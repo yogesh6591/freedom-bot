@@ -1,0 +1,8 @@
+FreedomBot Demo Knowledge File
+
+Company note for the product demo recording.
+
+Search token: FREEDOM_DEMO_ALPHA
+
+Acme operating tip: keep customer follow-ups inside approved workflows so
+writes stay in the approval queue before anything is sent.

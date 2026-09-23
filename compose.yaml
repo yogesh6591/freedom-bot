@@ -1,0 +1,70 @@
+# Local development stack: `docker compose up -d --build`
+#
+# Three services, no Kubernetes and no Redis — neither is needed at this scale
+# (§33). The scheduler runs in-process inside AgentOS.
+#
+# Host ports are shifted off the common defaults so this stack can run alongside
+# other local Postgres / Next / API processes:
+#   UI  http://localhost:3001
+#   API http://localhost:8001
+#   DB  localhost:5434 → container 5432
+
+services:
+  db:
+    # pgvector so the knowledge base has vector search available.
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: bizos
+      POSTGRES_PASSWORD: bizos
+      POSTGRES_DB: bizos_control
+    ports:
+      - "5434:5432"
+    volumes:
+      - bizos-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bizos -d bizos_control"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      RUNTIME_ENV: ${RUNTIME_ENV:-dev}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: bizos
+      DB_PASS: bizos
+      CONTROL_DB_NAME: bizos_control
+      WORKSPACE_DB_PREFIX: bizos_ws_
+      SHARED_WORKSPACE_DB: bizos_workspaces
+      DEFAULT_DEPLOYMENT_TYPE: ${DEFAULT_DEPLOYMENT_TYPE:-DEDICATED_DB}
+      DEFAULT_EXECUTION_MODE: ${DEFAULT_EXECUTION_MODE:-WAIT_FOR_APPROVAL}
+      JWT_SECRET: ${JWT_SECRET:-dev-local-signing-key-please-replace-in-production-0001}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-dev-local-secret-encryption-key-replace-0002}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
+      AGENTOS_URL: ${AGENTOS_URL:-http://127.0.0.1:8001}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
+    ports:
+      - "8001:8000"
+    # Seed the demo workspaces on first boot, then serve.
+    command: >
+      sh -c "python -m scripts.bootstrap --demo &&
+             python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  ui:
+    build:
+      context: ./ui
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8001}
+    depends_on:
+      - api
+    ports:
+      - "3001:3000"
+
+volumes:
+  bizos-db:

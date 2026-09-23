@@ -1,0 +1,15 @@
+# Pinned so a deployment is reproducible. Agno is consumed as a dependency, not
+# forked — see CURRENT_ARCHITECTURE.md.
+agno==3.0.9
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20
+sqlalchemy==2.0.36
+psycopg[binary]==3.2.3
+pydantic==2.10.4
+pydantic-settings==2.7.0
+email-validator==2.2.0
+PyJWT==2.10.1
+pgvector==0.3.6
+openai>=1.106.0
+cryptography==44.0.0

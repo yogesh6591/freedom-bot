@@ -1,0 +1,104 @@
+task_id,source_document,section,area,task,status,notes
+MP-001,Master Product Operating Spec,2.1 / 7.1,Core platform,Per-client isolated FreedomBot instance (data/memory/config separation),completed,Tenancy with dedicated DB/schema in bizos/tenancy
+MP-002,Master Product Operating Spec,5.1 / 10.1,Core platform,Single coherent text/chat-first client experience (not bot zoo),completed,One chat UI with domain packs; ui/src/app/chat
+MP-003,Master Product Operating Spec,5.2,Domains,Founder / Executive Clarity & Strategy domain,partial,strategy pack is placeholder (advise-only); no full founder domain
+MP-004,Master Product Operating Spec,5.2 / 6,Domains,Operations & Workflow Automation domain,completed,operations pack + CRM/ops tools
+MP-005,Master Product Operating Spec,5.2 / 6,Domains,Finance & Accounting domain,partial,Workspace accounting tools work; no live QuickBooks/Xero/bank
+MP-006,Master Product Operating Spec,5.2 / 6,Domains,Sales & Marketing domain,partial,CRM/pipeline/sales tools + weekly_sales_summary; no full nurture/campaign stack
+MP-007,Master Product Operating Spec,5.2 / 6,Domains,Branding & Web Presence domain,partial,brand pack is placeholder (draft ceiling)
+MP-008,Master Product Operating Spec,5.2 / 6,Domains,Legal & Compliance domain,partial,legal pack is placeholder (advise-only); no contract/template tools
+MP-009,Master Product Operating Spec,5.2 / 6,Domains,Client Intake & Delivery domain,completed,intake pack + lead_intake workflow
+MP-010,Master Product Operating Spec,5.2 / 6,Domains,Planning & Performance Tracking domain,completed,planning pack + meeting_preparation workflow
+MP-011,Master Product Operating Spec,5.3,Domains,Custom / adjacent capabilities (HR procurement etc.) as first-class support,not_done,Only via general tools; no dedicated packs
+MP-012,Master Product Operating Spec,7.2,Memory,Remember approved company facts terminology products roles systems,completed,Org memory FACT category + tools/API/UI
+MP-013,Master Product Operating Spec,7.2,Memory,Remember policies SOPs workflows approval rules templates,completed,SOP category + versioning
+MP-014,Master Product Operating Spec,7.2,Memory,Remember key decisions rationale preferences objectives,completed,DECISION category with structured attributes
+MP-015,Master Product Operating Spec,7.3,Memory,Prefer approved sources; distinguish inference; preserve provenance,completed,authoritative_only search; AI_INFERENCE lands PENDING
+MP-016,Master Product Operating Spec,7.3,Memory,Authorized correction without silent overwrite (history preserved),completed,memory_correct supersedes prior version
+MP-017,Master Product Operating Spec,7.3,Memory,Policy conflict escalation (do not silently pick),partial,Policy engine denies/escalates many cases; dedicated conflict UX thin
+MP-018,Master Product Operating Spec,4 / Knowledge,Knowledge,Client knowledge base / document RAG,partial,Upload+search works; full vector RAG needs embedder/pgvector
+MP-019,Master Product Operating Spec,8.1 / 8.2,Access,Role-based access (view vs approve vs execute),completed,VIEWER→ADMIN RBAC + tool matrix
+MP-020,Master Product Operating Spec,8.3,Access,PHI / card / regulated data controls,partial,allow_phi/allow_card_data flags + policy rules; not full clinical/PCI scanner
+MP-021,Master Product Operating Spec,8.4,Audit,Audit log of material AI actions approvals external changes,completed,Append-only audit + UI
+MP-022,Master Product Operating Spec,9.2,Governance,Advise mode (analyze only no external change),completed,ExecutionMode.ADVISE
+MP-023,Master Product Operating Spec,9.2,Governance,Draft mode (prepare for review),completed,ExecutionMode.DRAFT
+MP-024,Master Product Operating Spec,9.2,Governance,Approve-then-execute mode,completed,WAIT_FOR_APPROVAL + Approvals UI
+MP-025,Master Product Operating Spec,9.2,Governance,Autonomous-within-scope mode,completed,ExecutionMode.AUTO with policy limits
+MP-026,Master Product Operating Spec,9.3,Governance,Licensed/consequential judgment requires human review,completed,rule_licensed_judgment + approval path
+MP-027,Master Product Operating Spec,10.2,Interface,Voice interface (optional),not_done,Spec marks optional; not in repo
+MP-028,Master Product Operating Spec,10.3,Interface,Prompt-injection / untrusted content guardrails,completed,PromptInjectionGuardrail + untrusted fences
+MP-029,Master Product Operating Spec,11.2,Integrations,CRM integration,partial,Workspace CRM only; no Salesforce/HubSpot live
+MP-030,Master Product Operating Spec,11.2,Integrations,Email / messaging,partial,Workspace email; Gmail adapter needs credentials
+MP-031,Master Product Operating Spec,11.2,Integrations,Calendar / scheduling,partial,Workspace calendar; Google Calendar stub uncredentialed
+MP-032,Master Product Operating Spec,11.2,Integrations,Accounting / finance systems,partial,Workspace accounting only
+MP-033,Master Product Operating Spec,11.2,Integrations,Project / work management,not_done,Declared stub; not implemented
+MP-034,Master Product Operating Spec,11.2,Integrations,Document / storage / Drive,not_done,Not implemented
+MP-035,Master Product Operating Spec,11.2,Integrations,Website / CMS / forms,not_done,Not in this repo
+MP-036,Master Product Operating Spec,11.2,Integrations,Payments / billing,not_done,Not in this repo
+MP-037,Master Product Operating Spec,11.2,Integrations,Marketing platforms,not_done,Not in this repo
+MP-038,Master Product Operating Spec,11.2,Integrations,Customer support / service desk,not_done,Not in this repo
+MP-039,Master Product Operating Spec,11.3,Integrations,Tool consolidation / duplicate-license recommendations,not_done,Not implemented
+MP-040,Master Product Operating Spec,12,Proactive,Proactive inefficiency detection & prioritized recommendations,not_done,No standing detection loop
+MP-041,Master Product Operating Spec,12.2,Proactive,Directional financial impact estimates from operations data,not_done,Not implemented as product feature
+MP-042,Master Product Operating Spec,13 / 14,Delivery,Post-sale discovery → configure → test → launch lifecycle product,partial,Bootstrap/admin provision only; no guided onboarding UI
+MP-043,Master Product Operating Spec,13.3,Delivery,Reusable core template provisioned per client,completed,scripts/bootstrap + tenancy provisioning
+MP-044,Master Product Operating Spec,15,Support,Routine support layer with shared history (not to Jeanne),not_done,No support product in repo
+MP-045,Master Product Operating Spec,15.2,Support,Jeanne escalation only for strategic/relationship risk,not_done,No owner escalation product
+MP-046,Master Product Operating Spec,16,Owner UI,Jeanne owner conversational interface (clients status risks needing attention),not_done,Not in repo
+MP-047,Master Product Operating Spec,18,Commercial,Customized pricing / no Bronze-Silver-Gold / checkout automation,not_done,Not in repo
+MP-048,Master Product Operating Spec,19,Measurement,Baseline + post-implementation value metrics reporting,not_done,Not in repo
+MP-049,Master Product Operating Spec,Workflows,Workflows,Lead intake playbook,completed,lead_intake workflow
+MP-050,Master Product Operating Spec,Workflows,Workflows,Meeting preparation playbook,completed,meeting_preparation workflow
+MP-051,Master Product Operating Spec,Workflows,Workflows,Weekly sales summary playbook,completed,weekly_sales_summary workflow
+MP-052,Master Product Operating Spec,UI,Operator UI,Chat Memory Knowledge Approvals Reviews Workflows Integrations Audit Admin pages,completed,All under ui/src/app
+MP-053,Master Product Operating Spec,Admin,Admin,Users roles policies domains self-approval settings,completed,app/api/admin + ui admin page
+AC-001,Acquisition System Build Spec,5 / Journey,Acquisition,Prospect identify ICP company + decision-maker,not_done,Acquisition system not in this repo
+AC-002,Acquisition System Build Spec,5 / Journey,Acquisition,AI research / public signal layer for prospects,not_done,Not in this repo
+AC-003,Acquisition System Build Spec,5 / Journey,Acquisition,Personalized outreach directing to free assessment (not calendar),not_done,Not in this repo
+AC-004,Acquisition System Build Spec,5 / Journey,Assessment,Conversational free assessment (one question at a time branching),not_done,Not in this repo; lead_intake ≠ CAIO assessment
+AC-005,Acquisition System Build Spec,5 / Journey,Assessment,Business analysis: inefficiencies root-cause hypotheses,not_done,Not in this repo
+AC-006,Acquisition System Build Spec,5 / Journey,Assessment,Directional financial impact estimates for prospect,not_done,Not in this repo
+AC-007,Acquisition System Build Spec,5 / Journey,Qualification,Quiet qualification branch (qualified vs unqualified),not_done,Only keyword hot/warm/cold in lead_intake
+AC-008,Acquisition System Build Spec,5 / Journey,Qualification,Unqualified: useful results then exit (no calendar),not_done,Not in this repo
+AC-009,Acquisition System Build Spec,5 / Journey,Qualification,Qualified: FreedomBot fit map (high-level),not_done,Not in this repo
+AC-010,Acquisition System Build Spec,5 / Journey,Proof,Case studies / proof presentation,not_done,Not in this repo
+AC-011,Acquisition System Build Spec,5 / Journey,Demo,Standard FreedomBot demo video with value comparisons,not_done,Marketing site ≠ gated demo product
+AC-012,Acquisition System Build Spec,5 / Journey,Demo,Price / value conditioning before investment discussion,not_done,Not in this repo
+AC-013,Acquisition System Build Spec,5 / Journey,Calendar,Calendar unlock only after required steps + full demo watched,not_done,Not in this repo
+AC-014,Acquisition System Build Spec,10,Post-booking,Jeanne welcome/prep video after booking,not_done,Not in this repo
+AC-015,Acquisition System Build Spec,10,Post-booking,Optional YouTube content after booking only,not_done,Not in this repo
+AC-016,Acquisition System Build Spec,10,Post-booking,Auto-generated Jeanne pre-call brief from assessment data,not_done,Not in this repo
+AC-017,Acquisition System Build Spec,2,Brand,JeanneCAIO/FreedomBot branded prospect experience; Cepoch white-label,partial,Live marketing site exists separately; not built in this repo
+AC-018,Acquisition System Build Spec,2,Payments,JeanneCAIO-controlled Stripe/checkout payments,not_done,Not in this repo
+AC-019,Acquisition System Build Spec,11,Top-of-funnel,Enriched prospect list (company exec email signals source),not_done,Not in this repo
+AC-020,Acquisition System Build Spec,11,Top-of-funnel,Personalized AI email outreach + reply handling,not_done,Not in this repo
+AC-021,Acquisition System Build Spec,11,Top-of-funnel,Signal monitoring (hiring expansion leadership etc.),not_done,Not in this repo
+AC-022,Acquisition System Build Spec,11,Top-of-funnel,Social listening for scaling/overhead themes,not_done,Not in this repo
+AC-023,Acquisition System Build Spec,11,Top-of-funnel,Website visitor company intent enrichment,not_done,Not in this repo
+AC-024,Acquisition System Build Spec,11,Top-of-funnel,AI voice (recommend only; not mandatory cold calling),not_done,Not required V1; not in repo
+AC-025,Acquisition System Build Spec,12,Content,Repurpose Jeanne YouTube into organic formats (with approval),not_done,Not in this repo
+AC-026,Acquisition System Build Spec,13,CRM/Data,Single prospect record across outreach→purchase + attribution,not_done,Not in this repo
+AC-027,Acquisition System Build Spec,14,KPIs,Learning loop KPIs (assessment completed qualified booked purchased),not_done,Not in this repo
+AC-028,Acquisition System Build Spec,16,Acceptance,V1 acceptance: no public calendar; gated demo; pre-call brief; attribution,not_done,Acquisition V1 not implemented in this repo
+AS-001,Acquisition & Digital Assessment Spec,5.1,Assessment,AI chat assessment not rigid quiz/form,not_done,Not in this repo
+AS-002,Acquisition & Digital Assessment Spec,5.1,Assessment,Pivot when prospect names a specific problem,not_done,Not in this repo
+AS-003,Acquisition & Digital Assessment Spec,5.3,Assessment,High-level scan across major business areas then drill,not_done,Not in this repo
+AS-004,Acquisition & Digital Assessment Spec,5.4,Assessment,Collect revenue later with context; headcount tools workflows knowledge location,not_done,Not in this repo
+AS-005,Acquisition & Digital Assessment Spec,6.1,Assessment,Prospect-facing personalized inefficiency summary,not_done,Not in this repo
+AS-006,Acquisition & Digital Assessment Spec,6.2,Qualification,Continuous ICP fit authority growth AI-openness scoring,not_done,Not in this repo
+AS-007,Acquisition & Digital Assessment Spec,7,Proof/Demo,Proof then standard demo video before calendar,not_done,Not in this repo
+AS-008,Acquisition & Digital Assessment Spec,8,Commercial,Value stack / credible cost comparisons in demo,not_done,Not in this repo
+AS-009,Acquisition & Digital Assessment Spec,9,Calendar,Hide Jeanne calendar until qualified + demo complete,not_done,Not in this repo
+AS-010,Acquisition & Digital Assessment Spec,9,Handoff,Pre-call brief: context inefficiencies numbers concerns fit questions,not_done,Not in this repo
+TF-001,AI Top-of-Funnel Spec,3,TOF,Enriched prospect intelligence layer with confidence notes,not_done,Not in this repo
+TF-002,AI Top-of-Funnel Spec,4,TOF,AI-personalized business email outreach (team identity not Jeanne impersonation),not_done,Not in this repo
+TF-003,AI Top-of-Funnel Spec,4,TOF,AI-managed follow-up/replies until assessment routing,not_done,Not in this repo
+TF-004,AI Top-of-Funnel Spec,5,TOF,AI signal monitoring & social listening,not_done,Not in this repo
+TF-005,AI Top-of-Funnel Spec,6,TOF,Compliant website visitor/company intent enrichment,not_done,Not in this repo
+TF-006,AI Top-of-Funnel Spec,7,TOF,Pre-outreach lightweight account hypothesis (labeled not diagnosis),not_done,Not in this repo
+TF-007,AI Top-of-Funnel Spec,8,TOF,Content-as-acquisition (YouTube reuse) with no auto-publish from Jeanne personal accounts,not_done,Not in this repo
+TF-008,AI Top-of-Funnel Spec,9,TOF,Exportable enriched data for Jeanne-controlled Ulinc/LinkedIn audiences,not_done,Not in this repo
+TF-009,AI Top-of-Funnel Spec,10,TOF,Warm AI voice follow-up recommendation/implementation,not_done,Not in this repo
+TF-010,AI Top-of-Funnel Spec,11,TOF,End-to-end TOF flow Identify→Enrich→Prioritize→Research→Engage→Route to assessment,not_done,Not in this repo
+TF-011,AI Top-of-Funnel Spec,12,TOF,Learning loop feeding qualification/customer outcomes into targeting,not_done,Not in this repo
+TF-012,AI Top-of-Funnel Spec,14,TOF,Phase 1 core: enriched ICP DB + AI email + follow-up + route to assessment,not_done,Not in this repo
