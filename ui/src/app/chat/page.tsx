@@ -3,6 +3,10 @@
 /**
  * Chat.
  *
+ * One company conversation (FB-034): there is no domain menu. The server routes
+ * each turn to the domain it is about, inside one session, so context carries
+ * from strategy to operations to finance.
+ *
  * Shows what an ordinary user needs — the reply, and anything that now needs a
  * human — without the technical trace (§17). Tool activity is a compact strip of
  * names; the full redacted record lives in the Audit section for those permitted
@@ -12,7 +16,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { AppShell } from '@/components/AppShell'
-import { useSession } from '@/components/SessionProvider'
 import { api } from '@/lib/api'
 import type { ChatContext, ChatResponse } from '@/lib/types'
 import {
@@ -30,36 +33,6 @@ interface Turn {
   response?: ChatResponse
 }
 
-interface ChatDraft {
-  turns: Turn[]
-  sessionId?: string
-  domain: string
-}
-
-function chatStorageKey(clientId: string) {
-  return `bizos.chat.${clientId}`
-}
-
-function loadChatDraft(clientId: string): ChatDraft | null {
-  try {
-    const raw = sessionStorage.getItem(chatStorageKey(clientId))
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as ChatDraft
-    if (!parsed || !Array.isArray(parsed.turns)) return null
-    return parsed
-  } catch {
-    return null
-  }
-}
-
-function saveChatDraft(clientId: string, draft: ChatDraft) {
-  try {
-    sessionStorage.setItem(chatStorageKey(clientId), JSON.stringify(draft))
-  } catch {
-    // Ignore quota / private-mode failures; chat still works for the current page.
-  }
-}
-
 export default function ChatPage() {
   return (
     <AppShell>
@@ -69,164 +42,161 @@ export default function ChatPage() {
 }
 
 function ChatView() {
-  const { me } = useSession()
-  const clientId = me?.client.id
-  const [domain, setDomain] = useState('general')
+  const [lastDomain, setLastDomain] = useState<string | undefined>()
   const [context, setContext] = useState<ChatContext | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | undefined>()
-  const [hydrated, setHydrated] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
 
-  // Restore this workspace's chat when returning from another sidebar page.
-  useEffect(() => {
-    if (!clientId) return
-    const draft = loadChatDraft(clientId)
-    if (draft) {
-      setTurns(draft.turns)
-      setSessionId(draft.sessionId)
-      if (draft.domain) setDomain(draft.domain)
-    }
-    setHydrated(true)
-  }, [clientId])
-
-  useEffect(() => {
-    if (!clientId || !hydrated) return
-    saveChatDraft(clientId, { turns, sessionId, domain })
-  }, [clientId, hydrated, turns, sessionId, domain])
-
-  const loadContext = useCallback(async () => {
+  const refreshContext = useCallback(async () => {
     try {
-      setContext(await api.get<ChatContext>(`/api/chat/context?domain=${domain}`))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load chat context')
+      const data = await api.get<ChatContext>('/api/chat/context?domain=auto')
+      setContext(data)
+    } catch {
+      // Context is informational; chat still works without it.
     }
-  }, [domain])
+  }, [])
 
   useEffect(() => {
-    void loadContext()
-  }, [loadContext])
+    void refreshContext()
+  }, [refreshContext])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [turns])
+  }, [turns, busy])
 
   async function send(event: React.FormEvent) {
     event.preventDefault()
     const message = input.trim()
     if (!message || busy) return
     setInput('')
+    setBusy(true)
     setError(null)
     setTurns((prev) => [...prev, { role: 'user', content: message }])
-    setBusy(true)
     try {
       const response = await api.post<ChatResponse>('/api/chat', {
         message,
-        domain,
-        session_id: sessionId
+        session_id: sessionId,
+        domain: 'auto',
+        previous_domain: lastDomain
       })
       setSessionId(response.session_id)
+      setLastDomain(response.domain)
       setTurns((prev) => [
         ...prev,
         { role: 'assistant', content: response.content, response }
       ])
-      void loadContext()
+      void refreshContext()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'The assistant could not reply')
+      setError(err instanceof Error ? err.message : 'Chat failed')
     } finally {
       setBusy(false)
     }
   }
 
-  const writeTools = context?.tools.filter((tool) => tool.write) ?? []
+  const runnable = context?.tools.filter((t) => t.can_run) ?? []
+  const writeTools = runnable.filter((t) => t.write)
+  const viewOnly = (context?.tools.length ?? 0) - runnable.length
 
   return (
-    <div className="mx-auto flex h-full max-w-4xl flex-col gap-4">
+    <div className="flex h-[calc(100dvh-8.5rem)] min-h-[28rem] flex-col gap-4">
       <Panel
-        title="Assistant"
+        className="border-0 bg-gradient-to-br from-brand/40 via-white to-background-elevated"
+        title={context?.assistant_name ?? 'FreedomBot'}
         description={context?.mode_description}
         actions={
           <div className="flex items-center gap-2">
             {context && <Badge tone={modeTone(context.mode)}>{context.mode}</Badge>}
-            <select
-              value={domain}
-              onChange={(event) => setDomain(event.target.value)}
-              className="rounded-lg border border-border bg-background px-2 py-1 font-geist text-xs text-primary"
-            >
-              {(me?.client.enabled_domains ?? ['general']).map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
+            {sessionId && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSessionId(undefined)
+                  setLastDomain(undefined)
+                  setTurns([])
+                }}
+                className="rounded-full border border-border bg-white px-3 py-1.5 font-geist text-xs font-medium text-muted transition hover:border-brand-deep hover:bg-brand/20 hover:text-primary"
+              >
+                New conversation
+              </button>
+            )}
           </div>
         }
       >
-        <div className="flex flex-wrap gap-2 text-[11px] text-muted">
+        <div className="flex flex-wrap gap-2 text-xs leading-relaxed text-muted">
           <span>
-            {context?.tools.length ?? 0} tools available · {writeTools.length} can change
-            things
+            {runnable.length} tools you can run · {writeTools.length} can change things
+            {viewOnly > 0 && ` · ${viewOnly} visible but not runnable for your role`}
           </span>
           {context && context.pending_approvals > 0 && (
             <Link href="/approvals">
               <Badge tone="warn">{context.pending_approvals} awaiting approval</Badge>
             </Link>
           )}
-          {context && context.open_reviews > 0 && (
-            <Link href="/reviews">
-              <Badge tone="warn">{context.open_reviews} awaiting your answer</Badge>
-            </Link>
-          )}
         </div>
       </Panel>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-2xl border border-border bg-white p-4 shadow-panel sm:p-5">
         {turns.length === 0 && (
-          <Panel>
-            <p className="text-xs text-muted">
-              Ask about your pipeline, your recorded policies, or an upcoming meeting.
-              What the assistant may actually <em>do</em> depends on this workspace&apos;s
-              mode and your role — it will tell you when something needs approval.
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-4 py-16 text-center">
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-brand text-lg font-bold text-brand-ink shadow-glow">
+              FB
+            </span>
+            <p className="max-w-md text-sm leading-relaxed text-muted">
+              One conversation for the whole company — move from strategy to operations to
+              finance without repeating yourself. Answers mark recorded values as{' '}
+              <strong className="text-positive">Fact</strong> and anything unapproved as{' '}
+              <strong className="text-brand-deep">Estimate</strong>.
             </p>
-          </Panel>
+          </div>
         )}
 
         {turns.map((turn, index) =>
           turn.role === 'user' ? (
-            <div key={index} className="flex justify-end">
-              <div className="max-w-[80%] rounded-xl bg-background-secondary px-4 py-2 font-geist text-sm">
+            <div key={index} className="flex justify-end animate-fade-up">
+              <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-brand px-4 py-3 font-geist text-sm leading-relaxed text-brand-ink shadow-panel">
                 {turn.content}
               </div>
             </div>
           ) : (
-            <div key={index} className="space-y-2">
-              <div className="rounded-xl border border-border bg-background-secondary/30 px-4 py-3">
+            <div key={index} className="space-y-2 animate-fade-up">
+              <div className="max-w-[92%] rounded-2xl rounded-bl-sm border border-border bg-background-elevated/80 px-4 py-3.5 text-primary shadow-panel">
                 <MarkdownRenderer>{turn.content}</MarkdownRenderer>
               </div>
+              {turn.response?.domain && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-background-wash px-2.5 py-0.5 font-dmmono text-[10px] uppercase tracking-wider text-muted">
+                  Handled as: {turn.response.domain}
+                </span>
+              )}
               <TurnSignals response={turn.response} />
             </div>
           )
         )}
-        {busy && <p className="text-xs text-muted">Thinking…</p>}
+        {busy && (
+          <p className="animate-pulseSoft font-geist text-sm text-muted">Thinking…</p>
+        )}
         <div ref={endRef} />
       </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
-      <form onSubmit={send} className="flex gap-2">
+      <form
+        onSubmit={send}
+        className="flex gap-2 rounded-full border border-border bg-white p-1.5 shadow-lift"
+      >
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
           placeholder="Ask a question, or describe what you want done"
-          className="flex-1 rounded-xl border border-border bg-background px-4 py-3 font-geist text-sm outline-none placeholder:text-muted/60 focus:border-brand/60"
+          className="flex-1 rounded-full border-0 bg-transparent px-4 py-2.5 font-geist text-sm text-primary outline-none placeholder:text-muted/55"
         />
         <button
           type="submit"
           disabled={busy}
-          className="rounded-xl bg-brand px-5 py-3 font-geist text-sm text-white disabled:opacity-50"
+          className="rounded-full bg-brand px-6 py-2.5 font-geist text-sm font-bold text-brand-ink shadow-glow transition hover:bg-brand-soft disabled:opacity-50"
         >
           Send
         </button>
@@ -235,15 +205,14 @@ function ChatView() {
   )
 }
 
-/** Citations, tool activity, approvals and reviews raised by one turn. */
+/** Tool activity, approvals and drafts raised by one turn. */
 function TurnSignals({ response }: { response?: ChatResponse }) {
   if (!response) return null
-  const { tool_activity, awaiting_approval, drafts, reviews } = response
+  const { tool_activity, awaiting_approval, drafts } = response
   if (
     tool_activity.length === 0 &&
     awaiting_approval.length === 0 &&
-    drafts.length === 0 &&
-    reviews.length === 0
+    drafts.length === 0
   )
     return null
 
@@ -263,15 +232,18 @@ function TurnSignals({ response }: { response?: ChatResponse }) {
       {awaiting_approval.map((action) => (
         <div
           key={action.id}
-          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
+          className="rounded-xl border border-brand/50 bg-brand/15 px-3.5 py-2.5 text-sm"
         >
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge tone="warn">Awaiting approval</Badge>
             <Badge tone={riskTone(action.risk_level)}>{action.risk_level}</Badge>
-            <span className="font-geist text-primary">{action.title}</span>
+            <span className="font-geist font-semibold text-primary">{action.title}</span>
           </div>
-          <p className="mt-1 text-muted">{action.policy_reason}</p>
-          <Link href="/approvals" className="mt-1 inline-block text-brand">
+          <p className="mt-1.5 leading-relaxed text-muted">{action.policy_reason}</p>
+          <Link
+            href="/approvals"
+            className="mt-2 inline-block font-semibold text-brand-deep transition hover:text-primary"
+          >
             Open the approval queue →
           </Link>
         </div>
@@ -280,23 +252,10 @@ function TurnSignals({ response }: { response?: ChatResponse }) {
       {drafts.map((action) => (
         <div
           key={action.id}
-          className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs"
+          className="rounded-xl border border-info/25 bg-info/5 px-3.5 py-2.5 text-sm"
         >
           <Badge tone="info">Draft prepared — nothing sent</Badge>
-          <span className="ml-2 font-geist text-primary">{action.title}</span>
-        </div>
-      ))}
-
-      {reviews.map((review) => (
-        <div
-          key={review.id}
-          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
-        >
-          <Badge tone="warn">Needs your answer</Badge>
-          <span className="ml-2 font-geist text-primary">{review.question}</span>
-          <Link href="/reviews" className="ml-2 text-brand">
-            Answer →
-          </Link>
+          <span className="ml-2 font-geist font-semibold text-primary">{action.title}</span>
         </div>
       ))}
     </div>

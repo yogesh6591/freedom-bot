@@ -2,13 +2,13 @@
 
 from fastapi import APIRouter
 
-from app.api import admin, approvals, audit, auth, chat, integrations, knowledge, memory, reviews, workflows
+from app.api import admin, approvals, audit, auth, chat, integrations, memory
 
 
 def platform_router() -> APIRouter:
     """Every platform route under one router."""
     router = APIRouter()
-    for module in (auth, chat, memory, knowledge, approvals, reviews, workflows, integrations, audit, admin):
+    for module in (auth, chat, memory, approvals, integrations, audit, admin):
         router.include_router(module.router)
     return router
 

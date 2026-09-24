@@ -74,7 +74,7 @@ def test_unauthenticated_requests_are_rejected():
 
     with TestClient(app) as anonymous:
         for path in ("/api/auth/me", "/api/memory", "/api/approvals", "/api/audit",
-                     "/api/users", "/api/chat/context", "/api/reviews"):
+                     "/api/users", "/api/chat/context"):
             assert anonymous.get(path).status_code == 401, path
         assert anonymous.post("/api/chat", json={"message": "hi"}).status_code == 401
 
@@ -108,8 +108,7 @@ def test_role_gates_on_routes(app_client, client_a):
     assert app_client.get("/api/audit", headers=_auth(approver)).status_code == 200
 
     # Reads everyone can do
-    for path in ("/api/memory", "/api/approvals", "/api/reviews", "/api/workflows",
-                 "/api/integrations", "/api/domains", "/api/knowledge"):
+    for path in ("/api/memory", "/api/approvals", "/api/integrations", "/api/domains"):
         assert app_client.get(path, headers=_auth(viewer)).status_code == 200, path
 
 
@@ -141,22 +140,38 @@ def test_admin_cannot_modify_another_clients_user(app_client, client_a, client_b
 
 
 def test_approval_flow_over_http(app_client, client_a):
-    """Propose via a workflow, approve as an approver, execute as an operator."""
+    """Propose via a tool, approve as an approver, execute."""
+    from bizos.tenancy.context import tenant_scope
+    from bizos.tools.base import guarded_call, RunScope
+    from bizos.types import ExecutionMode
+
     operator = _login(app_client, client_a, "operator")
     approver = _login(app_client, client_a, "approver")
 
-    run = app_client.post(
-        "/api/workflows/lead_intake/run",
-        json={"inputs": {"email": "http@lead.test", "name": "HTTP Lead",
-                         "message": "please send pricing"}},
-        headers=_auth(operator),
+    user = next(u for u in control.list_users(client_a.id) if "operator" in u.email)
+    ctx = control.build_context(user)
+    scope = RunScope(
+        ctx=ctx,
+        settings=client_a.settings,
+        domain="sales",
+        requested_mode=ExecutionMode.WAIT_FOR_APPROVAL,
     )
-    assert run.status_code == 200, run.text
-    action_ids = run.json()["output"]["actions"]
-    assert action_ids
+    with tenant_scope(ctx):
+        outcome = guarded_call(
+            scope,
+            "crm_create_contact",
+            {
+                "first_name": "HTTP",
+                "last_name": "Lead",
+                "email": "http@lead.test",
+                "company": "HTTP Co",
+            },
+        )
+    assert outcome.action_id, outcome
+    action_id = outcome.action_id
 
     queue = app_client.get("/api/approvals", headers=_auth(approver)).json()["items"]
-    target = next(a for a in queue if a["id"] in action_ids and a["tool"] == "crm_create_contact")
+    target = next(a for a in queue if a["id"] == action_id and a["tool"] == "crm_create_contact")
     assert target["status"] == "PENDING_APPROVAL"
     assert target["policy_reason"]
 
@@ -178,21 +193,35 @@ def test_approval_flow_over_http(app_client, client_a):
 
 def test_approver_can_execute_a_protected_write_after_approval(app_client, client_a):
     """Approvers may execute after approving when the tool grants EXECUTE_AFTER_APPROVAL."""
-    operator = _login(app_client, client_a, "operator")
+    from bizos.tenancy.context import tenant_scope
+    from bizos.tools.base import guarded_call, RunScope
+    from bizos.types import ExecutionMode
+
     approver = _login(app_client, client_a, "approver")
 
-    run = app_client.post(
-        "/api/workflows/lead_intake/run",
-        json={"inputs": {"email": "sep@duties.test", "name": "Sep", "message": "quote please"}},
-        headers=_auth(operator),
-    ).json()
-    queue = app_client.get("/api/approvals", headers=_auth(approver)).json()["items"]
-    email_action = next(
-        a for a in queue if a["id"] in run["output"]["actions"] and a["tool"] == "email_send_message"
+    user = next(u for u in control.list_users(client_a.id) if "operator" in u.email)
+    ctx = control.build_context(user)
+    scope = RunScope(
+        ctx=ctx,
+        settings=client_a.settings,
+        domain="sales",
+        requested_mode=ExecutionMode.WAIT_FOR_APPROVAL,
     )
+    with tenant_scope(ctx):
+        outcome = guarded_call(
+            scope,
+            "email_send_message",
+            {
+                "recipients": ["sep@duties.test"],
+                "subject": "quote please",
+                "body": "Hello — following up on pricing.",
+            },
+        )
+    assert outcome.action_id
+    action_id = outcome.action_id
 
     result = app_client.post(
-        f"/api/approvals/{email_action['id']}/approve",
+        f"/api/approvals/{action_id}/approve",
         json={"execute": True}, headers=_auth(approver),
     ).json()
     assert result["executed"] is True
@@ -200,14 +229,27 @@ def test_approver_can_execute_a_protected_write_after_approval(app_client, clien
 
 
 def test_viewer_cannot_execute_or_approve(app_client, client_a):
+    from bizos.tenancy.context import tenant_scope
+    from bizos.tools.base import guarded_call, RunScope
+    from bizos.types import ExecutionMode
+
     viewer = _login(app_client, client_a, "viewer")
-    operator = _login(app_client, client_a, "operator")
-    run = app_client.post(
-        "/api/workflows/lead_intake/run",
-        json={"inputs": {"email": "gate@probe.test", "name": "Gate", "message": "pricing"}},
-        headers=_auth(operator),
-    ).json()
-    action_id = run["output"]["actions"][0]
+
+    user = next(u for u in control.list_users(client_a.id) if "operator" in u.email)
+    ctx = control.build_context(user)
+    scope = RunScope(
+        ctx=ctx,
+        settings=client_a.settings,
+        domain="sales",
+        requested_mode=ExecutionMode.WAIT_FOR_APPROVAL,
+    )
+    with tenant_scope(ctx):
+        outcome = guarded_call(
+            scope,
+            "crm_create_contact",
+            {"first_name": "Gate", "last_name": "Probe", "email": "gate@probe.test"},
+        )
+    action_id = outcome.action_id
     assert app_client.post(
         f"/api/approvals/{action_id}/approve", json={}, headers=_auth(viewer)
     ).status_code == 403
@@ -288,7 +330,9 @@ def test_chat_reports_the_mode_and_surface(app_client, client_a):
     context = app_client.get("/api/chat/context?domain=sales", headers=_auth(viewer)).json()
     assert context["role"] == "VIEWER"
     assert context["mode"] == str(client_a.settings.mode)
-    assert [t for t in context["tools"] if t["write"]] == []
+    # A viewer can see write processes exist (FB-037) but can run none of them.
+    assert [t for t in context["tools"] if t["write"] and t["can_run"]] == []
+    assert any(t["write"] and t["can_view"] for t in context["tools"])
 
 
 def test_chat_without_a_model_is_reported_clearly(app_client, client_a):

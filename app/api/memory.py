@@ -27,6 +27,10 @@ class MemoryWrite(BaseModel):
     source_type: str = "MANUAL"
     source_id: Optional[str] = None
     confidence: float = 1.0
+    #: FB-037 restricted area (exec/hr/salary/finance/legal), or None.
+    access_area: Optional[str] = None
+    #: FB-036 policy topic; two differing values on one topic are a conflict.
+    topic: Optional[str] = None
 
 
 class MemoryCorrection(BaseModel):
@@ -70,6 +74,14 @@ def search_memory(
         return {"items": [i.to_dict() for i in items]}
 
 
+@router.get("/conflicts")
+def list_conflicts(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """Topics where recorded policies disagree and a person must pick one."""
+    with bound(ctx):
+        items = memory.find_conflicts(ctx=ctx)
+        return {"items": items, "count": len(items)}
+
+
 @router.get("/{item_id}")
 def get_memory(item_id: str, ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
     """One item with its full version history, including superseded values."""
@@ -86,21 +98,28 @@ def create_memory(
     ctx: TenantContext = Depends(require_drafter),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
+    attributes = dict(body.attributes)
+    if body.topic:
+        attributes["topic"] = body.topic
     with bound(ctx):
-        item = memory.put(
-            category=MemoryCategory.parse(body.category, MemoryCategory.FACT),  # type: ignore[arg-type]
-            title=body.title,
-            content=body.content,
-            memory_key=body.key,
-            domain=body.domain,
-            tags=body.tags,
-            attributes=body.attributes,
-            source_type=SourceType.parse(body.source_type, SourceType.MANUAL),  # type: ignore[arg-type]
-            source_id=body.source_id,
-            confidence=body.confidence,
-            settings=settings,
-            ctx=ctx,
-        )
+        try:
+            item = memory.put(
+                category=MemoryCategory.parse(body.category, MemoryCategory.FACT),  # type: ignore[arg-type]
+                title=body.title,
+                content=body.content,
+                memory_key=body.key,
+                domain=body.domain,
+                tags=body.tags,
+                attributes=attributes,
+                access_area=body.access_area,
+                source_type=SourceType.parse(body.source_type, SourceType.MANUAL),  # type: ignore[arg-type]
+                source_id=body.source_id,
+                confidence=body.confidence,
+                settings=settings,
+                ctx=ctx,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
         return item.to_dict()
 
 
@@ -143,3 +162,5 @@ def approve_version(
             return memory.approve_version(version_id, ctx=ctx).to_dict()
         except memory.MemoryNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc

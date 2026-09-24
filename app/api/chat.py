@@ -6,8 +6,8 @@ Chat Routes
 
 The agent is constructed per request and bound to exactly one tenant (see
 :mod:`bizos.agents.agent` for why). The response carries the structured signals
-the UI needs — citations, tool activity, whether something is awaiting approval,
-workflow status — without dumping raw traces at ordinary users (§17).
+the UI needs — citations, tool activity, whether something is awaiting approval —
+without dumping raw traces at ordinary users (§17).
 """
 
 from __future__ import annotations
@@ -20,9 +20,11 @@ from pydantic import BaseModel, Field
 from app.api.deps import bound, client_settings, current_context, run_scope
 from bizos.actions import store as actions
 from bizos.agents.agent import ModelNotConfigured, build_agent
+from bizos.agents.instructions import assistant_name
+from bizos.agents.persona import AUTO, enforce_persona, route
+from bizos.rbac.registry import TOOL_SPECS
 from bizos.control.models import ClientSettings
 from bizos.policy.modes import describe as describe_mode
-from bizos.review import store as reviews
 from bizos.tenancy.context import TenantContext
 from bizos.types import ActionStatus
 from bizos.util.ids import new_id
@@ -33,32 +35,49 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20000)
     session_id: Optional[str] = None
-    domain: str = "general"
+    #: "auto" (the default) routes each turn to the domain it is about, inside
+    #: one continuous session. A named domain pins the turn to that domain.
+    domain: str = AUTO
+    #: The domain the previous turn was routed to, so short follow-ups stay put.
+    previous_domain: Optional[str] = None
     #: May only narrow the workspace mode.
     execution_mode: Optional[str] = None
 
 
 @router.get("/context")
 def chat_context(
-    domain: str = "general",
+    domain: str = AUTO,
     ctx: TenantContext = Depends(current_context),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    """What the agent can do right now — drives the UI's mode banner and tool list."""
+    """What the agent can do right now — drives the UI's mode banner and tool list.
+
+    Lists every process the caller may *see* in their enabled domains, each
+    flagged with whether they may *run* it (FB-037).
+    """
     from bizos.agents.surface import visible_specs
-    from bizos.domains.packs import get_pack
+    from bizos.domains.packs import enabled_packs, get_pack
 
     with bound(ctx):
-        scope = run_scope(ctx, settings, domain=domain)
-        pack = get_pack(domain)
-        general = get_pack("general")
-        packs = [p for p in (pack, general) if p is not None]
-        specs = visible_specs(scope, packs)
+        scope = run_scope(ctx, settings, domain="general" if domain == AUTO else domain)
+        if domain == AUTO:
+            packs = enabled_packs(settings.enabled_domains)
+        else:
+            packs = [p for p in (get_pack(domain), get_pack("general")) if p is not None]
+        runnable = {s.name for s in visible_specs(scope, packs)}
+        in_packs = {spec.name for p in packs for spec in p.tool_specs()}
+        viewable = [
+            s for s in TOOL_SPECS
+            if s.name in in_packs and s.implemented and s.can_view(ctx)
+        ]
         return {
             "mode": str(scope.mode),
             "mode_description": describe_mode(scope.mode),
             "domain": domain,
+            "enabled_domains": settings.enabled_domains,
+            "assistant_name": assistant_name(settings),
             "role": str(ctx.primary_role),
+            "data_scopes": sorted(ctx.visible_areas),
             "tools": [
                 {
                     "name": s.name,
@@ -66,11 +85,13 @@ def chat_context(
                     "write": s.write,
                     "risk": str(s.risk),
                     "category": s.category,
+                    "can_view": True,
+                    "can_run": s.name in runnable,
+                    "tool_mode": settings.tool_modes.get(s.name),
                 }
-                for s in specs
+                for s in viewable
             ],
             "pending_approvals": len(actions.pending_approvals(ctx=ctx)),
-            "open_reviews": reviews.open_count(ctx),
         }
 
 
@@ -82,16 +103,19 @@ def chat(
 ) -> dict[str, Any]:
     """One chat turn."""
     session_id = body.session_id or new_id("ses")
+    if body.domain == AUTO:
+        domain = route(body.message, settings.enabled_domains, previous=body.previous_domain)
+    else:
+        domain = body.domain
     with bound(ctx):
         scope = run_scope(
             ctx,
             settings,
-            domain=body.domain,
+            domain=domain,
             requested_mode=body.execution_mode,
             session_id=session_id,
         )
         before = {a.id for a in actions.list_actions(limit=200, ctx=ctx)}
-        open_reviews_before = {r.id for r in reviews.list_items(limit=200, ctx=ctx)}
 
         try:
             agent = build_agent(scope, session_id=session_id)
@@ -109,22 +133,34 @@ def chat(
             for a in actions.list_actions(limit=200, ctx=ctx)
             if a.id not in before
         ]
-        new_reviews = [
-            r.to_dict() for r in reviews.list_items(limit=200, ctx=ctx) if r.id not in open_reviews_before
-        ]
+
+        content, persona_fixed = enforce_persona(
+            str(getattr(output, "content", output) or ""), assistant_name(settings)
+        )
+        if persona_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
+
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status="PERSONA_ENFORCED",
+                execution_mode=str(scope.mode),
+            )
 
         return {
             "session_id": session_id,
-            "content": getattr(output, "content", str(output)),
+            "content": content,
             "mode": str(scope.mode),
-            "domain": body.domain,
+            "domain": domain,
+            "routed": body.domain == AUTO,
             "tool_activity": _tool_activity(output),
             "actions": new_actions,
             "awaiting_approval": [
                 a for a in new_actions if a["status"] == str(ActionStatus.PENDING_APPROVAL)
             ],
             "drafts": [a for a in new_actions if a["status"] == str(ActionStatus.DRAFT)],
-            "reviews": new_reviews,
         }
 
 

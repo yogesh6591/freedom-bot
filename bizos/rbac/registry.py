@@ -22,16 +22,19 @@ from types import MappingProxyType
 from typing import Mapping, Optional
 
 from bizos.rbac import matrix
-from bizos.types import DataClassification, RiskLevel, Role, ToolPermission
+from bizos.types import DataClassification, RiskLevel, Role, ToolPermission, role_rank
 
 #: Connector-ish grouping, used by the UI and by integration gating.
 CATEGORY_INTERNAL = "internal"
 CATEGORY_MEMORY = "memory"
-CATEGORY_KNOWLEDGE = "knowledge"
 CATEGORY_CRM = "crm"
 CATEGORY_EMAIL = "email"
 CATEGORY_CALENDAR = "calendar"
-CATEGORY_ACCOUNTING = "accounting"
+CATEGORY_STRATEGY = "strategy"
+CATEGORY_FINANCE = "finance"
+CATEGORY_BRAND = "brand"
+CATEGORY_LEGAL = "legal"
+CATEGORY_N8N = "n8n"
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,19 @@ class ToolSpec:
     draft_safe: bool = False
     #: Free-form tags used by domain packs to select tools.
     tags: frozenset[str] = field(default_factory=frozenset)
+    #: Restricted data area this tool reads or writes (FB-037). A caller without
+    #: that area in their data scopes can neither see nor run it.
+    data_area: Optional[str] = None
+    #: FB-037 "can see a process" vs "can run it": the lowest role that may see
+    #: this tool exists and what it does. Whether they may *run* it is the
+    #: separate ``permissions`` matrix.
+    view_min_role: Role = Role.VIEWER
+
+    def can_view(self, ctx) -> bool:
+        return ctx.at_least(self.view_min_role) and ctx.can_see_area(self.data_area)
+
+    def can_run(self, role: Role) -> bool:
+        return self.permission_for(role) not in (ToolPermission.DENIED, ToolPermission.APPROVE_ONLY)
 
     @property
     def internal_write(self) -> bool:
@@ -113,6 +129,10 @@ class ToolSpec:
             "integration": self.integration,
             "implemented": self.implemented,
             "tags": sorted(self.tags),
+            "data_area": self.data_area,
+            "view_min_role": str(self.view_min_role),
+            "view": {str(r): role_rank(r) >= role_rank(self.view_min_role) for r in Role},
+            "run": {str(r): self.can_run(r) for r in Role},
         }
 
 
@@ -222,14 +242,18 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         draft_safe=True,
         tags=frozenset({"write", "memory", "correction"}),
     ),
-    # ---------------------------------------------------------- knowledge
     _spec(
-        "knowledge_search",
-        "Search knowledge base",
-        "Semantic search over uploaded documents in this workspace's knowledge base.",
-        CATEGORY_KNOWLEDGE,
+        "memory_escalate_conflict",
+        "Escalate a policy conflict",
+        "When recorded policies disagree, hand the conflict to a person to decide. Pass the "
+        "topic, the conflicting item_ids and the question to resolve. Never pick a side.",
+        CATEGORY_MEMORY,
         _ALL,
-        tags=frozenset({"read", "knowledge"}),
+        write=True,
+        risk=RiskLevel.MEDIUM,
+        permissions=matrix.WRITE_INTERNAL,
+        always_requires_approval=True,
+        tags=frozenset({"write", "memory", "conflict"}),
     ),
     # --------------------------------------------------------------- CRM
     _spec(
@@ -486,37 +510,41 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         integration="calendar",
         tags=frozenset({"write", "calendar", "external"}),
     ),
-    # -------------------------------------------------------- accounting
-    # Declared so the policy engine and the Admin UI know the shape of the
-    # finance surface. Adapters are out of Phase 1 (implemented=False), so the
-    # tool never reaches an agent — see bizos.tools.registry_check.
+    # ----------------------------------------------------------- strategy
     _spec(
-        "invoice_search",
-        "Search invoices",
-        "Search invoices by customer, status or date. Read-only.",
-        CATEGORY_ACCOUNTING,
-        ("finance",),
-        classification=DataClassification.CONFIDENTIAL,
-        permissions=matrix.READ_SENSITIVE,
-        integration="accounting",
-        tags=frozenset({"read", "accounting"}),
+        "strategy_list_priorities",
+        "List strategic priorities",
+        "List recorded strategic goals and priorities from organizational memory.",
+        CATEGORY_STRATEGY,
+        ("strategy", "general"),
+        tags=frozenset({"read", "strategy", "memory"}),
     ),
     _spec(
-        "accounting_customer_balance",
-        "Read a customer balance",
-        "Read the outstanding balance for one customer. Read-only.",
-        CATEGORY_ACCOUNTING,
-        ("finance",),
-        classification=DataClassification.CONFIDENTIAL,
-        permissions=matrix.READ_SENSITIVE,
-        integration="accounting",
-        tags=frozenset({"read", "accounting"}),
+        "strategy_record_option",
+        "Record a strategic option",
+        "Record a strategic option or recommendation for human decision. Does not execute it.",
+        CATEGORY_STRATEGY,
+        ("strategy",),
+        write=True,
+        risk=RiskLevel.MEDIUM,
+        permissions=matrix.WRITE_INTERNAL,
+        draft_safe=True,
+        tags=frozenset({"write", "strategy"}),
+    ),
+    # ------------------------------------------------------------- finance
+    _spec(
+        "finance_lookup_policy",
+        "Look up finance policy",
+        "Look up recorded finance policies (pricing, refunds, payment terms). Not advice.",
+        CATEGORY_FINANCE,
+        ("finance", "general"),
+        tags=frozenset({"read", "finance", "memory"}),
     ),
     _spec(
-        "accounting_record_payment",
-        "Record or send a payment",
-        "Move money. Always requires human approval and is never auto-executed.",
-        CATEGORY_ACCOUNTING,
+        "finance_propose_adjustment",
+        "Propose a finance adjustment",
+        "Propose a payment or balance adjustment. Always requires licensed human approval.",
+        CATEGORY_FINANCE,
         ("finance",),
         write=True,
         external=True,
@@ -526,22 +554,58 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         always_requires_approval=True,
         licensed_judgment=True,
         financial=True,
-        card_sensitive=True,
-        integration="accounting",
-        tags=frozenset({"write", "accounting", "financial"}),
+        data_area="finance",
+        view_min_role=Role.DRAFTER,
+        tags=frozenset({"write", "finance", "licensed"}),
     ),
-    # ----------------------------------------------------- human review
+    # --------------------------------------------------------------- brand
     _spec(
-        "request_human_review",
-        "Ask a human",
-        "Raise a question to the human review queue instead of guessing, and stop.",
-        CATEGORY_INTERNAL,
-        _ALL,
+        "brand_get_voice",
+        "Get brand voice guidelines",
+        "Retrieve brand voice and messaging guidelines from organizational memory.",
+        CATEGORY_BRAND,
+        ("brand", "general"),
+        tags=frozenset({"read", "brand", "memory"}),
+    ),
+    # --------------------------------------------------------------- legal
+    _spec(
+        "legal_find_clause",
+        "Find a recorded clause summary",
+        "Find recorded contract/clause summaries. Never a legal conclusion.",
+        CATEGORY_LEGAL,
+        ("legal", "general"),
+        data_area="legal",
+        tags=frozenset({"read", "legal", "memory"}),
+    ),
+    _spec(
+        "legal_flag_for_counsel",
+        "Flag a matter for counsel",
+        "Escalate a legal question to human counsel. Always requires approval.",
+        CATEGORY_LEGAL,
+        ("legal",),
         write=True,
-        risk=RiskLevel.LOW,
-        permissions=matrix.WRITE_INTERNAL,
-        draft_safe=True,
-        tags=frozenset({"write", "review"}),
+        risk=RiskLevel.HIGH,
+        classification=DataClassification.CONFIDENTIAL,
+        permissions=matrix.WRITE_PROTECTED,
+        always_requires_approval=True,
+        licensed_judgment=True,
+        data_area="legal",
+        tags=frozenset({"write", "legal", "licensed"}),
+    ),
+    # ------------------------------------------------------------------ n8n
+    _spec(
+        "n8n_trigger_webhook",
+        "Trigger an n8n webhook",
+        "Call the client's n8n webhook with a structured event after approval.",
+        CATEGORY_N8N,
+        ("operations", "sales", "intake", "planning", "general"),
+        write=True,
+        external=True,
+        risk=RiskLevel.HIGH,
+        permissions=matrix.WRITE_PROTECTED,
+        always_requires_approval=True,
+        integration="n8n",
+        tags=frozenset({"write", "n8n", "external"}),
     ),
 )
 

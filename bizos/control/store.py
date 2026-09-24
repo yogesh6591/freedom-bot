@@ -233,6 +233,7 @@ def create_user(
     display_name: str = "",
     roles: Iterable[Role] = (Role.VIEWER,),
     created_by: Optional[str] = None,
+    data_scopes: Iterable[str] = (),
 ) -> User:
     """Create a user inside one client and grant their roles."""
     email_norm = email.strip().casefold()
@@ -263,6 +264,9 @@ def create_user(
             },
         )
         _replace_roles(conn, user_id, role_set, created_by)
+    scopes = list(data_scopes)
+    if scopes:
+        return set_user_scopes(user_id, scopes)
     return get_user(user_id)
 
 
@@ -273,6 +277,24 @@ def _replace_roles(conn: Any, user_id: str, roles: frozenset[Role], granted_by: 
             text("INSERT INTO user_roles (user_id, role, granted_by) VALUES (:u, :r, :g)"),
             {"u": user_id, "r": str(role), "g": granted_by},
         )
+
+
+def set_user_scopes(user_id: str, scopes: Iterable[str]) -> User:
+    """Replace the restricted data areas a user may see (FB-037)."""
+    from bizos.types import DATA_AREAS
+
+    wanted = sorted({str(s).strip().casefold() for s in scopes if str(s).strip()})
+    unknown = [s for s in wanted if s not in DATA_AREAS]
+    if unknown:
+        raise ValueError(f"unknown data area(s): {', '.join(unknown)}")
+    with control_connection() as conn:
+        updated = conn.execute(
+            text("UPDATE users SET data_scopes = :s, updated_at = NOW() WHERE id = :i"),
+            {"s": wanted, "i": user_id},
+        )
+        if updated.rowcount == 0:
+            raise UserNotFound(user_id)
+    return get_user(user_id)
 
 
 def set_user_roles(user_id: str, roles: Iterable[Role], *, granted_by: str) -> User:
@@ -328,6 +350,7 @@ def _user_from_row(conn: Any, row: Any) -> User:
         status=row.status,
         created_at=row.created_at,
         last_login_at=row.last_login_at,
+        data_scopes=frozenset(getattr(row, "data_scopes", None) or ()),
     )
 
 
@@ -439,6 +462,7 @@ def build_context(user: User, *, attributes: Optional[dict] = None) -> TenantCon
         default_execution_mode=client.settings.mode,
         email=user.email,
         display_name=user.display_name,
+        data_scopes=user.data_scopes,
         attributes=attributes or {},
     )
 

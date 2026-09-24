@@ -118,6 +118,14 @@ class ClientSettings:
     retention_policy: RetentionPolicy = field(default_factory=RetentionPolicy)
     approval_policy: ApprovalPolicy = field(default_factory=ApprovalPolicy)
     risk_policy: RiskPolicy = field(default_factory=RiskPolicy)
+    #: Post-sale configuration snapshot (FB-044).
+    onboarding: dict = field(default_factory=dict)
+    #: Domains the client has paid for (FB-035). A domain outside this list can
+    #: be enabled only through a recorded change order.
+    purchased_domains: list[str] = field(default_factory=lambda: list(DEFAULT_ENABLED_DOMAINS))
+    #: Per-tool execution mode (FB-038). Narrowing only: an entry can make one
+    #: tool stricter than the workspace mode, never looser.
+    tool_modes: dict = field(default_factory=dict)
 
     # -- serialization ------------------------------------------------------
 
@@ -153,9 +161,16 @@ class ClientSettings:
         settings = cls(**kwargs)
         settings.risk_policy = settings.risk_policy.normalize()
         settings.enabled_domains = [d for d in settings.enabled_domains if d in DOMAIN_NAMES]
-        # The general pack is the memory/knowledge surface; it is always on.
+        # The general pack is the memory surface; it is always on.
         if "general" not in settings.enabled_domains:
             settings.enabled_domains.insert(0, "general")
+        settings.purchased_domains = [d for d in settings.purchased_domains if d in DOMAIN_NAMES]
+        if "general" not in settings.purchased_domains:
+            settings.purchased_domains.insert(0, "general")
+        settings.tool_modes = {
+            str(k): str(v) for k, v in dict(settings.tool_modes or {}).items()
+            if ExecutionMode.parse(v) is not None
+        }
         return settings
 
     # -- typed accessors ----------------------------------------------------
@@ -171,6 +186,14 @@ class ClientSettings:
     @property
     def approval_floor(self) -> RiskLevel:
         return RiskLevel.parse(self.risk_policy.always_approve_at_or_above, RiskLevel.HIGH)  # type: ignore[return-value]
+
+    def tool_mode(self, tool: str) -> Optional[ExecutionMode]:
+        raw = (self.tool_modes or {}).get(tool)
+        return ExecutionMode.parse(raw) if raw else None  # type: ignore[return-value]
+
+    def domain_purchased(self, domain: str) -> bool:
+        name = (domain or "").strip().casefold()
+        return name == "general" or name in self.purchased_domains
 
     def domain_enabled(self, domain: str) -> bool:
         return (domain or "").strip().casefold() in self.enabled_domains
@@ -216,6 +239,7 @@ class User:
     status: str = "ACTIVE"
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
+    data_scopes: frozenset[str] = frozenset()
 
     @property
     def primary_role(self) -> Role:
@@ -231,6 +255,7 @@ class User:
             "display_name": self.display_name,
             "roles": sorted(str(r) for r in self.roles),
             "primary_role": str(self.primary_role),
+            "data_scopes": sorted(self.data_scopes),
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,

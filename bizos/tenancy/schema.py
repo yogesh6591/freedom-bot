@@ -468,6 +468,20 @@ WORKSPACE_DDL: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS calendar_events_time_idx ON calendar_events (starts_at)",
     """
+    CREATE TABLE IF NOT EXISTS n8n_deliveries (
+        id          TEXT PRIMARY KEY,
+        event       TEXT NOT NULL,
+        workflow    TEXT NOT NULL DEFAULT '',
+        status      TEXT NOT NULL,
+        request     JSONB NOT NULL DEFAULT '{}'::jsonb,
+        response    TEXT,
+        error       TEXT,
+        created_by  TEXT,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS n8n_deliveries_created_idx ON n8n_deliveries (created_at DESC)",
+    """
     CREATE TABLE IF NOT EXISTS accounting_customers (
         id           TEXT PRIMARY KEY,
         name         TEXT NOT NULL,
@@ -515,14 +529,68 @@ WORKSPACE_DDL: tuple[str, ...] = (
 )
 
 
+#: Additive columns for workspaces provisioned before they existed.
+UPGRADE_DDL: tuple[str, ...] = (
+    # FB-037: restricted data area of a memory item (NULL = general).
+    "ALTER TABLE memory_items ADD COLUMN IF NOT EXISTS access_area TEXT",
+    "CREATE INDEX IF NOT EXISTS memory_items_area_idx ON memory_items (access_area)",
+    # FB-038: which execution mode governed the audited event.
+    "ALTER TABLE audit_events ADD COLUMN IF NOT EXISTS execution_mode TEXT",
+)
+
+
+def client_wall_ddl(client_id: str) -> tuple[str, ...]:
+    """FB-033: stamp every workspace row with its client and refuse any other.
+
+    Each workspace table gets a ``client_id`` column defaulting to the owning
+    client and a CHECK that it equals that client, so a row can never be written
+    into this workspace on behalf of another client — even by code that forgets
+    to set it. Isolation still primarily comes from the separate database or
+    schema; this is the second wall inside it.
+    """
+    literal = "'" + client_id.replace("'", "''") + "'"
+    out: list[str] = []
+    for table in WORKSPACE_TABLES:
+        out.append(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS client_id TEXT NOT NULL DEFAULT {literal}"
+        )
+        out.append(f"ALTER TABLE {table} ALTER COLUMN client_id SET DEFAULT {literal}")
+        out.append(
+            f"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = '{table}_client_wall'
+                      AND conrelid = '{table}'::regclass
+                ) THEN
+                    ALTER TABLE {table}
+                        ADD CONSTRAINT {table}_client_wall CHECK (client_id = {literal});
+                END IF;
+            END $$
+            """
+        )
+    return tuple(out)
+
+
 #: Makes ``audit_events`` genuinely append-only rather than append-by-convention.
 #: A BEFORE trigger raises on any UPDATE or DELETE, including from the table's
 #: owner — which a ``REVOKE`` cannot achieve, since the owner keeps its rights.
 APPEND_ONLY_DDL: tuple[str, ...] = (
+    # The one sanctioned removal is the retention purge (FB-038): a DELETE of a
+    # row older than the cutoff that the purge transaction set with
+    # ``SET LOCAL bizos.audit_purge_before``. Updates are never permitted, and a
+    # delete of anything newer than the cutoff still raises.
     """
     CREATE OR REPLACE FUNCTION bizos_reject_mutation() RETURNS TRIGGER AS $$
+    DECLARE
+        cutoff TEXT := current_setting('bizos.audit_purge_before', true);
     BEGIN
-        RAISE EXCEPTION 'audit_events is append-only; % is not permitted', TG_OP
+        IF TG_OP = 'DELETE' AND cutoff IS NOT NULL AND cutoff <> ''
+           AND OLD.created_at < cutoff::timestamptz THEN
+            RETURN OLD;
+        END IF;
+        RAISE EXCEPTION '% is append-only; % is not permitted', TG_TABLE_NAME, TG_OP
             USING ERRCODE = 'insufficient_privilege';
     END;
     $$ LANGUAGE plpgsql
@@ -569,6 +637,7 @@ WORKSPACE_TABLES: tuple[str, ...] = (
     "email_messages",
     "email_drafts",
     "calendar_events",
+    "n8n_deliveries",
     "accounting_customers",
     "accounting_invoices",
     "accounting_payments",

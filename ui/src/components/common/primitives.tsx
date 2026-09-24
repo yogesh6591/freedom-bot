@@ -1,6 +1,6 @@
 'use client'
 
-/** Small presentational building blocks shared by every section. */
+/** Shared UI primitives — light / yellow product theme. */
 
 import { cn } from '@/lib/utils'
 import type { ReactNode } from 'react'
@@ -21,7 +21,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        'rounded-xl border border-border bg-background-secondary/40 p-5',
+        'rounded-xl border border-border bg-background-secondary p-5 shadow-panel',
         className
       )}
     >
@@ -29,12 +29,14 @@ export function Panel({
         <header className="mb-4 flex items-start justify-between gap-4">
           <div>
             {title && (
-              <h2 className="font-geist text-sm font-medium uppercase tracking-wide text-primary">
+              <h2 className="font-geist text-lg font-semibold tracking-tight text-primary">
                 {title}
               </h2>
             )}
             {description && (
-              <p className="mt-1 max-w-2xl text-xs text-muted">{description}</p>
+              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
+                {description}
+              </p>
             )}
           </div>
           {actions}
@@ -46,12 +48,12 @@ export function Panel({
 }
 
 const TONES = {
-  neutral: 'bg-background-secondary text-muted border-border',
-  info: 'bg-sky-500/10 text-sky-300 border-sky-500/30',
-  good: 'bg-positive/10 text-positive border-positive/30',
-  warn: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
-  bad: 'bg-destructive/10 text-red-300 border-destructive/30',
-  brand: 'bg-brand/10 text-brand border-brand/30'
+  neutral: 'bg-background-elevated text-muted border-border',
+  info: 'bg-info/10 text-info border-info/25',
+  good: 'bg-positive/10 text-positive border-positive/25',
+  warn: 'bg-brand/25 text-brand-ink border-brand/50',
+  bad: 'bg-destructive/10 text-destructive border-destructive/25',
+  brand: 'bg-brand text-brand-ink border-brand-deep/40'
 } as const
 
 export type Tone = keyof typeof TONES
@@ -68,7 +70,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-md border px-2 py-0.5 font-dmmono text-[10px] uppercase tracking-wide',
+        'inline-flex items-center rounded-full border px-2.5 py-0.5 font-dmmono text-[10px] font-medium uppercase tracking-wider',
         TONES[tone],
         className
       )}
@@ -78,7 +80,6 @@ export function Badge({
   )
 }
 
-/** Consistent colour semantics for the vocabularies users see everywhere. */
 export function riskTone(risk?: string | null): Tone {
   switch (risk) {
     case 'LOW':
@@ -137,7 +138,7 @@ export function modeTone(mode?: string | null): Tone {
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-xs text-muted">
+    <div className="rounded-xl border border-dashed border-border bg-background-elevated/60 px-4 py-14 text-center text-sm leading-relaxed text-muted">
       {children}
     </div>
   )
@@ -145,7 +146,7 @@ export function EmptyState({ children }: { children: ReactNode }) {
 
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-red-300">
+    <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
       {children}
     </div>
   )
@@ -161,16 +162,16 @@ export function Field({
   children: ReactNode
 }) {
   return (
-    <label className="block space-y-1">
-      <span className="font-geist text-xs text-muted">{label}</span>
+    <label className="block space-y-1.5">
+      <span className="font-geist text-sm font-medium text-primary">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-muted/70">{hint}</span>}
+      {hint && <span className="block text-xs leading-relaxed text-muted">{hint}</span>}
     </label>
   )
 }
 
 export const inputClass =
-  'w-full rounded-lg border border-border bg-background px-3 py-2 font-geist text-sm text-primary outline-none placeholder:text-muted/60 focus:border-brand/60'
+  'w-full rounded-xl border border-border bg-white px-3.5 py-2.5 font-geist text-sm text-primary outline-none transition placeholder:text-muted/55 focus:border-brand-deep focus:shadow-glow'
 
 export function DataTable<T>({
   rows,
@@ -185,14 +186,14 @@ export function DataTable<T>({
 }) {
   if (rows.length === 0) return <EmptyState>{empty}</EmptyState>
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-panel">
       <table className="w-full min-w-[640px] border-collapse text-left">
         <thead>
-          <tr className="border-b border-border">
+          <tr className="border-b border-border bg-background-elevated">
             {columns.map((column) => (
               <th
                 key={column.key}
-                className="px-3 py-2 font-geist text-[11px] font-medium uppercase tracking-wide text-muted"
+                className="px-3.5 py-3 font-geist text-[11px] font-semibold uppercase tracking-wider text-muted"
               >
                 {column.header}
               </th>
@@ -205,14 +206,14 @@ export function DataTable<T>({
               key={index}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               className={cn(
-                'border-b border-border/40 align-top',
-                onRowClick && 'cursor-pointer hover:bg-background-secondary/60'
+                'border-b border-border/50 align-top transition last:border-0',
+                onRowClick && 'cursor-pointer hover:bg-background-wash/50'
               )}
             >
               {columns.map((column) => (
                 <td
                   key={column.key}
-                  className={cn('px-3 py-2 text-xs text-primary', column.className)}
+                  className={cn('px-3.5 py-3 text-sm text-primary', column.className)}
                 >
                   {column.render(row)}
                 </td>

@@ -140,22 +140,10 @@ def test_injection_cannot_change_the_tool_surface(client_a, scope_factory):
     assert "crm_delete_record" not in names
 
 
-def test_agno_input_guardrail_is_wired(client_a, scope_factory):
-    """Agno's own PromptInjectionGuardrail is attached as a pre-hook."""
-    from agno.guardrails import PromptInjectionGuardrail
-    from bizos.agents.agent import build_agent
-    from bizos import settings as app_settings
+def test_untrusted_wrap_still_protects_connector_reads():
+    """Connector reads still fence untrusted content even without Agno's input guardrail."""
+    from bizos.connectors.untrusted import wrap
 
-    if not app_settings.llm_available():
-        # The agent needs a model to construct; assert the wiring by inspection.
-        import inspect
-        from bizos.agents import agent as agent_module
-
-        source = inspect.getsource(agent_module.build_agent)
-        assert "PromptInjectionGuardrail()" in source
-        assert "pre_hooks" in source
-        return
-    scope = scope_factory(client_a, "operator")
-    with tenant_scope(scope.ctx):
-        agent = build_agent(scope)
-    assert any(isinstance(hook, PromptInjectionGuardrail) for hook in (agent.pre_hooks or []))
+    wrapped = wrap(ATTACK, source="gmail", identifier="msg_guard")
+    assert wrapped.suspicious
+    assert "<untrusted_content" in wrapped.rendered()

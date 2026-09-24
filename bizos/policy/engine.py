@@ -30,7 +30,7 @@ from bizos.policy.models import (
     PolicyDecision,
     PolicyRequest,
 )
-from bizos.policy.modes import resolve_mode
+from bizos.policy.modes import narrowest, resolve_mode
 from bizos.policy.rules import RULES
 from bizos.rbac.permissions import EffectivePermission, resolve as resolve_permission
 from bizos.rbac.registry import ToolSpec, get_spec
@@ -70,6 +70,10 @@ def evaluate(req: PolicyRequest, *, domain_mode: Optional[ExecutionMode] = None)
     mode = resolve_mode(
         req.settings.mode, domain_override=domain_mode, requested=req.requested_mode
     )
+    # FB-038: a per-tool mode assignment may narrow further, never widen.
+    tool_mode = req.settings.tool_mode(req.tool)
+    if tool_mode is not None:
+        mode = narrowest(mode, tool_mode)
     risk = req.risk_override or spec.risk
 
     inputs = EvaluationInputs(spec=spec, permission=permission, mode=mode, risk=risk)

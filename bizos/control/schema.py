@@ -109,6 +109,9 @@ CONTROL_DDL: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS control_audit_created_idx ON control_audit_events (created_at DESC)",
     "CREATE INDEX IF NOT EXISTS users_email_idx ON users (lower(email))",
+    # Restricted data areas (exec/hr/salary/finance/legal) a user may see. Held
+    # on the user record, not the token, so a revoked scope takes effect at once.
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS data_scopes TEXT[] NOT NULL DEFAULT '{}'",
 )
 
 #: Seeded on every control-plane migration so the roles table always matches the

@@ -62,6 +62,8 @@ class AuditEvent:
     result: Optional[dict[str, Any]] = None
     error: Optional[str] = None
     latency_ms: Optional[int] = None
+    #: The execution mode that governed this event (FB-038).
+    execution_mode: Optional[str] = None
     id: str = field(default_factory=lambda: new_id("aud"))
 
 
@@ -70,12 +72,14 @@ _INSERT = text(
     INSERT INTO audit_events (
         id, event_type, client_id, user_id, actor_role, agent_id, session_id, run_id,
         workflow_id, workflow_run_id, action_id, tool, integration, domain, decision,
-        status, approver, risk_level, classification, request, result, error, latency_ms
+        status, approver, risk_level, classification, request, result, error, latency_ms,
+        execution_mode
     ) VALUES (
         :id, :event_type, :client_id, :user_id, :actor_role, :agent_id, :session_id, :run_id,
         :workflow_id, :workflow_run_id, :action_id, :tool, :integration, :domain, :decision,
         :status, :approver, :risk_level, :classification,
-        CAST(:request AS JSONB), CAST(:result AS JSONB), :error, :latency_ms
+        CAST(:request AS JSONB), CAST(:result AS JSONB), :error, :latency_ms,
+        :execution_mode
     )
     """
 )
@@ -122,6 +126,7 @@ def record(event: AuditEvent, *, ctx: Optional[TenantContext] = None) -> Optiona
                     "result": _payload(event.result),
                     "error": event.error,
                     "latency_ms": event.latency_ms,
+                    "execution_mode": event.execution_mode,
                 },
             )
         return event.id
@@ -144,6 +149,10 @@ def log(
     fields.setdefault("client_id", tenant.client_id)
     fields.setdefault("user_id", tenant.user_id)
     fields.setdefault("actor_role", str(tenant.primary_role))
+    if not fields.get("execution_mode"):
+        request = fields.get("request")
+        mode = request.get("mode") if isinstance(request, dict) else None
+        fields["execution_mode"] = str(mode or tenant.default_execution_mode)
     return record(AuditEvent(event_type=event_type, **fields), ctx=tenant)
 
 
@@ -157,6 +166,7 @@ def log_policy_decision(decision: Any, *, ctx: Optional[TenantContext] = None, *
         risk_level=str(decision.risk),
         classification=str(decision.classification),
         status=decision.rule,
+        execution_mode=str(decision.mode),
         request={"mode": str(decision.mode), **extra},
         result={"reason": decision.reason, "constraints": [c.code for c in decision.constraints]},
     )
@@ -240,3 +250,45 @@ def search(
 def count(ctx: Optional[TenantContext] = None) -> int:
     with workspace_connection(ctx, readonly=True) as conn:
         return int(conn.execute(text("SELECT count(*) FROM audit_events")).scalar() or 0)
+
+
+#: Floor on the audit retention window. A misconfigured "1 day" must not be
+#: able to erase the trail of last week's approvals.
+MIN_AUDIT_RETENTION_DAYS = 30
+
+
+def purge_expired(
+    retention_days: int,
+    *,
+    ctx: Optional[TenantContext] = None,
+    now: Optional[Any] = None,
+) -> dict[str, Any]:
+    """Apply the audit retention rule (FB-038).
+
+    Deletes audit rows older than ``retention_days`` — the only deletion the
+    append-only trigger permits, and only inside this transaction. ``0`` keeps
+    everything. The purge itself is recorded as a new audit event.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    tenant = ctx or current_context()
+    if retention_days <= 0:
+        return {"deleted": 0, "cutoff": None, "retention_days": retention_days}
+    days = max(int(retention_days), MIN_AUDIT_RETENTION_DAYS)
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=days)
+    with workspace_connection(tenant) as conn:
+        conn.execute(
+            text("SELECT set_config('bizos.audit_purge_before', :c, true)"),
+            {"c": cutoff.isoformat()},
+        )
+        deleted = conn.execute(
+            text("DELETE FROM audit_events WHERE created_at < CAST(:c AS TIMESTAMPTZ)"),
+            {"c": cutoff.isoformat()},
+        ).rowcount
+    log(
+        AuditEventType.AUDIT_PURGED,
+        ctx=tenant,
+        request={"retention_days": days, "cutoff": cutoff.isoformat()},
+        result={"deleted": deleted},
+    )
+    return {"deleted": deleted, "cutoff": cutoff.isoformat(), "retention_days": days}

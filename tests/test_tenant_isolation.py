@@ -30,7 +30,8 @@ def test_workspaces_are_physically_separate(client_a, client_b, ctx_factory):
     assert a != b
     assert client_a.deployment_type == DeploymentType.DEDICATED_DB
     assert client_b.deployment_type == DeploymentType.DEDICATED_SCHEMA
-    # And neither carries a tenant discriminator column on customer content.
+    # Isolation is physical; the client_id column inside each workspace (FB-033)
+    # is a second wall pinned to the one owning client, not a shared-table filter.
     ctx = ctx_factory(client_a, "admin")
     with tenant_scope(ctx), readonly_connection(ctx) as conn:
         columns = {
@@ -42,7 +43,7 @@ def test_workspaces_are_physically_separate(client_a, client_b, ctx_factory):
                 )
             ).fetchall()
         }
-    assert "tenant_id" not in columns and "client_id" not in columns
+    assert "tenant_id" not in columns and "client_id" in columns
 
 
 def test_memory_never_crosses_clients(client_a, client_b, ctx_factory, scope_factory):

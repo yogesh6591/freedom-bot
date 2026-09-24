@@ -21,7 +21,8 @@ from bizos.connectors.registry import seed_default_integrations
 from bizos.control import store as control
 from bizos.control.db import control_connection, migrate_control_plane
 from bizos.control.models import Client, ClientSettings
-from bizos.domains.catalog import DEFAULT_ENABLED_DOMAINS
+from bizos import template
+from bizos.domains.catalog import DEFAULT_ENABLED_DOMAINS, DOMAIN_NAMES
 from bizos.tenancy.context import TenantContext, tenant_scope
 from bizos.tenancy.provisioning import apply_workspace_schema, provision_client
 from bizos.tenancy.registry import workspace_connection
@@ -40,6 +41,12 @@ DEV_USERS: tuple[tuple[str, str, tuple[Role, ...]], ...] = (
 )
 
 DEV_PASSWORD = "bizos-dev-password"
+
+#: Restricted data areas each demo role may see (FB-037). Admin sees every area.
+DEV_USER_SCOPES: dict[Role, tuple[str, ...]] = {
+    Role.APPROVER: ("finance", "legal", "exec"),
+    Role.OPERATOR: ("finance",),
+}
 
 
 def admin_context(client: Client, *, user_id: str = "__bootstrap__") -> TenantContext:
@@ -101,9 +108,14 @@ def ensure_dev_users(client: Client, *, domain: str = "example.com") -> list[dic
                 display_name=name,
                 roles=roles,
                 created_by="bootstrap",
+                data_scopes=DEV_USER_SCOPES.get(roles[0], ()),
             )
             created.append({"email": user.email, "roles": sorted(str(r) for r in user.roles), "new": True})
         except control.DuplicateUser:
+            scopes = DEV_USER_SCOPES.get(roles[0], ())
+            existing = next((u for u in control.list_users(client.id) if u.email == email), None)
+            if existing is not None and scopes and not existing.data_scopes:
+                control.set_user_scopes(existing.id, scopes)
             created.append({"email": email, "roles": [str(r) for r in roles], "new": False})
     return created
 
@@ -141,7 +153,7 @@ def seed_business_data(client: Client, *, flavor: str = "default") -> dict[str, 
     now = utcnow()
     counts = {"contacts": 0, "companies": 0, "deals": 0, "messages": 0, "events": 0}
 
-    if flavor == "globex":
+    if flavor == "alt":
         companies = [("Initech", "initech.com", "Software"), ("Umbrella", "umbrella.com", "Pharma")]
         contacts = [
             ("Peter", "Gibbons", "peter@initech.com", "Initech", "Engineer", "customer", ["priority"]),
@@ -164,11 +176,13 @@ def seed_business_data(client: Client, *, flavor: str = "default") -> dict[str, 
         subject = "Tomorrow's planning meeting"
 
     with workspace_connection(ctx) as conn:
-        if conn.execute(text("SELECT count(*) FROM crm_contacts")).scalar():
-            _seed_accounting(ctx, client, flavor)
-            _seed_workflows(ctx)
-            return counts  # already seeded
+        already_seeded = bool(conn.execute(text("SELECT count(*) FROM crm_contacts")).scalar())
+    if already_seeded:
+        # Memory seeds are per-key idempotent, so upgrades still get new ones.
+        _seed_memory(ctx, client, flavor)
+        return counts
 
+    with workspace_connection(ctx) as conn:
         company_ids: dict[str, str] = {}
         for name, cdomain, industry in companies:
             cid = new_id("co")
@@ -284,116 +298,88 @@ def seed_business_data(client: Client, *, flavor: str = "default") -> dict[str, 
             )
             counts["events"] += 1
 
-    _seed_accounting(ctx, client, flavor)
     _seed_memory(ctx, client, flavor)
-    _seed_workflows(ctx)
     return counts
 
 
-def _seed_accounting(ctx: TenantContext, client: Client, flavor: str) -> None:
-    """Seed a couple of customers/invoices so Finance tools are demonstrable."""
-    with workspace_connection(ctx) as conn:
-        if conn.execute(text("SELECT count(*) FROM accounting_customers")).scalar():
-            return
-        customers = (
-            [
-                ("cust_northwind", "Northwind", "billing@northwind.com", 8200.0),
-                ("cust_contoso", "Contoso", "ap@contoso.com", 1500.0),
-            ]
-            if flavor == "globex"
-            else [
-                ("cust_initech", "Initech", "ap@initech.com", 4500.0),
-                ("cust_umbrella", "Umbrella", "billing@umbrella.com", 1200.0),
-            ]
-        )
-        for cid, name, email, balance in customers:
-            conn.execute(
-                text(
-                    "INSERT INTO accounting_customers (id, name, email, balance_due) "
-                    "VALUES (:i, :n, :e, :b) ON CONFLICT (id) DO NOTHING"
-                ),
-                {"i": cid, "n": name, "e": email, "b": balance},
-            )
-            inv = new_id("inv")
-            conn.execute(
-                text(
-                    "INSERT INTO accounting_invoices "
-                    "(id, number, customer_id, customer_name, customer_email, status, total, balance_due, due_at) "
-                    "VALUES (:i, :num, :c, :n, :e, 'open', :t, :b, CURRENT_DATE + 14) "
-                    "ON CONFLICT (number) DO NOTHING"
-                ),
-                {
-                    "i": inv,
-                    "num": f"INV-{client.slug.upper()}-{name[:3].upper()}",
-                    "c": cid,
-                    "n": name,
-                    "e": email,
-                    "t": balance,
-                    "b": balance,
-                },
-            )
-
-
 def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
-    """Seed distinct organizational memory per client."""
+    """Seed distinct organizational memory per client (incl. Phase 1 domain content)."""
     from bizos.memory import store as memory
 
-    if flavor == "globex":
-        seeds = [
-            (MemoryCategory.FACT, "discount_policy", "Standard discount", "Standard discount = 5%"),
-            (MemoryCategory.FACT, "operating_hours", "Operating hours", "Mon-Fri 08:00-16:00 CET"),
+    if flavor == "alt":
+        seeds: list[tuple] = [
+            (MemoryCategory.FACT, "discount_policy", "Standard discount", "Standard discount = 5%", ["finance", "pricing"]),
+            (MemoryCategory.FACT, "operating_hours", "Operating hours", "Mon-Fri 08:00-16:00 CET", ["operations"]),
         ]
     else:
         seeds = [
-            (MemoryCategory.FACT, "discount_policy", "Pricing discount", "Pricing discount = 15%"),
-            (MemoryCategory.FACT, "refund_period", "Refund period", "Refund period = 30 days"),
-            (MemoryCategory.FACT, "operating_hours", "Operating hours", "Mon-Fri 09:00-18:00 ET"),
+            (MemoryCategory.FACT, "discount_policy", "Pricing discount", "Pricing discount = 15%", ["finance", "pricing"]),
+            (MemoryCategory.FACT, "refund_period", "Refund period", "Refund period = 30 days", ["finance", "payment"]),
+            (MemoryCategory.FACT, "payment_terms", "Payment terms", "Net-30 on approved invoices.", ["finance", "payment"]),
+            (MemoryCategory.FACT, "operating_hours", "Operating hours", "Mon-Fri 09:00-18:00 ET", ["operations"]),
+            (MemoryCategory.FACT, "goal_1", "Goal 1", "Grow enterprise pipeline 25% this quarter.", ["strategy", "goal"]),
+            (
+                MemoryCategory.FACT,
+                "brand_voice",
+                "Brand voice",
+                "Clear, confident, no jargon. Prefer short sentences. Never overpromise ROI.",
+                ["brand", "voice"],
+            ),
+            (
+                MemoryCategory.FACT,
+                "msa_termination",
+                "MSA termination clause summary",
+                "Either party may terminate with 30 days written notice. Data returned within 15 days.",
+                ["legal", "contract", "clause"],
+            ),
+            (
+                MemoryCategory.FACT,
+                "salary_bands",
+                "Salary bands",
+                "Engineer II: $120k-$140k. Senior: $150k-$175k.",
+                ["hr", "compensation"],
+                "salary",
+            ),
+            (
+                MemoryCategory.FACT,
+                "hr_leave_policy_internal",
+                "Internal leave case notes",
+                "Two open parental-leave cases; handled by HR lead only.",
+                ["hr"],
+                "hr",
+            ),
+            (
+                MemoryCategory.DECISION,
+                "board_q3_plan",
+                "Board Q3 plan",
+                "Board approved a hiring freeze for non-revenue roles through Q3.",
+                ["exec", "board"],
+                "exec",
+            ),
             (
                 MemoryCategory.SOP,
                 "lead_response_sop",
                 "Inbound lead response",
                 "Respond to every inbound lead within one business day. Qualify against budget, "
                 "authority, need and timeline, then either book a call or route to nurture.",
+                ["sop", "intake"],
             ),
         ]
 
     with tenant_scope(ctx):
-        for category, key, title, content in seeds:
+        for category, key, title, content, tags, *area in seeds:
             if memory.get_by_key(category, key, ctx=ctx) is None:
                 memory.put(
                     category=category,
                     memory_key=key,
                     title=title,
                     content=content,
+                    tags=tags,
+                    access_area=area[0] if area else None,
                     source_type=SourceType.MANUAL,
                     settings=client.settings,
                     ctx=ctx,
                 )
-
-
-def _seed_workflows(ctx: TenantContext) -> None:
-    from bizos.workflows.templates import WORKFLOW_TEMPLATES
-
-    with workspace_connection(ctx) as conn:
-        for template in WORKFLOW_TEMPLATES:
-            conn.execute(
-                text(
-                    "INSERT INTO workflow_configs (id, template, name, description, domain, enabled, "
-                    "cron, steps, updated_by) VALUES (:i, :t, :n, :d, :dom, :e, :c, "
-                    "CAST(:s AS JSONB), :u) ON CONFLICT (id) DO NOTHING"
-                ),
-                {
-                    "i": template.id,
-                    "t": template.id,
-                    "n": template.name,
-                    "d": template.description,
-                    "dom": template.domain,
-                    "e": template.enabled_by_default,
-                    "c": template.cron,
-                    "s": __import__("json").dumps([s for s in template.step_names]),
-                    "u": ctx.user_id,
-                },
-            )
 
 
 def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:
@@ -405,39 +391,43 @@ def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:
         return report
 
     acme = ensure_client("Acme Corp", slug="acme", mode=ExecutionMode.WAIT_FOR_APPROVAL)
-    globex = ensure_client(
-        "Globex Industries",
-        slug="globex",
-        deployment_type=DeploymentType.DEDICATED_SCHEMA,
-        mode=ExecutionMode.ADVISE,
-    )
-    for client, flavor, domain in ((acme, "default", "acme.example.com"), (globex, "globex", "globex.example.com")):
-        # Re-apply schema + default integrations so existing volumes pick up new tables.
-        apply_workspace_schema(admin_context(client))
-        seed_default_integrations(admin_context(client))
-        settings_dict = client.settings.to_dict()
-        domains = list(dict.fromkeys([*settings_dict.get("enabled_domains", []), "finance"]))
-        approval = dict(settings_dict.get("approval_policy") or {})
-        approval["allow_self_approval"] = True
-        client = control.update_client_settings(
-            client.id,
-            ClientSettings.from_dict(
-                {**settings_dict, "enabled_domains": domains, "approval_policy": approval}
-            ),
-            updated_by="bootstrap",
-        )
-        users = ensure_dev_users(client, domain=domain)
-        data = seed_business_data(client, flavor=flavor)
-        report["clients"].append(
+    # Re-apply schema + default integrations so existing volumes pick up new tables.
+    apply_workspace_schema(admin_context(acme))
+    seed_default_integrations(admin_context(acme))
+    settings_dict = acme.settings.to_dict()
+    # The demo client has bought every domain, so the whole platform is visible.
+    domains = list(DOMAIN_NAMES)
+    approval = dict(settings_dict.get("approval_policy") or {})
+    approval["allow_self_approval"] = True
+    acme = control.update_client_settings(
+        acme.id,
+        ClientSettings.from_dict(
             {
-                "slug": client.slug,
-                "id": client.id,
-                "deployment_type": str(client.deployment_type),
-                "db": client.db_name,
-                "schema": client.db_schema,
-                "mode": str(client.settings.mode),
-                "users": users,
-                "seeded": data,
+                **settings_dict,
+                "enabled_domains": domains,
+                "purchased_domains": domains,
+                "tool_modes": settings_dict.get("tool_modes") or template.recommended_tool_modes(),
+                "approval_policy": approval,
             }
-        )
+        ),
+        updated_by="bootstrap",
+    )
+    template.seed_memory(admin_context(acme), template.load_template(), acme.settings)
+    from bizos.audit.events import purge_expired
+
+    purge_expired(acme.settings.retention_policy.audit_days, ctx=admin_context(acme))
+    users = ensure_dev_users(acme, domain="acme.example.com")
+    data = seed_business_data(acme, flavor="default")
+    report["clients"].append(
+        {
+            "slug": acme.slug,
+            "id": acme.id,
+            "deployment_type": str(acme.deployment_type),
+            "db": acme.db_name,
+            "schema": acme.db_schema,
+            "mode": str(acme.settings.mode),
+            "users": users,
+            "seeded": data,
+        }
+    )
     return report

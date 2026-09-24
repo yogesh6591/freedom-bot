@@ -3,7 +3,7 @@ Bootstrap CLI
 =============
 
     python -m scripts.bootstrap            # migrate the control plane only
-    python -m scripts.bootstrap --demo     # …plus two demo workspaces and users
+    python -m scripts.bootstrap --demo     # …plus the Acme demo workspace and users
     python -m scripts.bootstrap --reset    # destroy the demo workspaces first
 
 Idempotent, so it is safe as a container start step.
@@ -30,6 +30,7 @@ def reset_demo() -> None:
     from sqlalchemy import text
 
     migrate_control_plane()
+    # Include legacy "globex" so older demo installs are fully cleaned on --reset.
     for slug in ("acme", "globex"):
         try:
             client = control.get_client_by_slug(slug)

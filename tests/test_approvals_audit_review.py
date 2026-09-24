@@ -1,4 +1,4 @@
-"""Approval queue lifecycle, audit integrity and the human review queue."""
+"""Approval queue lifecycle and audit integrity."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ from sqlalchemy import text
 
 from bizos.actions import store as actions
 from bizos.audit import events as audit
-from bizos.review import store as reviews
 from bizos.tenancy.context import tenant_scope
 from bizos.tenancy.registry import workspace_connection
 from bizos.tools.base import guarded_call
 from bizos.tools.executor import execute_approved_action
-from bizos.types import ActionStatus, AuditEventType, ExecutionMode, ReviewStatus
+from bizos.types import ActionStatus, AuditEventType, ExecutionMode
 
 
 def _propose(scope, **overrides):
@@ -229,45 +228,3 @@ def test_audit_search_filters(client_a, ctx_factory):
     with tenant_scope(ctx):
         rows = audit.search(ctx=ctx, event_types=["POLICY_DECISION"], limit=10)
     assert all(r["event_type"] == "POLICY_DECISION" for r in rows)
-
-
-# -------------------------------------------------------------- human review
-
-
-def test_human_review_lifecycle(client_a, scope_factory, ctx_factory):
-    """§16: raise, list, resolve, and read the answer back."""
-    scope = scope_factory(client_a, "operator", domain="intake")
-    with tenant_scope(scope.ctx):
-        outcome = guarded_call(
-            scope, "request_human_review",
-            {
-                "question": "Which project does this task belong to?",
-                "context": "Two projects match the description.",
-                "choices": ["Northwind rollout", "Contoso pilot"],
-                "recommended_option": "Northwind rollout",
-                "confidence": 0.4,
-            },
-        )
-        review_id = outcome.data["review_id"]
-        item = reviews.get(review_id, ctx=scope.ctx)
-        assert item.status == ReviewStatus.OPEN
-        assert item.choices == ["Northwind rollout", "Contoso pilot"]
-        assert item.confidence == 0.4
-
-        assert reviews.resolution_for(review_id, ctx=scope.ctx) is None
-        reviews.resolve(review_id, resolution="Contoso pilot", note="checked with ops",
-                        ctx=scope.ctx)
-        assert reviews.resolution_for(review_id, ctx=scope.ctx) == "Contoso pilot"
-        resolved = reviews.get(review_id, ctx=scope.ctx)
-
-    assert resolved.status == ReviewStatus.RESOLVED
-    assert resolved.resolved_by == scope.ctx.user_id
-
-
-def test_resolving_twice_is_refused(client_a, scope_factory):
-    scope = scope_factory(client_a, "operator", domain="intake")
-    with tenant_scope(scope.ctx):
-        review = reviews.create(question="Double resolve probe?", ctx=scope.ctx)
-        reviews.resolve(review.id, resolution="yes", ctx=scope.ctx)
-        with pytest.raises(reviews.ReviewNotFound):
-            reviews.resolve(review.id, resolution="again", ctx=scope.ctx)

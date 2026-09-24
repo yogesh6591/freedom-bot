@@ -40,6 +40,18 @@ export default function MemoryPage() {
   )
 }
 
+interface Conflict {
+  topic: string
+  items: {
+    item_id: string
+    version_id: string
+    title: string
+    value: string
+    approval_status: string
+    recorded_by: string
+  }[]
+}
+
 function MemoryView() {
   const { hasRole } = useSession()
   const [tab, setTab] = useState<(typeof TABS)[number]>('FACT')
@@ -47,6 +59,7 @@ function MemoryView() {
   const [selected, setSelected] = useState<MemoryItem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [conflicts, setConflicts] = useState<Conflict[]>([])
 
   const canWrite = hasRole('DRAFTER', 'APPROVER', 'OPERATOR')
 
@@ -55,6 +68,8 @@ function MemoryView() {
     try {
       const data = await api.get<{ items: MemoryItem[] }>(`/api/memory?category=${tab}`)
       setItems(data.items)
+      const found = await api.get<{ items: Conflict[] }>('/api/memory/conflicts')
+      setConflicts(found.items)
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load memory')
@@ -99,6 +114,47 @@ function MemoryView() {
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
+      {conflicts.length > 0 && (
+        <Panel
+          title="Conflicting policies"
+          description="These recorded values disagree. The assistant will not pick one — an approver approves the value that stands, and the other is superseded."
+        >
+          <div className="space-y-3">
+            {conflicts.map((conflict) => (
+              <div key={conflict.topic} className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                <div className="mb-2 font-geist text-primary">Topic: {conflict.topic}</div>
+                <ul className="space-y-1">
+                  {conflict.items.map((entry) => (
+                    <li key={entry.version_id} className="flex items-center gap-2">
+                      <Badge tone={entry.approval_status === 'APPROVED' ? 'good' : 'warn'}>
+                        {entry.approval_status}
+                      </Badge>
+                      <span className="text-primary">{entry.value}</span>
+                      <span className="text-muted">— {entry.title} ({entry.recorded_by})</span>
+                      {hasRole('APPROVER') && entry.approval_status !== 'APPROVED' && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              await api.post(`/api/memory/versions/${entry.version_id}/approve`)
+                              await load()
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : 'Could not resolve')
+                            }
+                          }}
+                          className="ml-auto rounded-md bg-brand px-2 py-0.5 text-brand-ink"
+                        >
+                          This one stands
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
+
       <Panel>
         {loading ? (
           <EmptyState>Loading…</EmptyState>
@@ -114,7 +170,10 @@ function MemoryView() {
                 render: (item) => (
                   <div>
                     <div className="font-geist text-primary">{item.title}</div>
-                    <div className="font-dmmono text-[10px] text-muted">{item.memory_key}</div>
+                    <div className="font-dmmono text-[10px] text-muted">
+                      {item.memory_key}
+                      {item.access_area && ` · restricted: ${item.access_area}`}
+                    </div>
                   </div>
                 )
               },
@@ -137,6 +196,9 @@ function MemoryView() {
                 header: 'Status',
                 render: (item) => (
                   <div className="flex gap-1">
+                    <Badge tone={item.label === 'fact' ? 'good' : 'warn'}>
+                      {item.label === 'fact' ? 'Fact' : 'Estimate'}
+                    </Badge>
                     <Badge tone={item.current?.is_active ? 'good' : 'neutral'}>
                       {item.current?.status ?? '—'}
                     </Badge>
@@ -313,7 +375,7 @@ function MemoryDetail({
             <button
               type="submit"
               disabled={busy}
-              className="rounded-lg bg-brand px-4 py-2 font-geist text-xs text-white disabled:opacity-50"
+              className="rounded-lg bg-brand px-4 py-2 font-geist text-xs text-brand-ink disabled:opacity-50"
             >
               {busy ? 'Saving…' : 'Record correction'}
             </button>

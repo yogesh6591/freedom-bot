@@ -3,8 +3,8 @@ Domain Packs
 ============
 
 §11: a modular pack architecture where each domain may declare its own
-instructions, tools, knowledge scope, workflows, guardrails, permissions and
-approval requirements — and an admin can enable or disable each pack per client.
+instructions, tools, guardrails, permissions and approval requirements — and an
+admin can enable or disable each pack per client.
 
 A pack is **declarative**. It selects from the central tool registry rather than
 defining tools of its own, so there is still exactly one place where a tool's
@@ -18,7 +18,7 @@ placeholders — deliberately shallow, as the brief asks.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 from bizos.domains.catalog import DOMAIN_CATALOG, DomainCatalogEntry, get_entry
@@ -37,10 +37,6 @@ class DomainPack:
     #: Tool names this pack exposes. Empty means "every tool that lists this
     #: domain in the central registry".
     tools: tuple[str, ...] = ()
-    #: Tags used to scope knowledge search within the domain.
-    knowledge_tags: tuple[str, ...] = ()
-    #: Workflow template ids this domain owns.
-    workflows: tuple[str, ...] = ()
     #: Domain-level mode ceiling. May only narrow the workspace default.
     mode_ceiling: Optional[ExecutionMode] = None
     #: Tools this domain always sends to approval, whatever the mode.
@@ -77,7 +73,6 @@ class DomainPack:
             "phase": entry.phase if entry else 1,
             "depth": entry.depth if entry else "full",
             "tools": [s.name for s in self.tool_specs()],
-            "workflows": list(self.workflows),
             "mode_ceiling": str(self.mode_ceiling) if self.mode_ceiling else None,
             "always_approve": list(self.always_approve),
             "guardrails": list(self.guardrails),
@@ -88,10 +83,10 @@ GENERAL = DomainPack(
     name="general",
     title="General",
     instructions=(
-        "Answer questions using organizational memory and the knowledge base first. When you "
-        "state a fact the organization has recorded, cite where it came from and when it was "
-        "last updated. If the user tells you something has changed, record it as a correction "
-        "so the previous value is superseded rather than silently overwritten."
+        "Answer questions using organizational memory first. When you state a fact the "
+        "organization has recorded, cite where it came from and when it was last updated. "
+        "If the user tells you something has changed, record it as a correction so the "
+        "previous value is superseded rather than silently overwritten."
     ),
     tools=(
         "memory_search",
@@ -101,10 +96,8 @@ GENERAL = DomainPack(
         "memory_add_sop",
         "memory_record_decision",
         "memory_correct",
-        "knowledge_search",
-        "request_human_review",
+        "memory_escalate_conflict",
     ),
-    knowledge_tags=("general",),
 )
 
 OPERATIONS = DomainPack(
@@ -115,11 +108,9 @@ OPERATIONS = DomainPack(
         "an SOP does not cover the situation, say so rather than improvising. Prefer creating "
         "internal tasks and notes over changing customer-facing records."
     ),
-    knowledge_tags=("sop", "process", "operations"),
-    workflows=("weekly_sales_summary",),
     guardrails=(
-        "Never invent an SOP. If no recorded procedure covers the request, raise it for human "
-        "review instead of guessing.",
+        "Never invent an SOP. If no recorded procedure covers the request, say so instead of "
+        "guessing.",
     ),
     output_template="State the SOP you are following, then the steps you took or propose.",
 )
@@ -132,8 +123,6 @@ SALES = DomainPack(
         "outreach drafting. Ground every claim about a deal in the CRM record you read. Never "
         "promise pricing or terms that are not recorded in organizational memory."
     ),
-    knowledge_tags=("sales", "pricing", "product"),
-    workflows=("weekly_sales_summary",),
     guardrails=(
         "Do not state pricing, discounts or contract terms that are not in organizational "
         "memory or the CRM. If you cannot find them, say so.",
@@ -148,13 +137,10 @@ INTAKE = DomainPack(
         "You handle inbound leads and requests. Enrich only from permitted sources, always "
         "check for an existing record before creating a new one, and classify using the "
         "organization's recorded criteria. When you cannot confidently classify or route "
-        "something, raise it for human review instead of choosing arbitrarily."
+        "something, ask the user instead of choosing arbitrarily."
     ),
-    knowledge_tags=("intake", "qualification"),
-    workflows=("lead_intake",),
     guardrails=(
         "Never create a duplicate contact. If a record with the same email exists, update it.",
-        "If the correct owner, project or routing is ambiguous, raise a human review item.",
     ),
 )
 
@@ -166,8 +152,6 @@ PLANNING = DomainPack(
         "before proposing a time. A meeting brief should cover who the attendees are, the "
         "recent history with them, and what is still open."
     ),
-    knowledge_tags=("planning", "meetings"),
-    workflows=("meeting_preparation",),
 )
 
 # --- Phase 2 placeholders: configuration and instructions only (§12) --------
@@ -176,35 +160,40 @@ STRATEGY = DomainPack(
     name="strategy",
     title="Strategy",
     instructions=(
-        "You assist with strategic analysis. In this deployment the Strategy pack is advisory "
-        "only: research, summarize and lay out options, but do not act on them."
+        "You assist with strategic analysis. Use recorded goals and priorities first. "
+        "Lay out options with pros/cons; record options for human decision. Do not execute "
+        "strategic changes yourself."
     ),
-    tools=("memory_search", "knowledge_search", "memory_history", "request_human_review"),
+    tools=(
+        "memory_search",
+        "memory_history",
+        "memory_get_fact",
+        "strategy_list_priorities",
+        "strategy_record_option",
+    ),
     mode_ceiling=ExecutionMode.ADVISE,
+    output_template="State the goal, then options with trade-offs, then what needs a human decision.",
 )
 
 FINANCE = DomainPack(
     name="finance",
     title="Finance",
     instructions=(
-        "You assist with financial questions using the workspace accounting tools. "
-        "You may search invoices and read customer balances. Recording a payment always "
-        "requires human approval — never claim a payment has cleared until an approver "
-        "has released it. Do not present output as regulated financial advice."
+        "You assist with financial questions using recorded finance policies. "
+        "Quote recorded figures only. Never present output as regulated financial advice. "
+        "Any payment or balance adjustment must be proposed for licensed human approval."
     ),
     tools=(
         "memory_search",
-        "knowledge_search",
-        "invoice_search",
-        "accounting_customer_balance",
-        "accounting_record_payment",
-        "request_human_review",
+        "memory_history",
+        "finance_lookup_policy",
+        "finance_propose_adjustment",
     ),
     mode_ceiling=ExecutionMode.WAIT_FOR_APPROVAL,
-    always_approve=("accounting_record_payment",),
+    always_approve=("finance_propose_adjustment",),
     guardrails=(
-        "Never present output as regulated financial advice. Any figure you give is a summary "
-        "of recorded data, to be confirmed by a qualified person.",
+        "Never present output as regulated financial advice.",
+        "Never claim a payment or adjustment has cleared until an approver releases it.",
     ),
 )
 
@@ -212,11 +201,12 @@ BRAND = DomainPack(
     name="brand",
     title="Brand",
     instructions=(
-        "You assist with brand voice and messaging review. In this deployment the Brand pack "
-        "prepares drafts only; publishing is out of scope."
+        "You assist with brand voice and messaging. Load brand guidelines before drafting. "
+        "Prepare drafts only; publishing external content is out of scope in this pack."
     ),
-    tools=("memory_search", "knowledge_search", "email_create_draft", "request_human_review"),
+    tools=("memory_search", "brand_get_voice", "email_create_draft"),
     mode_ceiling=ExecutionMode.DRAFT,
+    output_template="Cite the brand guideline you followed, then the draft.",
 )
 
 LEGAL = DomainPack(
@@ -224,11 +214,17 @@ LEGAL = DomainPack(
     title="Legal",
     instructions=(
         "You assist with contract lookup and summarization. You do NOT give legal advice and "
-        "you do NOT make legal determinations. Summarize what a document says, identify the "
-        "clauses that bear on a question, and hand the judgment to a qualified human."
+        "you do NOT make legal determinations. Summarize what a recorded document says, identify "
+        "clauses that bear on a question, and escalate judgment to counsel."
     ),
-    tools=("memory_search", "knowledge_search", "memory_history", "request_human_review"),
+    tools=(
+        "memory_search",
+        "memory_history",
+        "legal_find_clause",
+        "legal_flag_for_counsel",
+    ),
     mode_ceiling=ExecutionMode.ADVISE,
+    always_approve=("legal_flag_for_counsel",),
     guardrails=(
         "Never state a legal conclusion, a risk determination or an interpretation as "
         "authoritative. Every legal judgment requires a licensed human.",

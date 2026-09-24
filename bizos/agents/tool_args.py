@@ -108,6 +108,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "tags": _arr("Optional tags"),
             "source_type": _s("MANUAL (default), DOCUMENT, AI_INFERENCE, …"),
             "confidence": _f("0-1 confidence"),
+            "topic": _s("Policy topic, e.g. discount; differing values on one topic are a conflict"),
         },
         ["title", "content"],
     ),
@@ -144,9 +145,13 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["new_content", "reason"],
     ),
-    "knowledge_search": _obj(
-        {"query": _s("Search query"), "limit": _i("Max hits")},
-        ["query"],
+    "memory_escalate_conflict": _obj(
+        {
+            "topic": _s("The policy topic that conflicts, e.g. discount"),
+            "item_ids": _arr("Ids of the conflicting memory items"),
+            "question": _s("The decision the person needs to make"),
+        },
+        ["topic", "question"],
     ),
     "crm_search_contacts": _obj(
         {
@@ -293,15 +298,46 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         ["event_id", "starts_at", "ends_at"],
     ),
     "calendar_cancel_event": _obj({"event_id": _s("Event id")}, ["event_id"]),
-    "request_human_review": _obj(
+    "strategy_list_priorities": _obj({"query": _s("Optional search")}),
+    "strategy_record_option": _obj(
         {
-            "question": _s("What the human must decide"),
-            "context": _s("Background"),
-            "choices": _arr("Options"),
-            "recommended_option": _s("Suggested choice"),
-            "confidence": _f("0-1"),
+            "title": _s("Option title"),
+            "content": _s("Option body"),
+            "option": _s("Alias for content"),
+            "pros": _s("Pros"),
+            "cons": _s("Cons"),
+            "recommended": {"type": "boolean"},
+            "key": _s("Optional memory key"),
         },
-        ["question", "context"],
+        ["title"],
+    ),
+    "finance_lookup_policy": _obj({"query": _s("Policy search")}),
+    "finance_propose_adjustment": _obj(
+        {
+            "customer": _s("Customer name"),
+            "amount": _f("Amount"),
+            "reason": _s("Why"),
+            "kind": _s("adjustment|payment|credit"),
+        },
+        ["customer", "amount", "reason"],
+    ),
+    "brand_get_voice": _obj({"query": _s("Optional search")}),
+    "legal_find_clause": _obj({"query": _s("Clause search")}, ["query"]),
+    "legal_flag_for_counsel": _obj(
+        {
+            "question": _s("Legal question"),
+            "context": _s("Background"),
+            "urgency": _s("normal|high"),
+        },
+        ["question"],
+    ),
+    "n8n_trigger_webhook": _obj(
+        {
+            "event": _s("Event name"),
+            "workflow": _s("Optional workflow id"),
+            "payload": {"type": "object", "description": "Event payload"},
+        },
+        ["event"],
     ),
 }
 

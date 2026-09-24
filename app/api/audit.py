@@ -60,3 +60,26 @@ def search(
 def event_types() -> dict[str, list[str]]:
     """The vocabulary, for the UI's filter dropdown."""
     return {"event_types": [str(e) for e in AuditEventType]}
+
+
+@router.get("/retention")
+def retention(ctx: TenantContext = Depends(_reader)) -> dict[str, Any]:
+    """The audit retention rule in force for this workspace."""
+    from bizos.control import store as control
+
+    days = control.get_client(ctx.client_id).settings.retention_policy.audit_days
+    return {
+        "audit_days": days,
+        "effective_days": max(days, audit.MIN_AUDIT_RETENTION_DAYS) if days > 0 else 0,
+        "minimum_days": audit.MIN_AUDIT_RETENTION_DAYS,
+    }
+
+
+@router.post("/purge")
+def purge(ctx: TenantContext = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
+    """Apply the retention rule now: delete only rows older than the window."""
+    from bizos.control import store as control
+
+    days = control.get_client(ctx.client_id).settings.retention_policy.audit_days
+    with bound(ctx):
+        return audit.purge_expired(days, ctx=ctx)

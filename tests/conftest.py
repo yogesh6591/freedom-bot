@@ -93,7 +93,7 @@ def client_b():
         f"Test Beta {SUFFIX}", f"tbeta{SUFFIX}", DeploymentType.DEDICATED_SCHEMA,
         ExecutionMode.ADVISE,
     )
-    seed_business_data(client, flavor="globex")
+    seed_business_data(client, flavor="alt")
     yield client
     _destroy(client)
 

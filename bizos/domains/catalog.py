@@ -2,14 +2,9 @@
 Domain Pack Catalogue
 =====================
 
-The static list of domains the platform knows about. Kept separate from the
-pack *implementations* (``bizos/domains/packs.py``) so the control plane can seed
-and list domains without importing the tool layer.
-
-Phase 1 (§12) builds Operations, Sales, Intake and Planning to depth, plus a
-General pack that is always on. Strategy, Finance, Brand and Legal are
-registered and admin-toggleable but intentionally shallow — ``depth="placeholder"``
-is the machine-readable statement of that, and the UI shows it.
+Phase 1 (FB-035) builds General, Operations, Sales, Intake, Planning, Strategy,
+Finance, Brand and Legal. Placeholders are gone — each pack has instructions and
+tools; finance/legal writes that require a license always go to approval.
 """
 
 from __future__ import annotations
@@ -23,7 +18,7 @@ class DomainCatalogEntry:
     title: str
     description: str
     phase: int
-    #: "full" — implemented with tools, instructions and workflows.
+    #: "full" — implemented with tools and instructions.
     #: "placeholder" — configuration and instructions only; no domain tools yet.
     depth: str
 
@@ -32,7 +27,7 @@ DOMAIN_CATALOG: tuple[DomainCatalogEntry, ...] = (
     DomainCatalogEntry(
         "general",
         "General",
-        "Organizational memory, knowledge lookup and everyday questions. Always enabled.",
+        "Organizational memory and everyday questions. Always enabled.",
         1,
         "full",
     ),
@@ -67,44 +62,44 @@ DOMAIN_CATALOG: tuple[DomainCatalogEntry, ...] = (
     DomainCatalogEntry(
         "strategy",
         "Strategy",
-        "Market and competitive analysis, strategic options. Advisory only in Phase 1.",
-        2,
-        "placeholder",
+        "Priorities, options memos and strategic analysis. Advise-first; options need humans.",
+        1,
+        "full",
     ),
     DomainCatalogEntry(
         "finance",
         "Finance",
-        "Invoices, balances, payments and financial reporting via workspace accounting.",
+        "Finance policy lookup and licensed adjustment proposals (always approved).",
         1,
         "full",
     ),
     DomainCatalogEntry(
         "brand",
         "Brand",
-        "Voice, messaging and content review. Placeholder in Phase 1.",
-        2,
-        "placeholder",
+        "Brand voice guidelines and draft messaging. Draft ceiling — no publish.",
+        1,
+        "full",
     ),
     DomainCatalogEntry(
         "legal",
         "Legal",
-        "Contract summarization and clause lookup. Never renders legal judgment; "
-        "advisory and draft only, always human-approved.",
-        2,
-        "placeholder",
+        "Clause lookup and counsel escalation. Never renders legal judgment.",
+        1,
+        "full",
     ),
 )
 
 DOMAIN_NAMES: tuple[str, ...] = tuple(entry.name for entry in DOMAIN_CATALOG)
 
-#: Domains a new client gets switched on at provisioning time (§12 Phase 1).
+#: The base package a new client gets at provisioning time (FB-035). The other
+#: domains (strategy, finance, brand, legal) are add-ons: they are fully built,
+#: but a client gets them only by a recorded change order.
 DEFAULT_ENABLED_DOMAINS: tuple[str, ...] = (
     "general",
     "operations",
     "sales",
     "intake",
     "planning",
-    "finance",
 )
 
 

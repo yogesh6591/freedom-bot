@@ -1,7 +1,0 @@
-BizOS Knowledge Upload Test
-
-This document is for verifying Knowledge upload and search.
-
-Search token: HELLO_KB_TEST
-
-If search finds this phrase after upload, the knowledge feature is working.

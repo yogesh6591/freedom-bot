@@ -307,6 +307,15 @@ class AuditEventType(StrEnum):
     HUMAN_REVIEW_CREATED = "HUMAN_REVIEW_CREATED"
     HUMAN_REVIEW_RESOLVED = "HUMAN_REVIEW_RESOLVED"
     GUARDRAIL_TRIGGERED = "GUARDRAIL_TRIGGERED"
+    MEMORY_CONFLICT = "MEMORY_CONFLICT"
+    CHANGE_ORDER = "CHANGE_ORDER"
+    DATA_SCOPES_CHANGED = "DATA_SCOPES_CHANGED"
+    AUDIT_PURGED = "AUDIT_PURGED"
+
+
+#: Restricted data areas (FB-037). Content tagged with one of these is returned
+#: only to users whose data scopes include it; untagged content is general.
+DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal")
 
 
 __all__ = [

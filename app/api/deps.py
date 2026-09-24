@@ -23,6 +23,7 @@ from typing import Any, Iterator, Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from bizos import settings as app_settings
 from bizos.control import store as control
 from bizos.control.tokens import TokenError, roles_from_claims, verify_token
 from bizos.control.models import ClientSettings
@@ -67,6 +68,11 @@ def current_context(
         raise HTTPException(status_code=401, detail="Unknown workspace") from exc
     if client.status != "ACTIVE":
         raise HTTPException(status_code=403, detail="Workspace is not active")
+    pinned = app_settings.pinned_client_slug()
+    if pinned and client.slug != pinned:
+        # This deployment belongs to one client; another client's token, even a
+        # validly signed one, does not open it (FB-033).
+        raise HTTPException(status_code=403, detail="This deployment serves a different client")
 
     # The roles in the token are signed, but the user record is authoritative for
     # revocation: a role removed a minute ago must not stay usable until the
@@ -94,6 +100,7 @@ def current_context(
         default_execution_mode=client.settings.mode,
         email=user.email,
         display_name=user.display_name,
+        data_scopes=user.data_scopes,
         attributes={"ip": request.client.host if request.client else None},
     )
 

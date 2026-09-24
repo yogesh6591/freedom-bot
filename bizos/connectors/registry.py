@@ -21,11 +21,11 @@ from typing import Any, Optional, Type
 
 from sqlalchemy import text
 
-from bizos.connectors.accounting import AccountingConnector
 from bizos.connectors.base import Connector, ConnectorNotConfigured
 from bizos.connectors.calendar import GoogleCalendarConnector, WorkspaceCalendarConnector
 from bizos.connectors.email import GmailConnector, WorkspaceEmailConnector
 from bizos.connectors.mock_crm import CrmConnector
+from bizos.connectors.n8n import N8nWebhookConnector
 from bizos.tenancy.context import TenantContext, require_context
 from bizos.tenancy.registry import readonly_connection, workspace_connection
 from bizos.util.ids import new_id
@@ -35,7 +35,7 @@ PROVIDERS: dict[str, dict[str, Type[Connector]]] = {
     "crm": {"workspace": CrmConnector},
     "email": {"workspace": WorkspaceEmailConnector, "gmail": GmailConnector},
     "calendar": {"workspace": WorkspaceCalendarConnector, "google_calendar": GoogleCalendarConnector},
-    "accounting": {"workspace": AccountingConnector},
+    "n8n": {"webhook": N8nWebhookConnector},
 }
 
 #: What a fresh workspace gets connected at provisioning time: the workspace-backed
@@ -44,7 +44,7 @@ DEFAULT_INTEGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("crm", "workspace", "Workspace CRM"),
     ("email", "workspace", "Workspace Email"),
     ("calendar", "workspace", "Workspace Calendar"),
-    ("accounting", "workspace", "Workspace Accounting"),
+    ("n8n", "webhook", "n8n Webhook"),
 )
 
 #: Categories declared for the UI and policy engine but with no Phase 1 adapter.

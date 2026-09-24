@@ -102,8 +102,22 @@ class MemoryItem:
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     current: Optional[MemoryVersion] = None
+    #: Restricted data area (FB-037): exec/hr/salary/finance/legal, or None.
+    access_area: Optional[str] = None
     #: Populated only by history reads.
     versions: list[MemoryVersion] = field(default_factory=list)
+
+    @property
+    def label(self) -> str:
+        """FB-036: "fact" only for a human-approved, non-inferred value."""
+        version = self.current
+        if (
+            version is not None
+            and str(version.approval_status) == "APPROVED"
+            and str(version.source_type) != "AI_INFERENCE"
+        ):
+            return "fact"
+        return "estimate"
 
     def to_dict(self, *, include_versions: bool = False) -> dict[str, Any]:
         data = {
@@ -114,6 +128,8 @@ class MemoryItem:
             "domain": self.domain,
             "tags": self.tags,
             "classification": str(self.classification),
+            "access_area": self.access_area,
+            "label": self.label,
             "created_by": self.created_by,
             "created_at": _iso(self.created_at),
             "updated_at": _iso(self.updated_at),

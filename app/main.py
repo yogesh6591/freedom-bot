@@ -15,8 +15,7 @@ tracing, the scheduler, the knowledge routers, its own approvals surface, and
 JWT/service-account verification.
 
 What the platform adds: tenancy, RBAC, the policy engine, execution modes,
-organizational memory, business-action approvals, audit, domain packs, connectors
-and workflows.
+organizational memory, business-action approvals, audit, domain packs and connectors.
 """
 
 from __future__ import annotations
@@ -67,7 +66,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     if not settings.llm_available():
         log_warning(
             "OPENAI_API_KEY is not set — chat is disabled. Policy, approvals, memory, "
-            "audit, workflows and the connectors all work without it."
+            "audit and the connectors all work without it."
         )
     try:
         yield

@@ -27,7 +27,7 @@ def test_policy_override_attempt_is_ignored(client_a, scope_factory):
     appear in its inputs at all. Passing the sentence as a tool *argument* — the
     only channel a model actually controls — leaves the verdict identical.
     """
-    scope = scope_factory(client_a, "operator", domain="finance",
+    scope = scope_factory(client_a, "operator", domain="sales",
                           mode=ExecutionMode.AUTO_WITHIN_SCOPE)
     with tenant_scope(scope.ctx):
         benign = evaluate(_request(scope, "email_send_message"))
@@ -45,39 +45,35 @@ def test_policy_override_attempt_is_ignored(client_a, scope_factory):
     assert hostile.effect != PolicyEffect.ALLOW
 
 
-def test_payment_is_never_automatic(client_a, scope_factory, settings_with):
-    """A licensed-judgment, CRITICAL, card-sensitive tool cannot be auto-run."""
+def test_destructive_write_is_never_automatic(client_a, scope_factory, settings_with):
+    """A CRITICAL always-approve tool cannot be auto-run."""
     settings = settings_with(
         client_a.settings,
         default_execution_mode=ExecutionMode.AUTO_WITHIN_SCOPE.value,
-        enabled_domains=["general", "finance"],
-        allow_card_data=True,
+        enabled_domains=["general", "sales", "operations"],
         risk_policy={"auto_allowed_max_risk": "HIGH", "always_approve_at_or_above": "CRITICAL"},
     )
-    scope = scope_factory(client_a, "operator", domain="finance", settings=settings)
+    scope = scope_factory(client_a, "operator", domain="sales", settings=settings)
     with tenant_scope(scope.ctx):
-        decision = evaluate(
-            _request(scope, "accounting_record_payment", financial_amount=Decimal("1000"))
-        )
+        decision = evaluate(_request(scope, "crm_delete_record"))
     assert decision.effect == PolicyEffect.REQUIRE_APPROVAL
     codes = {c.code for c in decision.constraints}
-    assert "LICENSED_JUDGMENT" in codes
-    assert "RISK_CRITICAL" in codes
+    assert "RISK_CRITICAL" in codes or "TOOL_ALWAYS_REQUIRES_APPROVAL" in codes
 
 
-def test_licensed_judgment_never_auto_executes(client_a, scope_factory, settings_with):
-    """§14: a licensed decision always requires designated human approval."""
+def test_always_approve_tools_never_auto_execute(client_a, scope_factory, settings_with):
+    """Tools flagged always_requires_approval always require a human."""
     from bizos.rbac.registry import TOOL_SPECS
 
-    licensed = [s for s in TOOL_SPECS if s.licensed_judgment]
-    assert licensed, "at least one tool should be flagged as licensed judgment"
+    flagged = [s for s in TOOL_SPECS if s.always_requires_approval]
+    assert flagged, "at least one tool should always require approval"
     settings = settings_with(
         client_a.settings,
         default_execution_mode=ExecutionMode.AUTO_WITHIN_SCOPE.value,
-        enabled_domains=["general", "finance", "sales", "operations", "intake", "planning"],
+        enabled_domains=["general", "sales", "operations", "intake", "planning"],
         risk_policy={"auto_allowed_max_risk": "HIGH"},
     )
-    for spec in licensed:
+    for spec in flagged:
         scope = scope_factory(client_a, "operator", domain=next(iter(spec.domains or {"general"})),
                               settings=settings)
         with tenant_scope(scope.ctx):

@@ -228,6 +228,17 @@ def guarded_call(
         emails_sent_in_run=scope.counters.get("emails_sent", 0),
         **extra,
     )
+    # FB-039: classify payload for PHI / card / licensed categories before decide.
+    from bizos.policy.classifier import classify_arguments
+
+    classified = classify_arguments(arguments)
+    if classified.contains_phi:
+        request.contains_phi = True
+    if classified.contains_card_data:
+        request.contains_card_data = True
+    if classified.requires_licensed_human:
+        request.licensed_categories = tuple(sorted(classified.categories))
+
     decision = evaluate(request)
     audit.log_policy_decision(decision, ctx=scope.ctx, arguments=arguments, domain=scope.domain)
 
@@ -274,6 +285,7 @@ def guarded_call(
                     audit.log(
                         AuditEventType.ACTION_FAILED,
                         ctx=scope.ctx,
+                        execution_mode=str(decision.mode),
                         tool=spec.draft_counterpart,
                         action_id=action.id,
                         error=str(exc),
@@ -308,6 +320,7 @@ def _execute_effect(
         audit.log(
             AuditEventType.ACTION_FAILED,
             ctx=scope.ctx,
+            execution_mode=str(decision.mode),
             tool=spec.name,
             action_id=action_id,
             error=message,
@@ -321,6 +334,7 @@ def _execute_effect(
         audit.log(
             AuditEventType.ACTION_FAILED,
             ctx=scope.ctx,
+            execution_mode=str(decision.mode),
             tool=spec.name,
             integration=spec.integration,
             action_id=action_id,
@@ -335,6 +349,7 @@ def _execute_effect(
         audit.log(
             AuditEventType.ACTION_FAILED,
             ctx=scope.ctx,
+            execution_mode=str(decision.mode),
             tool=spec.name,
             integration=spec.integration,
             action_id=action_id,
@@ -354,6 +369,7 @@ def _execute_effect(
     audit.log(
         AuditEventType.ACTION_EXECUTED if spec.write else AuditEventType.TOOL_CALL,
         ctx=scope.ctx,
+        execution_mode=str(decision.mode),
         tool=spec.name,
         integration=spec.integration,
         domain=scope.domain,

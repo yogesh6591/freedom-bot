@@ -26,7 +26,13 @@ from bizos import settings
 from bizos.control.models import Client
 from bizos.tenancy.context import TenantContext
 from bizos.tenancy.registry import registry, validate_identifier, workspace_location
-from bizos.tenancy.schema import APPEND_ONLY_DDL, WORKSPACE_DDL, WORKSPACE_TABLES
+from bizos.tenancy.schema import (
+    APPEND_ONLY_DDL,
+    UPGRADE_DDL,
+    WORKSPACE_DDL,
+    WORKSPACE_TABLES,
+    client_wall_ddl,
+)
 from bizos.types import DeploymentType
 
 
@@ -154,6 +160,10 @@ def apply_workspace_schema(ctx: TenantContext) -> None:
             except Exception as exc:  # pragma: no cover - surfaces the failing table
                 head = " ".join(statement.split())[:120]
                 raise RuntimeError(f"Workspace DDL failed: {head}…: {exc}") from exc
+        for statement in UPGRADE_DDL:
+            conn.execute(text(statement))
+        for statement in client_wall_ddl(ctx.client_id):
+            conn.execute(text(statement))
         for statement in APPEND_ONLY_DDL:
             conn.execute(text(statement))
 
@@ -196,6 +206,24 @@ def verify_workspace(ctx: TenantContext) -> list[str]:
             {"s": db_schema, "names": list(WORKSPACE_TABLES)},
         ).fetchall()
     return sorted(r.table_name for r in rows)
+
+
+def unwalled_tables(ctx: TenantContext) -> list[str]:
+    """Workspace tables lacking the per-client ``client_id`` wall (FB-033)."""
+    db_name, db_schema = workspace_location(ctx)
+    engine = registry.engine(db_name, db_schema)
+    with engine.begin() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT c.relname FROM pg_constraint k "
+                "JOIN pg_class c ON c.oid = k.conrelid "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = :s AND k.conname = c.relname || '_client_wall'"
+            ),
+            {"s": db_schema},
+        ).fetchall()
+    walled = {r.relname for r in rows}
+    return sorted(set(WORKSPACE_TABLES) - walled)
 
 
 def missing_tables(ctx: TenantContext) -> list[str]:

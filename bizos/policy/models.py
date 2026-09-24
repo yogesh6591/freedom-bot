@@ -78,6 +78,8 @@ class PolicyRequest:
     #: Set by the content classifier when the payload looks like PHI/card data.
     contains_phi: bool = False
     contains_card_data: bool = False
+    #: Licensed / regulated categories detected in the payload (FB-039).
+    licensed_categories: tuple[str, ...] = ()
     #: Connected integration ids in this workspace.
     connected_integrations: frozenset[str] = frozenset()
     #: Overrides the tool's declared risk when the caller knows better

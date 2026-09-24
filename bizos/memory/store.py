@@ -37,6 +37,7 @@ from bizos.types import (
     DataClassification,
     MemoryCategory,
     MemoryStatus,
+    Role,
     SourceType,
 )
 from bizos.util.ids import new_id, slugify
@@ -97,7 +98,92 @@ def _item_from_row(row: Any, current: Optional[MemoryVersion] = None) -> MemoryI
         created_at=row.created_at,
         updated_at=row.updated_at,
         current=current,
+        access_area=getattr(row, "access_area", None),
     )
+
+
+# ---------------------------------------------------------------------------
+# Restricted areas (FB-037)
+# ---------------------------------------------------------------------------
+
+
+def _area_filter(tenant: Optional[TenantContext], alias: str = "i") -> tuple[str, dict[str, Any]]:
+    """SQL that keeps restricted rows out of the result set entirely.
+
+    Filtering happens in the query, not after it, so a restricted item cannot
+    leak through a count, a ranking or a LIMIT slice.
+    """
+    areas = sorted(tenant.visible_areas) if tenant is not None else []
+    return (
+        f"({alias}.access_area IS NULL OR {alias}.access_area = ANY(:visible_areas))",
+        {"visible_areas": areas},
+    )
+
+
+def _visible(tenant: Optional[TenantContext], row: Any) -> bool:
+    area = getattr(row, "access_area", None)
+    return not area or (tenant is not None and tenant.can_see_area(area))
+
+
+# ---------------------------------------------------------------------------
+# Conflicts (FB-036)
+# ---------------------------------------------------------------------------
+
+
+def _conflicting_items(conn: Any, topic: str, exclude_item: Optional[str], content: str) -> list[str]:
+    """Approved, active items on the same topic whose value differs."""
+    rows = conn.execute(
+        text(
+            "SELECT i.id FROM memory_items i JOIN memory_versions v ON v.item_id = i.id "
+            "WHERE v.status = 'ACTIVE' AND v.approval_status = 'APPROVED' "
+            "AND lower(v.attributes->>'topic') = lower(:t) "
+            "AND (CAST(:x AS TEXT) IS NULL OR i.id <> :x) "
+            "AND btrim(lower(v.content)) <> btrim(lower(:c))"
+        ),
+        {"t": topic, "x": exclude_item, "c": content},
+    ).fetchall()
+    return [r.id for r in rows]
+
+
+def find_conflicts(*, ctx: Optional[TenantContext] = None) -> list[dict[str, Any]]:
+    """Topics where active memory holds more than one differing value.
+
+    These are never resolved by the agent: they are listed for a person to pick
+    the authoritative value.
+    """
+    tenant = ctx or current_context()
+    area_sql, area_params = _area_filter(tenant)
+    with workspace_connection(tenant, readonly=True) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT lower(v.attributes->>'topic') AS topic, i.id, i.title, i.memory_key, "
+                "i.category, v.id AS version_id, v.content, v.approval_status, v.created_by "
+                "FROM memory_items i JOIN memory_versions v ON v.item_id = i.id "
+                "WHERE v.status = 'ACTIVE' AND COALESCE(v.attributes->>'topic', '') <> '' "
+                f"AND {area_sql} ORDER BY topic, i.updated_at"
+            ),
+            area_params,
+        ).fetchall()
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for r in rows:
+        groups.setdefault(r.topic, []).append(
+            {
+                "item_id": r.id,
+                "version_id": r.version_id,
+                "title": r.title,
+                "key": r.memory_key,
+                "category": r.category,
+                "value": r.content,
+                "approval_status": r.approval_status,
+                "recorded_by": r.created_by,
+            }
+        )
+    out = []
+    for topic, items in groups.items():
+        values = {i["value"].strip().casefold() for i in items}
+        if len(items) > 1 and len(values) > 1:
+            out.append({"topic": topic, "items": items})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +228,7 @@ def put(
     source_id: Optional[str] = None,
     confidence: float = 1.0,
     approval_status: Optional[ApprovalStatus] = None,
+    access_area: Optional[str] = None,
     settings: Any = None,
     ctx: Optional[TenantContext] = None,
 ) -> MemoryItem:
@@ -165,19 +252,38 @@ def put(
         raise ValueError("memory items require non-empty content")
     now = utcnow()
     resolved_approval = _resolve_approval(source_type, confidence, approval_status, tenant, settings)
+    area = (access_area or "").strip().casefold() or None
+    if area is not None and not tenant.can_see_area(area):
+        raise PermissionError(f"not permitted to write {area} content")
+    attributes = dict(attributes or {})
+    conflict_with: list[str] = []
 
     with workspace_connection(tenant) as conn:
         existing = conn.execute(
             text("SELECT * FROM memory_items WHERE category = :c AND memory_key = :k"),
             {"c": str(category), "k": key},
         ).first()
+        if existing is not None and not _visible(tenant, existing):
+            raise PermissionError("not permitted to change this restricted item")
+
+        topic = str(attributes.get("topic") or "").strip()
+        if topic:
+            conflict_with = _conflicting_items(
+                conn, topic, existing.id if existing is not None else None, str(content)
+            )
+            if conflict_with:
+                # Two policies disagree: neither the agent nor this write gets to
+                # pick. The new value waits for a person (FB-036).
+                resolved_approval = ApprovalStatus.PENDING
+                attributes["conflict_with"] = conflict_with
 
         if existing is None:
             item_id = new_id("mem")
             conn.execute(
                 text(
                     "INSERT INTO memory_items (id, category, memory_key, title, domain, tags, "
-                    "classification, created_by) VALUES (:i, :c, :k, :t, :d, :g, :cl, :b)"
+                    "classification, access_area, created_by) "
+                    "VALUES (:i, :c, :k, :t, :d, :g, :cl, :ar, :b)"
                 ),
                 {
                     "i": item_id,
@@ -187,6 +293,7 @@ def put(
                     "d": domain,
                     "g": list(tags or []),
                     "cl": str(classification),
+                    "ar": area,
                     "b": tenant.user_id,
                 },
             )
@@ -246,6 +353,14 @@ def put(
         source_type=source_type,
         approval_status=resolved_approval,
     )
+    if conflict_with:
+        _audit(
+            AuditEventType.MEMORY_CONFLICT,
+            tenant,
+            item_id=item_id,
+            topic=attributes.get("topic"),
+            conflict_with=",".join(conflict_with),
+        )
     return get_item(item_id, ctx=tenant)
 
 
@@ -275,7 +390,7 @@ def correct(
 
     with workspace_connection(tenant) as conn:
         item = conn.execute(text("SELECT * FROM memory_items WHERE id = :i"), {"i": item_id}).first()
-        if item is None:
+        if item is None or not _visible(tenant, item):
             raise MemoryNotFound(item_id)
         current = _current_version_row(conn, item_id)
         if current is None:
@@ -343,6 +458,17 @@ def approve_version(version_id: str, *, ctx: Optional[TenantContext] = None) -> 
     """Mark a PENDING version as human-approved, making it authoritative."""
     tenant = ctx or require_context()
     with workspace_connection(tenant) as conn:
+        pending = conn.execute(
+            text(
+                "SELECT v.attributes, i.access_area FROM memory_versions v "
+                "JOIN memory_items i ON i.id = v.item_id WHERE v.id = :i"
+            ),
+            {"i": version_id},
+        ).first()
+        if pending is None or not _visible(tenant, pending):
+            raise MemoryNotFound(version_id)
+        if (pending.attributes or {}).get("conflict_with") and not tenant.at_least(Role.APPROVER):
+            raise PermissionError("resolving a policy conflict requires an approver")
         result = conn.execute(
             text(
                 "UPDATE memory_versions SET approval_status = 'APPROVED', approved_by = :u, "
@@ -355,6 +481,13 @@ def approve_version(version_id: str, *, ctx: Optional[TenantContext] = None) -> 
         row = conn.execute(
             text("SELECT * FROM memory_versions WHERE id = :i"), {"i": version_id}
         ).first()
+        # Approving one side of a conflict is the person's resolution: the
+        # competing values are superseded (kept in history), not left standing.
+        losers = (row.attributes or {}).get("conflict_with") or []
+        for item_id in losers:
+            current = _current_version_row(conn, item_id)
+            if current is not None:
+                _close_version(conn, current.id, utcnow(), superseded_by=version_id, actor=tenant.user_id)
     _audit(AuditEventType.MEMORY_CORRECTED, tenant, version_id=version_id, approved=True)
     return _version_from_row(row)
 
@@ -384,9 +517,10 @@ def _close_version(conn: Any, version_id: str, when: Any, *, superseded_by: Opti
 
 
 def get_item(item_id: str, *, ctx: Optional[TenantContext] = None) -> MemoryItem:
-    with workspace_connection(ctx, readonly=True) as conn:
+    tenant = ctx or current_context()
+    with workspace_connection(tenant, readonly=True) as conn:
         row = conn.execute(text("SELECT * FROM memory_items WHERE id = :i"), {"i": item_id}).first()
-        if row is None:
+        if row is None or not _visible(tenant, row):
             raise MemoryNotFound(item_id)
         current = _current_version_row(conn, item_id)
     return _item_from_row(row, _version_from_row(current) if current else None)
@@ -395,12 +529,13 @@ def get_item(item_id: str, *, ctx: Optional[TenantContext] = None) -> MemoryItem
 def get_by_key(
     category: MemoryCategory, memory_key: str, *, ctx: Optional[TenantContext] = None
 ) -> Optional[MemoryItem]:
-    with workspace_connection(ctx, readonly=True) as conn:
+    tenant = ctx or current_context()
+    with workspace_connection(tenant, readonly=True) as conn:
         row = conn.execute(
             text("SELECT * FROM memory_items WHERE category = :c AND memory_key = :k"),
             {"c": str(category), "k": memory_key},
         ).first()
-        if row is None:
+        if row is None or not _visible(tenant, row):
             return None
         current = _current_version_row(conn, row.id)
     return _item_from_row(row, _version_from_row(current) if current else None)
@@ -408,9 +543,10 @@ def get_by_key(
 
 def history(item_id: str, *, ctx: Optional[TenantContext] = None) -> MemoryItem:
     """The item with every version it has ever had, newest first."""
-    with workspace_connection(ctx, readonly=True) as conn:
+    tenant = ctx or current_context()
+    with workspace_connection(tenant, readonly=True) as conn:
         row = conn.execute(text("SELECT * FROM memory_items WHERE id = :i"), {"i": item_id}).first()
-        if row is None:
+        if row is None or not _visible(tenant, row):
             raise MemoryNotFound(item_id)
         versions = conn.execute(
             text("SELECT * FROM memory_versions WHERE item_id = :i ORDER BY version_no DESC"),
@@ -442,8 +578,12 @@ def list_items(
         params["domain"] = domain
     if not include_unapproved:
         clauses.append("v.approval_status = 'APPROVED'")
+    tenant = ctx or current_context()
+    area_sql, area_params = _area_filter(tenant)
+    clauses.append(area_sql)
+    params.update(area_params)
 
-    with workspace_connection(ctx, readonly=True) as conn:
+    with workspace_connection(tenant, readonly=True) as conn:
         rows = conn.execute(
             text(
                 "SELECT i.*, v.id AS v_id FROM memory_items i "
@@ -493,7 +633,19 @@ def search(
     if domain:
         clauses.append("(i.domain = :domain OR i.domain IS NULL)")
         params["domain"] = domain
-    clauses.append("(i.title ILIKE :q OR i.memory_key ILIKE :q OR v.content ILIKE :q OR :q = '%%')")
+    # The whole phrase, or any meaningful word in it: "Q3 goals and priorities"
+    # must find a fact titled "Goal 1". Words also match tags.
+    word_clauses = ["i.title ILIKE :q", "i.memory_key ILIKE :q", "v.content ILIKE :q", ":q = '%%'"]
+    for n, word in enumerate(_search_words(query)):
+        params[f"w{n}"] = f"%{word}%"
+        word_clauses.append(
+            f"(i.title ILIKE :w{n} OR i.memory_key ILIKE :w{n} OR v.content ILIKE :w{n} "
+            f"OR array_to_string(i.tags, ' ') ILIKE :w{n})"
+        )
+    clauses.append(f"({' OR '.join(word_clauses)})")
+    area_sql, area_params = _area_filter(tenant)
+    clauses.append(area_sql)
+    params.update(area_params)
 
     # Source trust as SQL so ordering happens in the database rather than after
     # a LIMIT, which would rank only an arbitrary slice.
@@ -509,7 +661,8 @@ def search(
                 f"SELECT i.*, v.id AS v_id FROM memory_items i "
                 "JOIN memory_versions v ON v.item_id = i.id "
                 f"WHERE {' AND '.join(clauses)} "
-                "ORDER BY (CASE WHEN i.memory_key ILIKE :q THEN 0 WHEN i.title ILIKE :q THEN 1 "
+                "ORDER BY (CASE WHEN v.approval_status = 'APPROVED' THEN 0 ELSE 1 END), "
+                "(CASE WHEN i.memory_key ILIKE :q THEN 0 WHEN i.title ILIKE :q THEN 1 "
                 f"ELSE 2 END), ({trust} * v.confidence) DESC, i.updated_at DESC LIMIT :limit"
             ),
             params,
@@ -523,6 +676,31 @@ def search(
     if out and tenant is not None:
         _audit(AuditEventType.MEMORY_READ, tenant, query=query, hits=len(out))
     return out
+
+
+_STOPWORDS = frozenset(
+    "the and for are our what which who how when where why this that with from have has "
+    "any all can you your about into does did was were will would should could there their "
+    "them they tell show give list me please".split()
+)
+
+
+def _search_words(query: str) -> list[str]:
+    """Meaningful words from a question, singularized crudely ("goals" -> "goal")."""
+    import re
+
+    if not re.search(r"\s", (query or "").strip()):
+        return []  # a single token such as a memory key is matched exactly
+    words: list[str] = []
+    for raw in re.findall(r"[a-z0-9]+", (query or "").casefold()):
+        if len(raw) < 3 or raw in _STOPWORDS:
+            continue
+        word = raw[:-3] + "y" if raw.endswith("ies") and len(raw) > 4 else raw
+        if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+            word = word[:-1]
+        if word not in words:
+            words.append(word)
+    return words[:8]
 
 
 def _audit(event_type: AuditEventType, tenant: TenantContext, **payload: Any) -> None:

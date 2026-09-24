@@ -75,8 +75,15 @@ def _control_audit(event: AuditEventType, **fields: Any) -> None:
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request, response: Response) -> LoginResponse:
     """Verify a password and issue a session token."""
+    pinned = app_settings.pinned_client_slug()
+    slug = body.client_slug
+    if pinned:
+        # A per-client deployment signs in to its own client only (FB-033).
+        if slug and slug.strip().casefold() != pinned:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        slug = pinned
     try:
-        user = control.authenticate(body.email, body.password, client_slug=body.client_slug)
+        user = control.authenticate(body.email, body.password, client_slug=slug)
     except control.AuthenticationError as exc:
         _control_audit(
             AuditEventType.LOGIN_FAILED,

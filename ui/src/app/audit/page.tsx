@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AppShell } from '@/components/AppShell'
+import { useSession } from '@/components/SessionProvider'
 import { api } from '@/lib/api'
 import type { AuditRow } from '@/lib/types'
 import {
@@ -12,6 +13,7 @@ import {
   ErrorNote,
   Panel,
   inputClass,
+  modeTone,
   riskTone,
   statusTone,
   timestamp
@@ -42,8 +44,14 @@ function AuditView() {
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<AuditRow | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [retention, setRetention] = useState<{ audit_days: number; effective_days: number } | null>(null)
+  const { hasRole } = useSession()
 
   useEffect(() => {
+    void api
+      .get<{ audit_days: number; effective_days: number }>('/api/audit/retention')
+      .then(setRetention)
+      .catch(() => undefined)
     void api
       .get<{ event_types: string[] }>('/api/audit/event-types')
       .then((data) => setTypes(data.event_types))
@@ -80,7 +88,31 @@ function AuditView() {
     <div className="space-y-4">
       <Panel
         title="Audit"
-        description={`${total} events recorded in this workspace. Append-only: entries cannot be edited or deleted, and secrets are redacted before they are written.`}
+        description={`${total} events recorded in this workspace — who acted, what, with which tool, in which mode. Append-only: entries cannot be edited, and are deleted only by the retention rule${
+          retention
+            ? retention.effective_days > 0
+              ? ` (kept ${retention.effective_days} days)`
+              : ' (kept indefinitely)'
+            : ''
+        }. This is the business audit log, separate from Agno run tracing.`}
+        actions={
+          hasRole('ADMIN') && retention && retention.effective_days > 0 ? (
+            <button
+              onClick={async () => {
+                if (!window.confirm(`Delete audit events older than ${retention.effective_days} days?`)) return
+                try {
+                  await api.post('/api/audit/purge')
+                  await load()
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : 'Purge failed')
+                }
+              }}
+              className="rounded-lg border border-border px-2 py-1 font-geist text-xs text-muted hover:text-primary"
+            >
+              Apply retention
+            </button>
+          ) : undefined
+        }
       >
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <select
@@ -158,6 +190,11 @@ function AuditView() {
             { key: 'e', header: 'Event', render: (r) => <Badge tone="neutral">{r.event_type}</Badge> },
             { key: 'u', header: 'User', render: (r) => <span className="text-muted">{r.user_id ?? '—'}</span> },
             { key: 'tool', header: 'Tool', render: (r) => r.tool ?? '—' },
+            {
+              key: 'm',
+              header: 'Mode',
+              render: (r) => (r.execution_mode ? <Badge tone={modeTone(r.execution_mode)}>{r.execution_mode}</Badge> : '—')
+            },
             {
               key: 'd',
               header: 'Decision',

@@ -1,0 +1,30 @@
+{
+  "template_version": "1.0.0",
+  "assistant_name": "FreedomBot",
+  "deployment_type": "DEDICATED_DB",
+  "default_execution_mode": "WAIT_FOR_APPROVAL",
+  "purchased_domains": ["general", "operations", "sales", "intake", "planning"],
+  "retention_policy": {"audit_days": 365, "action_days": 365, "superseded_memory_days": 0},
+  "approval_policy": {"allow_self_approval": false},
+  "tool_modes": {},
+  "dev_user_scopes": {
+    "approver": ["finance", "legal", "exec"],
+    "operator": ["finance"]
+  },
+  "seed_memory": [
+    {
+      "category": "SOP",
+      "key": "escalation_sop",
+      "title": "Escalation to a person",
+      "content": "When two recorded policies disagree, or a request needs a licensed professional, stop and escalate to the workspace approver. Never pick one yourself.",
+      "tags": ["sop", "governance"]
+    },
+    {
+      "category": "SOP",
+      "key": "approval_sop",
+      "title": "What needs approval",
+      "content": "Reads and drafts run automatically. Sending email, changing CRM records and anything that spends money waits in the approval queue for a named approver.",
+      "tags": ["sop", "governance"]
+    }
+  ]
+}

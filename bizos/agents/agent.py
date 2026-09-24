@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from agno.agent import Agent
-from agno.guardrails import PromptInjectionGuardrail
 
 from bizos import settings as app_settings
 from bizos.agents import instructions as agent_instructions
@@ -61,13 +60,13 @@ def build_agent(scope: RunScope, *, session_id: Optional[str] = None) -> Agent:
     if not app_settings.llm_available():
         raise ModelNotConfigured(
             "Chat requires a model. Set OPENAI_API_KEY (and MODEL_ID) to enable it. "
-            "Memory, approvals, workflows, audit and the connectors work without one."
+            "Memory, approvals, audit and the connectors work without one."
         )
 
     packs = enabled_packs(scope.settings.enabled_domains)
     active = get_pack(scope.domain)
-    # The active domain's pack leads; General is always included so memory and
-    # knowledge are reachable from every domain.
+    # The active domain's pack leads; General is always included so memory tools
+    # are reachable from every domain.
     selected = [p for p in ({active.name: active} if active else {}).values()]
     general = get_pack("general")
     if general is not None and general not in selected:
@@ -91,7 +90,7 @@ def build_agent(scope: RunScope, *, session_id: Optional[str] = None) -> Agent:
     )
 
     return Agent(
-        name="Business Assistant",
+        name=agent_instructions.assistant_name(scope.settings),
         id="bizos-assistant",
         model=app_settings.model_id(),
         user_id=scope.ctx.user_id,
@@ -102,9 +101,6 @@ def build_agent(scope: RunScope, *, session_id: Optional[str] = None) -> Agent:
         # The tool list is already resolved for this run; do not let agno cache
         # it across runs, which would be a cross-tenant hazard.
         cache_callables=False,
-        # Agno's input guardrail. Defence in depth only: the real protection is
-        # that the tool surface and the policy engine never consult message text.
-        pre_hooks=[PromptInjectionGuardrail()],
         add_history_to_context=True,
         num_history_runs=5,
         markdown=True,

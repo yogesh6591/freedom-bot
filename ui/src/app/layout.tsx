@@ -1,26 +1,26 @@
 import type { Metadata } from 'next'
-import { DM_Mono, Geist } from 'next/font/google'
+import { JetBrains_Mono, Space_Grotesk } from 'next/font/google'
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { Toaster } from '@/components/ui/sonner'
 import { SessionProvider } from '@/components/SessionProvider'
 import './globals.css'
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  weight: '400',
-  subsets: ['latin']
+const ui = Space_Grotesk({
+  variable: '--font-ui',
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700']
 })
 
-const dmMono = DM_Mono({
+const mono = JetBrains_Mono({
   subsets: ['latin'],
-  variable: '--font-dm-mono',
-  weight: '400'
+  variable: '--font-mono',
+  weight: ['400', '500']
 })
 
 export const metadata: Metadata = {
-  title: 'Business AI Agent Platform',
+  title: 'FreedomBot',
   description:
-    'Multi-tenant business AI agent workspace with organizational memory, policy-governed execution modes, an approval queue and a full audit trail.'
+    'Company AI workspace — memory, approvals, and policy-governed actions in one place.'
 }
 
 export default function RootLayout({
@@ -28,7 +28,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${dmMono.variable} antialiased`}>
+      <body className={`${ui.variable} ${mono.variable} font-geist antialiased`}>
         <NuqsAdapter>
           <SessionProvider>{children}</SessionProvider>
         </NuqsAdapter>

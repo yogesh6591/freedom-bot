@@ -296,6 +296,7 @@ def create_action(
         status=str(status),
         decision=str(decision.effect),
         risk_level=str(decision.risk),
+        execution_mode=str(decision.mode),
         request={"title": title, "payload": payload},
         result={"reason": decision.reason},
     )
@@ -328,7 +329,13 @@ def submit_for_approval(
             },
         )
         _set_status(conn, action, ActionStatus.PENDING_APPROVAL, tenant, event="SUBMITTED", request_id=request_id)
-    _audit(AuditEventType.APPROVAL_REQUESTED, tenant, action_id=action_id, tool=action.tool)
+    _audit(
+        AuditEventType.APPROVAL_REQUESTED,
+        tenant,
+        action_id=action_id,
+        tool=action.tool,
+        execution_mode=str(action.execution_mode),
+    )
     return get_action(action_id, ctx=tenant)
 
 
@@ -368,6 +375,7 @@ def approve(
         tenant,
         action_id=action_id,
         tool=action.tool,
+        execution_mode=str(action.execution_mode),
         approver=tenant.user_id,
         status=str(ActionStatus.APPROVED),
         result={"comment": comment},
@@ -391,6 +399,7 @@ def reject(
         tenant,
         action_id=action_id,
         tool=action.tool,
+        execution_mode=str(action.execution_mode),
         approver=tenant.user_id,
         status=str(ActionStatus.REJECTED),
         result={"comment": comment},
@@ -414,6 +423,7 @@ def request_changes(
         tenant,
         action_id=action_id,
         tool=action.tool,
+        execution_mode=str(action.execution_mode),
         approver=tenant.user_id,
         result={"comment": comment},
     )
@@ -460,6 +470,7 @@ def edit_payload(
         tenant,
         action_id=action_id,
         tool=action.tool,
+        execution_mode=str(action.execution_mode),
         request={"payload_before": action.payload},
         result={"payload_after": payload},
     )

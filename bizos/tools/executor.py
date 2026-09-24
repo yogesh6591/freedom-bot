@@ -78,6 +78,7 @@ def execute_approved_action(scope: RunScope, action_id: str) -> ToolOutcome:
         audit.log(
             AuditEventType.ACTION_FAILED,
             ctx=scope.ctx,
+            execution_mode=str(decision.mode),
             action_id=action_id,
             tool=action.tool,
             decision=str(decision.effect),

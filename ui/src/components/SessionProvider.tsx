@@ -52,21 +52,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [refresh])
 
   const logout = useCallback(async () => {
-    const clientId = me?.client.id
     try {
       await api.post('/api/auth/logout')
     } finally {
-      if (clientId) {
-        try {
-          sessionStorage.removeItem(`bizos.chat.${clientId}`)
-        } catch {
-          // ignore
-        }
-      }
       setMe(null)
       router.replace('/login')
     }
-  }, [router, me?.client.id])
+  }, [router])
 
   const hasRole = useCallback(
     (...roles: Role[]) => {

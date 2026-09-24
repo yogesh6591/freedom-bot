@@ -117,6 +117,18 @@ def rule_rbac(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
     return None
 
 
+def rule_data_area(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """FB-037: tools over a restricted data area need that area in the user's scopes."""
+    area = inp.spec.data_area
+    if not area or req.ctx.can_see_area(area):
+        return None
+    return Constraint(
+        "DATA_AREA_RESTRICTED",
+        DENY,
+        f"{area} information is restricted and this user has not been granted access to it",
+    )
+
+
 def rule_phi(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """PHI is refused unless the client is explicitly configured for it (§14)."""
     if req.settings.allow_phi:
@@ -167,10 +179,11 @@ def rule_restricted_classification(
 
 
 def rule_licensed_judgment(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
-    """A decision reserved to a licensed human is never automatic (§14).
+    """A decision reserved to a licensed human is never automatic (§14 / FB-039).
 
     The agent may still summarize, research, draft and prepare options — those
-    tools are not flagged. What is capped here is *executing* the decision.
+    tools are not flagged. What is capped here is *executing* the decision, and
+    any write whose payload the classifier flags as licensed subject matter.
     """
     if inp.spec.licensed_judgment:
         return Constraint(
@@ -178,6 +191,14 @@ def rule_licensed_judgment(req: PolicyRequest, inp: EvaluationInputs) -> Optiona
             REQUIRE_APPROVAL,
             f"{inp.spec.title} requires a decision reserved to a licensed human, so it "
             "always needs designated human approval",
+        )
+    if req.licensed_categories and inp.spec.write:
+        cats = ", ".join(req.licensed_categories)
+        return Constraint(
+            "LICENSED_CONTENT",
+            REQUIRE_APPROVAL,
+            f"this payload looks like licensed/regulated subject matter ({cats}) and "
+            "must be reviewed by a designated human before it can run",
         )
     return None
 
@@ -383,6 +404,7 @@ RULES: tuple[Rule, ...] = (
     rule_domain_enabled,
     rule_integration_connected,
     rule_rbac,
+    rule_data_area,
     rule_phi,
     rule_card_data,
     rule_restricted_classification,

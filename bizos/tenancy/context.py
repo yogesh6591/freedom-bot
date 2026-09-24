@@ -57,6 +57,8 @@ class TenantContext:
     default_execution_mode: ExecutionMode = ExecutionMode.WAIT_FOR_APPROVAL
     email: Optional[str] = None
     display_name: Optional[str] = None
+    #: Restricted data areas this user may see (FB-037), from the user record.
+    data_scopes: frozenset[str] = frozenset()
     #: Non-authoritative extras (session id, run id) useful for audit.
     attributes: dict = field(default_factory=dict, compare=False)
 
@@ -86,6 +88,18 @@ class TenantContext:
     @property
     def is_admin(self) -> bool:
         return Role.ADMIN in self.roles
+
+    @property
+    def visible_areas(self) -> frozenset[str]:
+        """Restricted areas whose content may be returned to this caller."""
+        from bizos.types import DATA_AREAS
+
+        if self.is_admin or self.is_system:
+            return frozenset(DATA_AREAS)
+        return frozenset(a for a in self.data_scopes if a in DATA_AREAS)
+
+    def can_see_area(self, area: Optional[str]) -> bool:
+        return not area or area in self.visible_areas
 
     @property
     def is_system(self) -> bool:

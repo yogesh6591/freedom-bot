@@ -171,3 +171,14 @@ def model_id() -> str:
 def llm_available() -> bool:
     """Whether an LLM is configured. Non-LLM features must work without one."""
     return openai_api_key() is not None
+
+
+def pinned_client_slug() -> str | None:
+    """FB-033: the one client this deployment serves, or ``None`` for shared dev.
+
+    Set per client by ``scripts/provision_client.py`` in that client's own
+    deployment. When set, the API refuses sign-ins and tokens for any other
+    client, so one FreedomBot deployment is walled to one company.
+    """
+    raw = getenv("CLIENT_SLUG", "").strip().casefold()
+    return raw or None

@@ -24,6 +24,7 @@ export interface SessionUser {
   display_name: string
   roles: Role[]
   primary_role: Role
+  data_scopes?: string[]
 }
 
 export interface SessionClient {
@@ -44,9 +45,10 @@ export interface DomainPack {
   phase: number
   depth: 'full' | 'placeholder'
   tools: string[]
-  workflows: string[]
+  workflows?: string[]
   mode_ceiling: string | null
   enabled?: boolean
+  purchased?: boolean
 }
 
 export interface Me {
@@ -90,6 +92,8 @@ export interface MemoryItem {
   domain: string | null
   tags: string[]
   classification: string
+  access_area?: string | null
+  label?: 'fact' | 'estimate'
   updated_at: string | null
   current: MemoryVersion | null
   versions?: MemoryVersion[]
@@ -137,20 +141,6 @@ export interface ActionRecord {
   events?: ApprovalEvent[]
 }
 
-export interface ReviewItem {
-  id: string
-  question: string
-  context: string
-  choices: string[]
-  recommended_option: string | null
-  confidence: number | null
-  status: 'OPEN' | 'RESOLVED' | 'DISMISSED'
-  workflow_id: string | null
-  created_at: string | null
-  resolution: string | null
-  resolved_by: string | null
-}
-
 export interface AuditRow {
   seq: number
   id: string
@@ -158,6 +148,7 @@ export interface AuditRow {
   user_id: string | null
   actor_role: string | null
   tool: string | null
+  execution_mode?: string | null
   integration: string | null
   workflow_id: string | null
   action_id: string | null
@@ -216,19 +207,31 @@ export interface ChatContext {
   mode: ExecutionMode
   mode_description: string
   domain: string
+  enabled_domains?: string[]
+  assistant_name?: string
   role: Role
-  tools: { name: string; title: string; write: boolean; risk: string; category: string }[]
+  data_scopes?: string[]
+  tools: {
+    name: string
+    title: string
+    write: boolean
+    risk: string
+    category: string
+    can_view: boolean
+    can_run: boolean
+    tool_mode?: string | null
+  }[]
   pending_approvals: number
-  open_reviews: number
 }
 
 export interface ChatResponse {
   session_id: string
   content: string
   mode: ExecutionMode
+  domain?: string
+  routed?: boolean
   tool_activity: { tool: string; ok: boolean }[]
   actions: ActionRecord[]
   awaiting_approval: ActionRecord[]
   drafts: ActionRecord[]
-  reviews: ReviewItem[]
 }
