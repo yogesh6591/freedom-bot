@@ -1,9 +1,19 @@
 'use client'
 
-/** Shared UI primitives — light / yellow product theme. */
+/** Shared UI primitives — spacing, type, and control consistency (palette unchanged). */
 
 import { cn } from '@/lib/utils'
-import type { ReactNode } from 'react'
+import type { ButtonHTMLAttributes, ReactNode } from 'react'
+
+export function PageStack({
+  children,
+  className
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return <div className={cn('flex flex-col gap-6', className)}>{children}</div>
+}
 
 export function Panel({
   title,
@@ -21,25 +31,17 @@ export function Panel({
   return (
     <section
       className={cn(
-        'rounded-xl border border-border bg-background-secondary p-5 shadow-panel',
+        'rounded-xl border border-border bg-background-secondary p-5 shadow-panel sm:p-6',
         className
       )}
     >
       {(title || actions) && (
-        <header className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            {title && (
-              <h2 className="font-geist text-lg font-semibold tracking-tight text-primary">
-                {title}
-              </h2>
-            )}
-            {description && (
-              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
-                {description}
-              </p>
-            )}
+        <header className="mb-5 flex items-start justify-between gap-4">
+          <div className="min-w-0 max-w-prose">
+            {title && <h2 className="type-subtitle">{title}</h2>}
+            {description && <p className="type-muted mt-1.5">{description}</p>}
           </div>
-          {actions}
+          {actions ? <div className="shrink-0">{actions}</div> : null}
         </header>
       )}
       {children}
@@ -51,9 +53,9 @@ const TONES = {
   neutral: 'bg-background-elevated text-muted border-border',
   info: 'bg-info/10 text-info border-info/25',
   good: 'bg-positive/10 text-positive border-positive/25',
-  warn: 'bg-brand/25 text-brand-ink border-brand/50',
+  warn: 'bg-brand/20 text-brand-soft border-brand/40',
   bad: 'bg-destructive/10 text-destructive border-destructive/25',
-  brand: 'bg-brand text-brand-ink border-brand-deep/40'
+  brand: 'bg-brand text-brand-ink border-brand-soft/40'
 } as const
 
 export type Tone = keyof typeof TONES
@@ -70,7 +72,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-0.5 font-dmmono text-[10px] font-medium uppercase tracking-wider',
+        'inline-flex items-center rounded-full border px-2.5 py-1 type-caption',
         TONES[tone],
         className
       )}
@@ -136,9 +138,77 @@ export function modeTone(mode?: string | null): Tone {
   }
 }
 
+const BTN_BASE =
+  'inline-flex items-center justify-center gap-2 rounded-xl font-geist font-semibold ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50'
+
+const BTN_VARIANT = {
+  primary: 'bg-brand text-brand-ink shadow-glow hover:bg-brand-soft',
+  secondary:
+    'border border-border bg-background-elevated text-muted hover:border-brand-soft hover:text-primary',
+  ghost: 'text-muted hover:bg-background-elevated hover:text-primary',
+  positive: 'bg-positive text-primaryAccent hover:opacity-90',
+  danger: 'bg-destructive text-primary hover:opacity-90'
+} as const
+
+const BTN_SIZE = {
+  sm: 'min-h-9 px-3 text-xs',
+  md: 'min-h-11 px-4 text-sm',
+  lg: 'min-h-12 px-6 text-sm'
+} as const
+
+export type BtnVariant = keyof typeof BTN_VARIANT
+export type BtnSize = keyof typeof BTN_SIZE
+
+export function Btn({
+  variant = 'primary',
+  size = 'md',
+  className,
+  type = 'button',
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: BtnVariant
+  size?: BtnSize
+}) {
+  return (
+    <button
+      type={type}
+      className={cn(BTN_BASE, BTN_VARIANT[variant], BTN_SIZE[size], className)}
+      {...props}
+    />
+  )
+}
+
+export function Chip({
+  active,
+  children,
+  className,
+  type = 'button',
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+  return (
+    <button
+      type={type}
+      aria-pressed={active}
+      className={cn(
+        'inline-flex min-h-11 items-center rounded-full px-4 font-geist text-sm font-medium ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        active
+          ? 'bg-brand text-brand-ink shadow-glow'
+          : 'bg-background-elevated text-muted hover:text-primary',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  )
+}
+
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-dashed border-border bg-background-elevated/60 px-4 py-14 text-center text-sm leading-relaxed text-muted">
+    <div
+      role="status"
+      className="rounded-xl border border-dashed border-border bg-background-elevated/60 px-6 py-16 text-center type-muted"
+    >
       {children}
     </div>
   )
@@ -146,7 +216,10 @@ export function EmptyState({ children }: { children: ReactNode }) {
 
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-destructive">
+    <div
+      role="alert"
+      className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+    >
       {children}
     </div>
   )
@@ -155,14 +228,16 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 export function Field({
   label,
   hint,
-  children
+  children,
+  htmlFor
 }: {
   label: string
   hint?: string
   children: ReactNode
+  htmlFor?: string
 }) {
   return (
-    <label className="block space-y-1.5">
+    <label className="block space-y-2" htmlFor={htmlFor}>
       <span className="font-geist text-sm font-medium text-primary">{label}</span>
       {children}
       {hint && <span className="block text-xs leading-relaxed text-muted">{hint}</span>}
@@ -171,7 +246,27 @@ export function Field({
 }
 
 export const inputClass =
-  'w-full rounded-xl border border-border bg-white px-3.5 py-2.5 font-geist text-sm text-primary outline-none transition placeholder:text-muted/55 focus:border-brand-deep focus:shadow-glow'
+  'w-full min-h-11 rounded-xl border border-border bg-background-elevated px-3.5 py-2.5 font-geist text-sm text-primary outline-none ui-transition placeholder:text-muted/55 focus:border-brand-soft focus:shadow-glow disabled:opacity-50'
+
+export function LoadingBlock({ rows = 3, className }: { rows?: number; className?: string }) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label="Loading"
+      className={cn('space-y-3', className)}
+    >
+      {Array.from({ length: rows }).map((_, index) => (
+        <div
+          key={index}
+          className="h-12 animate-pulse rounded-xl bg-background-elevated"
+          style={{ opacity: 1 - index * 0.12 }}
+        />
+      ))}
+      <span className="sr-only">Loading…</span>
+    </div>
+  )
+}
 
 export function DataTable<T>({
   rows,
@@ -186,14 +281,15 @@ export function DataTable<T>({
 }) {
   if (rows.length === 0) return <EmptyState>{empty}</EmptyState>
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-white shadow-panel">
+    <div className="overflow-x-auto rounded-xl border border-border bg-background-secondary shadow-panel">
       <table className="w-full min-w-[640px] border-collapse text-left">
         <thead>
           <tr className="border-b border-border bg-background-elevated">
             {columns.map((column) => (
               <th
                 key={column.key}
-                className="px-3.5 py-3 font-geist text-[11px] font-semibold uppercase tracking-wider text-muted"
+                scope="col"
+                className="px-4 py-3 type-caption text-left"
               >
                 {column.header}
               </th>
@@ -205,15 +301,27 @@ export function DataTable<T>({
             <tr
               key={index}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
+              onKeyDown={
+                onRowClick
+                  ? (event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onRowClick(row)
+                      }
+                    }
+                  : undefined
+              }
+              tabIndex={onRowClick ? 0 : undefined}
               className={cn(
-                'border-b border-border/50 align-top transition last:border-0',
-                onRowClick && 'cursor-pointer hover:bg-background-wash/50'
+                'border-b border-border/50 align-top ui-transition last:border-0',
+                onRowClick &&
+                  'cursor-pointer hover:bg-background-wash/50 focus-visible:bg-background-wash/50 focus-visible:outline-none'
               )}
             >
               {columns.map((column) => (
                 <td
                   key={column.key}
-                  className={cn('px-3.5 py-3 text-sm text-primary', column.className)}
+                  className={cn('px-4 py-3.5 text-sm text-primary', column.className)}
                 >
                   {column.render(row)}
                 </td>

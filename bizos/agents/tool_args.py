@@ -312,6 +312,21 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         ["title"],
     ),
     "finance_lookup_policy": _obj({"query": _s("Policy search")}),
+    "finance_list_pending_billables": _obj(
+        {
+            "customer": _s("Customer / company name"),
+            "company": _s("Alias for customer"),
+            "limit": _i("Max rows"),
+        }
+    ),
+    "finance_draft_invoice": _obj(
+        {
+            "customer": _s("Customer / company name"),
+            "company": _s("Alias for customer"),
+            "limit": _i("Max line items"),
+        },
+        ["customer"],
+    ),
     "finance_propose_adjustment": _obj(
         {
             "customer": _s("Customer name"),
@@ -320,6 +335,23 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "kind": _s("adjustment|payment|credit"),
         },
         ["customer", "amount", "reason"],
+    ),
+    "hr_match_candidate": _obj(
+        {
+            "candidate_name": _s("Candidate name, e.g. Jordan Lee"),
+            "opening": _s("Job opening / role name, e.g. Operations Coordinator"),
+            "opening_key": _s("Job opening memory key, if known"),
+            "resume_key": _s("Resume memory key, if known"),
+            "resume_text": _s("Raw resume text if not already in memory"),
+        }
+    ),
+    "approvals_list_pending": _obj({}),
+    "finance_list_invoices": _obj(
+        {
+            "customer": _s("Customer / company name"),
+            "company": _s("Alias for customer"),
+            "limit": _i("Max rows"),
+        }
     ),
     "brand_get_voice": _obj({"query": _s("Optional search")}),
     "legal_find_clause": _obj({"query": _s("Clause search")}, ["query"]),

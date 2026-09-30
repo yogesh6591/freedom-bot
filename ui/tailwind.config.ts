@@ -2,9 +2,9 @@ import type { Config } from 'tailwindcss'
 import tailwindcssAnimate from 'tailwindcss-animate'
 
 /**
- * FreedomBot v2 — light product theme.
- * White surfaces + bold yellow accent. Intentionally different from the prior
- * dark charcoal / copper console look.
+ * FreedomBot — JeanneCAIO client-facing command center.
+ * Dark / black surfaces + bright purple–blue brand accents.
+ * Visual only; product behavior is unchanged.
  */
 export default {
   darkMode: ['class'],
@@ -16,27 +16,27 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#14120B',
-        primaryAccent: '#FFFFFF',
+        primary: '#F4F2FF',
+        primaryAccent: '#0A0A12',
         brand: {
-          DEFAULT: '#F5C400',
-          soft: '#FFE566',
-          deep: '#C9A000',
-          ink: '#1A1500'
+          DEFAULT: '#8B5CF6',
+          soft: '#A78BFA',
+          deep: '#6366F1',
+          ink: '#F8F7FF'
         },
         background: {
-          DEFAULT: '#FFFDF7',
-          secondary: '#FFFFFF',
-          elevated: '#FFF8E1',
-          wash: '#FFF3C4'
+          DEFAULT: '#07070F',
+          secondary: '#10101C',
+          elevated: '#171728',
+          wash: '#1C1834'
         },
-        secondary: '#3D3A32',
+        secondary: '#C9C5DE',
         border: 'rgba(var(--color-border-default))',
-        accent: '#FFF8E1',
-        muted: '#6B6558',
-        destructive: '#D94848',
-        positive: '#1B8A5A',
-        info: '#1F6F8B'
+        accent: '#1C1834',
+        muted: '#8E89A8',
+        destructive: '#F87171',
+        positive: '#34D399',
+        info: '#38BDF8'
       },
       fontFamily: {
         geist: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
@@ -44,18 +44,44 @@ export default {
       },
       borderRadius: {
         xl: '16px',
-        lg: '12px'
+        lg: '12px',
+        md: '10px',
+        sm: '8px'
+      },
+      spacing: {
+        4.5: '1.125rem',
+        13: '3.25rem',
+        15: '3.75rem',
+        18: '4.5rem'
+      },
+      fontSize: {
+        caption: ['0.6875rem', { lineHeight: '1rem', letterSpacing: '0.04em' }],
+        body: ['0.875rem', { lineHeight: '1.45rem' }],
+        'body-lg': ['1rem', { lineHeight: '1.6rem' }],
+        subtitle: ['1.125rem', { lineHeight: '1.5rem', letterSpacing: '-0.01em' }],
+        title: ['1.25rem', { lineHeight: '1.6rem', letterSpacing: '-0.02em' }],
+        display: ['2.25rem', { lineHeight: '1.15', letterSpacing: '-0.02em' }]
+      },
+      maxWidth: {
+        prose: '70ch',
+        measure: '42rem'
+      },
+      transitionDuration: {
+        fast: '150ms',
+        base: '200ms',
+        slow: '250ms'
       },
       boxShadow: {
-        panel: '0 1px 2px rgba(20, 18, 11, 0.04), 0 8px 24px rgba(20, 18, 11, 0.06)',
-        glow: '0 0 0 3px rgba(245, 196, 0, 0.35)',
-        lift: '0 12px 40px rgba(20, 18, 11, 0.1)'
+        panel:
+          '0 0 0 1px rgba(139, 92, 246, 0.12), 0 8px 32px rgba(0, 0, 0, 0.45)',
+        glow: '0 0 0 2px rgba(139, 92, 246, 0.45), 0 0 24px rgba(99, 102, 241, 0.35)',
+        lift: '0 16px 48px rgba(0, 0, 0, 0.55), 0 0 40px rgba(99, 102, 241, 0.15)'
       },
       backgroundImage: {
         'app-atmosphere':
-          'radial-gradient(900px 420px at 0% 0%, rgba(245, 196, 0, 0.18), transparent 55%), radial-gradient(700px 380px at 100% 0%, rgba(255, 243, 196, 0.9), transparent 50%), linear-gradient(180deg, #FFFDF7 0%, #FFFFFF 40%, #FFFDF7 100%)',
+          'radial-gradient(900px 480px at 0% -10%, rgba(139, 92, 246, 0.28), transparent 55%), radial-gradient(700px 420px at 100% 0%, rgba(56, 189, 248, 0.14), transparent 50%), radial-gradient(600px 400px at 50% 120%, rgba(99, 102, 241, 0.12), transparent 55%), linear-gradient(180deg, #07070F 0%, #0A0A14 45%, #07070F 100%)',
         'login-atmosphere':
-          'radial-gradient(800px 500px at 15% 20%, rgba(245, 196, 0, 0.45), transparent 55%), radial-gradient(600px 400px at 90% 80%, rgba(255, 229, 102, 0.35), transparent 50%), linear-gradient(160deg, #FFFFFF 0%, #FFF8E1 55%, #FFF3C4 100%)'
+          'radial-gradient(900px 560px at 10% 15%, rgba(139, 92, 246, 0.4), transparent 55%), radial-gradient(700px 480px at 95% 85%, rgba(56, 189, 248, 0.22), transparent 50%), linear-gradient(165deg, #05050C 0%, #0E0A1C 50%, #070712 100%)'
       },
       keyframes: {
         'fade-up': {

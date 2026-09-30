@@ -6,12 +6,37 @@
 
 | Role | Email |
 |------|--------|
-| Operator | `operator@acme.example.com` |
+| Operator (legacy finance) | `operator@acme.example.com` |
 | Approver | `approver@acme.example.com` |
 | Admin | `admin@acme.example.com` |
 | Viewer | `viewer@acme.example.com` |
+| **Fiona Finance** | `finance@acme.example.com` — scope: finance |
+| **Oscar Ops** | `ops@acme.example.com` — scope: ops |
+| **Hannah HR** | `hr@acme.example.com` — scopes: hr, salary |
+| **Eddie Employee** | `employee@acme.example.com` — no restricted scopes |
+| **Lara Lead** | `lead@acme.example.com` — scope: ops |
+| **Elena Exec** | `exec@acme.example.com` — scopes: exec, finance, legal, hr, ops |
 
-Stack must be up (`docker compose up -d`). If Chat answers look wrong after a code change, rebuild: `docker compose up -d --build api ui`.
+Stack must be up (`docker compose up -d`). After pulling these people/scopes, re-seed: `docker compose exec api python -m scripts.bootstrap --demo`. If Chat answers look wrong after a code change, rebuild: `docker compose up -d --build api ui`.
+
+---
+
+## Department demo (Dhanu) — buckets + real scenarios
+
+**Use only these logins** (password `bizos-dev-password`). Do **not** use `operator@`, `approver@`, `viewer@`, or `drafter@` here — they duplicate Fiona/Elena/Eddie/Lara.
+
+| Login as | Ask in Chat | Expect |
+|----------|-------------|--------|
+| `finance@acme.example.com` (Fiona) | What is our discount policy? | Sees **15%** (finance). Badge may say OPERATOR = permission, not ops dept. |
+| `ops@acme.example.com` (Oscar) | What is our discount policy? | Does **not** see finance |
+| `ops@…` | How do we run monthly payroll from attendance? | **Monthly payroll** SOP |
+| `hr@…` | Does Jordan Lee fit the Ops Coordinator opening? | Match assist; human decides |
+| `finance@…` | List pending billables / draft invoice for Acme Logistics | Lines + draft → Approvals |
+| `ops@…` | List pending billables for Acme Logistics | **Blocked** |
+| `employee@…` | Full Acme Logistics master agreement? | **No** (legal); scope of work OK |
+| `exec@…` (Elena only) | Board Q3? / Approve Fiona’s invoice | Board plan; Approvals |
+
+Admin → Users: toggle **ops / finance / hr…** on Eddie to show configure-without-code.
 
 ---
 

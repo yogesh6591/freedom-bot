@@ -7,7 +7,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.api.deps import bound, client_settings, current_context, require_drafter
+from app.api.deps import bound, client_settings, current_context, require_approver, require_drafter
 from bizos.control.models import ClientSettings
 from bizos.memory import store as memory
 from bizos.tenancy.context import TenantContext
@@ -31,6 +31,10 @@ class MemoryWrite(BaseModel):
     access_area: Optional[str] = None
     #: FB-036 policy topic; two differing values on one topic are a conflict.
     topic: Optional[str] = None
+
+
+class MemoryArchive(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class MemoryCorrection(BaseModel):
@@ -164,3 +168,23 @@ def approve_version(
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/{item_id}/archive")
+def archive_memory(
+    item_id: str, body: MemoryArchive, ctx: TenantContext = Depends(require_approver)
+) -> dict[str, Any]:
+    """Remove an item from use. Its history is kept for audit; nothing is erased.
+
+    Approver or Admin only: removing a recorded policy changes what the
+    assistant tells everyone in the workspace.
+    """
+    with bound(ctx):
+        try:
+            return memory.archive(item_id, reason=body.reason, ctx=ctx).to_dict(include_versions=True)
+        except memory.MemoryNotFound as exc:
+            raise HTTPException(status_code=404, detail="Memory item not found or already removed") from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc

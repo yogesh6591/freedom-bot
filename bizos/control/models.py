@@ -120,6 +120,8 @@ class ClientSettings:
     risk_policy: RiskPolicy = field(default_factory=RiskPolicy)
     #: Post-sale configuration snapshot (FB-044).
     onboarding: dict = field(default_factory=dict)
+    #: Custom resale price rules / face quote (FB-048). Not a public price list.
+    resale_pricing: dict = field(default_factory=dict)
     #: Domains the client has paid for (FB-035). A domain outside this list can
     #: be enabled only through a recorded change order.
     purchased_domains: list[str] = field(default_factory=lambda: list(DEFAULT_ENABLED_DOMAINS))

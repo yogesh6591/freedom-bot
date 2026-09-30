@@ -94,7 +94,7 @@ def seed_memory(ctx: TenantContext, config: dict[str, Any], settings: ClientSett
         for entry in config.get("seed_memory") or []:
             category = MemoryCategory.parse(entry.get("category"), MemoryCategory.FACT)
             key = str(entry.get("key") or "").strip()
-            if not key or memory.get_by_key(category, key, ctx=ctx) is not None:  # type: ignore[arg-type]
+            if not key or memory.get_by_key(category, key, ctx=ctx, include_archived=True) is not None:  # type: ignore[arg-type]
                 continue
             memory.put(
                 category=category,  # type: ignore[arg-type]

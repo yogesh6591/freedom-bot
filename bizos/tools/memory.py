@@ -9,7 +9,7 @@ has approved is never returned as an established fact (§3).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Optional
 
 from bizos.connectors.base import ConnectorResult
 from bizos.memory import store as memory_store
@@ -64,6 +64,14 @@ def memory_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
         if any(entry["item_id"] in ids for entry in c["items"])
     ]
     summary = f"{len(items)} memory item(s) matched {args.get('query','')!r}"
+    if not items:
+        hidden = memory_store.restricted_areas_matching(str(args.get("query", "")), ctx=scope.ctx)
+        if hidden:
+            summary += (
+                f". Matching records exist in the restricted {', '.join(hidden)} area(s), which "
+                "this user cannot access. Tell them it is restricted; do not say it is missing "
+                "and do not offer to create it"
+            )
     if items:
         summary += (
             ". When you answer, write 'Fact:' before values labelled fact and "
@@ -89,6 +97,29 @@ def memory_get_fact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
         return ConnectorResult.failure("key is required — pass the fact key to look up.")
     item = memory_store.get_by_key(category, key, ctx=scope.ctx)  # type: ignore[arg-type]
     if item is None:
+        # The model often guesses a key ("salary_band_engineer_ii"); search the
+        # words of it before concluding nothing is recorded.
+        phrase = key.replace("_", " ").replace("-", " ")
+        hits = memory_store.search(phrase, limit=5, ctx=scope.ctx)
+        if hits:
+            return ConnectorResult(
+                ok=True,
+                data=[_render(i) for i in hits],
+                summary=(
+                    f"no item under key {key!r}, but {len(hits)} related item(s) matched; answer "
+                    "from the one that fits, prefixed with its label (Fact:/Estimate:)"
+                ),
+            )
+        hidden = memory_store.restricted_areas_matching(phrase, ctx=scope.ctx)
+        if hidden:
+            return ConnectorResult(
+                ok=True,
+                data=None,
+                summary=(
+                    f"a matching record exists in the restricted {', '.join(hidden)} area(s), which "
+                    "this user cannot access. Tell them it is restricted; do not say it is missing."
+                ),
+            )
         return ConnectorResult(ok=True, data=None, summary=f"no {category} recorded for that key")
     value = item.current.content if item.current else ""
     return ConnectorResult(
@@ -129,6 +160,38 @@ def _normalize_write_args(args: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+#: The restricted area a department domain's writes belong to.
+_DOMAIN_AREAS = {"operations": "ops", "finance": "finance", "legal": "legal"}
+
+
+def _write_area(scope: RunScope, args: dict[str, Any], title: str, content: str) -> Optional[str]:
+    """The access area a new memory item must carry.
+
+    Content derived from a restricted record (a checklist made from the ops
+    payroll SOP) stays in that record's area; otherwise a department domain's
+    write lands in that department. Without this, a restricted SOP rewritten
+    as a "team checklist" would become visible to everyone.
+    """
+    ctx = scope.ctx
+    requested = str(args.get("access_area") or "").strip() or None
+    if requested and ctx.can_see_area(requested):
+        return requested
+    text_ = f"{title}\n{content}"
+    sources = [
+        i for i in memory_store.search(text_[:400], authoritative_only=False, limit=10, ctx=ctx)
+        if i.access_area
+    ]
+    for item in sources:
+        body = item.current.content if item.current else ""
+        overlap = memory_store.word_hits(f"{item.title} {item.memory_key} {body}", text_[:400])
+        if len(overlap) >= 3:
+            return item.access_area
+    area = _DOMAIN_AREAS.get(scope.domain)
+    if area and ctx.can_see_area(area) and not ctx.is_admin:
+        return area
+    return None
+
+
 def _put(scope: RunScope, args: dict[str, Any], category: MemoryCategory) -> ConnectorResult:
     args = _normalize_write_args(args)
     title = str(args.get("title") or "").strip()
@@ -158,7 +221,7 @@ def _put(scope: RunScope, args: dict[str, Any], category: MemoryCategory) -> Con
         domain=args.get("domain") or scope.domain,
         tags=list(args.get("tags") or []),
         attributes=attributes,
-        access_area=args.get("access_area"),
+        access_area=_write_area(scope, args, title, content),
         source_type=source,  # type: ignore[arg-type]
         source_id=args.get("source_id"),
         confidence=float(args.get("confidence", 1.0)),

@@ -34,6 +34,7 @@ CATEGORY_STRATEGY = "strategy"
 CATEGORY_FINANCE = "finance"
 CATEGORY_BRAND = "brand"
 CATEGORY_LEGAL = "legal"
+CATEGORY_HR = "hr"
 CATEGORY_N8N = "n8n"
 
 
@@ -192,6 +193,16 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         CATEGORY_MEMORY,
         _ALL,
         tags=frozenset({"read", "memory"}),
+    ),
+    _spec(
+        "approvals_list_pending",
+        "List pending approvals",
+        "List actions waiting in the approval queue: what each one is, who requested it and, "
+        "for invoices, the amount (only when the caller has Finance access). Read only — "
+        "approving happens on the Approvals page.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        tags=frozenset({"read", "approvals"}),
     ),
     _spec(
         "memory_add_fact",
@@ -538,7 +549,43 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         "Look up recorded finance policies (pricing, refunds, payment terms). Not advice.",
         CATEGORY_FINANCE,
         ("finance", "general"),
+        data_area="finance",
         tags=frozenset({"read", "finance", "memory"}),
+    ),
+    _spec(
+        "finance_list_pending_billables",
+        "List pending billables",
+        "List CRM deals waiting to be invoiced for a customer (e.g. Acme Logistics).",
+        CATEGORY_FINANCE,
+        ("finance", "operations", "general"),
+        data_area="finance",
+        integration="crm",
+        tags=frozenset({"read", "finance", "crm", "invoice"}),
+    ),
+    _spec(
+        "finance_list_invoices",
+        "List invoices",
+        "List invoices, including drafts awaiting sending, for a customer from the accounting ledger.",
+        CATEGORY_FINANCE,
+        ("finance", "operations", "general"),
+        data_area="finance",
+        tags=frozenset({"read", "finance", "invoice"}),
+    ),
+    _spec(
+        "finance_draft_invoice",
+        "Draft an invoice from pending billables",
+        "Create a draft invoice from pending_invoice CRM deals. Requires finance access and approval.",
+        CATEGORY_FINANCE,
+        ("finance",),
+        write=True,
+        risk=RiskLevel.HIGH,
+        classification=DataClassification.CONFIDENTIAL,
+        permissions=matrix.WRITE_PROTECTED,
+        always_requires_approval=True,
+        data_area="finance",
+        view_min_role=Role.DRAFTER,
+        integration="crm",
+        tags=frozenset({"write", "finance", "invoice"}),
     ),
     _spec(
         "finance_propose_adjustment",
@@ -557,6 +604,18 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         data_area="finance",
         view_min_role=Role.DRAFTER,
         tags=frozenset({"write", "finance", "licensed"}),
+    ),
+    # ------------------------------------------------------------------ hr
+    _spec(
+        "hr_match_candidate",
+        "Match a resume to a job opening",
+        "Compare a candidate's resume against a job opening. Candidates, resumes and job "
+        "openings live in HR memory — NOT in the CRM — so use this for any 'does <candidate> "
+        "fit <role>' question. Assistive only — not a hiring decision.",
+        CATEGORY_HR,
+        ("intake", "operations", "general"),
+        data_area="hr",
+        tags=frozenset({"read", "hr", "hiring"}),
     ),
     # --------------------------------------------------------------- brand
     _spec(

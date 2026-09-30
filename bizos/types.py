@@ -289,6 +289,7 @@ class AuditEventType(StrEnum):
     KNOWLEDGE_LOOKUP = "KNOWLEDGE_LOOKUP"
     MEMORY_CREATED = "MEMORY_CREATED"
     MEMORY_CORRECTED = "MEMORY_CORRECTED"
+    MEMORY_ARCHIVED = "MEMORY_ARCHIVED"
     MEMORY_READ = "MEMORY_READ"
     TOOL_CALL = "TOOL_CALL"
     ACTION_PROPOSED = "ACTION_PROPOSED"
@@ -315,7 +316,8 @@ class AuditEventType(StrEnum):
 
 #: Restricted data areas (FB-037). Content tagged with one of these is returned
 #: only to users whose data scopes include it; untagged content is general.
-DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal")
+#: ``ops`` is the operations/department bucket (distinct from finance and HR).
+DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal", "ops")
 
 
 __all__ = [

@@ -24,6 +24,7 @@ outranks something a person stated.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Optional, Sequence
 
 from sqlalchemy import text
@@ -123,6 +124,77 @@ def _area_filter(tenant: Optional[TenantContext], alias: str = "i") -> tuple[str
 def _visible(tenant: Optional[TenantContext], row: Any) -> bool:
     area = getattr(row, "access_area", None)
     return not area or (tenant is not None and tenant.can_see_area(area))
+
+
+# One record can mix open and restricted parts: a section wrapped in
+# ``[[area:finance]] … [[/area]]`` is shown only to people who can see that area.
+_SECTION = re.compile(r"\[\[area:\s*([a-z_]+)\s*\]\](.*?)\[\[/area\]\]", re.S | re.I)
+_SECTION_TITLES = {
+    "finance": "Finance",
+    "ops": "Operations",
+    "hr": "HR",
+    "salary": "Salary / compensation",
+    "legal": "Legal",
+    "exec": "Executive / board",
+}
+
+
+def _can_see(tenant: Optional[TenantContext], area: str) -> bool:
+    return tenant is not None and tenant.can_see_area(area.casefold())
+
+
+def hidden_sections(content: str, tenant: Optional[TenantContext]) -> list[tuple[str, str]]:
+    """``(area, section text)`` for every section of ``content`` the caller cannot see."""
+    return [
+        (m.group(1).casefold(), m.group(2))
+        for m in _SECTION.finditer(content or "")
+        if not _can_see(tenant, m.group(1))
+    ]
+
+
+def redact_sections(content: str, tenant: Optional[TenantContext]) -> str:
+    """``content`` with restricted sections replaced by a notice naming the area."""
+    if not content or "[[area:" not in content.casefold():
+        return content
+
+    # Readers who may see a section keep its markers, so an edit made from what
+    # they read still carries the restriction.
+    def replace(m: "re.Match[str]") -> str:
+        area = m.group(1).casefold()
+        if _can_see(tenant, area):
+            return m.group(0)
+        title = _SECTION_TITLES.get(area, area)
+        return f"[Section restricted to the {title} area — not shown for your access]"
+
+    return _SECTION.sub(replace, content)
+
+
+def _check_section_write(
+    tenant: TenantContext, new_content: str, current_content: Optional[str]
+) -> None:
+    """Nobody may overwrite (and so silently drop) a section they cannot see, or
+    create a section for an area they cannot see."""
+    if current_content and hidden_sections(current_content, tenant):
+        raise PermissionError("not permitted to change a record with restricted sections")
+    for area, _ in hidden_sections(new_content, tenant):
+        raise PermissionError(f"not permitted to write {area} content")
+
+
+def _redact_version(version: Optional[MemoryVersion], tenant: Optional[TenantContext]) -> None:
+    if version is None:
+        return
+    version.content = redact_sections(version.content, tenant)
+    previous = version.attributes.get("previous_value") if version.attributes else None
+    if isinstance(previous, str):
+        version.attributes["previous_value"] = redact_sections(previous, tenant)
+
+
+def _redacted(item: MemoryItem, tenant: Optional[TenantContext]) -> MemoryItem:
+    _redact_version(item.current, tenant)
+    for version in item.versions or []:
+        if version is not item.current:
+            _redact_version(version, tenant)
+    return item
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +337,8 @@ def put(
         ).first()
         if existing is not None and not _visible(tenant, existing):
             raise PermissionError("not permitted to change this restricted item")
+        current_row = _current_version_row(conn, existing.id) if existing is not None else None
+        _check_section_write(tenant, str(content), current_row.content if current_row else None)
 
         topic = str(attributes.get("topic") or "").strip()
         if topic:
@@ -302,7 +376,15 @@ def put(
         else:
             item_id = existing.id
             current = _current_version_row(conn, item_id)
-            version_no = (current.version_no + 1) if current else 1
+            # An archived item has no ACTIVE version; number after the highest
+            # version ever written so re-adding it never collides.
+            version_no = int(
+                conn.execute(
+                    text("SELECT COALESCE(MAX(version_no), 0) FROM memory_versions WHERE item_id = :i"),
+                    {"i": item_id},
+                ).scalar()
+                or 0
+            ) + 1
             supersedes = current.id if current else None
             if current is not None:
                 _close_version(conn, current.id, now, superseded_by=None, actor=tenant.user_id)
@@ -395,6 +477,7 @@ def correct(
         current = _current_version_row(conn, item_id)
         if current is None:
             raise MemoryConflict(f"{item_id} has no active version to correct")
+        _check_section_write(tenant, str(new_content), current.content)
 
         previous_value = current.content
         _close_version(conn, current.id, now, superseded_by=None, actor=tenant.user_id)
@@ -492,6 +575,48 @@ def approve_version(version_id: str, *, ctx: Optional[TenantContext] = None) -> 
     return _version_from_row(row)
 
 
+def archive(item_id: str, *, reason: str, ctx: Optional[TenantContext] = None) -> MemoryItem:
+    """Retire an item: its active version becomes ARCHIVED and stops being used.
+
+    Nothing is deleted. The version history stays readable for audit, but an
+    archived item no longer appears in lists, search, conflicts or answers.
+    Recording the same key again later starts a fresh active version.
+    """
+    tenant = ctx or current_context()
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValueError("A reason is required to remove a memory item")
+    now = utcnow()
+    with workspace_connection(tenant) as conn:
+        row = conn.execute(text("SELECT * FROM memory_items WHERE id = :i"), {"i": item_id}).first()
+        if row is None or not _visible(tenant, row):
+            raise MemoryNotFound(item_id)
+        current = _current_version_row(conn, item_id)
+        if current is None:
+            raise MemoryNotFound(item_id)
+        if hidden_sections(current.content, tenant):
+            # Part of the value is in an area this caller cannot see.
+            raise PermissionError("not permitted to remove an item with restricted sections")
+        conn.execute(
+            text(
+                "UPDATE memory_versions SET status = 'ARCHIVED', effective_until = :t, "
+                "correction_reason = :r, corrected_by = :u, corrected_at = :t, "
+                "updated_by = :u, updated_at = NOW() WHERE id = :v"
+            ),
+            {"t": now, "r": reason[:500], "u": tenant.user_id, "v": current.id},
+        )
+        conn.execute(text("UPDATE memory_items SET updated_at = NOW() WHERE id = :i"), {"i": item_id})
+    _audit(
+        AuditEventType.MEMORY_ARCHIVED,
+        tenant,
+        item_id=item_id,
+        category=row.category,
+        key=row.memory_key,
+        reason=reason[:500],
+    )
+    return history(item_id, ctx=tenant)
+
+
 def _current_version_row(conn: Any, item_id: str) -> Any:
     return conn.execute(
         text("SELECT * FROM memory_versions WHERE item_id = :i AND status = 'ACTIVE'"),
@@ -523,12 +648,18 @@ def get_item(item_id: str, *, ctx: Optional[TenantContext] = None) -> MemoryItem
         if row is None or not _visible(tenant, row):
             raise MemoryNotFound(item_id)
         current = _current_version_row(conn, item_id)
-    return _item_from_row(row, _version_from_row(current) if current else None)
+    return _redacted(_item_from_row(row, _version_from_row(current) if current else None), tenant)
 
 
 def get_by_key(
-    category: MemoryCategory, memory_key: str, *, ctx: Optional[TenantContext] = None
+    category: MemoryCategory,
+    memory_key: str,
+    *,
+    ctx: Optional[TenantContext] = None,
+    include_archived: bool = False,
 ) -> Optional[MemoryItem]:
+    """The item under ``memory_key``. An archived item reads as absent unless
+    ``include_archived`` (seeding uses it so a removed item is not recreated)."""
     tenant = ctx or current_context()
     with workspace_connection(tenant, readonly=True) as conn:
         row = conn.execute(
@@ -538,7 +669,9 @@ def get_by_key(
         if row is None or not _visible(tenant, row):
             return None
         current = _current_version_row(conn, row.id)
-    return _item_from_row(row, _version_from_row(current) if current else None)
+    if current is None and not include_archived:
+        return None
+    return _redacted(_item_from_row(row, _version_from_row(current) if current else None), tenant)
 
 
 def history(item_id: str, *, ctx: Optional[TenantContext] = None) -> MemoryItem:
@@ -555,7 +688,7 @@ def history(item_id: str, *, ctx: Optional[TenantContext] = None) -> MemoryItem:
     parsed = [_version_from_row(v) for v in versions]
     item = _item_from_row(row, next((v for v in parsed if v.is_active), None))
     item.versions = parsed
-    return item
+    return _redacted(item, tenant)
 
 
 def list_items(
@@ -598,7 +731,7 @@ def list_items(
             version = conn.execute(
                 text("SELECT * FROM memory_versions WHERE id = :i"), {"i": row.v_id}
             ).first()
-            out.append(_item_from_row(row, _version_from_row(version)))
+            out.append(_redacted(_item_from_row(row, _version_from_row(version)), tenant))
     return out
 
 
@@ -636,13 +769,15 @@ def search(
     # The whole phrase, or any meaningful word in it: "Q3 goals and priorities"
     # must find a fact titled "Goal 1". Words also match tags.
     word_clauses = ["i.title ILIKE :q", "i.memory_key ILIKE :q", "v.content ILIKE :q", ":q = '%%'"]
+    hit_terms: list[str] = []
     for n, word in enumerate(_search_words(query)):
-        params[f"w{n}"] = f"%{word}%"
-        word_clauses.append(
-            f"(i.title ILIKE :w{n} OR i.memory_key ILIKE :w{n} OR v.content ILIKE :w{n} "
-            f"OR array_to_string(i.tags, ' ') ILIKE :w{n})"
-        )
+        match = _word_match_sql(n, word, params)
+        word_clauses.append(match)
+        hit_terms.append(f"(CASE WHEN {match} THEN 1 ELSE 0 END)")
     clauses.append(f"({' OR '.join(word_clauses)})")
+    # More of the question's words matched ranks higher, so "salary band engineer"
+    # prefers the salary item over one that merely mentions an engineer.
+    word_rank = f"({' + '.join(hit_terms)}) DESC, " if hit_terms else ""
     area_sql, area_params = _area_filter(tenant)
     clauses.append(area_sql)
     params.update(area_params)
@@ -663,7 +798,8 @@ def search(
                 f"WHERE {' AND '.join(clauses)} "
                 "ORDER BY (CASE WHEN v.approval_status = 'APPROVED' THEN 0 ELSE 1 END), "
                 "(CASE WHEN i.memory_key ILIKE :q THEN 0 WHEN i.title ILIKE :q THEN 1 "
-                f"ELSE 2 END), ({trust} * v.confidence) DESC, i.updated_at DESC LIMIT :limit"
+                f"ELSE 2 END), {word_rank}({trust} * v.confidence) DESC, "
+                "i.updated_at DESC LIMIT :limit"
             ),
             params,
         ).fetchall()
@@ -672,16 +808,166 @@ def search(
             version = conn.execute(
                 text("SELECT * FROM memory_versions WHERE id = :i"), {"i": row.v_id}
             ).first()
-            out.append(_item_from_row(row, _version_from_row(version)))
+            out.append(_redacted(_item_from_row(row, _version_from_row(version)), tenant))
     if out and tenant is not None:
         _audit(AuditEventType.MEMORY_READ, tenant, query=query, hits=len(out))
     return out
 
 
+def restricted_areas_matching(query: str, *, ctx: Optional[TenantContext] = None) -> list[str]:
+    """Restricted areas holding approved items that match ``query`` but that the
+    caller cannot see.
+
+    Returns area names only — never a title, key or value — so the assistant can
+    say "that is in the finance area, which you don't have access to" instead of
+    implying the information does not exist.
+    """
+    return sorted(restricted_area_hits(query, ctx=ctx))
+
+
+def restricted_area_hits(
+    query: str,
+    *,
+    ctx: Optional[TenantContext] = None,
+    common: Optional[set[str]] = None,
+) -> dict[str, list[str]]:
+    """``{area: [the user's own words that matched there]}`` for restricted areas
+    the caller cannot see. Only the caller's words are returned, never content.
+
+    ``common`` are words that already match records the caller *can* see
+    ("draft", "approval"); like names, they count half and cannot flag an area
+    on their own.
+    """
+    tenant = ctx or current_context()
+    words = _search_words(query)
+    if not words or tenant is None:
+        return {}
+    entities = _entity_words(query) | set(common or ())
+    params: dict[str, Any] = {"visible_areas": sorted(tenant.visible_areas)}
+    matches = [_word_match_sql(n, w, params) for n, w in enumerate(words)]
+    with workspace_connection(tenant, readonly=True) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT i.access_area, i.title, i.memory_key, v.content, "
+                "array_to_string(i.tags, ' ') AS tags FROM memory_items i "
+                "JOIN memory_versions v ON v.item_id = i.id "
+                "WHERE v.status = 'ACTIVE' AND v.approval_status = 'APPROVED' "
+                "AND i.access_area IS NOT NULL "
+                "AND NOT (i.access_area = ANY(:visible_areas)) "
+                f"AND ({' OR '.join(matches)}) LIMIT 500"
+            ),
+            params,
+        ).fetchall()
+        area_sql, area_params = _area_filter(tenant)
+        mixed = conn.execute(
+            text(
+                "SELECT i.title, i.memory_key, v.content FROM memory_items i "
+                "JOIN memory_versions v ON v.item_id = i.id "
+                "WHERE v.status = 'ACTIVE' AND v.approval_status = 'APPROVED' "
+                f"AND v.content ILIKE '%%[[area:%%' AND {area_sql} LIMIT 200"
+            ),
+            area_params,
+        ).fetchall()
+    candidates = [
+        (r.access_area, " ".join(str(x or "") for x in (r.title, r.memory_key, r.content, r.tags)))
+        for r in rows
+    ]
+    # A hidden section counts by its own text only: the open part of the record
+    # is not what makes a question restricted.
+    candidates += [
+        (area, body)
+        for r in mixed
+        for area, body in hidden_sections(r.content, tenant)
+    ]
+    # Two matching words (or one, for a one-word question) keeps a stray common
+    # word from flagging an unrelated area; and a customer or person name alone
+    # ("Acme Logistics") is not what the question is about.
+    needed = 1.0 if len(words) == 1 else 2.0
+    out: dict[str, list[str]] = {}
+    for area, haystack in candidates:
+        hit = [w for w in words if _hits(w, haystack)]
+        weight = sum(0.5 if w in entities else 1.0 for w in hit)
+        if weight < needed or not [w for w in hit if w not in entities]:
+            continue
+        bucket = out.setdefault(area, [])
+        bucket.extend(w for w in hit if w not in bucket)
+    return out
+
+
+def word_hits(text_: str, query: str) -> list[str]:
+    """Which of the question's words (or their synonyms) appear in ``text_``."""
+    return [w for w in _search_words(query) if _hits(w, text_ or "")]
+
+
+def _hits(word: str, text_: str) -> bool:
+    """The word as a prefix anywhere ("payroll" in "payrolls"), or a synonym as a
+    whole word ("plan" but not inside "planning")."""
+    import re
+
+    haystack = text_.casefold().replace("_", " ")
+    if word in haystack:
+        return True
+    return any(re.search(rf"\b{re.escape(v)}s?\b", haystack) for v in _SYNONYMS.get(word, ()))
+
+
+#: Words people use for a topic that the record words differently. Kept small
+#: and business-generic; each variant counts as a hit for the original word.
+_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "staffing": ("staff", "hiring", "headcount"),
+    "headcount": ("hiring", "staff"),
+    "direction": ("plan", "decision"),
+    "responsibility": ("scope", "your part", "duty"),
+    "duty": ("scope", "your part"),
+    "compensation": ("salary",),
+    "termination": ("terminate",),
+    "payslip": ("payroll",),
+}
+
+
+def _variants(word: str) -> tuple[str, ...]:
+    return (word, *_SYNONYMS.get(word, ()))
+
+
+def _word_match_sql(n: int, word: str, params: dict[str, Any]) -> str:
+    """SQL matching one question word (or a synonym) anywhere in an item."""
+    parts = []
+    for m, variant in enumerate(_variants(word)):
+        key = f"w{n}_{m}"
+        params[key] = f"%{variant}%"
+        parts.append(
+            f"i.title ILIKE :{key} OR i.memory_key ILIKE :{key} OR v.content ILIKE :{key} "
+            f"OR array_to_string(i.tags, ' ') ILIKE :{key}"
+        )
+    return "(" + " OR ".join(parts) + ")"
+
+
+def _entity_words(query: str) -> set[str]:
+    """Normalized words that are capitalized mid-sentence — names of customers,
+    people and roles rather than the subject being asked about."""
+    import re
+
+    out: set[str] = set()
+    for m in re.finditer(r"[A-Za-z][A-Za-z0-9]*", query or ""):
+        token = m.group(0)
+        before = (query[: m.start()]).rstrip()
+        sentence_start = not before or before[-1] in ".?!:"
+        if token[0].isupper() and not sentence_start and token != "I":
+            out.add(_normalize(token.casefold()))
+    return out
+
+
+def _normalize(raw: str) -> str:
+    word = raw[:-3] + "y" if raw.endswith("ies") and len(raw) > 4 else raw
+    if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+        word = word[:-1]
+    return word
+
+
 _STOPWORDS = frozenset(
     "the and for are our what which who how when where why this that with from have has "
     "any all can you your about into does did was were will would should could there their "
-    "them they tell show give list me please".split()
+    "them they tell show give list me please also need want help its it's than then "
+    "answer one know just exactly remind get like thing things".split()
 )
 
 
@@ -693,14 +979,13 @@ def _search_words(query: str) -> list[str]:
         return []  # a single token such as a memory key is matched exactly
     words: list[str] = []
     for raw in re.findall(r"[a-z0-9]+", (query or "").casefold()):
-        if len(raw) < 3 or raw in _STOPWORDS:
+        # Quarters ("q3") are short but meaningful.
+        if (len(raw) < 3 and not re.fullmatch(r"q[1-4]", raw)) or raw in _STOPWORDS or raw.isdigit():
             continue
-        word = raw[:-3] + "y" if raw.endswith("ies") and len(raw) > 4 else raw
-        if word.endswith("s") and not word.endswith("ss") and len(word) > 3:
-            word = word[:-1]
+        word = _normalize(raw)
         if word not in words:
             words.append(word)
-    return words[:8]
+    return words[:10]
 
 
 def _audit(event_type: AuditEventType, tenant: TenantContext, **payload: Any) -> None:

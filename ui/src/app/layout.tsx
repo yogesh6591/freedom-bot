@@ -1,26 +1,19 @@
 import type { Metadata } from 'next'
-import { JetBrains_Mono, Space_Grotesk } from 'next/font/google'
 import { NuqsAdapter } from 'nuqs/adapters/next/app'
 import { Toaster } from '@/components/ui/sonner'
 import { SessionProvider } from '@/components/SessionProvider'
 import './globals.css'
 
-const ui = Space_Grotesk({
-  variable: '--font-ui',
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700']
-})
-
-const mono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-mono',
-  weight: ['400', '500']
-})
+/**
+ * Fonts load via CSS @import in globals.css (runtime), not next/font/google.
+ * Docker builds often cannot reach Google Fonts during `next build`, which
+ * made next/font throw "Cannot read properties of null".
+ */
 
 export const metadata: Metadata = {
   title: 'FreedomBot',
   description:
-    'Company AI workspace — memory, approvals, and policy-governed actions in one place.'
+    'One company AI — ask in chat. Routing, memory, and approvals stay behind the scenes.'
 }
 
 export default function RootLayout({
@@ -28,7 +21,17 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body className={`${ui.variable} ${mono.variable} font-geist antialiased`}>
+      <head>
+        {/* Runtime Google Fonts — avoids next/font fetch during Docker `next build`. */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body className="font-geist antialiased">
         <NuqsAdapter>
           <SessionProvider>{children}</SessionProvider>
         </NuqsAdapter>

@@ -51,6 +51,10 @@ EFFECTS: dict[str, Callable[["RunScope", dict[str, Any]], ConnectorResult]] = {}
 #: recipients, fields and amounts *before* anything is written.
 RISK_INPUTS: dict[str, Callable[["RunScope", dict[str, Any]], dict[str, Any]]] = {}
 
+#: name -> precondition. Returns a reason when the call cannot do anything
+#: useful (nothing to invoice, already queued), so no empty action is queued.
+PRECHECKS: dict[str, Callable[["RunScope", dict[str, Any]], Optional[str]]] = {}
+
 
 def effect(name: str) -> Callable:
     """Register the effect function for a registered tool."""
@@ -69,6 +73,17 @@ def risk_inputs(name: str) -> Callable:
 
     def decorator(func: Callable[["RunScope", dict[str, Any]], dict[str, Any]]) -> Callable:
         RISK_INPUTS[name] = func
+        return func
+
+    return decorator
+
+
+def precheck(name: str) -> Callable:
+    """Register a precondition checked after policy allows the call, before any
+    draft, approval request or execution is created."""
+
+    def decorator(func: Callable[["RunScope", dict[str, Any]], Optional[str]]) -> Callable:
+        PRECHECKS[name] = func
         return func
 
     return decorator
@@ -166,23 +181,49 @@ class ToolOutcome:
         return "\n".join(lines)
 
 
+def _title(spec: ToolSpec, arguments: dict[str, Any]) -> str:
+    snap = arguments.get("_content_snapshot") if isinstance(arguments.get("_content_snapshot"), dict) else None
+    if snap and snap.get("customer") is not None and snap.get("total") is not None:
+        try:
+            return f"{spec.title}: {snap['customer']} (${float(snap['total']):,.2f})"
+        except (TypeError, ValueError):
+            pass
+    for key in ("title", "subject", "name", "contact_id", "event_id", "record_id"):
+        if arguments.get(key):
+            return f"{spec.title}: {arguments[key]}"
+    customer = arguments.get("customer") or arguments.get("company")
+    if customer:
+        return f"{spec.title}: {customer}"
+    return spec.title
+
+
 def _explain(spec: ToolSpec, arguments: dict[str, Any], decision: PolicyDecision) -> str:
     """A human-readable explanation of a proposed action, for the approval card."""
+    snap = arguments.get("_content_snapshot") if isinstance(arguments.get("_content_snapshot"), dict) else None
+    if snap and snap.get("line_items"):
+        total = snap.get("total")
+        try:
+            total_s = f"${float(total):,.2f}"
+        except (TypeError, ValueError):
+            total_s = str(total)
+        lines = ", ".join(
+            f"{i.get('name')}: ${float(i.get('amount') or 0):,.2f}"
+            for i in (snap.get("line_items") or [])[:6]
+        )
+        return (
+            f"{spec.description} Customer {snap.get('customer')}, total {total_s} "
+            f"({lines}). Risk {decision.risk}. Requires this treatment because: {decision.reason}."
+        )
     summary = ", ".join(
-        f"{k}={v!r}" for k, v in list(arguments.items())[:6] if k not in {"body", "description"}
+        f"{k}={v!r}"
+        for k, v in list(arguments.items())[:6]
+        if k not in {"body", "description", "_content_snapshot"}
     )
     return (
         f"{spec.description} Proposed with: {summary or 'no arguments'}. "
         f"Risk {decision.risk}, classified {decision.classification}. "
         f"Requires this treatment because: {decision.reason}."
     )
-
-
-def _title(spec: ToolSpec, arguments: dict[str, Any]) -> str:
-    for key in ("title", "subject", "name", "contact_id", "event_id", "record_id"):
-        if arguments.get(key):
-            return f"{spec.title}: {arguments[key]}"
-    return spec.title
 
 
 def guarded_call(
@@ -245,6 +286,13 @@ def guarded_call(
     # ---------------------------------------------------------------- DENY
     if decision.denied:
         return ToolOutcome(tool, decision.effect, False, decision.user_message(), decision)
+
+    check = PRECHECKS.get(tool)
+    if check is not None:
+        reason = check(scope, arguments)
+        if reason:
+            audit.log(AuditEventType.TOOL_CALL, ctx=scope.ctx, tool=tool, status="PRECONDITION_FAILED", error=reason)
+            return ToolOutcome(tool, PolicyEffect.DENY, False, reason, decision)
 
     # --------------------------------------------------- DRAFT / APPROVAL
     if decision.draft_only or decision.needs_approval:

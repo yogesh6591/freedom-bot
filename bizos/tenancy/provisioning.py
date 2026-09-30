@@ -28,6 +28,7 @@ from bizos.tenancy.context import TenantContext
 from bizos.tenancy.registry import registry, validate_identifier, workspace_location
 from bizos.tenancy.schema import (
     APPEND_ONLY_DDL,
+    CHAT_MESSAGES_DDL,
     UPGRADE_DDL,
     WORKSPACE_DDL,
     WORKSPACE_TABLES,
@@ -160,6 +161,8 @@ def apply_workspace_schema(ctx: TenantContext) -> None:
             except Exception as exc:  # pragma: no cover - surfaces the failing table
                 head = " ".join(statement.split())[:120]
                 raise RuntimeError(f"Workspace DDL failed: {head}…: {exc}") from exc
+        for statement in CHAT_MESSAGES_DDL:
+            conn.execute(text(statement))
         for statement in UPGRADE_DDL:
             conn.execute(text(statement))
         for statement in client_wall_ddl(ctx.client_id):

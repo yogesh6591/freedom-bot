@@ -110,6 +110,14 @@ export interface ApprovalEvent {
   created_at: string | null
 }
 
+export interface ActionContent {
+  kind: string
+  headline: string
+  summary: string
+  fields: { label: string; value: string }[]
+  lines: string[]
+}
+
 export interface ActionRecord {
   id: string
   title: string
@@ -126,6 +134,9 @@ export interface ActionRecord {
   policy_reason: string
   requested_by: string
   requested_by_role: string | null
+  requested_by_name?: string | null
+  requested_by_email?: string | null
+  content?: ActionContent | null
   record_count: number
   expires_at: string | null
   created_at: string | null
@@ -222,6 +233,13 @@ export interface ChatContext {
     tool_mode?: string | null
   }[]
   pending_approvals: number
+  inefficiency_alerts?: {
+    id: string
+    title: string
+    detail: string
+    directional_cost?: string
+    status?: string
+  }[]
 }
 
 export interface ChatResponse {
@@ -234,4 +252,31 @@ export interface ChatResponse {
   actions: ActionRecord[]
   awaiting_approval: ActionRecord[]
   drafts: ActionRecord[]
+}
+
+/** One of the caller's saved conversations (M01-11). */
+export interface ChatSessionSummary {
+  session_id: string
+  title: string
+  turns: number
+  started_at: string | null
+  updated_at: string | null
+}
+
+export interface ChatSessionMessage {
+  role: 'user' | 'assistant'
+  content: string
+  domain: string | null
+  meta: {
+    mode?: ExecutionMode
+    tool_activity?: { tool: string; ok: boolean }[]
+    awaiting_approval?: Partial<ActionRecord>[]
+    drafts?: Partial<ActionRecord>[]
+  }
+  created_at: string | null
+}
+
+export interface ChatSessionDetail {
+  session_id: string
+  messages: ChatSessionMessage[]
 }

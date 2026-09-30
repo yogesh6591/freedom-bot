@@ -529,6 +529,27 @@ WORKSPACE_DDL: tuple[str, ...] = (
 )
 
 
+#: FB-033 / M01-11: the chat transcript as the user saw it (after persona and
+#: restriction enforcement), so a conversation can be reopened. Kept separate
+#: from agno's run log, which holds the model's raw pre-enforcement output.
+CHAT_MESSAGES_DDL: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS chat_messages (
+        id          TEXT PRIMARY KEY,
+        session_id  TEXT NOT NULL,
+        user_id     TEXT NOT NULL,
+        role        TEXT NOT NULL,
+        content     TEXT NOT NULL,
+        domain      TEXT,
+        meta        JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS chat_messages_session_idx ON chat_messages (session_id, created_at)",
+    "CREATE INDEX IF NOT EXISTS chat_messages_user_idx ON chat_messages (user_id, created_at DESC)",
+)
+
+
 #: Additive columns for workspaces provisioned before they existed.
 UPGRADE_DDL: tuple[str, ...] = (
     # FB-037: restricted data area of a memory item (NULL = general).
@@ -539,7 +560,7 @@ UPGRADE_DDL: tuple[str, ...] = (
 )
 
 
-def client_wall_ddl(client_id: str) -> tuple[str, ...]:
+def client_wall_ddl(client_id: str, tables: tuple[str, ...] | None = None) -> tuple[str, ...]:
     """FB-033: stamp every workspace row with its client and refuse any other.
 
     Each workspace table gets a ``client_id`` column defaulting to the owning
@@ -550,7 +571,7 @@ def client_wall_ddl(client_id: str) -> tuple[str, ...]:
     """
     literal = "'" + client_id.replace("'", "''") + "'"
     out: list[str] = []
-    for table in WORKSPACE_TABLES:
+    for table in tables if tables is not None else WORKSPACE_TABLES:
         out.append(
             f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS client_id TEXT NOT NULL DEFAULT {literal}"
         )
@@ -641,4 +662,5 @@ WORKSPACE_TABLES: tuple[str, ...] = (
     "accounting_customers",
     "accounting_invoices",
     "accounting_payments",
+    "chat_messages",
 )

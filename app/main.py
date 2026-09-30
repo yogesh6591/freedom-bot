@@ -95,7 +95,7 @@ base_app.add_middleware(
     # must be explicit — never "*", which browsers reject with credentials anyway.
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Bizos-Client", "X-Bizos-User"],
 )
 
 base_app.include_router(platform_router())

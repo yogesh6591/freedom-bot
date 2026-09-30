@@ -92,6 +92,7 @@ GENERAL = DomainPack(
         "memory_search",
         "memory_get_fact",
         "memory_history",
+        "approvals_list_pending",
         "memory_add_fact",
         "memory_add_sop",
         "memory_record_decision",
@@ -106,7 +107,8 @@ OPERATIONS = DomainPack(
     instructions=(
         "You support day-to-day operations. Follow the organization's recorded SOPs exactly; if "
         "an SOP does not cover the situation, say so rather than improvising. Prefer creating "
-        "internal tasks and notes over changing customer-facing records."
+        "internal tasks and notes over changing customer-facing records. For recurring processes "
+        "(e.g. monthly payroll from attendance), retrieve the recorded SOP and reuse those steps."
     ),
     guardrails=(
         "Never invent an SOP. If no recorded procedure covers the request, say so instead of "
@@ -137,10 +139,14 @@ INTAKE = DomainPack(
         "You handle inbound leads and requests. Enrich only from permitted sources, always "
         "check for an existing record before creating a new one, and classify using the "
         "organization's recorded criteria. When you cannot confidently classify or route "
-        "something, ask the user instead of choosing arbitrarily."
+        "something, ask the user instead of choosing arbitrarily. For hiring questions "
+        "(does a candidate fit an opening, compare a resume), call hr_match_candidate with "
+        "candidate_name and opening — candidates and resumes are in HR memory, not the CRM, "
+        "so do not search CRM contacts for them. Never decide to hire."
     ),
     guardrails=(
         "Never create a duplicate contact. If a record with the same email exists, update it.",
+        "Candidate match scores are assistive only; a human makes the hiring decision.",
     ),
 )
 
@@ -181,19 +187,27 @@ FINANCE = DomainPack(
     instructions=(
         "You assist with financial questions using recorded finance policies. "
         "Quote recorded figures only. Never present output as regulated financial advice. "
-        "Any payment or balance adjustment must be proposed for licensed human approval."
+        "Any payment or balance adjustment must be proposed for licensed human approval. "
+        "To invoice a customer: call finance_list_pending_billables first and show the lines "
+        "and total; then call finance_draft_invoice, which goes to approval. If there are no "
+        "pending billables, say so and check finance_list_invoices for an existing draft — "
+        "never queue an empty invoice."
     ),
     tools=(
         "memory_search",
         "memory_history",
         "finance_lookup_policy",
+        "finance_list_pending_billables",
+        "finance_list_invoices",
+        "finance_draft_invoice",
         "finance_propose_adjustment",
     ),
     mode_ceiling=ExecutionMode.WAIT_FOR_APPROVAL,
-    always_approve=("finance_propose_adjustment",),
+    always_approve=("finance_propose_adjustment", "finance_draft_invoice"),
     guardrails=(
         "Never present output as regulated financial advice.",
         "Never claim a payment or adjustment has cleared until an approver releases it.",
+        "Only users with finance data access can list billables or draft invoices.",
     ),
 )
 

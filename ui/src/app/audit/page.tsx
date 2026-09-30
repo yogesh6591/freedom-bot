@@ -9,8 +9,10 @@ import { api } from '@/lib/api'
 import type { AuditRow } from '@/lib/types'
 import {
   Badge,
+  Btn,
   DataTable,
   ErrorNote,
+  PageStack,
   Panel,
   inputClass,
   modeTone,
@@ -85,7 +87,7 @@ function AuditView() {
   }
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       <Panel
         title="Audit"
         description={`${total} events recorded in this workspace — who acted, what, with which tool, in which mode. Append-only: entries cannot be edited, and are deleted only by the retention rule${
@@ -97,7 +99,9 @@ function AuditView() {
         }. This is the business audit log, separate from Agno run tracing.`}
         actions={
           hasRole('ADMIN') && retention && retention.effective_days > 0 ? (
-            <button
+            <Btn
+              variant="secondary"
+              size="sm"
               onClick={async () => {
                 if (!window.confirm(`Delete audit events older than ${retention.effective_days} days?`)) return
                 try {
@@ -107,14 +111,13 @@ function AuditView() {
                   setError(err instanceof Error ? err.message : 'Purge failed')
                 }
               }}
-              className="rounded-lg border border-border px-2 py-1 font-geist text-xs text-muted hover:text-primary"
             >
               Apply retention
-            </button>
+            </Btn>
           ) : undefined
         }
       >
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
           <select
             className={inputClass}
             value={filters.event_type}
@@ -212,16 +215,16 @@ function AuditView() {
           title={selected.event_type}
           description={timestamp(selected.created_at)}
           actions={
-            <button onClick={() => setSelected(null)} className="text-xs text-muted">
+            <Btn variant="ghost" size="sm" onClick={() => setSelected(null)}>
               Close
-            </button>
+            </Btn>
           }
         >
-          <pre className="overflow-x-auto rounded-lg bg-background p-3 font-dmmono text-[11px] text-muted">
+          <pre className="overflow-x-auto rounded-xl bg-background p-4 font-dmmono text-xs text-muted">
             {JSON.stringify(selected, null, 2)}
           </pre>
         </Panel>
       )}
-    </div>
+    </PageStack>
   )
 }

@@ -112,6 +112,25 @@ CONTROL_DDL: tuple[str, ...] = (
     # Restricted data areas (exec/hr/salary/finance/legal) a user may see. Held
     # on the user record, not the token, so a revoked scope takes effect at once.
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS data_scopes TEXT[] NOT NULL DEFAULT '{}'",
+    # FB-046 — post-sale support tickets (control-plane metadata; not a sales CRM).
+    """
+    CREATE TABLE IF NOT EXISTS support_tickets (
+        id               TEXT PRIMARY KEY,
+        client_id        TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        subject          TEXT NOT NULL,
+        body             TEXT NOT NULL DEFAULT '',
+        severity         TEXT NOT NULL DEFAULT 'NORMAL',
+        status           TEXT NOT NULL DEFAULT 'OPEN',
+        assignee         TEXT NOT NULL DEFAULT 'CEPOCH',
+        escalate_reason  TEXT,
+        created_by       TEXT,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        history          JSONB NOT NULL DEFAULT '[]'::jsonb
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS support_tickets_client_idx ON support_tickets (client_id, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS support_tickets_assignee_idx ON support_tickets (assignee, status)",
 )
 
 #: Seeded on every control-plane migration so the roles table always matches the

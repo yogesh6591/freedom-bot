@@ -518,3 +518,226 @@ def apply_onboarding(
             },
         )
     return result
+
+
+# -------------------------------------------------------------- insights (FB-041 / 043 / 050)
+
+
+@router.get("/insights/alerts")
+def get_alerts(
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Rare inefficiency alerts for this client (FB-041)."""
+    from bizos.insights import list_alerts, open_alerts
+
+    return {
+        "items": list_alerts(settings),
+        "open": open_alerts(settings),
+        "note": "Directional only — not a full always-on waste engine.",
+    }
+
+
+class AlertDismiss(BaseModel):
+    alert_id: str = Field(min_length=1, max_length=80)
+
+
+@router.post("/insights/alerts/dismiss")
+def dismiss_alert_route(
+    body: AlertDismiss,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    from bizos.insights import dismiss_alert
+
+    try:
+        items = dismiss_alert(
+            client_id=ctx.client_id, settings=settings, alert_id=body.alert_id, ctx=ctx
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Unknown alert {exc}") from exc
+    return {"items": items}
+
+
+@router.get("/insights/baselines")
+def get_baselines(
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Before/after metrics for sold workflows (FB-050). Directional only."""
+    from bizos.insights import list_baselines
+
+    return {
+        "items": list_baselines(settings),
+        "disclaimer": "Directional before/after only. No guaranteed ROI.",
+    }
+
+
+class BaselinesBody(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
+
+
+@router.put("/insights/baselines")
+def put_baselines(
+    body: BaselinesBody,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    from bizos.insights import save_baselines
+
+    items = save_baselines(
+        client_id=ctx.client_id, settings=settings, baselines=body.items, ctx=ctx
+    )
+    audit.log(
+        AuditEventType.CONFIG_CHANGED,
+        ctx=ctx,
+        status="BASELINES_UPDATED",
+        request={"count": len(items)},
+    )
+    return {"items": items, "disclaimer": "Directional before/after only. No guaranteed ROI."}
+
+
+class HandoffBody(BaseModel):
+    assessment: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/onboarding/handoff")
+def onboarding_handoff(
+    body: HandoffBody,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Paste sale/assessment JSON → prefill First-client setup (FB-043)."""
+    from bizos.insights import handoff_assessment
+
+    if not body.assessment:
+        raise HTTPException(status_code=400, detail="assessment JSON object is required")
+    result = handoff_assessment(
+        client_id=ctx.client_id, settings=settings, assessment=body.assessment, ctx=ctx
+    )
+    audit.log(
+        AuditEventType.CONFIG_CHANGED,
+        ctx=ctx,
+        status="ASSESSMENT_HANDOFF",
+        request={"keys": sorted(body.assessment.keys())[:20]},
+    )
+    return result
+
+
+# -------------------------------------------------------------- resale pricing (FB-048)
+
+
+@router.get("/pricing/resale-rules")
+def get_resale_rules(
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """JeanneCAIO resale rules + face quote values (FB-048)."""
+    from bizos.pricing import get_rules
+
+    return {"rules": get_rules(settings)}
+
+
+class ResaleRulesBody(BaseModel):
+    """Omitted fields keep their current value; nothing falls back to a demo price."""
+
+    customer_price_usd: Optional[float] = None
+    cepoch_cost_usd: Optional[float] = None
+    quote_status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.put("/pricing/resale-rules")
+def put_resale_rules(
+    body: ResaleRulesBody,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    from bizos.pricing import save_rules
+
+    try:
+        rules = save_rules(
+            client_id=ctx.client_id,
+            settings=settings,
+            rules=body.model_dump(exclude_none=True),
+            ctx=ctx,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    audit.log(
+        AuditEventType.CONFIG_CHANGED,
+        ctx=ctx,
+        status="RESALE_RULES_UPDATED",
+        request={
+            "customer_price_usd": rules["customer_price_usd"],
+            "quote_status": rules["quote_status"],
+            "placeholder": True,
+        },
+    )
+    return {"rules": rules}
+
+
+# -------------------------------------------------------------- consult pricing (FB-049)
+
+
+@router.get("/pricing/consult-config")
+def get_consult_config(
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Face scope weights + current FB-048 rules for the consult calculator."""
+    from bizos.pricing import face_scope_config, get_rules
+
+    return {"config": face_scope_config(), "rules": get_rules(settings)}
+
+
+class ConsultQuoteBody(BaseModel):
+    domains: list[str] = Field(default_factory=list)
+    autonomy: str = "WAIT_FOR_APPROVAL"
+    integrations: int = Field(default=0, ge=0, le=50)
+    label: str = ""
+    save: bool = False
+
+
+@router.post("/pricing/consult-quote")
+def post_consult_quote(
+    body: ConsultQuoteBody,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """FB-049: calculate (and optionally save) a consult quote from face rules."""
+    from bizos.pricing import calculate_consult_quote, save_consult_quote
+
+    try:
+        quote = calculate_consult_quote(
+            settings,
+            domains=body.domains,
+            autonomy=body.autonomy,
+            integrations=body.integrations,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    saved = None
+    if body.save:
+        saved = save_consult_quote(
+            client_id=ctx.client_id,
+            settings=settings,
+            quote=quote,
+            ctx=ctx,
+            label=body.label,
+        )
+        audit.log(
+            AuditEventType.CONFIG_CHANGED,
+            ctx=ctx,
+            status="CONSULT_QUOTE_SAVED",
+            request={
+                "id": saved["id"],
+                "customer_price_usd": saved["customer_price_usd"],
+                "domains": saved["inputs"]["domains"],
+                "placeholder": True,
+            },
+        )
+
+    return {"quote": quote, "saved": saved}
+

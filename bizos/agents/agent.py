@@ -55,8 +55,19 @@ def build_scope(
     )
 
 
-def build_agent(scope: RunScope, *, session_id: Optional[str] = None) -> Agent:
-    """Construct the tenant-bound agent for one run."""
+def build_agent(
+    scope: RunScope,
+    *,
+    session_id: Optional[str] = None,
+    message: str = "",
+    grounding_text: Optional[str] = None,
+) -> Agent:
+    """Construct the tenant-bound agent for one run.
+
+    ``message`` is the user's turn; memory matching it (within the caller's
+    access areas) is placed in the prompt so the answer is grounded. Pass
+    ``grounding_text`` when the caller already computed it.
+    """
     if not app_settings.llm_available():
         raise ModelNotConfigured(
             "Chat requires a model. Set OPENAI_API_KEY (and MODEL_ID) to enable it. "
@@ -81,12 +92,19 @@ def build_agent(scope: RunScope, *, session_id: Optional[str] = None) -> Agent:
 
         scope.requested_mode = narrowest(scope.requested_mode, *ceilings)
 
+    from bizos.agents import grounding
+
     prompt = agent_instructions.render(
         ctx=scope.ctx,
         settings=scope.settings,
         mode=scope.mode,
         domain=scope.domain,
         packs=selected,
+        grounding=(
+            grounding_text
+            if grounding_text is not None
+            else grounding.build(scope.ctx, message, scope.settings.enabled_domains)
+        ),
     )
 
     return Agent(
@@ -117,5 +135,5 @@ def chat(
     scope: RunScope, message: str, *, session_id: Optional[str] = None, stream: bool = False
 ) -> Any:
     """One chat turn. Returns agno's run output."""
-    agent = build_agent(scope, session_id=session_id)
+    agent = build_agent(scope, session_id=session_id, message=message)
     return agent.run(message, stream=stream)

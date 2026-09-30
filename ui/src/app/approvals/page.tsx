@@ -14,8 +14,12 @@ import { api } from '@/lib/api'
 import type { ActionRecord } from '@/lib/types'
 import {
   Badge,
+  Btn,
+  Chip,
   EmptyState,
   ErrorNote,
+  LoadingBlock,
+  PageStack,
   Panel,
   riskTone,
   statusTone,
@@ -69,35 +73,31 @@ function ApprovalsView() {
   }, [load])
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       <Panel
         title="Approvals"
         description="Actions the assistant proposed that need a human decision before anything happens."
       >
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Filter by status">
           {FILTERS.map((option) => (
-            <button
+            <Chip
               key={option.value}
+              active={filter === option.value}
               onClick={() => setFilter(option.value)}
-              className={`rounded-full px-3.5 py-1.5 font-geist text-xs font-medium transition ${
-                filter === option.value
-                  ? 'bg-brand text-brand-ink shadow-glow'
-                  : 'bg-background-elevated text-muted hover:text-primary'
-              }`}
             >
               {option.label}
-            </button>
+            </Chip>
           ))}
         </div>
       </Panel>
 
       {error && <ErrorNote>{error}</ErrorNote>}
-      {loading && <EmptyState>Loading…</EmptyState>}
+      {loading && <LoadingBlock rows={4} />}
       {!loading && items.length === 0 && (
         <EmptyState>Nothing here. The queue is clear.</EmptyState>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {items.map((action) => (
           <ActionCard
             key={action.id}
@@ -108,7 +108,7 @@ function ApprovalsView() {
           />
         ))}
       </div>
-    </div>
+    </PageStack>
   )
 }
 
@@ -151,30 +151,62 @@ function ActionCard({
 
   return (
     <Panel>
-      <div className="space-y-3">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={statusTone(action.status)}>{action.status}</Badge>
           <Badge tone={riskTone(action.risk_level)}>{action.risk_level}</Badge>
-          <span className="font-geist text-sm text-primary">{action.title}</span>
+          <span className="font-geist text-sm font-semibold text-primary">{action.title}</span>
         </div>
 
-        <p className="text-xs text-muted">{action.description || action.explanation}</p>
+        <div className="rounded-xl border border-border bg-background-elevated px-4 py-3">
+          <p className="type-caption">Requested by</p>
+          <p className="mt-1 font-geist text-sm text-primary">
+            {action.requested_by_name
+              ? `${action.requested_by_name}${action.requested_by_role ? ` (${action.requested_by_role})` : ''}`
+              : action.requested_by_role ?? action.requested_by}
+          </p>
+          {action.requested_by_email && (
+            <p className="mt-0.5 text-xs text-muted">{action.requested_by_email}</p>
+          )}
+        </div>
 
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-[11px] md:grid-cols-4">
-          <Meta label="Requested by" value={action.requested_by_role ?? action.requested_by} />
+        {action.content && (
+          <div className="space-y-3 rounded-xl border border-sky-500/25 bg-sky-500/5 px-4 py-3">
+            <p className="type-caption text-sky-300/80">What needs approval</p>
+            <p className="font-geist text-sm text-primary">{action.content.headline}</p>
+            {action.content.fields.length > 0 && (
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs md:grid-cols-4">
+                {action.content.fields.map((field) => (
+                  <Meta key={field.label} label={field.label} value={field.value} />
+                ))}
+              </dl>
+            )}
+            {action.content.lines.length > 0 && (
+              <ul className="space-y-1 border-t border-sky-500/15 pt-3 text-xs text-primary">
+                {action.content.lines.map((line) => (
+                  <li key={line}>• {line}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs md:grid-cols-3">
           <Meta label="Tool" value={action.tool} />
           <Meta label="Domain" value={action.domain ?? '—'} />
           <Meta label="Created" value={timestamp(action.created_at)} />
         </dl>
 
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-xs">
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-3 text-sm">
           <span className="font-geist text-amber-300">Why this needs a decision: </span>
           <span className="text-muted">{action.policy_reason}</span>
         </div>
 
-        <details open className="text-xs">
-          <summary className="cursor-pointer text-muted">Proposed payload</summary>
-          <pre className="mt-2 overflow-x-auto rounded-lg bg-background p-3 font-dmmono text-[11px] text-muted">
+        <details className="text-sm">
+          <summary className="cursor-pointer text-muted ui-transition hover:text-primary">
+            Technical payload (tool arguments)
+          </summary>
+          <pre className="mt-3 overflow-x-auto rounded-xl bg-background p-4 font-dmmono text-xs text-muted">
             {JSON.stringify(action.payload, null, 2)}
           </pre>
         </details>
@@ -182,50 +214,53 @@ function ActionCard({
         {action.error && <ErrorNote>{action.error}</ErrorNote>}
         {error && <ErrorNote>{error}</ErrorNote>}
         {note && (
-          <div className="rounded-lg border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">
+          <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
             {note}
           </div>
         )}
 
         {(pending || approved) && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
+          <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
             {pending && (
               <input
                 value={comment}
                 onChange={(event) => setComment(event.target.value)}
                 placeholder="Comment (optional)"
-                className="min-w-[200px] flex-1 rounded-lg border border-border bg-background px-3 py-1.5 font-geist text-xs outline-none"
+                aria-label="Optional comment"
+                className="min-h-11 min-w-[200px] flex-1 rounded-xl border border-border bg-background px-3.5 font-geist text-sm outline-none ui-transition focus:border-brand-soft focus:shadow-glow"
               />
             )}
             {pending && canApprove && (
               <>
-                <button
+                <Btn
+                  variant="positive"
+                  size="sm"
                   disabled={busy}
                   onClick={() => void act('approve', { comment: comment || null })}
-                  className="rounded-lg bg-positive px-3 py-1.5 font-geist text-xs text-black disabled:opacity-50"
                 >
                   Approve
-                </button>
-                <button
+                </Btn>
+                <Btn
+                  variant="danger"
+                  size="sm"
                   disabled={busy}
                   onClick={() => void act('reject', { comment: comment || null })}
-                  className="rounded-lg bg-destructive px-3 py-1.5 font-geist text-xs text-white disabled:opacity-50"
                 >
                   Reject
-                </button>
+                </Btn>
               </>
             )}
             {approved && canExecute && (
-              <button
+              <Btn
+                size="sm"
                 disabled={busy}
                 onClick={() => void act('execute')}
-                className="rounded-lg bg-brand px-3 py-1.5 font-geist text-xs text-brand-ink disabled:opacity-50"
               >
                 Execute now
-              </button>
+              </Btn>
             )}
             {pending && !canApprove && (
-              <span className="text-xs text-muted">
+              <span className="type-muted">
                 Your role cannot decide this. An approver must review it.
               </span>
             )}
@@ -239,8 +274,8 @@ function ActionCard({
 function Meta({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-muted/70">{label}</dt>
-      <dd className="font-geist text-primary break-all">{value}</dd>
+      <dt className="type-caption">{label}</dt>
+      <dd className="mt-0.5 font-geist text-primary break-all">{value}</dd>
     </div>
   )
 }

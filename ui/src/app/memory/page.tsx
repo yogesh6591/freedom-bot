@@ -15,10 +15,13 @@ import { api } from '@/lib/api'
 import type { MemoryItem } from '@/lib/types'
 import {
   Badge,
+  Btn,
+  Chip,
   DataTable,
-  EmptyState,
   ErrorNote,
   Field,
+  LoadingBlock,
+  PageStack,
   Panel,
   inputClass,
   timestamp
@@ -62,6 +65,7 @@ function MemoryView() {
   const [conflicts, setConflicts] = useState<Conflict[]>([])
 
   const canWrite = hasRole('DRAFTER', 'APPROVER', 'OPERATOR')
+  const canRemove = hasRole('APPROVER')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -87,27 +91,23 @@ function MemoryView() {
   }
 
   return (
-    <div className="space-y-4">
+    <PageStack>
       <Panel
         title="Organizational memory"
         description="What this organization has told the assistant. Values are versioned: a correction supersedes the old value and keeps it in history."
       >
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Memory categories">
           {TABS.map((name) => (
-            <button
+            <Chip
               key={name}
+              active={tab === name}
               onClick={() => {
                 setTab(name)
                 setSelected(null)
               }}
-              className={`rounded-lg px-3 py-1.5 font-geist text-xs transition ${
-                tab === name
-                  ? 'bg-background-secondary text-primary'
-                  : 'text-muted hover:text-primary'
-              }`}
             >
               {TAB_LABEL[name]}
-            </button>
+            </Chip>
           ))}
         </div>
       </Panel>
@@ -121,18 +121,25 @@ function MemoryView() {
         >
           <div className="space-y-3">
             {conflicts.map((conflict) => (
-              <div key={conflict.topic} className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
-                <div className="mb-2 font-geist text-primary">Topic: {conflict.topic}</div>
-                <ul className="space-y-1">
+              <div
+                key={conflict.topic}
+                className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm"
+              >
+                <div className="mb-3 font-geist text-primary">Topic: {conflict.topic}</div>
+                <ul className="space-y-2">
                   {conflict.items.map((entry) => (
-                    <li key={entry.version_id} className="flex items-center gap-2">
+                    <li key={entry.version_id} className="flex flex-wrap items-center gap-2">
                       <Badge tone={entry.approval_status === 'APPROVED' ? 'good' : 'warn'}>
                         {entry.approval_status}
                       </Badge>
                       <span className="text-primary">{entry.value}</span>
-                      <span className="text-muted">— {entry.title} ({entry.recorded_by})</span>
+                      <span className="text-muted">
+                        — {entry.title} ({entry.recorded_by})
+                      </span>
                       {hasRole('APPROVER') && entry.approval_status !== 'APPROVED' && (
-                        <button
+                        <Btn
+                          size="sm"
+                          className="ml-auto"
                           onClick={async () => {
                             try {
                               await api.post(`/api/memory/versions/${entry.version_id}/approve`)
@@ -141,10 +148,9 @@ function MemoryView() {
                               setError(err instanceof Error ? err.message : 'Could not resolve')
                             }
                           }}
-                          className="ml-auto rounded-md bg-brand px-2 py-0.5 text-brand-ink"
                         >
                           This one stands
-                        </button>
+                        </Btn>
                       )}
                     </li>
                   ))}
@@ -157,7 +163,7 @@ function MemoryView() {
 
       <Panel>
         {loading ? (
-          <EmptyState>Loading…</EmptyState>
+          <LoadingBlock rows={5} />
         ) : (
           <DataTable
             rows={items}
@@ -233,28 +239,63 @@ function MemoryView() {
         <MemoryDetail
           item={selected}
           canWrite={canWrite}
+          canRemove={canRemove}
           onClose={() => setSelected(null)}
+          onRemoved={async () => {
+            setSelected(null)
+            await load()
+          }}
           onChanged={async () => {
             await load()
             setSelected(await api.get<MemoryItem>(`/api/memory/${selected.id}`))
           }}
         />
       )}
-    </div>
+    </PageStack>
   )
 }
 
 function MemoryDetail({
   item,
   canWrite,
+  canRemove,
   onClose,
-  onChanged
+  onChanged,
+  onRemoved
 }: {
   item: MemoryItem
   canWrite: boolean
+  canRemove: boolean
   onClose: () => void
   onChanged: () => Promise<void>
+  onRemoved: () => Promise<void>
 }) {
+  const [removeReason, setRemoveReason] = useState('')
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+
+  async function remove(event: React.FormEvent) {
+    event.preventDefault()
+    if (
+      !window.confirm(
+        `Remove "${item.title}" from memory? FreedomBot will stop using it in answers. ` +
+          'Its history stays in the audit trail.'
+      )
+    )
+      return
+    setRemoving(true)
+    setRemoveError(null)
+    try {
+      await api.post(`/api/memory/${item.id}/archive`, { reason: removeReason })
+      setRemoveReason('')
+      await onRemoved()
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : 'Could not remove this item')
+    } finally {
+      setRemoving(false)
+    }
+  }
+
   const [newContent, setNewContent] = useState(item.current?.content ?? '')
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
@@ -372,18 +413,38 @@ function MemoryDetail({
                 required
               />
             </Field>
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-lg bg-brand px-4 py-2 font-geist text-xs text-brand-ink disabled:opacity-50"
-            >
+            <Btn type="submit" disabled={busy} size="sm">
               {busy ? 'Saving…' : 'Record correction'}
-            </button>
+            </Btn>
           </form>
         ) : (
           <p className="border-t border-border pt-4 text-xs text-muted">
             Your role can view memory but not correct it.
           </p>
+        )}
+
+        {canRemove && item.current && (
+          <form onSubmit={remove} className="space-y-2 border-t border-border pt-4">
+            <h3 className="font-geist text-xs uppercase tracking-wide text-muted">
+              Remove from memory
+            </h3>
+            <p className="text-[11px] text-muted">
+              FreedomBot stops using this item in answers, search and lists. Nothing is erased —
+              the version history stays for audit.
+            </p>
+            {removeError && <ErrorNote>{removeError}</ErrorNote>}
+            <Field label="Reason for removing">
+              <input
+                className={inputClass}
+                value={removeReason}
+                onChange={(event) => setRemoveReason(event.target.value)}
+                required
+              />
+            </Field>
+            <Btn type="submit" variant="danger" disabled={removing || !removeReason.trim()} size="sm">
+              {removing ? 'Removing…' : 'Remove from memory'}
+            </Btn>
+          </form>
         )}
       </div>
     </Panel>

@@ -58,6 +58,7 @@ tools lead this turn.
 ## Who you are talking to
 User: {display_name} ({user_id})
 Role: {role}
+Data access areas: {data_scopes}
 Workspace: {company_name}
 Active domain: {domain}
 
@@ -65,9 +66,42 @@ Active domain: {domain}
 Execution mode: {mode_name}
 {mode_description}
 
-Your available tools have already been filtered to what this user's role and this
-workspace's mode permit. If a capability is not in your tool list, you do not have
-it — say so plainly rather than describing a workaround.
+Your available tools have already been filtered to what this user's role, data
+access areas, and this workspace's mode permit. If a capability is not in your
+tool list, you do not have it — say so plainly rather than describing a workaround.
+Restricted memory (finance, ops, HR, salary, legal, exec) is only returned when
+this user has that area. Do not invent or leak information from areas they cannot see.
+
+## Access answers must be exact
+- When the information or capability the user asks for belongs to an area they
+  do not have, say so in one sentence: "That's restricted to the <area> area,
+  which your account doesn't have access to — an admin can grant it." Do not say
+  "there is no record", do not guess, and do not offer to create or record it.
+- Only say "there is no record of that" when the grounding section says nothing
+  visible matches AND nothing restricted matches, and you also searched memory.
+- Never answer a business question from general knowledge when memory is empty;
+  say it is not recorded and offer to record it (only if it is not restricted).
+- A multi-part question gets a per-part answer: answer what the user can see, and
+  name the area for each part they cannot.
+- A domain pack this client has not bought (listed under "NOT IN THIS CLIENT'S
+  PACKAGE" in the grounding) is a package limit, not an access restriction. Say
+  it is not part of the current package and an admin can add it with a change
+  order. Never offer to draft, prepare, submit or queue work from that pack.
+- For a restricted topic, do not offer "what is typical", "general practice", an
+  example, or a guess either — even if the user asks for one. General content
+  about a restricted record can reveal it.
+
+## Memory writes and approvals
+- Only record to memory when the user explicitly asks you to save, record or
+  update something. Turning an SOP into a checklist or summary for them is a
+  reply, not a memory write.
+- For "what is waiting for approval / who requested it / how much", call
+  approvals_list_pending. Approving happens on the Approvals page by a user with
+  the Approver role; you never approve anything yourself.
+
+## Style
+Do not narrate your tool use ("Let me check…", "I'll look that up now"). Call the
+tools you need, then give one clean answer.
 
 Every write you attempt is independently checked by the policy engine before it
 runs. It can come back as:
@@ -147,6 +181,7 @@ def render(
     mode: ExecutionMode,
     domain: str,
     packs: Iterable[DomainPack] = (),
+    grounding: str = "",
 ) -> str:
     """Build the system prompt for one run."""
     packs = list(packs)
@@ -160,6 +195,11 @@ def render(
         display_name=ctx.display_name or ctx.user_id,
         user_id=ctx.user_id,
         role=ctx.primary_role,
+        data_scopes=(
+            "all areas (admin)"
+            if ctx.is_admin
+            else (", ".join(sorted(ctx.visible_areas)) or "general only (no restricted areas)")
+        ),
         domain=domain,
         mode_name=str(mode),
         mode_description=describe_mode(mode),
@@ -187,6 +227,8 @@ def render(
             instructions=pack.instructions,
             output_template=f"\nPreferred output: {pack.output_template}" if pack.output_template else "",
         )
+    if grounding:
+        prompt += "\n" + grounding + "\n"
     return prompt
 
 

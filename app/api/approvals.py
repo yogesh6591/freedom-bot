@@ -41,6 +41,35 @@ class PayloadEdit(BaseModel):
     comment: Optional[str] = None
 
 
+def _named(items: list[Any], ctx: TenantContext) -> list[dict[str, Any]]:
+    """Action dicts with requester name + readable content for the approval cards."""
+    from bizos.actions.preview import content_for
+    from bizos.control import store as control
+
+    try:
+        users = {u.id: u for u in control.list_users(ctx.client_id)}
+    except Exception:
+        users = {}
+    out = []
+    for a in items:
+        d = a.to_dict()
+        user = users.get(a.requested_by)
+        d["requested_by_name"] = (user.display_name or user.email) if user else None
+        d["requested_by_email"] = user.email if user else None
+        try:
+            d["content"] = content_for(a, ctx=ctx)
+        except Exception:
+            d["content"] = {
+                "kind": "generic",
+                "headline": a.title,
+                "fields": [],
+                "lines": [],
+                "summary": a.description or a.title,
+            }
+        out.append(d)
+    return out
+
+
 @router.get("")
 def list_queue(
     status: Optional[str] = None,
@@ -55,7 +84,7 @@ def list_queue(
         items = actions.list_actions(
             statuses=[s for s in statuses if s], tool=tool, limit=limit, offset=offset, ctx=ctx
         )
-        return {"items": [a.to_dict() for a in items], "count": len(items)}
+        return {"items": _named(items, ctx), "count": len(items)}
 
 
 @router.get("/all")
@@ -67,7 +96,7 @@ def list_all(
     """Every action regardless of status — the "Actions" view."""
     with bound(ctx):
         items = actions.list_actions(limit=limit, offset=offset, ctx=ctx)
-        return {"items": [a.to_dict() for a in items], "count": len(items)}
+        return {"items": _named(items, ctx), "count": len(items)}
 
 
 @router.get("/{action_id}")
@@ -75,9 +104,12 @@ def get_action(action_id: str, ctx: TenantContext = Depends(current_context)) ->
     """One action with its full transition history."""
     with bound(ctx):
         try:
-            return actions.get_action(action_id, include_events=True, ctx=ctx).to_dict(
-                include_events=True
-            )
+            action = actions.get_action(action_id, include_events=True, ctx=ctx)
+            enriched = _named([action], ctx)[0]
+            enriched["events"] = [
+                e.to_dict() if hasattr(e, "to_dict") else e for e in (action.events or [])
+            ]
+            return enriched
         except actions.ActionNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

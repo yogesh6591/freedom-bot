@@ -35,6 +35,12 @@ from bizos.types import ExecutionMode, Role
 #: is what keeps an XSS from becoming a token theft.
 SESSION_COOKIE = "bizos_session"
 
+#: Headers the UI sends with the client and user the tab is displaying (M01-06).
+EXPECTED_CLIENT_HEADER = "X-Bizos-Client"
+EXPECTED_USER_HEADER = "X-Bizos-User"
+#: 409 detail when those no longer match the session cookie.
+WORKSPACE_CHANGED = "workspace_changed"
+
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -86,6 +92,17 @@ def current_context(
         raise HTTPException(status_code=403, detail="Token does not match this workspace")
     if user.status != "ACTIVE":
         raise HTTPException(status_code=403, detail="Account is not active")
+
+    # M01-06: a browser shares one session cookie across tabs. When another tab
+    # signs in to a different client (or as a different person), a tab still
+    # showing the old workspace sends which client/user it believes it is on.
+    # Refuse the mismatch rather than answer with the other workspace's data.
+    expected_client = request.headers.get(EXPECTED_CLIENT_HEADER, "").strip()
+    expected_user = request.headers.get(EXPECTED_USER_HEADER, "").strip()
+    if (expected_client and expected_client != client.id) or (
+        expected_user and expected_user != user.id
+    ):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=WORKSPACE_CHANGED)
 
     roles = frozenset(roles_from_claims(payload)) & user.roles
 

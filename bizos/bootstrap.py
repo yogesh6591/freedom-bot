@@ -32,21 +32,28 @@ from bizos.util.timeutil import utcnow
 
 #: Development users created for each demo client. Passwords are development-only
 #: and are documented in the README; production seeds must supply their own.
-DEV_USERS: tuple[tuple[str, str, tuple[Role, ...]], ...] = (
-    ("viewer@{domain}", "Vera Viewer", (Role.VIEWER,)),
-    ("drafter@{domain}", "Dana Drafter", (Role.DRAFTER,)),
-    ("approver@{domain}", "Avery Approver", (Role.APPROVER,)),
-    ("operator@{domain}", "Omar Operator", (Role.OPERATOR,)),
-    ("admin@{domain}", "Ada Admin", (Role.ADMIN,)),
+#:
+#: Tuple is (email template, display name, roles, data_scopes).
+#: Platform-role demos stay for RBAC tests; department people match Dhanu's
+#: finance / ops / HR buckets and employee / lead / exec visibility levels.
+DEV_USERS: tuple[tuple[str, str, tuple[Role, ...], tuple[str, ...]], ...] = (
+    # --- platform role demos (unchanged emails for existing tests) ---
+    ("viewer@{domain}", "Vera Viewer", (Role.VIEWER,), ()),
+    ("drafter@{domain}", "Dana Drafter", (Role.DRAFTER,), ()),
+    ("approver@{domain}", "Avery Approver", (Role.APPROVER,), ("finance", "legal", "exec")),
+    ("operator@{domain}", "Omar Operator", (Role.OPERATOR,), ("finance",)),
+    ("admin@{domain}", "Ada Admin", (Role.ADMIN,), ()),
+    # --- department people (clear finance vs ops vs HR) ---
+    ("finance@{domain}", "Fiona Finance", (Role.OPERATOR,), ("finance",)),
+    ("ops@{domain}", "Oscar Ops", (Role.OPERATOR,), ("ops",)),
+    ("hr@{domain}", "Hannah HR", (Role.OPERATOR,), ("hr", "salary")),
+    # --- level people (employee / lead / exec see different info) ---
+    ("employee@{domain}", "Eddie Employee", (Role.VIEWER,), ()),
+    ("lead@{domain}", "Lara Lead", (Role.DRAFTER,), ("ops",)),
+    ("exec@{domain}", "Elena Exec", (Role.APPROVER,), ("exec", "finance", "legal", "hr", "ops")),
 )
 
 DEV_PASSWORD = "bizos-dev-password"
-
-#: Restricted data areas each demo role may see (FB-037). Admin sees every area.
-DEV_USER_SCOPES: dict[Role, tuple[str, ...]] = {
-    Role.APPROVER: ("finance", "legal", "exec"),
-    Role.OPERATOR: ("finance",),
-}
 
 
 def admin_context(client: Client, *, user_id: str = "__bootstrap__") -> TenantContext:
@@ -96,9 +103,9 @@ def ensure_client(
 
 
 def ensure_dev_users(client: Client, *, domain: str = "example.com") -> list[dict[str, Any]]:
-    """Create the five role-demo users for a client."""
+    """Create platform + department demo users for a client (idempotent)."""
     created: list[dict[str, Any]] = []
-    for email_template, name, roles in DEV_USERS:
+    for email_template, name, roles, scopes in DEV_USERS:
         email = email_template.format(domain=domain)
         try:
             user = control.create_user(
@@ -108,15 +115,29 @@ def ensure_dev_users(client: Client, *, domain: str = "example.com") -> list[dic
                 display_name=name,
                 roles=roles,
                 created_by="bootstrap",
-                data_scopes=DEV_USER_SCOPES.get(roles[0], ()),
+                data_scopes=scopes,
             )
-            created.append({"email": user.email, "roles": sorted(str(r) for r in user.roles), "new": True})
+            created.append(
+                {
+                    "email": user.email,
+                    "roles": sorted(str(r) for r in user.roles),
+                    "data_scopes": sorted(scopes),
+                    "new": True,
+                }
+            )
         except control.DuplicateUser:
-            scopes = DEV_USER_SCOPES.get(roles[0], ())
             existing = next((u for u in control.list_users(client.id) if u.email == email), None)
-            if existing is not None and scopes and not existing.data_scopes:
+            if existing is not None:
+                # Re-bootstrap always aligns scopes so dept demos stay correct.
                 control.set_user_scopes(existing.id, scopes)
-            created.append({"email": email, "roles": [str(r) for r in roles], "new": False})
+            created.append(
+                {
+                    "email": email,
+                    "roles": [str(r) for r in roles],
+                    "data_scopes": sorted(scopes),
+                    "new": False,
+                }
+            )
     return created
 
 
@@ -162,24 +183,40 @@ def seed_business_data(client: Client, *, flavor: str = "default") -> dict[str, 
         deals = [("Initech renewal", 45000, "negotiation"), ("Umbrella pilot", 12000, "new")]
         subject = "Initech renewal terms"
     else:
-        companies = [("Northwind", "northwind.com", "Logistics"), ("Contoso", "contoso.com", "Retail")]
+        companies = [
+            ("Northwind", "northwind.com", "Logistics"),
+            ("Contoso", "contoso.com", "Retail"),
+            ("Acme Logistics", "acmelogistics.example.com", "Logistics"),
+        ]
         contacts = [
             ("John", "Baker", "john@northwind.com", "Northwind", "Ops Lead", "customer", ["renewal"]),
             ("Maria", "Silva", "maria@contoso.com", "Contoso", "VP Sales", "lead", ["inbound", "webinar"]),
             ("Tom", "Reyes", "tom@contoso.com", "Contoso", "Analyst", "lead", ["inbound"]),
+            (
+                "Pat",
+                "Nguyen",
+                "billing@acmelogistics.example.com",
+                "Acme Logistics",
+                "AP Lead",
+                "customer",
+                ["billing"],
+            ),
         ]
         deals = [
             ("Northwind expansion", 82000, "proposal"),
             ("Contoso pilot", 24000, "new"),
             ("Contoso rollout", 150000, "negotiation"),
+            ("Acme Logistics — Aug delivery", 4500, "pending_invoice"),
+            ("Acme Logistics — Sept storage", 1200, "pending_invoice"),
         ]
         subject = "Tomorrow's planning meeting"
 
     with workspace_connection(ctx) as conn:
         already_seeded = bool(conn.execute(text("SELECT count(*) FROM crm_contacts")).scalar())
     if already_seeded:
-        # Memory seeds are per-key idempotent, so upgrades still get new ones.
+        # Memory / Acme billable seeds are per-key idempotent for upgrades.
         _seed_memory(ctx, client, flavor)
+        _seed_acme_billables(ctx, client, flavor)
         return counts
 
     with workspace_connection(ctx) as conn:
@@ -218,8 +255,15 @@ def seed_business_data(client: Client, *, flavor: str = "default") -> dict[str, 
             )
             counts["contacts"] += 1
 
-        first_contact = next(iter(contact_ids.values()))
+        # Map each deal to the company named in its title when possible.
+        contact_by_company = {
+            company: cid
+            for email, cid in contact_ids.items()
+            for company in company_ids
+            if any(c[3] == company and c[2] == email for c in contacts)
+        }
         for name, amount, stage in deals:
+            company_name = next((c for c in company_ids if c in name), next(iter(company_ids)))
             conn.execute(
                 text(
                     "INSERT INTO crm_deals (id, name, contact_id, company_id, stage, amount, "
@@ -228,8 +272,8 @@ def seed_business_data(client: Client, *, flavor: str = "default") -> dict[str, 
                 {
                     "i": new_id("deal"),
                     "n": name,
-                    "c": first_contact,
-                    "co": next(iter(company_ids.values())),
+                    "c": contact_by_company.get(company_name) or next(iter(contact_ids.values())),
+                    "co": company_ids[company_name],
                     "s": stage,
                     "a": amount,
                 },
@@ -299,7 +343,84 @@ def seed_business_data(client: Client, *, flavor: str = "default") -> dict[str, 
             counts["events"] += 1
 
     _seed_memory(ctx, client, flavor)
+    _seed_acme_billables(ctx, client, flavor)
     return counts
+
+
+def _seed_acme_billables(ctx: TenantContext, client: Client, flavor: str) -> None:
+    """Ensure Acme Logistics + pending_invoice deals exist (idempotent upgrade)."""
+    if flavor == "alt":
+        return
+    with workspace_connection(ctx) as conn:
+        company = conn.execute(
+            text("SELECT id FROM crm_companies WHERE name = 'Acme Logistics' LIMIT 1")
+        ).first()
+        if company is None:
+            company_id = new_id("co")
+            conn.execute(
+                text(
+                    "INSERT INTO crm_companies (id, name, domain, industry) VALUES (:i, :n, :d, :ind)"
+                ),
+                {
+                    "i": company_id,
+                    "n": "Acme Logistics",
+                    "d": "acmelogistics.example.com",
+                    "ind": "Logistics",
+                },
+            )
+        else:
+            company_id = company.id
+
+        contact = conn.execute(
+            text(
+                "SELECT id FROM crm_contacts WHERE lower(email) = lower(:e) LIMIT 1"
+            ),
+            {"e": "billing@acmelogistics.example.com"},
+        ).first()
+        if contact is None:
+            contact_id = new_id("con")
+            conn.execute(
+                text(
+                    "INSERT INTO crm_contacts (id, first_name, last_name, email, company, title, "
+                    "lifecycle, tags, owner) VALUES (:i, :f, :l, :e, :c, :t, :lc, :g, 'sales@'||:d)"
+                ),
+                {
+                    "i": contact_id,
+                    "f": "Pat",
+                    "l": "Nguyen",
+                    "e": "billing@acmelogistics.example.com",
+                    "c": "Acme Logistics",
+                    "t": "AP Lead",
+                    "lc": "customer",
+                    "g": ["billing"],
+                    "d": client.slug,
+                },
+            )
+        else:
+            contact_id = contact.id
+
+        for title, amount in (
+            ("Acme Logistics — Aug delivery", 4500),
+            ("Acme Logistics — Sept storage", 1200),
+        ):
+            if conn.execute(
+                text("SELECT 1 FROM crm_deals WHERE name = :n LIMIT 1"), {"n": title}
+            ).first():
+                continue
+            conn.execute(
+                text(
+                    "INSERT INTO crm_deals (id, name, contact_id, company_id, stage, amount, "
+                    "close_date, owner) VALUES (:i, :n, :c, :co, :s, :a, CURRENT_DATE + 30, 'sales')"
+                ),
+                {
+                    "i": new_id("deal"),
+                    "n": title,
+                    "c": contact_id,
+                    "co": company_id,
+                    "s": "pending_invoice",
+                    "a": amount,
+                },
+            )
 
 
 def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
@@ -313,11 +434,45 @@ def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
         ]
     else:
         seeds = [
-            (MemoryCategory.FACT, "discount_policy", "Pricing discount", "Pricing discount = 15%", ["finance", "pricing"]),
-            (MemoryCategory.FACT, "refund_period", "Refund period", "Refund period = 30 days", ["finance", "payment"]),
-            (MemoryCategory.FACT, "payment_terms", "Payment terms", "Net-30 on approved invoices.", ["finance", "payment"]),
-            (MemoryCategory.FACT, "operating_hours", "Operating hours", "Mon-Fri 09:00-18:00 ET", ["operations"]),
-            (MemoryCategory.FACT, "goal_1", "Goal 1", "Grow enterprise pipeline 25% this quarter.", ["strategy", "goal"]),
+            (
+                MemoryCategory.FACT,
+                "discount_policy",
+                "Pricing discount",
+                "Pricing discount = 15%",
+                ["finance", "pricing"],
+                "finance",
+            ),
+            (
+                MemoryCategory.FACT,
+                "refund_period",
+                "Refund period",
+                "Refund period = 30 days",
+                ["finance", "payment"],
+                "finance",
+            ),
+            (
+                MemoryCategory.FACT,
+                "payment_terms",
+                "Payment terms",
+                "Net-30 on approved invoices.",
+                ["finance", "payment"],
+                "finance",
+            ),
+            (
+                MemoryCategory.FACT,
+                "operating_hours",
+                "Operating hours",
+                "Mon-Fri 09:00-18:00 ET",
+                ["operations", "ops"],
+                "ops",
+            ),
+            (
+                MemoryCategory.FACT,
+                "goal_1",
+                "Goal 1",
+                "Grow enterprise pipeline 25% this quarter.",
+                ["strategy", "goal"],
+            ),
             (
                 MemoryCategory.FACT,
                 "brand_voice",
@@ -331,6 +486,24 @@ def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
                 "MSA termination clause summary",
                 "Either party may terminate with 30 days written notice. Data returned within 15 days.",
                 ["legal", "contract", "clause"],
+                "legal",
+            ),
+            (
+                MemoryCategory.FACT,
+                "client_agreement_acme_logistics",
+                "Acme Logistics master agreement (full)",
+                "Full MSA: pricing schedule, liability caps, exclusivity, and termination. "
+                "Confidential — legal and exec only.",
+                ["legal", "contract", "agreement"],
+                "legal",
+            ),
+            (
+                MemoryCategory.FACT,
+                "my_scope_of_work",
+                "Employee scope of work",
+                "Your part: update attendance by the 3rd business day, flag exceptions to your lead. "
+                "You do not need other teams' agreements or invoice details.",
+                ["ops", "scope", "employee"],
             ),
             (
                 MemoryCategory.FACT,
@@ -349,12 +522,62 @@ def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
                 "hr",
             ),
             (
+                MemoryCategory.FACT,
+                "job_opening_ops_coordinator",
+                "Job opening: Operations Coordinator",
+                "Role: Operations Coordinator. Must-haves: 2+ years logistics ops, Excel, "
+                "vendor coordination, shift coverage planning. Nice-to-have: SQL basics. "
+                "Location: hybrid ET. Open until filled.",
+                ["hr", "hiring", "job_opening"],
+                "hr",
+            ),
+            (
+                MemoryCategory.FACT,
+                "candidate_resume_jordan_lee",
+                "Resume: Jordan Lee",
+                "Jordan Lee — 3 years warehouse ops coordinator at Northwind. Excel daily, "
+                "vendor SLAs, weekend shift planning. No SQL. Seeking Ops Coordinator roles.",
+                ["hr", "hiring", "resume"],
+                "hr",
+            ),
+            (
+                MemoryCategory.SOP,
+                "monthly_payroll_from_attendance",
+                "Monthly payroll from attendance",
+                "Process used last month (repeat each month):\n"
+                "1) Upload employee attendance CSV for the period.\n"
+                "2) Flag missing days and overtime exceptions.\n"
+                "3) Apply base pay + approved overtime rules from HR.\n"
+                "4) Draft payslips for Approver review (do not send externally).\n"
+                "5) After approval, mark run complete and archive the attendance file key.",
+                ["sop", "payroll", "ops", "hr"],
+                "ops",
+            ),
+            (
                 MemoryCategory.DECISION,
                 "board_q3_plan",
                 "Board Q3 plan",
                 "Board approved a hiring freeze for non-revenue roles through Q3.",
                 ["exec", "board"],
                 "exec",
+            ),
+            (
+                MemoryCategory.FACT,
+                "project_atlas_globex",
+                "Project Atlas — Globex Foods warehouse rollout",
+                "Project work:\n"
+                "- Scope: move Globex Foods' warehouse scanning to the new handheld app at the Newark site.\n"
+                "- Milestones: pilot in aisles 1-4 done Sept 12; staff training Sept 29-30; "
+                "full site go-live Oct 3.\n"
+                "- Team: Oscar Ops (site lead), Lara Lead (training), Eddie Employee (daily scan checks).\n"
+                "- Status: on track. Next step: confirm the training schedule.\n"
+                "[[area:finance]]\n"
+                "Client invoice:\n"
+                "- Invoice INV-ATL-0920 to Globex Foods, issued Sept 20, due Oct 20 (Net 30).\n"
+                "- Amount: $18,400 (implementation $14,000 + training $4,400).\n"
+                "- Payment status: unpaid.\n"
+                "[[/area]]",
+                ["project", "ops", "globex"],
             ),
             (
                 MemoryCategory.SOP,
@@ -368,7 +591,7 @@ def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
 
     with tenant_scope(ctx):
         for category, key, title, content, tags, *area in seeds:
-            if memory.get_by_key(category, key, ctx=ctx) is None:
+            if memory.get_by_key(category, key, ctx=ctx, include_archived=True) is None:
                 memory.put(
                     category=category,
                     memory_key=key,
@@ -380,6 +603,34 @@ def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
                     settings=client.settings,
                     ctx=ctx,
                 )
+        # Align access_area on already-seeded keys (upgrade path for older volumes).
+        _align_memory_access_areas(ctx, seeds)
+
+
+def _align_memory_access_areas(ctx: TenantContext, seeds: list[tuple]) -> None:
+    """Set access_area (and missing tags) on existing seed keys to match the catalog."""
+    with workspace_connection(ctx) as conn:
+        for category, key, _title, _content, tags, *area in seeds:
+            if tags:
+                conn.execute(
+                    text(
+                        "UPDATE memory_items SET tags = :t, updated_at = NOW() "
+                        "WHERE category = :c AND memory_key = :k "
+                        "AND (tags IS NULL OR cardinality(tags) = 0)"
+                    ),
+                    {"t": list(tags), "c": str(category), "k": key},
+                )
+            wanted = area[0] if area else None
+            if not wanted:
+                continue
+            conn.execute(
+                text(
+                    "UPDATE memory_items SET access_area = :a, updated_at = NOW() "
+                    "WHERE category = :c AND memory_key = :k "
+                    "AND (access_area IS NULL OR access_area <> :a)"
+                ),
+                {"a": wanted, "c": str(category), "k": key},
+            )
 
 
 def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:
@@ -414,6 +665,24 @@ def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:
     )
     template.seed_memory(admin_context(acme), template.load_template(), acme.settings)
     from bizos.audit.events import purge_expired
+    from bizos.insights import ensure_default_alerts, ensure_default_baselines
+    from bizos.owner import ensure_portfolio_defaults
+    from bizos.pricing import ensure_default_rules
+    from bizos.support import ensure_demo_tickets
+
+    # FB-041 / FB-050 — seed rare alerts + one baseline for the Acme demo.
+    ensure_default_alerts(client_id=acme.id, settings=acme.settings, actor="bootstrap")
+    acme = control.get_client(acme.id)
+    ensure_default_baselines(client_id=acme.id, settings=acme.settings, actor="bootstrap")
+    acme = control.get_client(acme.id)
+    # FB-048 — face resale rules until Jeanne/Venu confirm.
+    ensure_default_rules(client_id=acme.id, settings=acme.settings, actor="bootstrap")
+    acme = control.get_client(acme.id)
+    # FB-047 — face portfolio fields for owner view.
+    ensure_portfolio_defaults(client_id=acme.id, actor="bootstrap")
+    # FB-046 — routine Cepoch tickets + one Jeanne escalation.
+    ensure_demo_tickets(client_id=acme.id, actor="bootstrap")
+    acme = control.get_client(acme.id)
 
     purge_expired(acme.settings.retention_policy.audit_days, ctx=admin_context(acme))
     users = ensure_dev_users(acme, domain="acme.example.com")

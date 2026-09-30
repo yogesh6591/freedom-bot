@@ -31,21 +31,27 @@ _SIGNALS: dict[str, tuple[str, ...]] = {
     "strategy": (
         "strategy", "strategic", "goal", "goals", "priority", "priorities", "okr",
         "roadmap", "vision", "quarter plan", "positioning", "option", "trade-off", "tradeoff",
+        "board", "board decision", "board decisions", "executive", "exec",
+        "decide", "decided", "q1", "q2", "q3", "q4",
     ),
     "finance": (
         "finance", "invoice", "invoices", "refund", "discount", "pricing", "price",
         "payment", "payments", "budget", "cost", "costs", "revenue", "margin", "cash",
-        "spend", "net-30", "terms", "adjustment",
+        "spend", "net-30", "terms", "adjustment", "billable", "billables",
     ),
     "operations": (
         "operations", "ops", "process", "sop", "procedure", "workflow", "task", "tasks",
         "handoff", "checklist", "hours", "schedule", "vendor", "fulfilment", "fulfillment",
+        "payroll", "attendance", "payslip", "payslips", "timesheet",
     ),
     "sales": (
         "sales", "deal", "deals", "pipeline", "prospect", "lead", "leads", "follow-up",
         "follow up", "proposal", "quote", "crm", "contact", "customer",
     ),
-    "intake": ("intake", "inbound", "new lead", "qualify", "qualification", "enquiry", "inquiry"),
+    "intake": (
+        "intake", "inbound", "new lead", "qualify", "qualification", "enquiry", "inquiry",
+        "resume", "job opening", "candidate", "hiring", "recruit",
+    ),
     "planning": ("plan", "planning", "meeting", "calendar", "agenda", "timeline", "milestone", "week"),
     "brand": ("brand", "voice", "tone", "messaging", "copy", "tagline", "style guide"),
     "legal": ("legal", "contract", "clause", "msa", "nda", "terms of service", "liability", "counsel"),

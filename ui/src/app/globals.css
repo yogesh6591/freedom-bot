@@ -4,13 +4,16 @@
 
 @layer base {
   :root {
-    --color-border-default: 20, 18, 11, 0.1;
+    --color-border-default: 167, 139, 250, 0.22;
     --scrollbar-width: 0.4rem;
-    --surface-glass: rgba(255, 253, 247, 0.86);
+    --surface-glass: rgba(16, 16, 28, 0.82);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --font-ui: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   }
 
   html {
-    color-scheme: light;
+    color-scheme: dark;
   }
 
   body {
@@ -20,13 +23,58 @@
   }
 
   ::selection {
-    background: rgba(245, 196, 0, 0.45);
-    color: #14120b;
+    background: rgba(139, 92, 246, 0.45);
+    color: #F8F7FF;
   }
 
   :focus-visible {
-    outline: 2px solid rgba(245, 196, 0, 0.9);
+    outline: 2px solid rgba(167, 139, 250, 0.9);
     outline-offset: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  .type-display {
+    @apply font-geist text-display font-bold text-primary text-balance;
+  }
+
+  .type-title {
+    @apply font-geist text-title font-semibold tracking-tight text-primary;
+  }
+
+  .type-subtitle {
+    @apply font-geist text-subtitle font-semibold tracking-tight text-primary;
+  }
+
+  .type-body {
+    @apply font-geist text-body text-secondary;
+  }
+
+  .type-muted {
+    @apply font-geist text-sm leading-relaxed text-muted;
+  }
+
+  .type-caption {
+    @apply font-dmmono text-caption font-medium uppercase text-muted;
+  }
+
+  .ui-transition {
+    @apply transition-colors duration-base ease-out;
+  }
+
+  .touch-target {
+    @apply min-h-11 min-w-11;
   }
 }
 
@@ -40,6 +88,10 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  .max-w-prose-chat {
+    max-width: 70ch;
+  }
 }
 
 ::-webkit-scrollbar {
@@ -49,13 +101,13 @@
 
 ::-webkit-scrollbar-thumb {
   @apply rounded-full;
-  background-color: rgba(20, 18, 11, 0.18);
+  background-color: rgba(167, 139, 250, 0.28);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(20, 18, 11, 0.32);
+  background-color: rgba(167, 139, 250, 0.45);
 }
 
 ::-webkit-scrollbar-track {
