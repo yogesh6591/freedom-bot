@@ -118,7 +118,10 @@ def current_context(
         email=user.email,
         display_name=user.display_name,
         data_scopes=user.data_scopes,
-        attributes={"ip": request.client.host if request.client else None},
+        attributes={
+            "ip": request.client.host if request.client else None,
+            "platform_owner": user.platform_owner,
+        },
     )
 
 
@@ -142,6 +145,16 @@ def require_role(*roles: Role):
         )
 
     return _check
+
+
+def require_platform_owner(ctx: TenantContext = Depends(current_context)) -> TenantContext:
+    """M15-20: the cross-client owner view. A client ADMIN does not qualify."""
+    if not ctx.attributes.get("platform_owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The owner view is available to Cepoch platform owners only.",
+        )
+    return ctx
 
 
 require_admin = require_role(Role.ADMIN)

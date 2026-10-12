@@ -47,6 +47,10 @@ _SIGNALS: dict[str, tuple[str, ...]] = {
     "sales": (
         "sales", "deal", "deals", "pipeline", "prospect", "lead", "leads", "follow-up",
         "follow up", "proposal", "quote", "crm", "contact", "customer",
+        # M06-05: email lives in the sales pack; without these a plain "send an
+        # email to John" fell to general, which has no send tool.
+        "email", "emails", "e-mail", "mail", "send an email", "send email", "email to",
+        "reply to", "outreach", "inbox", "thread", "threads",
     ),
     "intake": (
         "intake", "inbound", "new lead", "qualify", "qualification", "enquiry", "inquiry",

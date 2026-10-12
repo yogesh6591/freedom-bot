@@ -154,6 +154,8 @@ class Grounding:
     unpurchased: dict[str, list[str]] = field(default_factory=dict)
     #: Whether the question asks for work in one of those packs.
     unpurchased_action: bool = False
+    #: Open memory conflicts that touch this question (M04-12) — never pick a side.
+    conflicts: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _render_item(item: Any, hits: list[str]) -> str:
@@ -358,6 +360,8 @@ def analyze(ctx: TenantContext, message: str, enabled_domains: list[str]) -> Gro
     hidden = {a: ([w for w in hits if w not in covered] or hits) for a, hits in hidden.items()}
     blocked = blocked_capabilities(ctx, enabled_domains)
 
+    relevant_conflicts = _relevant_conflicts(ctx, query, scored)
+
     lines = ["## Recorded memory for this question (retrieved for this user's access)"]
     if hidden:
         lines.append(
@@ -375,15 +379,39 @@ def analyze(ctx: TenantContext, message: str, enabled_domains: list[str]) -> Gro
             "answer the parts that a visible record below does answer."
         )
         lines.append("")
-    if scored:
+
+    conflict_ids = {entry["item_id"] for c in relevant_conflicts for entry in c["items"]}
+    safe_scored = [(i, h) for i, h in scored if i.id not in conflict_ids]
+
+    if relevant_conflicts:
+        lines.append(
+            "OPEN POLICY CONFLICT — recorded values disagree. Do NOT pick a side, do NOT "
+            "quote one value as Fact, and do NOT guess which is current. Tell the user the "
+            "policies conflict and that an approver must resolve it (call "
+            "memory_escalate_conflict when you can)."
+        )
+        for conflict in relevant_conflicts:
+            lines.append(f"- Topic `{conflict['topic']}` has disagreeing values:")
+            for entry in conflict["items"]:
+                status = entry.get("approval_status") or ""
+                snippet = (entry.get("value") or "").strip().replace("\n", " ")
+                if len(snippet) > 160:
+                    snippet = snippet[:157] + "..."
+                lines.append(
+                    f"  • {entry.get('title') or entry.get('key')} "
+                    f"[{status}]: {snippet}"
+                )
+        lines.append("")
+
+    if safe_scored:
         lines.append(
             "These are the approved records this user may see that match the question. "
             "Answer from them. Quote the value exactly and prefix it with Fact: (or "
             "Estimate: when labelled estimate). Only use the ones that actually answer "
             "the question."
         )
-        lines.extend(_render_item(i, h) for i, h in scored)
-    else:
+        lines.extend(_render_item(i, h) for i, h in safe_scored)
+    elif not relevant_conflicts:
         lines.append("No approved record visible to this user matches the question.")
 
     if blocked:
@@ -414,10 +442,96 @@ def analyze(ctx: TenantContext, message: str, enabled_domains: list[str]) -> Gro
     return Grounding(
         text="\n".join(lines),
         hidden=hidden,
-        visible_keys=[i.memory_key for i, _ in scored if i.memory_key],
+        visible_keys=[i.memory_key for i, _ in safe_scored if i.memory_key],
         unpurchased=unpurchased,
         unpurchased_action=bool(unpurchased and _ACTION.search(query)),
+        conflicts=relevant_conflicts,
     )
+
+
+def _relevant_conflicts(
+    ctx: TenantContext, query: str, scored: list[tuple[Any, list[str]]]
+) -> list[dict[str, Any]]:
+    """Open conflicts that touch this question or a retrieved memory item."""
+    try:
+        all_conflicts = memory.find_conflicts(ctx=ctx)
+    except Exception:
+        return []
+    if not all_conflicts:
+        return []
+    scored_ids = {i.id for i, _ in scored}
+    query_l = (query or "").casefold()
+    out: list[dict[str, Any]] = []
+    for conflict in all_conflicts:
+        item_ids = {entry["item_id"] for entry in conflict["items"]}
+        if item_ids & scored_ids:
+            out.append(conflict)
+            continue
+        haystack = " ".join(
+            [
+                conflict.get("topic") or "",
+                *(str(entry.get("title") or "") for entry in conflict["items"]),
+                *(str(entry.get("key") or "") for entry in conflict["items"]),
+                *(str(entry.get("value") or "") for entry in conflict["items"]),
+            ]
+        ).casefold()
+        hits = memory.word_hits(haystack, query)
+        if len(hits) >= 1 and any(
+            token in query_l for token in (conflict.get("topic") or "").split() if len(token) > 2
+        ):
+            out.append(conflict)
+        elif len(hits) >= 2:
+            out.append(conflict)
+    return out
+
+
+_CONFLICT_OK = re.compile(
+    r"\b(conflict|conflicts|disagree|disagreement|disagreeing|pending approval|"
+    r"approver|escalate|escalat|cannot choose|can't choose|both values|both policies|"
+    r"two (policies|values|records)|not resolve|needs? (a )?person|human (to )?decide)\b",
+    re.I,
+)
+
+
+def conflict_message(conflicts: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for conflict in conflicts:
+        values = [str(entry.get("value") or "").strip() for entry in conflict["items"]]
+        shown = "; ".join(f"“{v[:80]}”" for v in values if v)
+        parts.append(
+            f"Recorded policies on “{conflict.get('topic')}” disagree ({shown}). "
+            "I can't choose between them — an approver needs to resolve this conflict."
+        )
+    return "\n\n".join(parts)
+
+
+def enforce_conflicts(reply: str, conflicts: list[dict[str, Any]]) -> tuple[str, bool]:
+    """Block replies that silently pick one side of an open memory conflict (M04-12)."""
+    if not conflicts:
+        return reply, False
+    if _CONFLICT_OK.search(reply or ""):
+        return reply, False
+    reply_l = (reply or "").casefold()
+    for conflict in conflicts:
+        for entry in conflict["items"]:
+            value = str(entry.get("value") or "").strip()
+            if not value:
+                continue
+            candidates = {value.casefold()}
+            if len(value) > 48:
+                candidates.add(value[:48].casefold())
+            for m in re.findall(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d+\s*%", value):
+                candidates.add(m.casefold())
+            # Prefer multi-digit / currency snippets so "1" from "version 1" does not trip.
+            for m in re.findall(r"\b\d{2,}\b", value):
+                candidates.add(m.casefold())
+            if any(c and c in reply_l for c in candidates):
+                return conflict_message(conflicts), True
+    # Model answered without naming the conflict and without quoting either side —
+    # still force the notice when conflicts were grounded for this turn.
+    if "fact:" in reply_l:
+        return conflict_message(conflicts), True
+    return reply, False
 
 
 _MATCH_INTENT = re.compile(r"\b(compare|fit|fits|match|matches|suitable|qualif|hire|hired|hiring)\b", re.I)

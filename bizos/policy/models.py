@@ -78,6 +78,10 @@ class PolicyRequest:
     #: Set by the content classifier when the payload looks like PHI/card data.
     contains_phi: bool = False
     contains_card_data: bool = False
+    #: M07-13: the payload carries personal data about a child.
+    contains_child_data: bool = False
+    #: FB-039: the payload carries biometric identifiers.
+    contains_biometrics: bool = False
     #: Licensed / regulated categories detected in the payload (FB-039).
     licensed_categories: tuple[str, ...] = ()
     #: Connected integration ids in this workspace.

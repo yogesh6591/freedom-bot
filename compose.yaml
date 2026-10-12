@@ -48,6 +48,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
       AGENTOS_URL: ${AGENTOS_URL:-http://127.0.0.1:8001}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # FB-043: shared secret for the checkout/contract sale webhook.
+      SALE_WEBHOOK_SECRET: ${SALE_WEBHOOK_SECRET:-}
       MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
     ports:
       - "8001:8000"

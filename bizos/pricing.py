@@ -146,8 +146,11 @@ def save_rules(
 
     customer = pick("customer_price_usd")
     cost = pick("cepoch_cost_usd")
-    if customer < 0 or cost < 0:
-        raise ValueError("prices must be non-negative")
+    if customer <= 0:
+        # M17-08: a zero price would produce $0 quotes that look real.
+        raise ValueError("customer_price_usd must be greater than zero")
+    if cost < 0:
+        raise ValueError("cepoch_cost_usd must be zero or more")
     margin = ((customer - cost) / customer * 100.0) if customer > 0 else 0.0
     status = str(rules.get("quote_status") or current.get("quote_status") or "pending_venu_confirm")
     if status not in {"pending_venu_confirm", "venu_confirmed", "draft"}:
@@ -264,7 +267,10 @@ def calculate_consult_quote(
     ]
     addon_total = sum(line["customer_usd"] for line in addon_lines)
 
-    mode = (autonomy or "WAIT_FOR_APPROVAL").strip().upper()
+    if not (autonomy or "").strip():
+        # M17-11: a required scope input is asked for, never assumed.
+        raise ValueError("autonomy is required — choose the autonomy level for this quote")
+    mode = autonomy.strip().upper()
     if mode not in FACE_AUTONOMY_FACTOR:
         raise ValueError(f"unknown autonomy mode: {mode}")
     factor = FACE_AUTONOMY_FACTOR[mode]

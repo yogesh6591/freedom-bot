@@ -154,6 +154,16 @@ def internal_service_token() -> str | None:
     return getenv("INTERNAL_SERVICE_TOKEN", "").strip() or None
 
 
+def sale_webhook_secret() -> str | None:
+    """Shared secret for checkout/contract → assessment handoff (FB-043).
+
+    Checkout or contract systems POST to ``/api/owner/sale-events`` with header
+    ``X-FreedomBot-Sale-Secret``. When unset, only a signed-in platform owner
+    may trigger automatic handoff.
+    """
+    return getenv("SALE_WEBHOOK_SECRET", "").strip() or None
+
+
 def openai_api_key() -> str | None:
     return getenv("OPENAI_API_KEY", "").strip() or None
 
@@ -165,6 +175,15 @@ def model_id() -> str:
         # Older env files used bare ids; Agno 3 requires a provider prefix.
         return f"openai:{raw}"
     return raw or "openai:gpt-4.1-mini"
+
+
+def llm_vendor() -> str:
+    """Configured chat model vendor (FB-039 BAA pattern). Defaults from MODEL_ID."""
+    override = getenv("LLM_VENDOR", "").strip().casefold()
+    if override:
+        return override
+    mid = model_id()
+    return mid.split(":", 1)[0].casefold() if ":" in mid else "openai"
 
 
 @lru_cache(maxsize=1)

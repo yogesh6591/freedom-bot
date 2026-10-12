@@ -25,6 +25,8 @@ export interface SessionUser {
   roles: Role[]
   primary_role: Role
   data_scopes?: string[]
+  /** M15-20: may open the cross-client owner view. */
+  is_platform_owner?: boolean
 }
 
 export interface SessionClient {

@@ -87,6 +87,13 @@ _VALUE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("db_url", re.compile(r"(?i)\b[a-z0-9+]{2,20}://[^\s:/@]+:[^\s@]+@")),
     # Payment card numbers (13-19 digits, optionally grouped). Never stored.
     ("card", re.compile(r"\b(?:\d[ -]?){13,19}\b")),
+    # M07-20: regulated personal identifiers typed into chat must not be kept
+    # verbatim in audit or history. US SSN, dashed or labelled.
+    ("ssn", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+    ("ssn_labeled", re.compile(r"(?i)\b(?:ssn|social security(?: number| no\.?)?)\s*[:#]?\s*\d{3}[ -]?\d{2}[ -]?\d{4}\b")),
+    # Medical record numbers and dates of birth (PHI identifiers).
+    ("mrn", re.compile(r"(?i)\b(?:mrn|medical record(?: number| no\.?)?)\s*[:#]?\s*[A-Z0-9][A-Z0-9-]{3,}")),
+    ("dob", re.compile(r"(?i)\b(?:dob|date of birth|born(?: on)?)\s*[:#]?\s*\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}")),
 )
 
 #: Maximum length of any single string kept in an audit payload. Long blobs are
@@ -112,6 +119,19 @@ def redact_text(value: str) -> str:
     if len(redacted) > _MAX_STRING:
         redacted = f"{redacted[:_MAX_STRING]}…[truncated {len(redacted) - _MAX_STRING} chars]"
     return redacted
+
+
+def scrub_identifiers(value: str) -> str:
+    """Replace secret and regulated identifiers without truncating the text.
+
+    Used for stored transcripts (chat history), where the message must stay
+    readable in full but an SSN, card number or medical record number must not.
+    """
+    if not value:
+        return value
+    for _name, pattern in _VALUE_PATTERNS:
+        value = pattern.sub(REDACTED, value)
+    return value
 
 
 def redact(value: Any, *, _depth: int = 0) -> Any:

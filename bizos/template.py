@@ -75,8 +75,16 @@ def settings_from(config: dict[str, Any], *, company_name: str) -> ClientSetting
             "tool_modes": tool_modes,
             "retention_policy": dict(config.get("retention_policy") or {}),
             "approval_policy": dict(config.get("approval_policy") or {}),
+            # FB-039: legacy switches migrate into the Order/DPA list unless the
+            # template names the list directly.
             "allow_phi": bool(config.get("allow_phi", False)),
             "allow_card_data": bool(config.get("allow_card_data", False)),
+            "allow_child_data": bool(config.get("allow_child_data", False)),
+            **(
+                {"order_dpa_allows": list(config["order_dpa_allows"])}
+                if isinstance(config.get("order_dpa_allows"), list)
+                else {}
+            ),
             "onboarding": {
                 "template_version": config.get("template_version"),
                 "assistant_name": config.get("assistant_name", "FreedomBot"),

@@ -201,44 +201,109 @@ def _redacted(item: MemoryItem, tenant: Optional[TenantContext]) -> MemoryItem:
 # Conflicts (FB-036)
 # ---------------------------------------------------------------------------
 
+#: Title/key wording that should map to the same policy topic (M04-17).
+_TOPIC_SYNONYMS: tuple[tuple[str, str], ...] = (
+    (r"\bheadquarters\b", "hq"),
+    (r"\bhead[-\s]?office\b", "hq"),
+    (r"\bheadquarters?\s+city\b", "hq city"),
+    (r"\bhq\s+city\b", "hq city"),
+    (r"\bhead office city\b", "hq city"),
+)
+
+_TOPIC_STOP = frozenset(
+    "the a an our my your their its this that these those for and or of to in on "
+    "at by with from about as is are was were be been being qa test".split()
+)
+
+
+def topic_fingerprint(title: str, *, key: str = "") -> str:
+    """Stable topic id from a title so synonym titles share one conflict bucket.
+
+    ``HQ city`` and ``Headquarters city`` collapse to the same fingerprint so a
+    second approved value cannot sit beside the first unnoticed (M04-17).
+
+    The memory key is only used when the title is empty — keys often embed the
+    value itself (``hq_city_boston``) and would otherwise split the bucket.
+    """
+    raw = (title or "").strip() or str(key or "").replace("_", " ")
+    raw = raw.casefold()
+    for pattern, repl in _TOPIC_SYNONYMS:
+        raw = re.sub(pattern, repl, raw)
+    tokens = [
+        t for t in re.findall(r"[a-z0-9]+", raw) if t not in _TOPIC_STOP and len(t) > 1
+    ]
+    return " ".join(sorted(set(tokens)))
+
 
 def _conflicting_items(conn: Any, topic: str, exclude_item: Optional[str], content: str) -> list[str]:
-    """Approved, active items on the same topic whose value differs."""
+    """Approved, active items on the same topic whose value differs.
+
+    Matches both an explicit ``attributes.topic`` and a title/key fingerprint so
+    older rows written before auto-topic still collide with synonym titles.
+    """
+    topic_l = topic.casefold().strip()
+    content_l = content.strip().casefold()
     rows = conn.execute(
         text(
-            "SELECT i.id FROM memory_items i JOIN memory_versions v ON v.item_id = i.id "
+            "SELECT i.id, i.title, i.memory_key, v.content, v.attributes "
+            "FROM memory_items i JOIN memory_versions v ON v.item_id = i.id "
             "WHERE v.status = 'ACTIVE' AND v.approval_status = 'APPROVED' "
-            "AND lower(v.attributes->>'topic') = lower(:t) "
-            "AND (CAST(:x AS TEXT) IS NULL OR i.id <> :x) "
-            "AND btrim(lower(v.content)) <> btrim(lower(:c))"
+            "AND (CAST(:x AS TEXT) IS NULL OR i.id <> :x)"
         ),
-        {"t": topic, "x": exclude_item, "c": content},
+        {"x": exclude_item},
     ).fetchall()
-    return [r.id for r in rows]
+    out: list[str] = []
+    for r in rows:
+        attrs = r.attributes if isinstance(r.attributes, dict) else {}
+        if not attrs and isinstance(r.attributes, str):
+            try:
+                attrs = json.loads(r.attributes) or {}
+            except Exception:
+                attrs = {}
+        stored = str(attrs.get("topic") or "").strip()
+        fingerprint = topic_fingerprint(r.title or "", key=r.memory_key or "")
+        if stored.casefold() != topic_l and fingerprint != topic_l:
+            continue
+        if (r.content or "").strip().casefold() == content_l:
+            continue
+        out.append(r.id)
+    return out
 
 
 def find_conflicts(*, ctx: Optional[TenantContext] = None) -> list[dict[str, Any]]:
     """Topics where active memory holds more than one differing value.
 
     These are never resolved by the agent: they are listed for a person to pick
-    the authoritative value.
+    the authoritative value. Topic comes from ``attributes.topic`` or, when
+    missing, the title/key fingerprint so synonym titles still group together.
     """
     tenant = ctx or current_context()
     area_sql, area_params = _area_filter(tenant)
     with workspace_connection(tenant, readonly=True) as conn:
         rows = conn.execute(
             text(
-                "SELECT lower(v.attributes->>'topic') AS topic, i.id, i.title, i.memory_key, "
-                "i.category, v.id AS version_id, v.content, v.approval_status, v.created_by "
+                "SELECT i.id, i.title, i.memory_key, i.category, i.updated_at, "
+                "v.id AS version_id, v.content, v.approval_status, v.created_by, v.attributes "
                 "FROM memory_items i JOIN memory_versions v ON v.item_id = i.id "
-                "WHERE v.status = 'ACTIVE' AND COALESCE(v.attributes->>'topic', '') <> '' "
-                f"AND {area_sql} ORDER BY topic, i.updated_at"
+                "WHERE v.status = 'ACTIVE' "
+                f"AND {area_sql} ORDER BY i.updated_at"
             ),
             area_params,
         ).fetchall()
     groups: dict[str, list[dict[str, Any]]] = {}
     for r in rows:
-        groups.setdefault(r.topic, []).append(
+        attrs = r.attributes if isinstance(r.attributes, dict) else {}
+        if not attrs and isinstance(r.attributes, str):
+            try:
+                attrs = json.loads(r.attributes) or {}
+            except Exception:
+                attrs = {}
+        topic = str(attrs.get("topic") or "").strip().casefold()
+        if not topic:
+            topic = topic_fingerprint(r.title or "", key=r.memory_key or "")
+        if not topic:
+            continue
+        groups.setdefault(topic, []).append(
             {
                 "item_id": r.id,
                 "version_id": r.version_id,
@@ -329,6 +394,15 @@ def put(
         raise PermissionError(f"not permitted to write {area} content")
     attributes = dict(attributes or {})
     conflict_with: list[str] = []
+    # M04-17 / FB-036: every write carries a topic so synonym titles ("HQ city" /
+    # "Headquarters city") land in the same conflict bucket instead of two
+    # approved facts. An explicit topic from the caller always wins.
+    if not str(attributes.get("topic") or "").strip():
+        inferred = topic_fingerprint(title, key=key)
+        # Need at least two tokens so a lone word ("discount") does not collide
+        # every discount-related fact into one conflict bucket.
+        if inferred and len(inferred.split()) >= 2:
+            attributes["topic"] = inferred
 
     with workspace_connection(tenant) as conn:
         existing = conn.execute(
@@ -810,7 +884,7 @@ def search(
             ).first()
             out.append(_redacted(_item_from_row(row, _version_from_row(version)), tenant))
     if out and tenant is not None:
-        _audit(AuditEventType.MEMORY_READ, tenant, query=query, hits=len(out))
+        _audit(AuditEventType.MEMORY_READ, tenant, query=_auditable_query(query), hits=len(out))
     return out
 
 
@@ -986,6 +1060,25 @@ def _search_words(query: str) -> list[str]:
         if word not in words:
             words.append(word)
     return words[:10]
+
+
+def _auditable_query(query: str) -> str:
+    """The search text as it may appear in the audit log (M07-20).
+
+    A search is audited so reads are traceable, but the user's words can carry
+    regulated content (a patient note, an SSN, a child's details). When they do,
+    only the fact that such content was present is recorded, not the text.
+    """
+    from bizos.policy.classifier import classify_text
+    from bizos.util.redaction import scrub_identifiers
+
+    found = classify_text(query or "")
+    sensitive = sorted(
+        c for c in found.categories if c in {"medical", "credit", "minor"}
+    )
+    if found.contains_phi or found.contains_card_data or sensitive:
+        return f"[REDACTED: regulated content ({', '.join(sensitive) or 'sensitive'})]"
+    return scrub_identifiers(query or "")
 
 
 def _audit(event_type: AuditEventType, tenant: TenantContext, **payload: Any) -> None:

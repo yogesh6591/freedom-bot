@@ -23,6 +23,62 @@ def test_classifier_flags_licensed_and_phi():
     card = classify_arguments({"body": "Store the card number and CVV for this customer"})
     assert card.contains_card_data
 
+    bio = classify_text("Store the employee's fingerprint template for door access")
+    assert bio.contains_biometrics
+    assert "biometrics" in bio.categories
+    assert bio.requires_licensed_human
+
+
+def test_biometrics_blocked_unless_order_dpa_allows(client_a, scope_factory, settings_with):
+    scope = scope_factory(client_a, "operator", mode=ExecutionMode.AUTO_WITHIN_SCOPE)
+    with tenant_scope(scope.ctx):
+        outcome = guarded_call(
+            scope,
+            "crm_create_note",
+            {"body": "Save facial recognition embedding for badge entry"},
+        )
+    assert outcome.effect == PolicyEffect.DENY
+    assert "BIOMETRICS_NOT_PERMITTED" in {c.code for c in outcome.decision.constraints}
+
+    settings = settings_with(
+        client_a.settings,
+        order_dpa_allows=["biometrics"],
+        default_execution_mode=ExecutionMode.AUTO_WITHIN_SCOPE.value,
+    )
+    scope = scope_factory(client_a, "operator", settings=settings)
+    with tenant_scope(scope.ctx):
+        outcome = guarded_call(
+            scope,
+            "crm_create_note",
+            {"body": "Save facial recognition embedding for badge entry"},
+        )
+    # Biometrics still require licensed-human approval on writes.
+    assert outcome.effect == PolicyEffect.REQUIRE_APPROVAL
+
+
+def test_phi_order_dpa_blocked_without_baa_for_openai(client_a, scope_factory, settings_with):
+    settings = settings_with(
+        client_a.settings,
+        order_dpa_allows=["phi"],
+        llm_vendor="openai",
+        llm_baa_covered=False,
+        default_execution_mode=ExecutionMode.AUTO_WITHIN_SCOPE.value,
+    )
+    scope = scope_factory(client_a, "operator", settings=settings)
+    with tenant_scope(scope.ctx):
+        decision = evaluate(
+            PolicyRequest(
+                ctx=scope.ctx,
+                settings=settings,
+                tool="crm_create_note",
+                domain="sales",
+                contains_phi=True,
+                connected_integrations=scope.integrations,
+            )
+        )
+    assert decision.effect == PolicyEffect.DENY
+    assert decision.rule == "PHI_NO_BAA"
+
 
 def test_licensed_content_forces_approval_on_writes(client_a, scope_factory):
     scope = scope_factory(client_a, "operator", domain="sales", mode=ExecutionMode.AUTO_WITHIN_SCOPE)

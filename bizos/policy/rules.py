@@ -15,7 +15,7 @@ policy layer auditable and testable.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from bizos.policy.models import Constraint, EvaluationInputs, PolicyRequest
 from bizos.types import (
@@ -27,6 +27,12 @@ from bizos.types import (
     classification_rank,
     risk_rank,
 )
+
+def _order_dpa_allows(settings: Any, category: str) -> bool:
+    """FB-039: whether the client's Order/DPA setting allows this category."""
+    allowed = getattr(settings, "order_dpa_allows", None) or []
+    return category.casefold() in {str(x).strip().casefold() for x in allowed}
+
 
 Rule = Callable[[PolicyRequest, EvaluationInputs], Optional[Constraint]]
 
@@ -130,31 +136,71 @@ def rule_data_area(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constr
 
 
 def rule_phi(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
-    """PHI is refused unless the client is explicitly configured for it (§14)."""
-    if req.settings.allow_phi:
+    """PHI is refused unless Order/DPA allows it (§14 / FB-039).
+
+    Dental BAA vendor pattern: when PHI is on the Order/DPA list but the model
+    vendor has no BAA (OpenAI today), refuse — same posture as a dental practice
+    that cannot send PHI to a non-BAA processor.
+    """
+    if not (inp.spec.phi_sensitive or req.contains_phi):
         return None
-    if inp.spec.phi_sensitive or req.contains_phi:
+    if not _order_dpa_allows(req.settings, "phi"):
         return Constraint(
             "PHI_NOT_PERMITTED",
             DENY,
-            "this workspace is not configured to process protected health information "
-            "(allow_phi is off)",
+            "this workspace's Order/DPA does not allow protected health information",
+        )
+    # Dental BAA vendor pattern: whatever the Order/DPA says, PHI never goes
+    # to a model vendor that has not signed a BAA for this client.
+    if not bool(getattr(req.settings, "llm_baa_covered", False)):
+        vendor = str(getattr(req.settings, "llm_vendor", "") or "openai")
+        label = "OpenAI" if vendor.casefold() in {"openai", "open_ai"} else vendor
+        return Constraint(
+            "PHI_NO_BAA",
+            DENY,
+            f"PHI is Order/DPA-allowed, but the configured model vendor ({label}) "
+            "has no BAA — use a BAA-covered vendor or remove PHI from Order/DPA",
         )
     return None
 
 
 def rule_card_data(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
-    """Payment-card data is refused unless explicitly enabled (§14)."""
-    if req.settings.allow_card_data:
+    """Payment-card data is refused unless Order/DPA allows it (§14 / FB-039)."""
+    if not (inp.spec.card_sensitive or req.contains_card_data):
         return None
-    if inp.spec.card_sensitive or req.contains_card_data:
-        return Constraint(
-            "CARD_DATA_NOT_PERMITTED",
-            DENY,
-            "this workspace is not configured to handle payment card data "
-            "(allow_card_data is off)",
-        )
-    return None
+    if _order_dpa_allows(req.settings, "card"):
+        return None
+    return Constraint(
+        "CARD_DATA_NOT_PERMITTED",
+        DENY,
+        "this workspace's Order/DPA does not allow payment card data",
+    )
+
+
+def rule_child_data(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """M07-13 / FB-039: children's personal data only when Order/DPA allows it."""
+    if not req.contains_child_data:
+        return None
+    if _order_dpa_allows(req.settings, "child"):
+        return None
+    return Constraint(
+        "CHILD_DATA_NOT_PERMITTED",
+        DENY,
+        "this workspace's Order/DPA does not allow personal data about children",
+    )
+
+
+def rule_biometrics(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """FB-039: biometric identifiers only when Order/DPA allows them."""
+    if not req.contains_biometrics:
+        return None
+    if _order_dpa_allows(req.settings, "biometrics"):
+        return None
+    return Constraint(
+        "BIOMETRICS_NOT_PERMITTED",
+        DENY,
+        "this workspace's Order/DPA does not allow biometric data",
+    )
 
 
 def rule_restricted_classification(
@@ -407,6 +453,8 @@ RULES: tuple[Rule, ...] = (
     rule_data_area,
     rule_phi,
     rule_card_data,
+    rule_child_data,
+    rule_biometrics,
     rule_restricted_classification,
     rule_licensed_judgment,
     rule_always_requires_approval,

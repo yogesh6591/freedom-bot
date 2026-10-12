@@ -61,8 +61,17 @@ class SettingsUpdate(BaseModel):
 
     default_execution_mode: Optional[str] = None
     enabled_domains: Optional[list[str]] = None
+    #: Legacy per-category switches; each is applied as an edit to
+    #: ``order_dpa_allows``, which is the one stored setting (FB-039).
     allow_phi: Optional[bool] = None
     allow_card_data: Optional[bool] = None
+    allow_child_data: Optional[bool] = None
+    allow_biometrics: Optional[bool] = None
+    #: FB-039: the "Order/DPA allows" setting (phi / card / child / biometrics).
+    order_dpa_allows: Optional[list[str]] = None
+    #: FB-039: the deployment's model vendor has a signed BAA for this client.
+    #: The vendor itself comes from ``MODEL_ID`` and is not editable here.
+    llm_baa_covered: Optional[bool] = None
     enabled_integrations: Optional[list[str]] = None
     memory_policy: Optional[dict[str, Any]] = None
     retention_policy: Optional[dict[str, Any]] = None
@@ -258,6 +267,7 @@ def update_settings(
             raise HTTPException(status_code=409, detail=_change_order_detail(unpaid))
     if "tool_modes" in changes:
         changes["tool_modes"] = _validated_tool_modes(settings, changes["tool_modes"])
+    _fold_legacy_dpa_flags(changes, settings)
     payload = settings.to_dict()
     for key, value in changes.items():
         if key == "tool_modes":
@@ -278,6 +288,29 @@ def update_settings(
             result={"settings": client.settings.to_dict()},
         )
     return client.settings.to_dict()
+
+
+_LEGACY_DPA_FIELDS = {
+    "allow_phi": "phi",
+    "allow_card_data": "card",
+    "allow_child_data": "child",
+    "allow_biometrics": "biometrics",
+}
+
+
+def _fold_legacy_dpa_flags(changes: dict[str, Any], settings: ClientSettings) -> None:
+    """FB-039: turn legacy ``allow_*`` switches into an ``order_dpa_allows`` edit.
+
+    The Order/DPA list is the only stored setting, so a legacy switch must edit
+    it — otherwise the list would silently override the switch on save.
+    """
+    legacy = {k: changes.pop(k) for k in list(changes) if k in _LEGACY_DPA_FIELDS}
+    if not legacy or "order_dpa_allows" in changes:
+        return
+    allowed = set(settings.order_dpa_allows)
+    for key, on in legacy.items():
+        (allowed.add if on else allowed.discard)(_LEGACY_DPA_FIELDS[key])
+    changes["order_dpa_allows"] = sorted(allowed)
 
 
 @router.put("/policies/tool-permissions")
@@ -464,7 +497,12 @@ def get_onboarding(
     """Current first-client configuration profile."""
     from bizos.onboarding import get_profile
 
-    return {"profile": get_profile(settings).to_dict()}
+    profile = get_profile(settings).to_dict()
+    blob = settings.onboarding or {}
+    profile["handoff_at"] = blob.get("handoff_at")
+    profile["handoff_source"] = blob.get("handoff_source")
+    profile["handoff_event"] = blob.get("handoff_event")
+    return {"profile": profile}
 
 
 class OnboardingApply(BaseModel):
@@ -477,6 +515,11 @@ class OnboardingApply(BaseModel):
     enabled_domains: Optional[list[str]] = None
     review_points: list[str] = Field(default_factory=list)
     assessment: dict[str, Any] = Field(default_factory=dict)
+    #: FB-044: out-of-scope items for this engagement.
+    exclusions: list[str] = Field(default_factory=list)
+    #: FB-044: baseline metrics captured at setup. Omitted keeps the current
+    #: baselines; an empty list clears them.
+    baselines: Optional[list[dict[str, Any]]] = None
 
 
 @router.put("/onboarding")
@@ -486,7 +529,7 @@ def apply_onboarding(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Apply guided first-client config: memory + domains + autonomy mode."""
-    from bizos.onboarding import OnboardingProfile, apply_profile
+    from bizos.onboarding import OnboardingProfile, apply_profile, get_profile
 
     unpaid = [d for d in body.enabled_domains or [] if not settings.domain_purchased(d)]
     if unpaid:
@@ -501,6 +544,8 @@ def apply_onboarding(
         enabled_domains=body.enabled_domains or list(settings.enabled_domains),
         review_points=body.review_points,
         assessment=body.assessment,
+        exclusions=body.exclusions,
+        baselines=body.baselines if body.baselines is not None else get_profile(settings).baselines,
     )
     with bound(ctx):
         result = apply_profile(
@@ -528,12 +573,48 @@ def get_alerts(
     ctx: TenantContext = Depends(current_context),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    """Rare inefficiency alerts for this client (FB-041)."""
-    from bizos.insights import list_alerts, open_alerts
+    """Rare inefficiency alerts for this client (FB-041).
 
+    Detected from the client's own workspace data (M09-11), rescanned when the
+    last scan is over an hour old (M09-13), and filtered to the areas this
+    caller may see (M09-14).
+    """
+    from datetime import timedelta
+
+    from bizos.insights import last_scanned, list_alerts, open_alerts, scan_alerts, visible_to
+    from bizos.util.timeutil import utcnow
+
+    scanned = last_scanned(settings)
+    stale = True
+    if scanned:
+        from datetime import datetime
+
+        stale = datetime.fromisoformat(scanned) < utcnow() - timedelta(hours=1)
+    if stale:
+        with bound(ctx):
+            scan_alerts(client_id=ctx.client_id, settings=settings, ctx=ctx)
+        settings = control.get_client(ctx.client_id).settings
     return {
-        "items": list_alerts(settings),
-        "open": open_alerts(settings),
+        "items": [a for a in list_alerts(settings) if visible_to(a, ctx)],
+        "open": open_alerts(settings, ctx),
+        "scanned_at": last_scanned(settings),
+        "note": "Directional only — not a full always-on waste engine.",
+    }
+
+
+@router.post("/insights/alerts/scan")
+def scan_alerts_route(
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Look for recurring waste in this client's data now (M09-13)."""
+    from bizos.insights import last_scanned, scan_alerts
+
+    with bound(ctx):
+        items = scan_alerts(client_id=ctx.client_id, settings=settings, ctx=ctx)
+    return {
+        "items": items,
+        "scanned_at": last_scanned(control.get_client(ctx.client_id).settings),
         "note": "Directional only — not a full always-on waste engine.",
     }
 
@@ -585,9 +666,12 @@ def put_baselines(
 ) -> dict[str, Any]:
     from bizos.insights import save_baselines
 
-    items = save_baselines(
-        client_id=ctx.client_id, settings=settings, baselines=body.items, ctx=ctx
-    )
+    try:
+        items = save_baselines(
+            client_id=ctx.client_id, settings=settings, baselines=body.items, ctx=ctx
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     audit.log(
         AuditEventType.CONFIG_CHANGED,
         ctx=ctx,
@@ -607,19 +691,100 @@ def onboarding_handoff(
     ctx: TenantContext = Depends(require_admin),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    """Paste sale/assessment JSON → prefill First-client setup (FB-043)."""
+    """Paste sale/assessment JSON → prefill First-client setup (FB-043).
+
+    Prefer ``POST /api/owner/sale-events`` after checkout/contract so this is
+    not needed by hand.
+    """
     from bizos.insights import handoff_assessment
 
     if not body.assessment:
         raise HTTPException(status_code=400, detail="assessment JSON object is required")
     result = handoff_assessment(
-        client_id=ctx.client_id, settings=settings, assessment=body.assessment, ctx=ctx
+        client_id=ctx.client_id,
+        settings=settings,
+        assessment=body.assessment,
+        ctx=ctx,
+        source="manual",
     )
     audit.log(
         AuditEventType.CONFIG_CHANGED,
         ctx=ctx,
         status="ASSESSMENT_HANDOFF",
-        request={"keys": sorted(body.assessment.keys())[:20]},
+        request={"keys": sorted(body.assessment.keys())[:20], "source": "manual"},
+    )
+    return result
+
+
+# -------------------------------------------------------------- launch checklist (FB-045)
+
+
+@router.get("/launch/checklist")
+def get_launch_checklist(
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """First-client launch checklist status (FB-045)."""
+    from bizos.launch import checklist_summary
+
+    _ = ctx
+    return checklist_summary(settings)
+
+
+class LaunchItemBody(BaseModel):
+    item_id: str = Field(min_length=1, max_length=80)
+    status: str = Field(default="done", min_length=3, max_length=20)
+    waive_reason: str = Field(default="", max_length=500)
+
+
+@router.post("/launch/checklist/items")
+def mark_launch_item(
+    body: LaunchItemBody,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    from bizos.launch import mark_item
+
+    try:
+        return mark_item(
+            client_id=ctx.client_id,
+            settings=settings,
+            item_id=body.item_id,
+            status=body.status,
+            actor=ctx.user_id,
+            waive_reason=body.waive_reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class LaunchSignOffBody(BaseModel):
+    force: bool = False
+
+
+@router.post("/launch/sign-off")
+def launch_sign_off(
+    body: LaunchSignOffBody,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Record go-live sign-off when the checklist is ready (FB-045)."""
+    from bizos.launch import sign_off
+
+    try:
+        result = sign_off(
+            client_id=ctx.client_id,
+            settings=settings,
+            actor=ctx.user_id,
+            force=body.force,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    audit.log(
+        AuditEventType.CONFIG_CHANGED,
+        ctx=ctx,
+        status="LAUNCH_SIGNED_OFF",
+        request={"force": body.force},
     )
     return result
 

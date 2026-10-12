@@ -16,11 +16,17 @@ import type { Role } from '@/lib/types'
 
 const PRIMARY_NAV = { href: '/chat', label: 'Ask FreedomBot' } as const
 
-const WORKSPACE_NAV: { href: string; label: string; roles?: Role[] }[] = [
+const WORKSPACE_NAV: {
+  href: string
+  label: string
+  roles?: Role[]
+  /** Cepoch platform owners only — never a client's own admin (M15-20). */
+  platformOwner?: boolean
+}[] = [
   { href: '/memory', label: 'Memory' },
   { href: '/approvals', label: 'Approvals' },
   { href: '/support', label: 'Support', roles: ['OPERATOR', 'ADMIN'] },
-  { href: '/owner', label: 'Owner', roles: ['ADMIN'] },
+  { href: '/owner', label: 'Owner', platformOwner: true },
   { href: '/audit', label: 'Audit', roles: ['APPROVER', 'OPERATOR', 'ADMIN'] },
   { href: '/admin', label: 'Admin', roles: ['ADMIN'] }
 ]
@@ -60,7 +66,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!me) return null
 
   const mode = me.client.default_execution_mode
-  const tools = WORKSPACE_NAV.filter((item) => !item.roles || hasRole(...item.roles))
+  const tools = WORKSPACE_NAV.filter((item) =>
+    item.platformOwner
+      ? Boolean(me.user.is_platform_owner)
+      : !item.roles || hasRole(...item.roles)
+  )
   const chatActive = pathname === '/chat' || pathname.startsWith('/chat/')
 
   return (

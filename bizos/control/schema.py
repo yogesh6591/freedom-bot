@@ -112,6 +112,9 @@ CONTROL_DDL: tuple[str, ...] = (
     # Restricted data areas (exec/hr/salary/finance/legal) a user may see. Held
     # on the user record, not the token, so a revoked scope takes effect at once.
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS data_scopes TEXT[] NOT NULL DEFAULT '{}'",
+    # M15-20: the JeanneCAIO owner view spans every client, so it is gated on a
+    # platform-level flag held by Cepoch staff — never on a client's ADMIN role.
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS platform_owner BOOLEAN NOT NULL DEFAULT FALSE",
     # FB-046 — post-sale support tickets (control-plane metadata; not a sales CRM).
     """
     CREATE TABLE IF NOT EXISTS support_tickets (

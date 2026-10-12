@@ -297,6 +297,18 @@ def set_user_scopes(user_id: str, scopes: Iterable[str]) -> User:
     return get_user(user_id)
 
 
+def set_platform_owner(user_id: str, flag: bool) -> User:
+    """Grant or revoke the cross-client owner view (M15-20). Platform staff only."""
+    with control_connection() as conn:
+        updated = conn.execute(
+            text("UPDATE users SET platform_owner = :f, updated_at = NOW() WHERE id = :i"),
+            {"f": bool(flag), "i": user_id},
+        )
+        if updated.rowcount == 0:
+            raise UserNotFound(user_id)
+    return get_user(user_id)
+
+
 def set_user_roles(user_id: str, roles: Iterable[Role], *, granted_by: str) -> User:
     """Replace a user's role grants wholesale."""
     role_set = frozenset(roles)
@@ -351,6 +363,7 @@ def _user_from_row(conn: Any, row: Any) -> User:
         created_at=row.created_at,
         last_login_at=row.last_login_at,
         data_scopes=frozenset(getattr(row, "data_scopes", None) or ()),
+        platform_owner=bool(getattr(row, "platform_owner", False)),
     )
 
 
@@ -463,7 +476,7 @@ def build_context(user: User, *, attributes: Optional[dict] = None) -> TenantCon
         email=user.email,
         display_name=user.display_name,
         data_scopes=user.data_scopes,
-        attributes=attributes or {},
+        attributes={**(attributes or {}), "platform_owner": user.platform_owner},
     )
 
 

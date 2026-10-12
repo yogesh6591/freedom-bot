@@ -170,6 +170,7 @@ def me(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
             "display_name": ctx.display_name,
             "roles": sorted(str(r) for r in ctx.roles),
             "primary_role": str(ctx.primary_role),
+            "is_platform_owner": bool(ctx.attributes.get("platform_owner")),
         },
         "client": {
             "id": client.id,

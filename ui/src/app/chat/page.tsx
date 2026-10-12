@@ -91,7 +91,7 @@ function ChatView() {
   const [sessionId, setSessionId] = useState<string | undefined>()
   const [alertsOpen, setAlertsOpen] = useState(false)
   const endRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const refreshContext = useCallback(async () => {
     try {
@@ -190,6 +190,7 @@ function ChatView() {
     const message = input.trim()
     if (!message || busy) return
     setInput('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
     setBusy(true)
     setError(null)
     setTurns((prev) => [...prev, { role: 'user', content: message }])
@@ -414,20 +415,37 @@ function ChatView() {
 
       <form
         onSubmit={send}
-        className="flex shrink-0 items-center gap-2 rounded-full border border-border bg-background-secondary p-1.5 shadow-lift"
+        className="flex shrink-0 items-end gap-2 rounded-3xl border border-border bg-background-secondary p-1.5 shadow-lift"
       >
         <label htmlFor="chat-input" className="sr-only">
           Message FreedomBot
         </label>
-        <input
+        {/* M10-04: multi-line. Enter sends; Shift+Enter starts a new line. */}
+        <textarea
           id="chat-input"
           ref={inputRef}
+          rows={1}
           value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Ask FreedomBot…"
+          onChange={(event) => {
+            setInput(event.target.value)
+            const el = event.target
+            el.style.height = 'auto'
+            el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              event.currentTarget.form?.requestSubmit()
+            }
+          }}
+          placeholder="Ask FreedomBot… (Shift+Enter for a new line)"
           disabled={busy}
-          className="min-h-11 flex-1 rounded-full border-0 bg-transparent px-4 font-geist text-sm text-primary outline-none placeholder:text-muted/55 disabled:opacity-60"
+          aria-describedby="chat-input-hint"
+          className="max-h-[200px] min-h-11 flex-1 resize-none rounded-2xl border-0 bg-transparent px-4 py-3 font-geist text-sm leading-relaxed text-primary outline-none placeholder:text-muted/55 disabled:opacity-60"
         />
+        <span id="chat-input-hint" className="sr-only">
+          Press Enter to send, Shift plus Enter for a new line.
+        </span>
         <Btn type="submit" disabled={busy || !input.trim()} className="rounded-full px-6">
           Ask
         </Btn>

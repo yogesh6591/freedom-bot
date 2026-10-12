@@ -15,7 +15,8 @@ Two rules:
   ``session_id`` is refused.
 
 What is stored is the *post-enforcement* reply (persona fixed, restricted
-content removed). Agno's own run log keeps the raw model output and is never
+content removed), with regulated identifiers (SSN, card and medical record
+numbers, dates of birth) replaced by ``[REDACTED]``. Agno's own run log keeps the raw model output and is never
 shown to users.
 """
 
@@ -31,6 +32,7 @@ from bizos.tenancy.context import TenantContext
 from bizos.tenancy.registry import workspace_connection, workspace_location
 from bizos.tenancy.schema import CHAT_MESSAGES_DDL, client_wall_ddl
 from bizos.util.ids import new_id
+from bizos.util.redaction import scrub_identifiers
 
 #: Workspaces already confirmed to have the table in this process.
 _ready: set[tuple[str, str]] = set()
@@ -104,7 +106,8 @@ def record_turn(
                     "s": session_id,
                     "u": ctx.user_id,
                     "r": role,
-                    "c": content,
+                    # M07-20: never keep an SSN, card or record number verbatim.
+                    "c": scrub_identifiers(content),
                     "d": domain if role == "assistant" else None,
                     "m": json.dumps(extra, default=str),
                 },

@@ -123,7 +123,11 @@ SALES = DomainPack(
     instructions=(
         "You support the sales team: pipeline questions, deal context, contact history and "
         "outreach drafting. Ground every claim about a deal in the CRM record you read. Never "
-        "promise pricing or terms that are not recorded in organizational memory."
+        "promise pricing or terms that are not recorded in organizational memory. "
+        "When the user asks you to SEND an email, call email_send_message with the recipients, "
+        "subject and body — in approval mode that creates the approval request, which is what "
+        "the user wants. Use email_create_draft only when they ask for a draft. Never say an "
+        "email is awaiting approval unless email_send_message returned an approval request."
     ),
     guardrails=(
         "Do not state pricing, discounts or contract terms that are not in organizational "

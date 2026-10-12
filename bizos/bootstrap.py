@@ -633,6 +633,43 @@ def _align_memory_access_areas(ctx: TenantContext, seeds: list[tuple]) -> None:
             )
 
 
+#: M15-20: Cepoch's internal workspace, where platform owners sign in.
+OWNER_WORKSPACE_SLUG = "cepoch"
+OWNER_EMAIL = "jeanne@cepoch.example.com"
+
+
+def ensure_owner_workspace() -> dict[str, Any]:
+    """Create Cepoch's internal workspace and the demo platform owner (idempotent).
+
+    The owner view spans every client, so it is reached from here — never from a
+    client's own workspace, whose ADMIN must not see other clients.
+    """
+    cfg = ClientSettings()
+    cfg.internal_workspace = True
+    owner_ws = ensure_client(
+        "Cepoch (internal)", slug=OWNER_WORKSPACE_SLUG, settings=cfg
+    )
+    if not owner_ws.settings.internal_workspace:
+        payload = owner_ws.settings.to_dict()
+        payload["internal_workspace"] = True
+        owner_ws = control.update_client_settings(
+            owner_ws.id, ClientSettings.from_dict(payload), updated_by="bootstrap"
+        )
+    try:
+        user = control.create_user(
+            client_id=owner_ws.id,
+            email=OWNER_EMAIL,
+            password=DEV_PASSWORD,
+            display_name="Jeanne (owner)",
+            roles=(Role.ADMIN,),
+            created_by="bootstrap",
+        )
+    except control.DuplicateUser:
+        user = next(u for u in control.list_users(owner_ws.id) if u.email == OWNER_EMAIL)
+    control.set_platform_owner(user.id, True)
+    return {"slug": owner_ws.slug, "owner": OWNER_EMAIL}
+
+
 def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:
     """Full bootstrap. Returns a report for the CLI and the tests."""
     migrate_control_plane()
@@ -687,6 +724,7 @@ def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:
     purge_expired(acme.settings.retention_policy.audit_days, ctx=admin_context(acme))
     users = ensure_dev_users(acme, domain="acme.example.com")
     data = seed_business_data(acme, flavor="default")
+    report["owner_workspace"] = ensure_owner_workspace()
     report["clients"].append(
         {
             "slug": acme.slug,

@@ -60,6 +60,30 @@ class NotAnApprover(PermissionError):
     """The caller lacks the role required to decide this action."""
 
 
+def hidden_tools(tenant: Optional[TenantContext]) -> list[str]:
+    """Tools whose actions this caller may not see (M05-08).
+
+    An action carries the payload of a tool that belongs to a restricted data
+    area (a finance credit amount, a legal question). Someone without that area
+    must not read it on the Approvals page any more than in chat.
+    """
+    if tenant is None:
+        return []
+    from bizos.rbac.registry import TOOL_SPECS
+
+    return sorted(
+        spec.name
+        for spec in TOOL_SPECS
+        if spec.data_area and not tenant.can_see_area(spec.data_area)
+    )
+
+
+def _assert_visible(action: Action, tenant: Optional[TenantContext]) -> None:
+    """Treat an action in an area the caller cannot see as not existing."""
+    if action.tool in hidden_tools(tenant):
+        raise ActionNotFound(action.id)
+
+
 def assert_transition(current: ActionStatus, target: ActionStatus) -> None:
     """Raise unless ``current -> target`` is a legal move."""
     if target not in ACTION_TRANSITIONS.get(current, frozenset()):
@@ -345,7 +369,8 @@ def submit_for_approval(
 
 
 def _check_approver(action: Action, tenant: TenantContext, settings: Any) -> None:
-    """Role and self-approval checks, applied before any decision is recorded."""
+    """Area, role and self-approval checks, applied before any decision is recorded."""
+    _assert_visible(action, tenant)
     required = Role.parse(settings.approval_policy.approver_role, Role.APPROVER)
     if not (tenant.has_role(required) or tenant.is_admin):
         raise NotAnApprover(
@@ -618,11 +643,13 @@ def mark_failed(action_id: str, error: str, *, ctx: Optional[TenantContext] = No
 def get_action(
     action_id: str, *, include_events: bool = False, ctx: Optional[TenantContext] = None
 ) -> Action:
-    with workspace_connection(ctx, readonly=True) as conn:
+    tenant = ctx or require_context()
+    with workspace_connection(tenant, readonly=True) as conn:
         row = conn.execute(text("SELECT * FROM actions WHERE id = :i"), {"i": action_id}).first()
         if row is None:
             raise ActionNotFound(action_id)
         action = _action_from_row(row)
+        _assert_visible(action, tenant)
         request = conn.execute(
             text("SELECT * FROM approval_requests WHERE action_id = :a ORDER BY created_at DESC LIMIT 1"),
             {"a": action_id},
@@ -662,9 +689,14 @@ def list_actions(
     if domain:
         clauses.append("a.domain = :domain")
         params["domain"] = domain
+    tenant = ctx or require_context()
+    hidden = hidden_tools(tenant)
+    if hidden:
+        clauses.append("NOT (a.tool = ANY(:hidden_tools))")
+        params["hidden_tools"] = hidden
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
-    with workspace_connection(ctx, readonly=True) as conn:
+    with workspace_connection(tenant, readonly=True) as conn:
         rows = conn.execute(
             text(f"SELECT a.* FROM actions a {where} ORDER BY a.created_at DESC LIMIT :limit OFFSET :offset"),
             params,

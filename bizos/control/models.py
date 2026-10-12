@@ -100,6 +100,20 @@ class RetentionPolicy:
     superseded_memory_days: int = 0
 
 
+#: FB-039: Order/DPA category -> legacy boolean field it replaces.
+_LEGACY_DPA_FLAGS = {
+    "phi": "allow_phi",
+    "card": "allow_card_data",
+    "child": "allow_child_data",
+    "biometrics": "allow_biometrics",
+}
+ORDER_DPA_CATEGORIES = frozenset(_LEGACY_DPA_FLAGS)
+
+
+def _order_dpa_categories(values: Any) -> set[str]:
+    return {str(v).strip().casefold() for v in (values or [])} & ORDER_DPA_CATEGORIES
+
+
 @dataclass
 class ClientSettings:
     """The §21 tenant configuration object."""
@@ -113,6 +127,27 @@ class ClientSettings:
     #: explicitly permit them (§14). Defaults are the safe values.
     allow_phi: bool = False
     allow_card_data: bool = False
+    #: M07-13: personal data about children is refused unless the contract
+    #: explicitly covers it (COPPA-style obligations).
+    allow_child_data: bool = False
+    #: FB-039: biometric identifiers (legacy boolean; prefer order_dpa_allows).
+    allow_biometrics: bool = False
+    #: FB-039: the per-client "Order/DPA allows" setting — a subset of
+    #: ``phi`` / ``card`` / ``child`` / ``biometrics``. This is the single source
+    #: of truth: the legacy booleans above always mirror it, and an empty list
+    #: means nothing regulated is allowed.
+    order_dpa_allows: list[str] = field(default_factory=list)
+    #: FB-039: the deployment's model vendor (e.g. ``openai``), read from
+    #: ``MODEL_ID`` / ``LLM_VENDOR`` on every load — not editable per client, so
+    #: a workspace cannot relabel the processor its data is sent to.
+    llm_vendor: str = "openai"
+    #: FB-039: whether that vendor is under a signed BAA for this client. Dental
+    #: BAA vendor pattern: PHI is never sent to a processor without one, so PHI
+    #: stays blocked even when the Order/DPA allows it. OpenAI has no BAA today.
+    llm_baa_covered: bool = False
+    #: M15-20: Cepoch's own internal workspace (where platform owners sign in).
+    #: Never counted as a client in the owner portfolio.
+    internal_workspace: bool = False
     enabled_integrations: list[str] = field(default_factory=list)
     memory_policy: MemoryPolicy = field(default_factory=MemoryPolicy)
     retention_policy: RetentionPolicy = field(default_factory=RetentionPolicy)
@@ -160,6 +195,20 @@ class ClientSettings:
                 kwargs[key] = sub_cls(**{k: v for k, v in value.items() if k in sub_known})
             else:
                 kwargs[key] = value
+        # FB-039: an explicit Order/DPA list wins over the legacy booleans
+        # (an empty list means "nothing allowed"); a row written before the list
+        # existed is migrated from its booleans once.
+        if isinstance(data.get("order_dpa_allows"), list):
+            allowed = _order_dpa_categories(data["order_dpa_allows"])
+        else:
+            allowed = {
+                category
+                for category, flag in _LEGACY_DPA_FLAGS.items()
+                if bool(data.get(flag, False))
+            }
+        kwargs["order_dpa_allows"] = sorted(allowed)
+        for category, flag in _LEGACY_DPA_FLAGS.items():
+            kwargs[flag] = category in allowed
         settings = cls(**kwargs)
         settings.risk_policy = settings.risk_policy.normalize()
         settings.enabled_domains = [d for d in settings.enabled_domains if d in DOMAIN_NAMES]
@@ -173,7 +222,28 @@ class ClientSettings:
             str(k): str(v) for k, v in dict(settings.tool_modes or {}).items()
             if ExecutionMode.parse(v) is not None
         }
+        from bizos.settings import llm_vendor
+
+        settings.llm_vendor = llm_vendor()
+        settings.llm_baa_covered = bool(settings.llm_baa_covered)
         return settings
+
+    def __post_init__(self) -> None:
+        # Built directly (not from a row) with only legacy booleans: derive the
+        # Order/DPA list so the policy engine sees one consistent setting.
+        if not self.order_dpa_allows:
+            self.order_dpa_allows = sorted(
+                c for c, flag in _LEGACY_DPA_FLAGS.items() if getattr(self, flag)
+            )
+
+    # -- Order/DPA (FB-039) -------------------------------------------------
+
+    def order_dpa_allows_category(self, category: str) -> bool:
+        return category.casefold() in self.order_dpa_allows
+
+    def phi_permitted(self) -> bool:
+        """PHI may be processed: Order/DPA allows it *and* the vendor has a BAA."""
+        return self.order_dpa_allows_category("phi") and self.llm_baa_covered
 
     # -- typed accessors ----------------------------------------------------
 
@@ -242,6 +312,8 @@ class User:
     created_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
     data_scopes: frozenset[str] = frozenset()
+    #: M15-20: may use the cross-client owner view. Not a client role.
+    platform_owner: bool = False
 
     @property
     def primary_role(self) -> Role:
@@ -258,6 +330,7 @@ class User:
             "roles": sorted(str(r) for r in self.roles),
             "primary_role": str(self.primary_role),
             "data_scopes": sorted(self.data_scopes),
+            "is_platform_owner": self.platform_owner,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_login_at": self.last_login_at.isoformat() if self.last_login_at else None,

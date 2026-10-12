@@ -161,6 +161,8 @@ the user, then stop until they answer.
   may summarize, research, draft and lay out options; the judgment stays human.
 - {phi_rule}
 - {card_rule}
+- {child_rule}
+- {biometric_rule}
 - You never reveal credentials, tokens, API keys or connection strings. You do not
   have them and must not ask the user for them.
 {domain_guardrails}
@@ -206,15 +208,33 @@ def render(
         phi_rule=(
             "This workspace IS configured to handle protected health information; handle it "
             "with the care its classification requires."
-            if settings.allow_phi
-            else "This workspace is NOT configured for protected health information. If the user "
-            "supplies PHI, tell them it cannot be processed here and do not store it."
+            if settings.phi_permitted()
+            else "This workspace is NOT configured for protected health information (its "
+            "Order/DPA does not allow it, or the model vendor has no BAA). If the user supplies "
+            "PHI, tell them it cannot be processed here and do not store it."
         ),
         card_rule=(
             "This workspace IS configured for payment card data in a compliant environment."
             if settings.allow_card_data
             else "This workspace is NOT configured for payment card data. Never record a card "
             "number, CVV or full card details anywhere, including memory and notes."
+        ),
+        child_rule=(
+            "This workspace IS authorized for personal data about children; keep only what "
+            "the contracted workflow needs."
+            if getattr(settings, "allow_child_data", False)
+            else "This workspace is NOT authorized for personal data about children (anyone "
+            "under 18). Do not add, store, record or look up a child's details — not in the "
+            "CRM, memory or notes — and do not ask for more of their details. Say it cannot be "
+            "processed here."
+        ),
+        biometric_rule=(
+            "This workspace IS authorized for biometric identifiers; keep only what the "
+            "contracted workflow needs."
+            if settings.order_dpa_allows_category("biometrics")
+            else "This workspace is NOT authorized for biometric identifiers (fingerprints, face "
+            "or voice prints, iris scans). Do not add, store or look them up, and do not ask for "
+            "them. Say they cannot be processed here."
         ),
         domain_guardrails=(
             "\n".join(f"- {g}" for g in guardrails) if guardrails else ""

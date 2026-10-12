@@ -65,14 +65,22 @@ def create_support_ticket(
     body: TicketCreate,
     ctx: TenantContext = Depends(require_support_staff),
 ) -> dict[str, Any]:
-    ticket = support.create_ticket(
+    ticket, merged = support.submit_ticket(
         client_id=ctx.client_id,
         subject=body.subject,
         body=body.body,
         severity=body.severity,
         created_by=ctx.user_id,
     )
-    return {"ticket": ticket}
+    return {
+        "ticket": ticket,
+        "merged": merged,
+        "message": (
+            "This matches an open ticket, so your details were added to it."
+            if merged
+            else "Ticket opened with Cepoch support."
+        ),
+    }
 
 
 @router.get("/tickets/{ticket_id}")

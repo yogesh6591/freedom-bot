@@ -23,6 +23,7 @@ from bizos.actions import store as actions
 from bizos import chat_history
 from bizos.agents import grounding
 from bizos.agents.agent import ModelNotConfigured, build_agent
+from bizos.agents.claims import enforce_claims
 from bizos.agents.instructions import assistant_name
 from bizos.agents.persona import AUTO, enforce_persona, route
 from bizos.rbac.registry import TOOL_SPECS
@@ -95,15 +96,15 @@ def chat_context(
                 for s in viewable
             ],
             "pending_approvals": len(actions.pending_approvals(ctx=ctx)),
-            "inefficiency_alerts": _open_alerts(settings),
+            "inefficiency_alerts": _open_alerts(settings, ctx),
         }
 
 
-def _open_alerts(settings: ClientSettings) -> list[dict[str, Any]]:
+def _open_alerts(settings: ClientSettings, ctx: TenantContext) -> list[dict[str, Any]]:
     try:
         from bizos.insights import open_alerts
 
-        return open_alerts(settings)
+        return open_alerts(settings, ctx)
     except Exception:
         return []
 
@@ -153,7 +154,21 @@ def chat(
                     "State that it is assistive only and the hiring decision stays with a human."
                 )
 
-        output: Any = grounding.restricted_candidate_reply(grounded, body.message)
+        refusal = _regulated_data_refusal(body.message, settings)
+        output: Any = (refusal[1] if refusal else None) or grounding.restricted_candidate_reply(
+            grounded, body.message
+        )
+        if refusal:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
+
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status=refusal[0],
+                execution_mode=str(scope.mode),
+            )
         if output is None:
             try:
                 agent = build_agent(
@@ -181,6 +196,7 @@ def chat(
         content, restriction_fixed = grounding.enforce_restrictions(
             content, grounded.hidden, answered_visible=bool(grounded.visible_keys)
         )
+        content, conflict_fixed = grounding.enforce_conflicts(content, grounded.conflicts)
         content, package_fixed = grounding.enforce_package(
             content,
             grounded.unpurchased,
@@ -189,6 +205,20 @@ def chat(
             answered_visible=bool(grounded.visible_keys),
         )
         activity = _tool_activity(output)
+        content, claim_fixed = enforce_claims(
+            content, message=body.message, activity=activity, new_actions=new_actions
+        )
+        if claim_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
+
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status="FALSE_ACTION_CLAIM_CORRECTED",
+                execution_mode=str(scope.mode),
+            )
         ran_match = match_ran or any(t["tool"] == "hr_match_candidate" and t["ok"] for t in activity)
         if ran_match and not re.search(
             r"\bhuman\b", content, re.I
@@ -205,6 +235,17 @@ def chat(
                 ctx=ctx,
                 session_id=session_id,
                 status="RESTRICTION_NOTED",
+                execution_mode=str(scope.mode),
+            )
+        if conflict_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
+
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status="CONFLICT_ENFORCED",
                 execution_mode=str(scope.mode),
             )
         if package_fixed:
@@ -246,6 +287,85 @@ def chat(
         }
         _remember_turn(ctx, body.message, response)
         return response
+
+
+#: Asking the assistant to keep, change, find or act on someone's details.
+_HANDLE_INTENT = re.compile(
+    r"\b(add|create|store|save|record|remember|register|enrol+|enter|log|put|upload|import|"
+    r"update|look ?up|find|search|send|email|text|call|contact|schedule|book|onboard|sign up)\b",
+    re.I,
+)
+
+CHILD_DATA_REFUSAL = (
+    "I can't process personal details about a child here. This workspace isn't authorized "
+    "to handle children's personal data, so I won't add, store or look up this information "
+    "— and please don't share more of it. If your contract covers a workflow for minors, an "
+    "admin can arrange for it to be enabled."
+)
+
+
+def _child_data_refusal(message: str, settings: ClientSettings) -> Optional[str]:
+    """M07-13: refuse a request to handle a child's personal data, before any model call.
+
+    The policy engine also denies any tool call whose payload carries child data;
+    this stops the assistant from asking for more of it in the first place.
+    """
+    if getattr(settings, "allow_child_data", False):
+        return None
+    from bizos.policy.classifier import classify_text
+
+    if classify_text(message).contains_child_data and _HANDLE_INTENT.search(message or ""):
+        return CHILD_DATA_REFUSAL
+    return None
+
+
+PHI_REFUSAL = (
+    "I can't process patient health information here. This workspace's Order/DPA doesn't "
+    "allow PHI, so I won't add, store or look up these details — and please don't share "
+    "more of them. An admin can update the Order/DPA setting if your contract covers PHI."
+)
+
+PHI_NO_BAA_REFUSAL = (
+    "I can't process patient health information here. Your Order/DPA allows PHI, but the AI "
+    "model this workspace uses ({vendor}) has no signed BAA, so PHI can't be sent to it — the "
+    "same rule a dental practice follows with any vendor. Please don't share these details "
+    "here; keep them in your practice system until a BAA-covered model is configured."
+)
+
+BIOMETRICS_REFUSAL = (
+    "I can't process biometric identifiers (fingerprints, face or voice prints, iris scans) "
+    "here. This workspace's Order/DPA doesn't allow biometric data, so I won't add, store or "
+    "look it up. An admin can update the Order/DPA setting if your contract covers it."
+)
+
+
+def _regulated_data_refusal(
+    message: str, settings: ClientSettings
+) -> Optional[tuple[str, str]]:
+    """FB-039: refuse regulated data the Order/DPA doesn't allow, before any model call.
+
+    Returns ``(audit_status, reply)``. Dental BAA vendor pattern: PHI is never
+    sent to a model vendor without a BAA, even when the Order/DPA allows PHI.
+    The policy engine still denies tool calls carrying this data; this keeps it
+    from reaching the model at all.
+    """
+    child = _child_data_refusal(message, settings)
+    if child:
+        return "CHILD_DATA_BLOCKED", child
+    if not _HANDLE_INTENT.search(message or ""):
+        return None
+    from bizos.policy.classifier import classify_text, identifiable_phi
+
+    if identifiable_phi(message) and not settings.phi_permitted():
+        if not settings.order_dpa_allows_category("phi"):
+            return "PHI_BLOCKED", PHI_REFUSAL
+        vendor = "OpenAI" if settings.llm_vendor in {"openai", "open_ai"} else settings.llm_vendor
+        return "PHI_NO_BAA_BLOCKED", PHI_NO_BAA_REFUSAL.format(vendor=vendor)
+    if classify_text(message).contains_biometrics and not settings.order_dpa_allows_category(
+        "biometrics"
+    ):
+        return "BIOMETRICS_BLOCKED", BIOMETRICS_REFUSAL
+    return None
 
 
 def _action_summary(action: dict[str, Any]) -> dict[str, Any]:

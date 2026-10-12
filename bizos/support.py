@@ -9,6 +9,8 @@ relationship risk, or at-risk accounts. Support is not a sales desk.
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -64,6 +66,65 @@ def _row_to_ticket(row: Any) -> dict[str, Any]:
         "updated_at": data["updated_at"].isoformat() if data.get("updated_at") else None,
         "history": _history(data.get("history")),
     }
+
+
+#: M14-18: a resubmission of an open ticket within this window is merged.
+DUPLICATE_WINDOW_HOURS = 72
+
+
+def _normalize_subject(subject: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", (subject or "").casefold()).split())
+
+
+def find_open_duplicate(*, client_id: str, subject: str) -> Optional[dict[str, Any]]:
+    """An unresolved ticket in this client with the same subject, raised recently."""
+    wanted = _normalize_subject(subject)
+    if not wanted:
+        return None
+    cutoff = utcnow() - timedelta(hours=DUPLICATE_WINDOW_HOURS)
+    for ticket in list_tickets(client_id=client_id):
+        if ticket["status"] == STATUS_RESOLVED:
+            continue
+        created = ticket.get("created_at")
+        if created and datetime.fromisoformat(created) < cutoff:
+            continue
+        if _normalize_subject(ticket["subject"]) == wanted:
+            return ticket
+    return None
+
+
+def submit_ticket(
+    *,
+    client_id: str,
+    subject: str,
+    body: str = "",
+    severity: str = SEVERITY_NORMAL,
+    created_by: str = "system",
+) -> tuple[dict[str, Any], bool]:
+    """Open a ticket, or merge into an open one with the same subject (M14-18).
+
+    Returns ``(ticket, merged)``. A merged resubmission adds its details to the
+    existing ticket's history instead of starting a fragmented second case.
+    """
+    existing = find_open_duplicate(client_id=client_id, subject=subject)
+    if existing is None:
+        return create_ticket(
+            client_id=client_id,
+            subject=subject,
+            body=body,
+            severity=severity,
+            created_by=created_by,
+        ), False
+    history = list(existing["history"] or [])
+    history.append(
+        {
+            "at": utcnow().isoformat(),
+            "by": created_by,
+            "event": "duplicate_merged",
+            "note": ("Same issue submitted again. " + (body or "").strip())[:2000],
+        }
+    )
+    return _update(existing["id"], history=history), True
 
 
 def create_ticket(

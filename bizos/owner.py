@@ -132,7 +132,11 @@ def _client_row(client: Client) -> dict[str, Any]:
 
 def owner_portfolio() -> dict[str, Any]:
     """Aggregate exception-only owner view across clients (control metadata only)."""
-    clients = [c for c in control.list_clients() if c.status == "ACTIVE"]
+    clients = [
+        c
+        for c in control.list_clients()
+        if c.status == "ACTIVE" and not getattr(c.settings, "internal_workspace", False)
+    ]
     rows = [_client_row(c) for c in clients]
     needs_total = sum(r["needs_me_count"] for r in rows)
     at_risk = sum(1 for r in rows if r["account_risk"] == "at_risk")
@@ -146,5 +150,7 @@ def owner_portfolio() -> dict[str, Any]:
         "needs_me_count": needs_total,
         "at_risk_count": at_risk,
         "clients": rows,
-        "needs_me_queue": list_tickets(needs_jeanne=True)[:20],
+        "needs_me_queue": [
+            t for t in list_tickets(needs_jeanne=True) if t["client_id"] in {c.id for c in clients}
+        ][:20],
     }

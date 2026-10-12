@@ -62,6 +62,7 @@ function SupportView() {
   const [note, setNote] = useState('')
   const [escalateReason, setEscalateReason] = useState('CEO_JUDGMENT')
   const [busy, setBusy] = useState(false)
+  const [submitted, setSubmitted] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -90,7 +91,12 @@ function SupportView() {
     event.preventDefault()
     setBusy(true)
     try {
-      await api.post('/api/support/tickets', { subject, body, severity: 'NORMAL' })
+      const result = await api.post<{ message?: string; merged?: boolean; ticket: Ticket }>(
+        '/api/support/tickets',
+        { subject, body, severity: 'NORMAL' }
+      )
+      setSubmitted(result.message ?? null)
+      if (result.merged) setSelected(result.ticket)
       setSubject('')
       setBody('')
       await load()
@@ -127,6 +133,11 @@ function SupportView() {
       </Panel>
 
       {error && <ErrorNote>{error}</ErrorNote>}
+      {submitted && (
+        <p role="status" className="text-sm text-positive">
+          {submitted}
+        </p>
+      )}
 
       <Panel title="Open a routine ticket">
         <form className="space-y-3" onSubmit={(e) => void createTicket(e)}>
