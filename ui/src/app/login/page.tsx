@@ -80,7 +80,7 @@ export default function LoginPage() {
       <div className="relative z-10 flex flex-1 items-center justify-center p-6 sm:p-8 md:p-10">
         <form
           onSubmit={submit}
-          className="w-full max-w-md space-y-6 rounded-xl border border-border bg-background-secondary/95 p-6 shadow-lift animate-fade-up sm:p-8"
+          className="w-full max-w-md space-y-6 rounded-2xl border border-purple-200/80 bg-background-secondary/95 p-6 shadow-lift animate-fade-up dark:border-purple-800/40 sm:p-8"
           noValidate
         >
           <div className="space-y-1.5">

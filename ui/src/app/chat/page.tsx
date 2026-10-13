@@ -264,7 +264,7 @@ function ChatView() {
       </div>
 
       {historyOpen && (
-        <div className="max-h-64 shrink-0 overflow-y-auto rounded-xl border border-border bg-background-secondary p-2 shadow-panel">
+        <div className="max-h-64 shrink-0 overflow-y-auto rounded-xl border border-purple-200/70 bg-background-secondary p-2 shadow-panel dark:border-purple-800/40">
           {historyError && <ErrorNote>{historyError}</ErrorNote>}
           {!historyError && history.length === 0 && (
             <p className="px-2 py-3 type-muted">No saved conversations yet.</p>
@@ -276,8 +276,10 @@ function ChatView() {
                   type="button"
                   onClick={() => void openSession(item.session_id)}
                   aria-current={item.session_id === sessionId ? 'true' : undefined}
-                  className={`flex min-h-11 w-full flex-col items-start rounded-lg px-3 py-2 text-left ui-transition hover:bg-background-elevated ${
-                    item.session_id === sessionId ? 'bg-background-elevated' : ''
+                  className={`flex min-h-11 w-full flex-col items-start rounded-lg px-3 py-2 text-left ui-transition hover:bg-purple-50 dark:hover:bg-purple-900/30 ${
+                    item.session_id === sessionId
+                      ? 'bg-purple-100 dark:bg-purple-900/45'
+                      : ''
                   }`}
                 >
                   <span className="w-full truncate font-geist text-sm text-primary">
@@ -295,26 +297,26 @@ function ChatView() {
       )}
 
       {alerts.length > 0 && (
-        <div className="shrink-0 rounded-xl border border-brand/30 bg-brand/10 px-4 py-3">
+        <div className="shrink-0 rounded-xl border border-warning/25 bg-warning/5 px-4 py-3">
           <button
             type="button"
             onClick={() => setAlertsOpen((v) => !v)}
             aria-expanded={alertsOpen}
             className="flex min-h-11 w-full items-center justify-between gap-2 text-left ui-transition"
           >
-            <span className="type-caption text-brand-soft/90">
+            <span className="type-caption text-warning">
               Inefficiency alerts · directional only · {alerts.length}
             </span>
-            <span className="text-xs text-brand-soft/80">{alertsOpen ? 'Hide' : 'Show'}</span>
+            <span className="text-xs text-warning/80">{alertsOpen ? 'Hide' : 'Show'}</span>
           </button>
           {alertsOpen && (
-            <div className="mt-3 space-y-3 border-t border-brand/20 pt-3">
+            <div className="mt-3 space-y-3 border-t border-warning/20 pt-3">
               {alerts.slice(0, 2).map((alert) => (
                 <div key={alert.id} className="space-y-1 text-sm">
                   <p className="font-geist font-medium text-primary">{alert.title}</p>
                   <p className="type-muted">{alert.detail}</p>
                   {alert.directional_cost && (
-                    <p className="text-xs text-brand-soft/80">{alert.directional_cost}</p>
+                    <p className="text-xs text-warning/90">{alert.directional_cost}</p>
                   )}
                 </div>
               ))}
@@ -324,7 +326,7 @@ function ChatView() {
       )}
 
       <div
-        className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-border bg-background-secondary p-4 shadow-panel sm:p-6"
+        className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-border bg-background-secondary/95 p-4 shadow-panel sm:p-6"
         aria-live="polite"
       >
         {restoring && turns.length === 0 && (
@@ -335,23 +337,23 @@ function ChatView() {
         {!restoring && turns.length === 0 && (
           <div className="flex min-h-[20rem] flex-col items-center justify-center gap-6 px-4 py-12 text-center">
             <span
-              className="flex h-16 w-16 items-center justify-center rounded-xl bg-brand text-xl font-bold text-brand-ink shadow-glow"
+              className="flex h-16 w-16 items-center justify-center rounded-2xl btn-primary-fill text-xl font-bold shadow-glow"
               aria-hidden
             >
               FB
             </span>
             <div className="max-w-prose space-y-3">
-              <h2 className="type-title text-2xl sm:text-[1.75rem]">Ask FreedomBot</h2>
-              <p className="type-muted">
+              <h2 className="type-title text-2xl sm:text-3xl">Ask FreedomBot</h2>
+              <p className="type-muted text-base">
                 One company AI — strategy, ops, and finance in the same conversation.
                 Routing, memory, and human approval happen behind the scenes.
               </p>
-              <p className="text-xs text-muted/80">
+              <p className="text-xs text-muted">
                 Recorded answers show as{' '}
-                <strong className="text-positive">Fact</strong>
+                <strong className="text-success">Fact</strong>
                 {' · '}
                 anything unapproved as{' '}
-                <strong className="text-brand-soft">Estimate</strong>
+                <strong className="text-purple-600 dark:text-purple-300">Estimate</strong>
               </p>
             </div>
             <div className="flex max-w-prose flex-wrap justify-center gap-2">
@@ -376,23 +378,23 @@ function ChatView() {
           </div>
         )}
 
-        <div className="space-y-6">
+        <div className="space-y-5">
           {turns.map((turn, index) =>
             turn.role === 'user' ? (
               <div key={index} className="flex justify-end animate-fade-up">
-                <div className="max-w-[min(85%,70ch)] whitespace-pre-wrap break-words rounded-xl rounded-br-sm bg-brand px-4 py-3 font-geist text-sm leading-relaxed text-brand-ink shadow-panel">
+                <div className="max-w-[min(85%,70ch)] whitespace-pre-wrap break-words rounded-2xl rounded-br-md btn-primary-fill px-4 py-3 font-geist text-sm leading-relaxed shadow-panel">
                   {turn.content}
                 </div>
               </div>
             ) : (
               <div key={index} className="space-y-2 animate-fade-up">
-                <div className="w-full max-w-prose-chat break-words rounded-xl rounded-bl-sm border border-border bg-background-elevated/80 px-4 py-4 text-primary shadow-panel sm:px-5">
+                <div className="w-full max-w-prose-chat break-words rounded-2xl rounded-bl-md border border-purple-200/80 bg-purple-50/60 px-4 py-4 text-primary shadow-panel dark:border-purple-800/50 dark:bg-purple-950/40 sm:px-5">
                   <MarkdownRenderer classname="!max-w-none gap-y-2 prose-p:my-1 prose-li:my-0.5 text-sm leading-relaxed">
                     {turn.content}
                   </MarkdownRenderer>
                 </div>
                 {turn.response?.domain && (
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-background-wash px-2.5 py-1 type-caption">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 type-caption text-purple-800 dark:border-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
                     Handled as: {turn.response.domain}
                   </span>
                 )}
@@ -402,8 +404,8 @@ function ChatView() {
           )}
           {busy && (
             <div className="space-y-2" role="status" aria-label="Thinking">
-              <div className="h-3 w-24 animate-pulse rounded-full bg-background-elevated" />
-              <div className="h-16 max-w-prose animate-pulse rounded-xl bg-background-elevated" />
+              <div className="h-3 w-24 animate-pulse rounded-full bg-purple-200/80 dark:bg-purple-800/50" />
+              <div className="h-16 max-w-prose animate-pulse rounded-2xl bg-purple-100/80 dark:bg-purple-900/40" />
               <span className="sr-only">Thinking…</span>
             </div>
           )}
@@ -415,7 +417,7 @@ function ChatView() {
 
       <form
         onSubmit={send}
-        className="flex shrink-0 items-end gap-2 rounded-3xl border border-border bg-background-secondary p-1.5 shadow-lift"
+        className="flex shrink-0 items-end gap-2 rounded-2xl border border-purple-200/80 bg-background-secondary p-1.5 shadow-lift dark:border-purple-800/40"
       >
         <label htmlFor="chat-input" className="sr-only">
           Message FreedomBot
@@ -446,7 +448,7 @@ function ChatView() {
         <span id="chat-input-hint" className="sr-only">
           Press Enter to send, Shift plus Enter for a new line.
         </span>
-        <Btn type="submit" disabled={busy || !input.trim()} className="rounded-full px-6">
+        <Btn type="submit" loading={busy} disabled={!input.trim()} className="rounded-xl px-6">
           Ask
         </Btn>
       </form>
@@ -480,7 +482,7 @@ function TurnSignals({ response }: { response?: ChatResponse }) {
       {awaiting_approval.map((action) => (
         <div
           key={action.id}
-          className="rounded-xl border border-brand/50 bg-brand/15 px-4 py-3 text-sm"
+          className="rounded-xl border border-purple-300 bg-purple-50 px-4 py-3 text-sm shadow-panel dark:border-purple-700 dark:bg-purple-950/50"
         >
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="warn">Awaiting approval</Badge>
@@ -490,7 +492,7 @@ function TurnSignals({ response }: { response?: ChatResponse }) {
           <p className="type-muted mt-2">{action.policy_reason}</p>
           <Link
             href="/approvals"
-            className="mt-3 inline-flex min-h-11 items-center font-semibold text-brand-soft ui-transition hover:text-primary"
+            className="mt-3 inline-flex min-h-11 items-center font-semibold text-purple-700 ui-transition hover:text-purple-900 dark:text-purple-300 dark:hover:text-purple-100"
           >
             Open the approval queue →
           </Link>

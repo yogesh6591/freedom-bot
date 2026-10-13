@@ -17,15 +17,15 @@ export const metadata: Metadata = {
     'One company AI — ask in chat. Routing, memory, and approvals stay behind the scenes.'
 }
 
-/** Apply saved theme before paint to avoid a light/dark flash. */
+/** Apply saved theme before paint to avoid a light/dark flash. Default: light. */
 const THEME_BOOT =
-  "(function(){try{var t=localStorage.getItem('freedombot-theme');var d=t!=='light';if(t==='light')d=false;if(t==='dark')d=true;var r=document.documentElement;r.classList.toggle('dark',d);r.style.colorScheme=d?'dark':'light';}catch(e){document.documentElement.classList.add('dark')}})();"
+  "(function(){try{var t=localStorage.getItem('freedombot-theme');var d=t==='dark';var r=document.documentElement;r.classList.toggle('dark',d);r.style.colorScheme=d?'dark':'light';}catch(e){}})();"
 
 export default function RootLayout({
   children
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         {/* Runtime Google Fonts — avoids next/font fetch during Docker `next build`. */}

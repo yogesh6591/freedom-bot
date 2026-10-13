@@ -179,25 +179,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* Demo role strip — large so viewers know which persona is on screen (Dhanu feedback). */}
-      <div
-        role="status"
-        aria-live="polite"
-        className="border-b border-purple-700/30 btn-primary-fill text-brand-ink shadow-glow"
-      >
+      <div role="status" aria-live="polite" className="demo-strip">
         <div className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-2.5 sm:px-6">
-          <span className="font-dmmono text-[10px] font-medium uppercase tracking-[0.14em] text-brand-ink/80">
+          <span className="demo-strip-muted font-dmmono text-[10px] font-medium uppercase tracking-[0.14em]">
             You are
           </span>
           <span className="font-geist text-xl font-bold tracking-tight sm:text-2xl">
             {me.user.display_name}
           </span>
-          <span className="hidden text-brand-ink/50 sm:inline" aria-hidden>
+          <span className="demo-strip-muted hidden sm:inline" aria-hidden>
             ·
           </span>
           <span className="font-geist text-lg font-semibold uppercase tracking-wide sm:text-xl">
             {demoPersonaLabel(me)}
           </span>
-          <span className="ml-auto font-dmmono text-[10px] uppercase tracking-wide text-brand-ink/75">
+          <span className="demo-strip-muted ml-auto font-dmmono text-[10px] uppercase tracking-wide">
             {me.client.company_name}
           </span>
         </div>

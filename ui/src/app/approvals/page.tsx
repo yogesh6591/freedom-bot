@@ -19,6 +19,8 @@ import {
   ErrorNote,
   LoadingBlock,
   PageStack,
+  SegmentedTab,
+  SegmentedTabs,
   riskTone,
   statusTone,
   timestamp
@@ -105,32 +107,17 @@ function ApprovalsView() {
           )}
         </div>
 
-        <div
-          role="tablist"
-          aria-label="Filter by status"
-          className="flex flex-wrap gap-1.5 rounded-2xl border border-border bg-background-secondary/80 p-1.5 shadow-panel"
-        >
-          {FILTERS.map((option) => {
-            const active = filter === option.value
-            return (
-              <button
-                key={option.value || 'all'}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setFilter(option.value)}
-                className={cn(
-                  'inline-flex min-h-10 items-center rounded-xl px-3.5 font-geist text-sm font-medium ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80',
-                  active
-                    ? 'bg-brand text-brand-ink shadow-glow'
-                    : 'text-muted hover:bg-background-elevated hover:text-primary'
-                )}
-              >
-                {option.label}
-              </button>
-            )
-          })}
-        </div>
+        <SegmentedTabs aria-label="Filter by status">
+          {FILTERS.map((option) => (
+            <SegmentedTab
+              key={option.value || 'all'}
+              active={filter === option.value}
+              onClick={() => setFilter(option.value)}
+            >
+              {option.label}
+            </SegmentedTab>
+          ))}
+        </SegmentedTabs>
       </header>
 
       {error && <ErrorNote>{error}</ErrorNote>}
@@ -202,16 +189,23 @@ function ActionCard({
   }
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-border bg-background-secondary shadow-panel">
+    <article
+      className={cn(
+        'overflow-hidden rounded-2xl border bg-background-secondary shadow-panel ui-transition',
+        pending
+          ? 'border-purple-300 ring-1 ring-purple-200/80 dark:border-purple-700 dark:ring-purple-800/50'
+          : 'border-border'
+      )}
+    >
       {/* Title band */}
-      <div className="space-y-3 border-b border-border px-5 py-4 sm:px-6 sm:py-5">
+      <div className="space-y-3 border-b border-border bg-purple-50/40 px-5 py-4 dark:bg-purple-950/25 sm:px-6 sm:py-5">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={statusTone(action.status)}>
             {STATUS_LABEL[action.status] ?? action.status}
           </Badge>
           <Badge tone={riskTone(action.risk_level)}>{action.risk_level} risk</Badge>
           {action.domain && (
-            <span className="rounded-full border border-border bg-background-elevated px-2.5 py-1 font-dmmono text-[10px] uppercase tracking-wide text-muted">
+            <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 font-dmmono text-[10px] uppercase tracking-wide text-purple-800 dark:border-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
               {action.domain}
             </span>
           )}
@@ -232,7 +226,7 @@ function ActionCard({
           <div className="flex min-w-0 items-center gap-3">
             <span
               aria-hidden
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand/15 font-geist text-xs font-bold text-brand"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-purple-100 font-geist text-xs font-bold text-purple-700 dark:bg-purple-900/50 dark:text-purple-200"
             >
               {initials(requester)}
             </span>
@@ -308,10 +302,8 @@ function ActionCard({
 
         {/* Policy reason — one calm callout */}
         {action.policy_reason && (
-          <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm leading-relaxed text-secondary">
-            <span className="font-medium text-amber-700 dark:text-amber-300">
-              Why a decision is needed
-            </span>
+          <p className="rounded-xl border border-warning/25 bg-warning/5 px-4 py-3 text-sm leading-relaxed text-secondary">
+            <span className="font-medium text-warning">Why a decision is needed</span>
             <span className="mt-1 block text-muted">{action.policy_reason}</span>
           </p>
         )}

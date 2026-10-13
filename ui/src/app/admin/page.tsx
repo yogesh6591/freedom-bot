@@ -15,6 +15,8 @@ import {
   Field,
   PageStack,
   Panel,
+  SegmentedTab,
+  SegmentedTabs,
   inputClass,
   modeTone,
   riskTone
@@ -90,16 +92,20 @@ function AdminView() {
   return (
     <PageStack>
       <Panel title="Administration" description="Configure the workspace, users, policies and domain packs.">
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Admin sections">
+        <SegmentedTabs aria-label="Admin sections">
           {(
             ['setup', 'insights', 'launch', 'pricing', 'users', 'policies', 'domains', 'tools'] as const
           ).map((name) => (
-              <Chip key={name} active={tab === name} onClick={() => setTab(name)} className="capitalize">
-                {name}
-              </Chip>
-            )
-          )}
-        </div>
+            <SegmentedTab
+              key={name}
+              active={tab === name}
+              onClick={() => setTab(name)}
+              className="capitalize"
+            >
+              {name}
+            </SegmentedTab>
+          ))}
+        </SegmentedTabs>
       </Panel>
       {tab === 'setup' && <Setup />}
       {tab === 'insights' && <Insights />}

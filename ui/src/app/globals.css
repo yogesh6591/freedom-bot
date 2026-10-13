@@ -229,6 +229,41 @@
   .btn-primary-fill:active {
     filter: brightness(0.96);
   }
+
+  /* Demo persona strip — soft wash in light, strong brand in dark */
+  .demo-strip {
+    @apply border-b border-purple-200 bg-purple-100 text-purple-950;
+  }
+
+  .dark .demo-strip {
+    border-color: rgb(var(--purple-700) / 0.45);
+    background-image: var(--brand-gradient);
+    color: rgb(var(--color-brand-ink));
+    box-shadow: var(--shadow-glow);
+  }
+
+  .demo-strip-muted {
+    @apply text-purple-700/80;
+  }
+
+  .dark .demo-strip-muted {
+    color: rgb(var(--color-brand-ink) / 0.8);
+  }
+
+  .segmented {
+    @apply flex flex-wrap gap-1 rounded-xl border border-border bg-background-secondary/90 p-1.5 shadow-panel;
+  }
+
+  .segmented-item {
+    @apply inline-flex min-h-10 items-center rounded-lg px-3.5 font-geist text-sm font-medium text-muted ui-transition;
+    @apply hover:bg-purple-50 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80;
+    @apply dark:hover:bg-purple-900/40;
+  }
+
+  .segmented-item[aria-selected='true'],
+  .segmented-item[data-active='true'] {
+    @apply bg-purple-600 text-brand-ink shadow-glow dark:bg-purple-500;
+  }
 }
 
 @layer utilities {

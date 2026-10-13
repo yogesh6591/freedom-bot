@@ -208,13 +208,45 @@ export function Chip({
     <button
       type={type}
       aria-pressed={active}
-      className={cn(
-        'inline-flex min-h-11 items-center rounded-full px-4 font-geist text-sm font-medium ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-        active
-          ? 'btn-primary-fill shadow-glow'
-          : 'bg-background-elevated text-muted hover:bg-purple-50 hover:text-primary dark:hover:bg-purple-900/40',
-        className
-      )}
+      data-active={active ? 'true' : undefined}
+      className={cn('segmented-item capitalize', !active && 'bg-transparent', className)}
+      {...props}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Consistent filter / section tabs used across Approvals, Memory, Admin, Support. */
+export function SegmentedTabs({
+  'aria-label': ariaLabel,
+  children,
+  className
+}: {
+  'aria-label': string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div role="tablist" aria-label={ariaLabel} className={cn('segmented', className)}>
+      {children}
+    </div>
+  )
+}
+
+export function SegmentedTab({
+  active,
+  children,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      data-active={active ? 'true' : undefined}
+      className={cn('segmented-item', className)}
       {...props}
     >
       {children}

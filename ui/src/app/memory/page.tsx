@@ -16,13 +16,14 @@ import type { MemoryItem } from '@/lib/types'
 import {
   Badge,
   Btn,
-  Chip,
   DataTable,
   ErrorNote,
   Field,
   LoadingBlock,
   PageStack,
   Panel,
+  SegmentedTab,
+  SegmentedTabs,
   inputClass,
   timestamp
 } from '@/components/common/primitives'
@@ -96,9 +97,9 @@ function MemoryView() {
         title="Organizational memory"
         description="What this organization has told the assistant. Values are versioned: a correction supersedes the old value and keeps it in history."
       >
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Memory categories">
+        <SegmentedTabs aria-label="Memory categories">
           {TABS.map((name) => (
-            <Chip
+            <SegmentedTab
               key={name}
               active={tab === name}
               onClick={() => {
@@ -107,9 +108,9 @@ function MemoryView() {
               }}
             >
               {TAB_LABEL[name]}
-            </Chip>
+            </SegmentedTab>
           ))}
-        </div>
+        </SegmentedTabs>
       </Panel>
 
       {error && <ErrorNote>{error}</ErrorNote>}

@@ -2,7 +2,7 @@
 
 /**
  * Light / dark theme. Persists to localStorage and toggles the `dark` class on <html>.
- * Default is dark (FreedomBot command-center look) when no preference is stored.
+ * Default is light (modern SaaS); users can switch to dark anytime.
  */
 
 import {
@@ -28,14 +28,14 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 function readStored(): Theme {
-  if (typeof window === 'undefined') return 'dark'
+  if (typeof window === 'undefined') return 'light'
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw === 'light' || raw === 'dark') return raw
   } catch {
     /* ignore */
   }
-  return 'dark'
+  return 'light'
 }
 
 function applyTheme(theme: Theme) {
@@ -45,7 +45,7 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('dark')
+  const [theme, setThemeState] = useState<Theme>('light')
 
   useEffect(() => {
     const initial = readStored()

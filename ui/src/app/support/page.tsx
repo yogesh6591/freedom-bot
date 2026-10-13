@@ -8,13 +8,14 @@ import { api } from '@/lib/api'
 import {
   Badge,
   Btn,
-  Chip,
   EmptyState,
   ErrorNote,
   Field,
   LoadingBlock,
   PageStack,
   Panel,
+  SegmentedTab,
+  SegmentedTabs,
   inputClass,
   timestamp
 } from '@/components/common/primitives'
@@ -119,22 +120,22 @@ function SupportView() {
         title="Support (Cepoch)"
         description="Routine tickets stay with us. Pull Jeanne only for CEO-level judgment, relationship risk, or at-risk accounts — not a sales desk."
       >
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Queue filter">
+        <SegmentedTabs aria-label="Queue filter">
           {FILTERS.map((option) => (
-            <Chip
+            <SegmentedTab
               key={option.value || 'all'}
               active={filter === option.value}
               onClick={() => setFilter(option.value)}
             >
               {option.label}
-            </Chip>
+            </SegmentedTab>
           ))}
-        </div>
+        </SegmentedTabs>
       </Panel>
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {submitted && (
-        <p role="status" className="text-sm text-positive">
+        <p role="status" className="text-sm text-success">
           {submitted}
         </p>
       )}
