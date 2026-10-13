@@ -2,9 +2,8 @@ import type { Config } from 'tailwindcss'
 import tailwindcssAnimate from 'tailwindcss-animate'
 
 /**
- * FreedomBot — JeanneCAIO client-facing command center.
- * Dark / black surfaces + bright purple–blue brand accents.
- * Visual only; product behavior is unchanged.
+ * FreedomBot — light + dark via CSS variables (`.dark` on <html>).
+ * Brand stays purple/violet; surfaces flip with theme.
  */
 export default {
   darkMode: ['class'],
@@ -16,27 +15,27 @@ export default {
   theme: {
     extend: {
       colors: {
-        primary: '#F4F2FF',
-        primaryAccent: '#0A0A12',
+        primary: 'rgb(var(--color-primary) / <alpha-value>)',
+        primaryAccent: 'rgb(var(--color-primary-accent) / <alpha-value>)',
         brand: {
-          DEFAULT: '#8B5CF6',
-          soft: '#A78BFA',
-          deep: '#6366F1',
-          ink: '#F8F7FF'
+          DEFAULT: 'rgb(var(--color-brand) / <alpha-value>)',
+          soft: 'rgb(var(--color-brand-soft) / <alpha-value>)',
+          deep: 'rgb(var(--color-brand-deep) / <alpha-value>)',
+          ink: 'rgb(var(--color-brand-ink) / <alpha-value>)'
         },
         background: {
-          DEFAULT: '#07070F',
-          secondary: '#10101C',
-          elevated: '#171728',
-          wash: '#1C1834'
+          DEFAULT: 'rgb(var(--color-bg) / <alpha-value>)',
+          secondary: 'rgb(var(--color-bg-secondary) / <alpha-value>)',
+          elevated: 'rgb(var(--color-bg-elevated) / <alpha-value>)',
+          wash: 'rgb(var(--color-bg-wash) / <alpha-value>)'
         },
-        secondary: '#C9C5DE',
+        secondary: 'rgb(var(--color-secondary) / <alpha-value>)',
         border: 'rgba(var(--color-border-default))',
-        accent: '#1C1834',
-        muted: '#8E89A8',
-        destructive: '#F87171',
-        positive: '#34D399',
-        info: '#38BDF8'
+        accent: 'rgb(var(--color-accent) / <alpha-value>)',
+        muted: 'rgb(var(--color-muted) / <alpha-value>)',
+        destructive: 'rgb(var(--color-destructive) / <alpha-value>)',
+        positive: 'rgb(var(--color-positive) / <alpha-value>)',
+        info: 'rgb(var(--color-info) / <alpha-value>)'
       },
       fontFamily: {
         geist: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
@@ -72,16 +71,13 @@ export default {
         slow: '250ms'
       },
       boxShadow: {
-        panel:
-          '0 0 0 1px rgba(139, 92, 246, 0.12), 0 8px 32px rgba(0, 0, 0, 0.45)',
-        glow: '0 0 0 2px rgba(139, 92, 246, 0.45), 0 0 24px rgba(99, 102, 241, 0.35)',
-        lift: '0 16px 48px rgba(0, 0, 0, 0.55), 0 0 40px rgba(99, 102, 241, 0.15)'
+        panel: 'var(--shadow-panel)',
+        glow: 'var(--shadow-glow)',
+        lift: 'var(--shadow-lift)'
       },
       backgroundImage: {
-        'app-atmosphere':
-          'radial-gradient(900px 480px at 0% -10%, rgba(139, 92, 246, 0.28), transparent 55%), radial-gradient(700px 420px at 100% 0%, rgba(56, 189, 248, 0.14), transparent 50%), radial-gradient(600px 400px at 50% 120%, rgba(99, 102, 241, 0.12), transparent 55%), linear-gradient(180deg, #07070F 0%, #0A0A14 45%, #07070F 100%)',
-        'login-atmosphere':
-          'radial-gradient(900px 560px at 10% 15%, rgba(139, 92, 246, 0.4), transparent 55%), radial-gradient(700px 480px at 95% 85%, rgba(56, 189, 248, 0.22), transparent 50%), linear-gradient(165deg, #05050C 0%, #0E0A1C 50%, #070712 100%)'
+        'app-atmosphere': 'var(--app-atmosphere)',
+        'login-atmosphere': 'var(--login-atmosphere)'
       },
       keyframes: {
         'fade-up': {

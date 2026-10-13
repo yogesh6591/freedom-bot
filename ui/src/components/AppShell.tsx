@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Badge, Btn, modeTone } from '@/components/common/primitives'
 import { useSession } from '@/components/SessionProvider'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { takeNotice } from '@/lib/sessionSync'
 import type { Role } from '@/lib/types'
 
@@ -140,12 +141,46 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="font-geist text-xs font-semibold">{me.user.display_name}</div>
               <div className="type-caption">{me.user.roles.join(' · ')}</div>
             </div>
+            <ThemeToggle />
             <Btn variant="secondary" size="sm" onClick={() => void logout()}>
               Sign out
             </Btn>
           </div>
         </div>
       </header>
+
+      {/* Demo role strip — large so viewers know which persona is on screen (Dhanu feedback). */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="border-b border-brand/40 bg-brand text-brand-ink shadow-glow"
+      >
+        <div className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-2.5 sm:px-6">
+          <span className="font-dmmono text-[10px] font-medium uppercase tracking-[0.14em] text-brand-ink/80">
+            You are
+          </span>
+          <span className="font-geist text-xl font-bold tracking-tight sm:text-2xl">
+            {me.user.display_name}
+          </span>
+          <span className="hidden text-brand-ink/50 sm:inline" aria-hidden>
+            ·
+          </span>
+          <span className="font-geist text-base font-semibold uppercase tracking-wide sm:text-lg">
+            {me.user.primary_role || me.user.roles[0] || 'USER'}
+          </span>
+          <span className="hidden text-brand-ink/50 sm:inline" aria-hidden>
+            ·
+          </span>
+          <span className="font-geist text-sm font-medium text-brand-ink/95 sm:text-base">
+            {me.user.data_scopes?.length
+              ? me.user.data_scopes.map((s) => s.toUpperCase()).join(' · ')
+              : 'GENERAL ACCESS ONLY'}
+          </span>
+          <span className="ml-auto font-dmmono text-[10px] uppercase tracking-wide text-brand-ink/75">
+            {me.client.company_name}
+          </span>
+        </div>
+      </div>
 
       {notice && (
         <div

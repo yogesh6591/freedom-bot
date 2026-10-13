@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { useSession } from '@/components/SessionProvider'
 import { announceSessionChange, takeNotice } from '@/lib/sessionSync'
 import { Btn, ErrorNote, Field, inputClass } from '@/components/common/primitives'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -45,16 +46,19 @@ export default function LoginPage() {
   return (
     <div className="relative flex min-h-dvh flex-col overflow-hidden bg-login-atmosphere lg:flex-row">
       <div className="relative z-10 flex w-full flex-col justify-between gap-10 p-6 sm:p-8 md:p-12 lg:w-[46%] lg:p-16">
-        <div className="flex items-center gap-3">
-          <span
-            className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand text-base font-bold text-brand-ink shadow-glow"
-            aria-hidden
-          >
-            FB
-          </span>
-          <span className="font-geist text-xl font-bold tracking-tight text-primary">
-            FreedomBot
-          </span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand text-base font-bold text-brand-ink shadow-glow"
+              aria-hidden
+            >
+              FB
+            </span>
+            <span className="font-geist text-xl font-bold tracking-tight text-primary">
+              FreedomBot
+            </span>
+          </div>
+          <ThemeToggle />
         </div>
 
         <div className="max-w-md space-y-4">

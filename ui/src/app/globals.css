@@ -3,32 +3,108 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light theme (default when `.dark` is absent) */
   :root {
-    --color-border-default: 167, 139, 250, 0.22;
+    --color-primary: 15 23 42;
+    --color-primary-accent: 248 250 252;
+    --color-secondary: 71 85 105;
+    --color-muted: 100 116 139;
+    --color-brand: 124 58 237;
+    --color-brand-soft: 139 92 246;
+    --color-brand-deep: 79 70 229;
+    --color-brand-ink: 248 247 255;
+    --color-bg: 248 250 252;
+    --color-bg-secondary: 255 255 255;
+    --color-bg-elevated: 241 245 249;
+    --color-bg-wash: 237 233 254;
+    --color-accent: 237 233 254;
+    --color-destructive: 220 38 38;
+    --color-positive: 5 150 105;
+    --color-info: 2 132 199;
+    --color-border-default: 124, 58, 237, 0.18;
+    --surface-glass: rgba(255, 255, 255, 0.86);
+    --app-atmosphere:
+      radial-gradient(900px 480px at 0% -10%, rgba(124, 58, 237, 0.12), transparent 55%),
+      radial-gradient(700px 420px at 100% 0%, rgba(2, 132, 199, 0.08), transparent 50%),
+      radial-gradient(600px 400px at 50% 120%, rgba(79, 70, 229, 0.06), transparent 55%),
+      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 45%, #f8fafc 100%);
+    --login-atmosphere:
+      radial-gradient(900px 560px at 10% 15%, rgba(124, 58, 237, 0.18), transparent 55%),
+      radial-gradient(700px 480px at 95% 85%, rgba(2, 132, 199, 0.1), transparent 50%),
+      linear-gradient(165deg, #f8fafc 0%, #ede9fe 50%, #f1f5f9 100%);
+    --shadow-panel: 0 0 0 1px rgba(124, 58, 237, 0.1), 0 8px 28px rgba(15, 23, 42, 0.08);
+    --shadow-glow: 0 0 0 2px rgba(124, 58, 237, 0.35), 0 0 20px rgba(139, 92, 246, 0.2);
+    --shadow-lift: 0 16px 40px rgba(15, 23, 42, 0.12), 0 0 32px rgba(124, 58, 237, 0.08);
+    --selection-bg: rgba(124, 58, 237, 0.22);
+    --selection-fg: #0f172a;
+    --scrollbar-thumb: rgba(124, 58, 237, 0.28);
+    --scrollbar-thumb-hover: rgba(124, 58, 237, 0.45);
     --scrollbar-width: 0.4rem;
-    --surface-glass: rgba(16, 16, 28, 0.82);
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --font-ui: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   }
 
+  /* Dark theme — FreedomBot command center */
+  .dark {
+    --color-primary: 244 242 255;
+    --color-primary-accent: 10 10 18;
+    --color-secondary: 201 197 222;
+    --color-muted: 142 137 168;
+    --color-brand: 139 92 246;
+    --color-brand-soft: 167 139 250;
+    --color-brand-deep: 99 102 241;
+    --color-brand-ink: 248 247 255;
+    --color-bg: 7 7 15;
+    --color-bg-secondary: 16 16 28;
+    --color-bg-elevated: 23 23 40;
+    --color-bg-wash: 28 24 52;
+    --color-accent: 28 24 52;
+    --color-destructive: 248 113 113;
+    --color-positive: 52 211 153;
+    --color-info: 56 189 248;
+    --color-border-default: 167, 139, 250, 0.22;
+    --surface-glass: rgba(16, 16, 28, 0.82);
+    --app-atmosphere:
+      radial-gradient(900px 480px at 0% -10%, rgba(139, 92, 246, 0.28), transparent 55%),
+      radial-gradient(700px 420px at 100% 0%, rgba(56, 189, 248, 0.14), transparent 50%),
+      radial-gradient(600px 400px at 50% 120%, rgba(99, 102, 241, 0.12), transparent 55%),
+      linear-gradient(180deg, #07070f 0%, #0a0a14 45%, #07070f 100%);
+    --login-atmosphere:
+      radial-gradient(900px 560px at 10% 15%, rgba(139, 92, 246, 0.4), transparent 55%),
+      radial-gradient(700px 480px at 95% 85%, rgba(56, 189, 248, 0.22), transparent 50%),
+      linear-gradient(165deg, #05050c 0%, #0e0a1c 50%, #070712 100%);
+    --shadow-panel: 0 0 0 1px rgba(139, 92, 246, 0.12), 0 8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-glow: 0 0 0 2px rgba(139, 92, 246, 0.45), 0 0 24px rgba(99, 102, 241, 0.35);
+    --shadow-lift: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 40px rgba(99, 102, 241, 0.15);
+    --selection-bg: rgba(139, 92, 246, 0.45);
+    --selection-fg: #f8f7ff;
+    --scrollbar-thumb: rgba(167, 139, 250, 0.28);
+    --scrollbar-thumb-hover: rgba(167, 139, 250, 0.45);
+  }
+
   html {
+    color-scheme: light;
+  }
+
+  html.dark {
     color-scheme: dark;
   }
 
   body {
-    @apply bg-background bg-app-atmosphere text-secondary antialiased;
+    @apply bg-background text-secondary antialiased;
+    background-image: var(--app-atmosphere);
     background-attachment: fixed;
     min-height: 100dvh;
   }
 
   ::selection {
-    background: rgba(139, 92, 246, 0.45);
-    color: #F8F7FF;
+    background: var(--selection-bg);
+    color: var(--selection-fg);
   }
 
   :focus-visible {
-    outline: 2px solid rgba(167, 139, 250, 0.9);
+    outline: 2px solid rgb(var(--color-brand-soft) / 0.9);
     outline-offset: 2px;
   }
 
@@ -92,6 +168,14 @@
   .max-w-prose-chat {
     max-width: 70ch;
   }
+
+  .bg-app-atmosphere {
+    background-image: var(--app-atmosphere);
+  }
+
+  .bg-login-atmosphere {
+    background-image: var(--login-atmosphere);
+  }
 }
 
 ::-webkit-scrollbar {
@@ -101,13 +185,13 @@
 
 ::-webkit-scrollbar-thumb {
   @apply rounded-full;
-  background-color: rgba(167, 139, 250, 0.28);
+  background-color: var(--scrollbar-thumb);
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(167, 139, 250, 0.45);
+  background-color: var(--scrollbar-thumb-hover);
 }
 
 ::-webkit-scrollbar-track {
