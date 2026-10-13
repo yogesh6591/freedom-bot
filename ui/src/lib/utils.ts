@@ -5,6 +5,14 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Given name only for the UI — "Ada Admin" / "Fiona Finance" → "Ada" / "Fiona". */
+export function personGivenName(displayName?: string | null, fallback = 'User'): string {
+  const raw = (displayName || '').trim()
+  if (!raw) return fallback
+  const first = raw.split(/\s+/)[0] || raw
+  return first.replace(/[(),]/g, '') || fallback
+}
+
 export const truncateText = (text: string, limit: number) => {
   if (text) {
     return text.length > limit ? `${text.slice(0, limit)}..` : text

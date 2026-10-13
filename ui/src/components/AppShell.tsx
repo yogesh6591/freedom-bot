@@ -8,7 +8,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { cn } from '@/lib/utils'
+import { cn, personGivenName } from '@/lib/utils'
 import { Badge, Btn } from '@/components/common/primitives'
 import { useSession } from '@/components/SessionProvider'
 import { ThemeToggle } from '@/components/ThemeToggle'
@@ -158,7 +158,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {!me.client.allow_phi && <Badge tone="neutral">PHI off</Badge>}
             {!me.client.allow_card_data && <Badge tone="neutral">Card off</Badge>}
             <div className="hidden border-l border-border pl-3 text-right md:block">
-              <div className="font-geist text-xs font-semibold">{me.user.display_name}</div>
+              <div className="font-geist text-xs font-semibold">
+                {personGivenName(me.user.display_name)}
+              </div>
               <div className="type-caption">{demoPersonaLabel(me)}</div>
             </div>
             <ThemeToggle />
@@ -176,7 +178,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             You are
           </span>
           <span className="font-geist text-xl font-bold tracking-tight sm:text-2xl">
-            {me.user.display_name}
+            {personGivenName(me.user.display_name)}
           </span>
           <span className="demo-strip-muted hidden sm:inline" aria-hidden>
             ·

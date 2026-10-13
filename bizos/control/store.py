@@ -279,6 +279,22 @@ def _replace_roles(conn: Any, user_id: str, roles: frozenset[Role], granted_by: 
         )
 
 
+def set_user_display_name(user_id: str, display_name: str) -> User:
+    """Update the person's given name shown in the UI (demo strip, header)."""
+    name = (display_name or "").strip()
+    if not name:
+        raise ValueError("display_name is required")
+    with control_connection() as conn:
+        conn.execute(
+            text("UPDATE users SET display_name = :n, updated_at = NOW() WHERE id = :i"),
+            {"n": name, "i": user_id},
+        )
+    user = get_user(user_id)
+    if user is None:
+        raise LookupError(user_id)
+    return user
+
+
 def set_user_scopes(user_id: str, scopes: Iterable[str]) -> User:
     """Replace the restricted data areas a user may see (FB-037)."""
     from bizos.types import DATA_AREAS

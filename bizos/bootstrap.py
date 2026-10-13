@@ -38,19 +38,20 @@ from bizos.util.timeutil import utcnow
 #: finance / ops / HR buckets and employee / lead / exec visibility levels.
 DEV_USERS: tuple[tuple[str, str, tuple[Role, ...], tuple[str, ...]], ...] = (
     # --- platform role demos (unchanged emails for existing tests) ---
-    ("viewer@{domain}", "Vera Viewer", (Role.VIEWER,), ()),
-    ("drafter@{domain}", "Dana Drafter", (Role.DRAFTER,), ()),
-    ("approver@{domain}", "Avery Approver", (Role.APPROVER,), ("finance", "legal", "exec")),
-    ("operator@{domain}", "Omar Operator", (Role.OPERATOR,), ("finance",)),
-    ("admin@{domain}", "Ada Admin", (Role.ADMIN,), ()),
+    # Display names are given names only — department/role shows on the demo strip.
+    ("viewer@{domain}", "Vera", (Role.VIEWER,), ()),
+    ("drafter@{domain}", "Dana", (Role.DRAFTER,), ()),
+    ("approver@{domain}", "Avery", (Role.APPROVER,), ("finance", "legal", "exec")),
+    ("operator@{domain}", "Omar", (Role.OPERATOR,), ("finance",)),
+    ("admin@{domain}", "Ada", (Role.ADMIN,), ()),
     # --- department people (clear finance vs ops vs HR) ---
-    ("finance@{domain}", "Fiona Finance", (Role.OPERATOR,), ("finance",)),
-    ("ops@{domain}", "Oscar Ops", (Role.OPERATOR,), ("ops",)),
-    ("hr@{domain}", "Hannah HR", (Role.OPERATOR,), ("hr", "salary")),
+    ("finance@{domain}", "Fiona", (Role.OPERATOR,), ("finance",)),
+    ("ops@{domain}", "Oscar", (Role.OPERATOR,), ("ops",)),
+    ("hr@{domain}", "Hannah", (Role.OPERATOR,), ("hr", "salary")),
     # --- level people (employee / lead / exec see different info) ---
-    ("employee@{domain}", "Eddie Employee", (Role.VIEWER,), ()),
-    ("lead@{domain}", "Lara Lead", (Role.DRAFTER,), ("ops",)),
-    ("exec@{domain}", "Elena Exec", (Role.APPROVER,), ("exec", "finance", "legal", "hr", "ops")),
+    ("employee@{domain}", "Eddie", (Role.VIEWER,), ()),
+    ("lead@{domain}", "Lara", (Role.DRAFTER,), ("ops",)),
+    ("exec@{domain}", "Elena", (Role.APPROVER,), ("exec", "finance", "legal", "hr", "ops")),
 )
 
 DEV_PASSWORD = "bizos-dev-password"
@@ -128,8 +129,10 @@ def ensure_dev_users(client: Client, *, domain: str = "example.com") -> list[dic
         except control.DuplicateUser:
             existing = next((u for u in control.list_users(client.id) if u.email == email), None)
             if existing is not None:
-                # Re-bootstrap always aligns scopes so dept demos stay correct.
+                # Re-bootstrap always aligns scopes + given name so demos stay correct.
                 control.set_user_scopes(existing.id, scopes)
+                if existing.display_name != name:
+                    control.set_user_display_name(existing.id, name)
             created.append(
                 {
                     "email": email,
@@ -570,7 +573,7 @@ def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
                 "- Scope: move Globex Foods' warehouse scanning to the new handheld app at the Newark site.\n"
                 "- Milestones: pilot in aisles 1-4 done Sept 12; staff training Sept 29-30; "
                 "full site go-live Oct 3.\n"
-                "- Team: Oscar Ops (site lead), Lara Lead (training), Eddie Employee (daily scan checks).\n"
+                "- Team: Oscar (site lead), Lara (training), Eddie (daily scan checks).\n"
                 "- Status: on track. Next step: confirm the training schedule.\n"
                 "[[area:finance]]\n"
                 "Client invoice:\n"
