@@ -170,6 +170,9 @@ def me(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
             "display_name": ctx.display_name,
             "roles": sorted(str(r) for r in ctx.roles),
             "primary_role": str(ctx.primary_role),
+            # Department / restricted areas for the demo strip and UI (FB-037).
+            # Admins see every area; others see only their granted data_scopes.
+            "data_scopes": sorted(ctx.visible_areas),
             "is_platform_owner": bool(ctx.attributes.get("platform_owner")),
         },
         "client": {

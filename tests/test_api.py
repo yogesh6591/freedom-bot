@@ -51,6 +51,8 @@ def test_login_and_me(app_client, client_a):
     assert body["user"]["roles"] == ["OPERATOR"]
     assert body["client"]["slug"] == client_a.slug
     assert "general" in body["client"]["enabled_domains"]
+    # Demo strip / UI: department scopes must be on /me (not missing → "GENERAL ACCESS ONLY").
+    assert "finance" in body["user"]["data_scopes"]
 
 
 def test_bad_password_is_rejected(app_client, client_a):

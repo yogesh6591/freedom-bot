@@ -13,9 +13,34 @@ import { Badge, Btn, modeTone } from '@/components/common/primitives'
 import { useSession } from '@/components/SessionProvider'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { takeNotice } from '@/lib/sessionSync'
-import type { Role } from '@/lib/types'
+import type { Me, Role } from '@/lib/types'
 
 const PRIMARY_NAV = { href: '/chat', label: 'Ask FreedomBot' } as const
+
+/** Demo strip: department people read as FINANCE / OPERATIONS, not "GENERAL ACCESS ONLY". */
+const AREA_LABEL: Record<string, string> = {
+  finance: 'FINANCE',
+  ops: 'OPERATIONS',
+  operations: 'OPERATIONS',
+  hr: 'HR',
+  salary: 'SALARY',
+  legal: 'LEGAL',
+  exec: 'EXECUTIVE',
+  sales: 'SALES',
+  strategy: 'STRATEGY'
+}
+
+function accessBannerLabel(me: Me): string {
+  if (me.user.primary_role === 'ADMIN' || me.user.roles.includes('ADMIN')) {
+    return 'ADMIN'
+  }
+  const scopes = me.user.data_scopes ?? []
+  if (scopes.length > 0) {
+    return scopes.map((s) => AREA_LABEL[s.toLowerCase()] ?? s.toUpperCase()).join(' · ')
+  }
+  // Viewer / no restricted areas — employee-level general access (Eddie).
+  return 'EMPLOYEE'
+}
 
 const WORKSPACE_NAV: {
   href: string
@@ -172,9 +197,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ·
           </span>
           <span className="font-geist text-sm font-medium text-brand-ink/95 sm:text-base">
-            {me.user.data_scopes?.length
-              ? me.user.data_scopes.map((s) => s.toUpperCase()).join(' · ')
-              : 'GENERAL ACCESS ONLY'}
+            {accessBannerLabel(me)}
           </span>
           <span className="ml-auto font-dmmono text-[10px] uppercase tracking-wide text-brand-ink/75">
             {me.client.company_name}
