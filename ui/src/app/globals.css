@@ -2,85 +2,148 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * FreedomBot design tokens — purple scale + slate neutrals.
+ * Components should use Tailwind theme keys / CSS vars, not raw hex.
+ */
+
 @layer base {
-  /* Light theme (default when `.dark` is absent) */
   :root {
-    --color-primary: 15 23 42;
-    --color-primary-accent: 248 250 252;
-    --color-secondary: 71 85 105;
-    --color-muted: 100 116 139;
-    --color-brand: 124 58 237;
-    --color-brand-soft: 139 92 246;
-    --color-brand-deep: 79 70 229;
-    --color-brand-ink: 248 247 255;
-    --color-bg: 248 250 252;
-    --color-bg-secondary: 255 255 255;
-    --color-bg-elevated: 241 245 249;
-    --color-bg-wash: 237 233 254;
-    --color-accent: 237 233 254;
-    --color-destructive: 220 38 38;
-    --color-positive: 5 150 105;
+    /* Purple scale (#F5F3FF … #4C1D95) as space-separated RGB */
+    --purple-50: 245 243 255;
+    --purple-100: 237 233 254;
+    --purple-200: 221 214 254;
+    --purple-300: 196 181 253;
+    --purple-400: 167 139 250;
+    --purple-500: 139 92 246;
+    --purple-600: 124 58 237;
+    --purple-700: 109 40 217;
+    --purple-800: 91 33 182;
+    --purple-900: 76 29 149;
+
+    /* Slate neutrals */
+    --slate-50: 248 250 252;
+    --slate-100: 241 245 249;
+    --slate-200: 226 232 240;
+    --slate-300: 203 213 225;
+    --slate-400: 148 163 184;
+    --slate-500: 100 116 139;
+    --slate-600: 71 85 105;
+    --slate-700: 51 65 85;
+    --slate-800: 30 41 59;
+    --slate-900: 15 23 42;
+
+    /* Semantic (harmonized with purple brand) */
+    --color-success: 5 150 105;
+    --color-warning: 217 119 6;
+    --color-error: 220 38 38;
     --color-info: 2 132 199;
-    --color-border-default: 124, 58, 237, 0.18;
-    --surface-glass: rgba(255, 255, 255, 0.86);
+
+    /* Mapped app tokens (light) */
+    --color-primary: var(--slate-800);
+    --color-primary-accent: var(--slate-50);
+    --color-secondary: var(--slate-600);
+    --color-muted: var(--slate-500);
+    --color-brand: var(--purple-600);
+    --color-brand-soft: var(--purple-500);
+    --color-brand-deep: var(--purple-800);
+    --color-brand-ink: 250 249 255;
+    --color-bg: var(--slate-50);
+    --color-bg-secondary: 255 255 255;
+    --color-bg-elevated: var(--slate-100);
+    --color-bg-wash: var(--purple-50);
+    --color-accent: var(--purple-100);
+    --color-destructive: var(--color-error);
+    --color-positive: var(--color-success);
+    --color-warning-fg: var(--color-warning);
+    --color-info-fg: var(--color-info);
+    --color-border-default: 124, 58, 237, 0.16;
+
+    --surface-glass: rgb(255 255 255 / 0.88);
+    --brand-gradient: linear-gradient(
+      135deg,
+      rgb(var(--purple-600)) 0%,
+      rgb(var(--purple-500)) 55%,
+      rgb(var(--purple-700)) 100%
+    );
     --app-atmosphere:
-      radial-gradient(900px 480px at 0% -10%, rgba(124, 58, 237, 0.12), transparent 55%),
-      radial-gradient(700px 420px at 100% 0%, rgba(2, 132, 199, 0.08), transparent 50%),
-      radial-gradient(600px 400px at 50% 120%, rgba(79, 70, 229, 0.06), transparent 55%),
-      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 45%, #f8fafc 100%);
+      radial-gradient(900px 480px at 0% -10%, rgb(var(--purple-600) / 0.1), transparent 55%),
+      radial-gradient(700px 420px at 100% 0%, rgb(var(--color-info) / 0.06), transparent 50%),
+      radial-gradient(600px 400px at 50% 120%, rgb(var(--purple-700) / 0.05), transparent 55%),
+      linear-gradient(180deg, rgb(var(--slate-50)) 0%, rgb(var(--purple-50)) 42%, rgb(var(--slate-50)) 100%);
     --login-atmosphere:
-      radial-gradient(900px 560px at 10% 15%, rgba(124, 58, 237, 0.18), transparent 55%),
-      radial-gradient(700px 480px at 95% 85%, rgba(2, 132, 199, 0.1), transparent 50%),
-      linear-gradient(165deg, #f8fafc 0%, #ede9fe 50%, #f1f5f9 100%);
-    --shadow-panel: 0 0 0 1px rgba(124, 58, 237, 0.1), 0 8px 28px rgba(15, 23, 42, 0.08);
-    --shadow-glow: 0 0 0 2px rgba(124, 58, 237, 0.35), 0 0 20px rgba(139, 92, 246, 0.2);
-    --shadow-lift: 0 16px 40px rgba(15, 23, 42, 0.12), 0 0 32px rgba(124, 58, 237, 0.08);
-    --selection-bg: rgba(124, 58, 237, 0.22);
-    --selection-fg: #0f172a;
-    --scrollbar-thumb: rgba(124, 58, 237, 0.28);
-    --scrollbar-thumb-hover: rgba(124, 58, 237, 0.45);
+      radial-gradient(900px 560px at 10% 15%, rgb(var(--purple-600) / 0.16), transparent 55%),
+      radial-gradient(700px 480px at 95% 85%, rgb(var(--color-info) / 0.08), transparent 50%),
+      linear-gradient(165deg, rgb(var(--slate-50)) 0%, rgb(var(--purple-100)) 48%, rgb(var(--slate-100)) 100%);
+    --shadow-panel:
+      0 0 0 1px rgb(var(--purple-600) / 0.08),
+      0 8px 28px rgb(var(--slate-900) / 0.06);
+    --shadow-glow:
+      0 0 0 2px rgb(var(--purple-500) / 0.3),
+      0 0 20px rgb(var(--purple-500) / 0.18);
+    --shadow-lift:
+      0 16px 40px rgb(var(--slate-900) / 0.1),
+      0 0 32px rgb(var(--purple-600) / 0.08);
+    --selection-bg: rgb(var(--purple-500) / 0.22);
+    --selection-fg: rgb(var(--slate-900));
+    --scrollbar-thumb: rgb(var(--purple-600) / 0.28);
+    --scrollbar-thumb-hover: rgb(var(--purple-600) / 0.45);
     --scrollbar-width: 0.4rem;
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-    --font-ui: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+    --font-ui: 'Plus Jakarta Sans', 'Inter', ui-sans-serif, system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   }
 
-  /* Dark theme — FreedomBot command center */
+  /* Dark — deep purple-ink surfaces (#0F0B1E → #17122B), not pure black */
   .dark {
     --color-primary: 244 242 255;
-    --color-primary-accent: 10 10 18;
+    --color-primary-accent: 15 11 30;
     --color-secondary: 201 197 222;
-    --color-muted: 142 137 168;
-    --color-brand: 139 92 246;
-    --color-brand-soft: 167 139 250;
-    --color-brand-deep: 99 102 241;
-    --color-brand-ink: 248 247 255;
-    --color-bg: 7 7 15;
-    --color-bg-secondary: 16 16 28;
-    --color-bg-elevated: 23 23 40;
-    --color-bg-wash: 28 24 52;
-    --color-accent: 28 24 52;
+    --color-muted: 148 140 176;
+    --color-brand: var(--purple-500);
+    --color-brand-soft: var(--purple-400);
+    --color-brand-deep: var(--purple-700);
+    --color-brand-ink: 250 249 255;
+    --color-bg: 15 11 30;
+    --color-bg-secondary: 23 18 43;
+    --color-bg-elevated: 32 26 58;
+    --color-bg-wash: 40 32 72;
+    --color-accent: 40 32 72;
     --color-destructive: 248 113 113;
     --color-positive: 52 211 153;
-    --color-info: 56 189 248;
+    --color-warning-fg: 251 191 36;
+    --color-info-fg: 56 189 248;
     --color-border-default: 167, 139, 250, 0.22;
-    --surface-glass: rgba(16, 16, 28, 0.82);
+
+    --surface-glass: rgb(23 18 43 / 0.86);
+    --brand-gradient: linear-gradient(
+      135deg,
+      rgb(var(--purple-500)) 0%,
+      rgb(var(--purple-400)) 50%,
+      rgb(var(--purple-700)) 100%
+    );
     --app-atmosphere:
-      radial-gradient(900px 480px at 0% -10%, rgba(139, 92, 246, 0.28), transparent 55%),
-      radial-gradient(700px 420px at 100% 0%, rgba(56, 189, 248, 0.14), transparent 50%),
-      radial-gradient(600px 400px at 50% 120%, rgba(99, 102, 241, 0.12), transparent 55%),
-      linear-gradient(180deg, #07070f 0%, #0a0a14 45%, #07070f 100%);
+      radial-gradient(900px 480px at 0% -10%, rgb(var(--purple-500) / 0.28), transparent 55%),
+      radial-gradient(700px 420px at 100% 0%, rgb(56 189 248 / 0.12), transparent 50%),
+      radial-gradient(600px 400px at 50% 120%, rgb(var(--purple-700) / 0.14), transparent 55%),
+      linear-gradient(180deg, #0f0b1e 0%, #17122b 48%, #0f0b1e 100%);
     --login-atmosphere:
-      radial-gradient(900px 560px at 10% 15%, rgba(139, 92, 246, 0.4), transparent 55%),
-      radial-gradient(700px 480px at 95% 85%, rgba(56, 189, 248, 0.22), transparent 50%),
-      linear-gradient(165deg, #05050c 0%, #0e0a1c 50%, #070712 100%);
-    --shadow-panel: 0 0 0 1px rgba(139, 92, 246, 0.12), 0 8px 32px rgba(0, 0, 0, 0.45);
-    --shadow-glow: 0 0 0 2px rgba(139, 92, 246, 0.45), 0 0 24px rgba(99, 102, 241, 0.35);
-    --shadow-lift: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 40px rgba(99, 102, 241, 0.15);
-    --selection-bg: rgba(139, 92, 246, 0.45);
-    --selection-fg: #f8f7ff;
-    --scrollbar-thumb: rgba(167, 139, 250, 0.28);
-    --scrollbar-thumb-hover: rgba(167, 139, 250, 0.45);
+      radial-gradient(900px 560px at 10% 15%, rgb(var(--purple-500) / 0.38), transparent 55%),
+      radial-gradient(700px 480px at 95% 85%, rgb(56 189 248 / 0.16), transparent 50%),
+      linear-gradient(165deg, #0c0818 0%, #17122b 50%, #100c1f 100%);
+    --shadow-panel:
+      0 0 0 1px rgb(var(--purple-400) / 0.12),
+      0 8px 32px rgb(0 0 0 / 0.4);
+    --shadow-glow:
+      0 0 0 2px rgb(var(--purple-400) / 0.4),
+      0 0 24px rgb(var(--purple-500) / 0.28);
+    --shadow-lift:
+      0 16px 48px rgb(0 0 0 / 0.5),
+      0 0 40px rgb(var(--purple-600) / 0.14);
+    --selection-bg: rgb(var(--purple-400) / 0.4);
+    --selection-fg: #faf9ff;
+    --scrollbar-thumb: rgb(var(--purple-400) / 0.28);
+    --scrollbar-thumb-hover: rgb(var(--purple-400) / 0.45);
   }
 
   html {
@@ -96,6 +159,7 @@
     background-image: var(--app-atmosphere);
     background-attachment: fixed;
     min-height: 100dvh;
+    font-feature-settings: 'ss01' on, 'cv11' on;
   }
 
   ::selection {
@@ -146,11 +210,24 @@
   }
 
   .ui-transition {
-    @apply transition-colors duration-base ease-out;
+    @apply transition-all duration-base ease-out;
   }
 
   .touch-target {
     @apply min-h-11 min-w-11;
+  }
+
+  .btn-primary-fill {
+    background-image: var(--brand-gradient);
+    @apply text-brand-ink shadow-glow;
+  }
+
+  .btn-primary-fill:hover {
+    filter: brightness(1.06);
+  }
+
+  .btn-primary-fill:active {
+    filter: brightness(0.96);
   }
 }
 

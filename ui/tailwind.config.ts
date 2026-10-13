@@ -2,8 +2,8 @@ import type { Config } from 'tailwindcss'
 import tailwindcssAnimate from 'tailwindcss-animate'
 
 /**
- * FreedomBot — light + dark via CSS variables (`.dark` on <html>).
- * Brand stays purple/violet; surfaces flip with theme.
+ * FreedomBot — purple design system via CSS variables (`.dark` on <html>).
+ * Prefer theme tokens over hardcoded hex in components.
  */
 export default {
   darkMode: ['class'],
@@ -15,6 +15,30 @@ export default {
   theme: {
     extend: {
       colors: {
+        purple: {
+          50: 'rgb(var(--purple-50) / <alpha-value>)',
+          100: 'rgb(var(--purple-100) / <alpha-value>)',
+          200: 'rgb(var(--purple-200) / <alpha-value>)',
+          300: 'rgb(var(--purple-300) / <alpha-value>)',
+          400: 'rgb(var(--purple-400) / <alpha-value>)',
+          500: 'rgb(var(--purple-500) / <alpha-value>)',
+          600: 'rgb(var(--purple-600) / <alpha-value>)',
+          700: 'rgb(var(--purple-700) / <alpha-value>)',
+          800: 'rgb(var(--purple-800) / <alpha-value>)',
+          900: 'rgb(var(--purple-900) / <alpha-value>)'
+        },
+        slate: {
+          50: 'rgb(var(--slate-50) / <alpha-value>)',
+          100: 'rgb(var(--slate-100) / <alpha-value>)',
+          200: 'rgb(var(--slate-200) / <alpha-value>)',
+          300: 'rgb(var(--slate-300) / <alpha-value>)',
+          400: 'rgb(var(--slate-400) / <alpha-value>)',
+          500: 'rgb(var(--slate-500) / <alpha-value>)',
+          600: 'rgb(var(--slate-600) / <alpha-value>)',
+          700: 'rgb(var(--slate-700) / <alpha-value>)',
+          800: 'rgb(var(--slate-800) / <alpha-value>)',
+          900: 'rgb(var(--slate-900) / <alpha-value>)'
+        },
         primary: 'rgb(var(--color-primary) / <alpha-value>)',
         primaryAccent: 'rgb(var(--color-primary-accent) / <alpha-value>)',
         brand: {
@@ -35,10 +59,14 @@ export default {
         muted: 'rgb(var(--color-muted) / <alpha-value>)',
         destructive: 'rgb(var(--color-destructive) / <alpha-value>)',
         positive: 'rgb(var(--color-positive) / <alpha-value>)',
-        info: 'rgb(var(--color-info) / <alpha-value>)'
+        warning: 'rgb(var(--color-warning-fg) / <alpha-value>)',
+        info: 'rgb(var(--color-info-fg) / <alpha-value>)',
+        success: 'rgb(var(--color-positive) / <alpha-value>)',
+        error: 'rgb(var(--color-destructive) / <alpha-value>)'
       },
       fontFamily: {
         geist: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-ui)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         dmmono: ['var(--font-mono)', 'ui-monospace', 'monospace']
       },
       borderRadius: {
@@ -54,12 +82,21 @@ export default {
         18: '4.5rem'
       },
       fontSize: {
-        caption: ['0.6875rem', { lineHeight: '1rem', letterSpacing: '0.04em' }],
+        xs: ['0.75rem', { lineHeight: '1rem' }],
+        sm: ['0.875rem', { lineHeight: '1.25rem' }],
+        base: ['1rem', { lineHeight: '1.5rem' }],
+        lg: ['1.125rem', { lineHeight: '1.5rem' }],
+        xl: ['1.25rem', { lineHeight: '1.75rem' }],
+        '2xl': ['1.5rem', { lineHeight: '2rem' }],
+        '3xl': ['1.875rem', { lineHeight: '2.25rem' }],
+        '4xl': ['2.25rem', { lineHeight: '2.5rem' }],
+        '5xl': ['2.5rem', { lineHeight: '1.15' }],
+        caption: ['0.75rem', { lineHeight: '1rem', letterSpacing: '0.04em' }],
         body: ['0.875rem', { lineHeight: '1.45rem' }],
         'body-lg': ['1rem', { lineHeight: '1.6rem' }],
         subtitle: ['1.125rem', { lineHeight: '1.5rem', letterSpacing: '-0.01em' }],
-        title: ['1.25rem', { lineHeight: '1.6rem', letterSpacing: '-0.02em' }],
-        display: ['2.25rem', { lineHeight: '1.15', letterSpacing: '-0.02em' }]
+        title: ['1.5rem', { lineHeight: '2rem', letterSpacing: '-0.02em' }],
+        display: ['2.5rem', { lineHeight: '1.15', letterSpacing: '-0.02em' }]
       },
       maxWidth: {
         prose: '70ch',
@@ -77,7 +114,8 @@ export default {
       },
       backgroundImage: {
         'app-atmosphere': 'var(--app-atmosphere)',
-        'login-atmosphere': 'var(--login-atmosphere)'
+        'login-atmosphere': 'var(--login-atmosphere)',
+        'brand-gradient': 'var(--brand-gradient)'
       },
       keyframes: {
         'fade-up': {
@@ -90,7 +128,7 @@ export default {
         }
       },
       animation: {
-        'fade-up': 'fade-up 0.4s ease-out',
+        'fade-up': 'fade-up 200ms var(--ease-out)',
         pulseSoft: 'pulseSoft 1.5s ease-in-out infinite'
       }
     }

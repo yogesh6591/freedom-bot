@@ -103,20 +103,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-dvh flex-col text-primary">
-      <header className="z-10 border-b border-border bg-background-secondary/90 shadow-panel backdrop-blur-md">
+      <header className="z-20 border-b border-border bg-background-secondary/90 shadow-panel backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-4 gap-y-3 px-4 py-3 sm:px-6">
           <Link
             href="/chat"
-            className="flex min-h-11 items-center gap-2.5 rounded-xl ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80"
+            className="flex min-h-11 items-center gap-2.5 rounded-lg ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80"
           >
             <span
               aria-hidden
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-sm font-bold text-brand-ink shadow-glow"
+              className="flex h-9 w-9 items-center justify-center rounded-lg btn-primary-fill text-sm font-bold shadow-glow"
             >
               FB
             </span>
             <div className="leading-tight">
-              <div className="font-geist text-base font-bold tracking-tight">FreedomBot</div>
+              <div className="font-geist text-base font-bold tracking-tight text-primary">
+                FreedomBot
+              </div>
               <div className="type-caption">{me.client.company_name}</div>
             </div>
           </Link>
@@ -129,10 +131,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               href={PRIMARY_NAV.href}
               aria-current={chatActive ? 'page' : undefined}
               className={cn(
-                'inline-flex min-h-11 items-center whitespace-nowrap rounded-full px-4 font-geist text-sm font-semibold ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80',
+                'inline-flex min-h-11 items-center whitespace-nowrap rounded-full px-4 font-geist text-sm font-semibold ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80',
                 chatActive
-                  ? 'bg-brand text-brand-ink shadow-glow'
-                  : 'bg-brand/15 text-brand-soft hover:bg-brand/25 hover:text-primary'
+                  ? 'btn-primary-fill shadow-glow'
+                  : 'bg-purple-100 text-purple-800 hover:bg-purple-200 dark:bg-purple-900/50 dark:text-purple-200 dark:hover:bg-purple-800/60'
               )}
             >
               {PRIMARY_NAV.label}
@@ -148,10 +150,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href={item.href}
                   aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'inline-flex min-h-11 items-center whitespace-nowrap rounded-full px-3 font-geist text-xs font-medium ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80',
+                    'inline-flex min-h-11 items-center whitespace-nowrap rounded-full px-3 font-geist text-xs font-medium ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80',
                     active
-                      ? 'bg-background-elevated text-primary'
-                      : 'text-muted/80 hover:bg-background-elevated/60 hover:text-muted'
+                      ? 'bg-purple-100 text-purple-900 dark:bg-purple-900/55 dark:text-purple-100'
+                      : 'text-muted hover:bg-purple-50 hover:text-primary dark:hover:bg-purple-900/30'
                   )}
                 >
                   {item.label}
@@ -180,7 +182,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div
         role="status"
         aria-live="polite"
-        className="border-b border-brand/40 bg-brand text-brand-ink shadow-glow"
+        className="border-b border-purple-700/30 btn-primary-fill text-brand-ink shadow-glow"
       >
         <div className="mx-auto flex max-w-6xl flex-wrap items-baseline gap-x-4 gap-y-1 px-4 py-2.5 sm:px-6">
           <span className="font-dmmono text-[10px] font-medium uppercase tracking-[0.14em] text-brand-ink/80">

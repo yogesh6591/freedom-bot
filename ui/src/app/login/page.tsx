@@ -49,7 +49,7 @@ export default function LoginPage() {
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <span
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand text-base font-bold text-brand-ink shadow-glow"
+              className="flex h-11 w-11 items-center justify-center rounded-lg btn-primary-fill text-base font-bold shadow-glow"
               aria-hidden
             >
               FB
@@ -133,7 +133,7 @@ export default function LoginPage() {
             </Field>
           </div>
 
-          <Btn type="submit" disabled={busy} className="w-full rounded-full" size="lg">
+          <Btn type="submit" loading={busy} className="w-full" size="lg">
             {busy ? 'Signing in…' : 'Continue'}
           </Btn>
         </form>

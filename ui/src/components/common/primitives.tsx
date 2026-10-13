@@ -1,6 +1,6 @@
 'use client'
 
-/** Shared UI primitives — spacing, type, and control consistency (palette unchanged). */
+/** Shared UI primitives — purple design system tokens via Tailwind theme. */
 
 import { cn } from '@/lib/utils'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
@@ -52,9 +52,9 @@ export function Panel({
 const TONES = {
   neutral: 'bg-background-elevated text-muted border-border',
   info: 'bg-info/10 text-info border-info/25',
-  good: 'bg-positive/10 text-positive border-positive/25',
-  warn: 'bg-brand/20 text-brand-soft border-brand/40',
-  bad: 'bg-destructive/10 text-destructive border-destructive/25',
+  good: 'bg-success/10 text-success border-success/25',
+  warn: 'bg-warning/15 text-warning border-warning/35',
+  bad: 'bg-error/10 text-error border-error/25',
   brand: 'bg-brand text-brand-ink border-brand-soft/40'
 } as const
 
@@ -139,21 +139,22 @@ export function modeTone(mode?: string | null): Tone {
 }
 
 const BTN_BASE =
-  'inline-flex items-center justify-center gap-2 rounded-xl font-geist font-semibold ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50'
+  'inline-flex items-center justify-center gap-2 rounded-lg font-geist font-semibold ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 active:scale-[0.98]'
 
 const BTN_VARIANT = {
-  primary: 'bg-brand text-brand-ink shadow-glow hover:bg-brand-soft',
+  primary: 'btn-primary-fill border border-transparent',
   secondary:
-    'border border-border bg-background-elevated text-muted hover:border-brand-soft hover:text-primary',
-  ghost: 'text-muted hover:bg-background-elevated hover:text-primary',
-  positive: 'bg-positive text-primaryAccent hover:opacity-90',
-  danger: 'bg-destructive text-primary hover:opacity-90'
+    'border border-border bg-background-elevated text-secondary hover:border-purple-400 hover:bg-purple-50 hover:text-primary dark:hover:bg-purple-900/40',
+  ghost: 'text-muted hover:bg-purple-50 hover:text-primary dark:hover:bg-purple-900/35',
+  positive: 'bg-success text-white hover:brightness-105',
+  danger: 'bg-error text-white hover:brightness-105',
+  destructive: 'bg-error text-white hover:brightness-105'
 } as const
 
 const BTN_SIZE = {
-  sm: 'min-h-9 px-3 text-xs',
-  md: 'min-h-11 px-4 text-sm',
-  lg: 'min-h-12 px-6 text-sm'
+  sm: 'min-h-9 px-3 text-xs rounded-md',
+  md: 'min-h-11 px-4 text-sm rounded-lg',
+  lg: 'min-h-12 px-6 text-base rounded-lg'
 } as const
 
 export type BtnVariant = keyof typeof BTN_VARIANT
@@ -164,17 +165,35 @@ export function Btn({
   size = 'md',
   className,
   type = 'button',
+  loading = false,
+  children,
+  disabled,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: BtnVariant
   size?: BtnSize
+  loading?: boolean
 }) {
   return (
     <button
       type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       className={cn(BTN_BASE, BTN_VARIANT[variant], BTN_SIZE[size], className)}
       {...props}
-    />
+    >
+      {loading ? (
+        <>
+          <span
+            className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent"
+            aria-hidden
+          />
+          <span>{children}</span>
+        </>
+      ) : (
+        children
+      )}
+    </button>
   )
 }
 
@@ -190,10 +209,10 @@ export function Chip({
       type={type}
       aria-pressed={active}
       className={cn(
-        'inline-flex min-h-11 items-center rounded-full px-4 font-geist text-sm font-medium ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'inline-flex min-h-11 items-center rounded-full px-4 font-geist text-sm font-medium ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
         active
-          ? 'bg-brand text-brand-ink shadow-glow'
-          : 'bg-background-elevated text-muted hover:text-primary',
+          ? 'btn-primary-fill shadow-glow'
+          : 'bg-background-elevated text-muted hover:bg-purple-50 hover:text-primary dark:hover:bg-purple-900/40',
         className
       )}
       {...props}
@@ -218,7 +237,7 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   return (
     <div
       role="alert"
-      className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+      className="rounded-xl border border-error/30 bg-error/5 px-4 py-3 text-sm text-error"
     >
       {children}
     </div>
@@ -228,11 +247,13 @@ export function ErrorNote({ children }: { children: ReactNode }) {
 export function Field({
   label,
   hint,
+  error,
   children,
   htmlFor
 }: {
   label: string
   hint?: string
+  error?: string
   children: ReactNode
   htmlFor?: string
 }) {
@@ -240,13 +261,19 @@ export function Field({
     <label className="block space-y-2" htmlFor={htmlFor}>
       <span className="font-geist text-sm font-medium text-primary">{label}</span>
       {children}
-      {hint && <span className="block text-xs leading-relaxed text-muted">{hint}</span>}
+      {error ? (
+        <span className="block text-xs font-medium text-error" role="alert">
+          {error}
+        </span>
+      ) : hint ? (
+        <span className="block text-xs leading-relaxed text-muted">{hint}</span>
+      ) : null}
     </label>
   )
 }
 
 export const inputClass =
-  'w-full min-h-11 rounded-xl border border-border bg-background-elevated px-3.5 py-2.5 font-geist text-sm text-primary outline-none ui-transition placeholder:text-muted/55 focus:border-brand-soft focus:shadow-glow disabled:opacity-50'
+  'w-full min-h-11 rounded-lg border border-border bg-background-secondary px-3.5 py-2.5 font-geist text-sm text-primary outline-none ui-transition placeholder:text-muted/55 focus:border-purple-400 focus:shadow-glow disabled:opacity-50'
 
 export function LoadingBlock({ rows = 3, className }: { rows?: number; className?: string }) {
   return (
@@ -259,8 +286,12 @@ export function LoadingBlock({ rows = 3, className }: { rows?: number; className
       {Array.from({ length: rows }).map((_, index) => (
         <div
           key={index}
-          className="h-12 animate-pulse rounded-xl bg-background-elevated"
-          style={{ opacity: 1 - index * 0.12 }}
+          className={cn(
+            'h-12 animate-pulse rounded-lg bg-purple-100/80 dark:bg-purple-900/40',
+            index === 1 && 'opacity-80',
+            index === 2 && 'opacity-60',
+            index >= 3 && 'opacity-45'
+          )}
         />
       ))}
       <span className="sr-only">Loading…</span>
@@ -283,7 +314,7 @@ export function DataTable<T>({
   return (
     <div className="overflow-x-auto rounded-xl border border-border bg-background-secondary shadow-panel">
       <table className="w-full min-w-[640px] border-collapse text-left">
-        <thead>
+        <thead className="sticky top-0 z-[1]">
           <tr className="border-b border-border bg-background-elevated">
             {columns.map((column) => (
               <th
@@ -315,7 +346,7 @@ export function DataTable<T>({
               className={cn(
                 'border-b border-border/50 align-top ui-transition last:border-0',
                 onRowClick &&
-                  'cursor-pointer hover:bg-background-wash/50 focus-visible:bg-background-wash/50 focus-visible:outline-none'
+                  'cursor-pointer hover:bg-purple-50/70 focus-visible:bg-purple-50/70 focus-visible:outline-none dark:hover:bg-purple-900/25 dark:focus-visible:bg-purple-900/25'
               )}
             >
               {columns.map((column) => (
