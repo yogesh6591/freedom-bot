@@ -70,10 +70,10 @@ What is our refund period?
 
 **Type (same chat):**
 ```text
-What is our standard discount percentage?
+What is our pricing discount?
 ```
 
-**Expect:** **15%** (Fact / finance). Same thread.  
+**Expect:** **15%** (Pricing discount = 15%). Same thread. (Must appear in Memory → Facts first.)  
 Optional follow-up in same chat:
 ```text
 What are our payment terms?
@@ -186,7 +186,7 @@ Chat: `A driver filed a $40 meal receipt. Do they need a receipt under our polic
 | # | Say (one line) | Type | Expect |
 |---|----------------|------|--------|
 | 1 | Finance answers from approved Fact memory | `What is our refund period?` | Fact · 30 days |
-| 2 | Same chat, no bot picker | `What is our standard discount percentage?` | 15% |
+| 2 | Same chat, no bot picker | `What is our pricing discount?` | 15% |
 | 3a | Prepare real finance work | `List pending billables for Acme Logistics.` | ~$5,700 lines |
 | 3b | Money actions wait for a human | `Draft an invoice for Acme Logistics from those billables.` | Approval queue |
 | 4 | Ops badge ≠ Finance | Oscar: same billables/invoice ask | Restricted to Finance |

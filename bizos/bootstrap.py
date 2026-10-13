@@ -438,8 +438,9 @@ def _seed_memory(ctx: TenantContext, client: Client, flavor: str) -> None:
                 MemoryCategory.FACT,
                 "discount_policy",
                 "Pricing discount",
-                "Pricing discount = 15%",
-                ["finance", "pricing"],
+                # Wording covers both "pricing discount" and "standard discount %" demo asks.
+                "Standard pricing discount = 15%",
+                ["finance", "pricing", "discount"],
                 "finance",
             ),
             (
