@@ -30,15 +30,17 @@ const AREA_LABEL: Record<string, string> = {
   strategy: 'STRATEGY'
 }
 
-function accessBannerLabel(me: Me): string {
+/** Single demo label: ADMIN / FINANCE / EMPLOYEE — not platform role + scopes again. */
+function demoPersonaLabel(me: Me): string {
   if (me.user.primary_role === 'ADMIN' || me.user.roles.includes('ADMIN')) {
     return 'ADMIN'
   }
   const scopes = me.user.data_scopes ?? []
   if (scopes.length > 0) {
-    return scopes.map((s) => AREA_LABEL[s.toLowerCase()] ?? s.toUpperCase()).join(' · ')
+    // Prefer the primary department (first scope) so the strip stays scannable.
+    const primary = scopes[0].toLowerCase()
+    return AREA_LABEL[primary] ?? scopes[0].toUpperCase()
   }
-  // Viewer / no restricted areas — employee-level general access (Eddie).
   return 'EMPLOYEE'
 }
 
@@ -164,7 +166,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {!me.client.allow_card_data && <Badge tone="neutral">Card off</Badge>}
             <div className="hidden border-l border-border pl-3 text-right md:block">
               <div className="font-geist text-xs font-semibold">{me.user.display_name}</div>
-              <div className="type-caption">{me.user.roles.join(' · ')}</div>
+              <div className="type-caption">{demoPersonaLabel(me)}</div>
             </div>
             <ThemeToggle />
             <Btn variant="secondary" size="sm" onClick={() => void logout()}>
@@ -190,14 +192,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="hidden text-brand-ink/50 sm:inline" aria-hidden>
             ·
           </span>
-          <span className="font-geist text-base font-semibold uppercase tracking-wide sm:text-lg">
-            {me.user.primary_role || me.user.roles[0] || 'USER'}
-          </span>
-          <span className="hidden text-brand-ink/50 sm:inline" aria-hidden>
-            ·
-          </span>
-          <span className="font-geist text-sm font-medium text-brand-ink/95 sm:text-base">
-            {accessBannerLabel(me)}
+          <span className="font-geist text-lg font-semibold uppercase tracking-wide sm:text-xl">
+            {demoPersonaLabel(me)}
           </span>
           <span className="ml-auto font-dmmono text-[10px] uppercase tracking-wide text-brand-ink/75">
             {me.client.company_name}
