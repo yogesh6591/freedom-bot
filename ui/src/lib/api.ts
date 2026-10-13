@@ -96,6 +96,89 @@ function safeJson(text: string): unknown {
   }
 }
 
+export type StreamHandlers = {
+  onEvent: (event: string, data: unknown) => void
+}
+
+/**
+ * POST that consumes a Server-Sent Events body (chat streaming).
+ * Calls ``onEvent`` for each ``event:`` / ``data:`` pair as chunks arrive.
+ */
+async function streamRequest(
+  path: string,
+  body: unknown,
+  handlers: StreamHandlers,
+  opts: RequestOptions = {}
+): Promise<void> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...(expected && !opts.anyWorkspace
+        ? { 'X-Bizos-Client': expected.clientId, 'X-Bizos-User': expected.userId }
+        : {})
+    },
+    body: JSON.stringify(body)
+  })
+
+  if (!response.ok) {
+    const text = await response.text()
+    const data = text ? safeJson(text) : null
+    const detail =
+      (data && typeof data === 'object' && 'detail' in data
+        ? String((data as { detail: unknown }).detail)
+        : null) ?? `Request failed (${response.status})`
+    if (response.status === 409 && detail === WORKSPACE_CHANGED && typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(WORKSPACE_CHANGED_EVENT))
+      throw new ApiError(
+        409,
+        'This tab is out of date — you signed in to another workspace in a different tab.'
+      )
+    }
+    throw new ApiError(response.status, detail)
+  }
+
+  if (!response.body) {
+    throw new ApiError(502, 'No response body from stream')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    // SSE events are separated by a blank line.
+    let splitAt: number
+    while ((splitAt = buffer.indexOf('\n\n')) !== -1) {
+      const raw = buffer.slice(0, splitAt)
+      buffer = buffer.slice(splitAt + 2)
+      let eventName = 'message'
+      const dataLines: string[] = []
+      for (const line of raw.split('\n')) {
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim()
+        } else if (line.startsWith('data:')) {
+          dataLines.push(line.slice(5).trimStart())
+        }
+      }
+      if (dataLines.length === 0) continue
+      const payload = dataLines.join('\n')
+      let parsed: unknown = payload
+      try {
+        parsed = JSON.parse(payload)
+      } catch {
+        // keep raw string
+      }
+      handlers.onEvent(eventName, parsed)
+    }
+  }
+}
+
 export const api = {
   get: <T>(path: string, opts?: RequestOptions) => request<T>(path, {}, opts),
   post: <T>(path: string, body?: unknown, opts?: RequestOptions) =>
@@ -107,6 +190,8 @@ export const api = {
       },
       opts
     ),
+  stream: (path: string, body: unknown, handlers: StreamHandlers, opts?: RequestOptions) =>
+    streamRequest(path, body, handlers, opts),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, {
       method: 'PATCH',
