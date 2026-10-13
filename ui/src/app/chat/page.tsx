@@ -24,7 +24,6 @@ import {
   Badge,
   Btn,
   ErrorNote,
-  modeTone,
   riskTone
 } from '@/components/common/primitives'
 import MarkdownRenderer from '@/components/ui/typography/MarkdownRenderer'
@@ -228,19 +227,17 @@ function ChatView() {
             <h1 className="type-subtitle">
               {context?.assistant_name ?? 'FreedomBot'}
             </h1>
-            {context && <Badge tone={modeTone(context.mode)}>{context.mode}</Badge>}
             {context && context.pending_approvals > 0 && (
               <Link
                 href="/approvals"
-                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/80"
+                className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80"
               >
                 <Badge tone="warn">{context.pending_approvals} awaiting approval</Badge>
               </Link>
             )}
           </div>
           <p className="type-muted truncate">
-            {context?.mode_description ||
-              'Ask anything — routing, memory, and approvals stay behind the scenes.'}
+            Ask anything — routing, memory, and approvals stay behind the scenes.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">

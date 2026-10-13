@@ -9,7 +9,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
-import { Badge, Btn, modeTone } from '@/components/common/primitives'
+import { Badge, Btn } from '@/components/common/primitives'
 import { useSession } from '@/components/SessionProvider'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { takeNotice } from '@/lib/sessionSync'
@@ -59,13 +59,6 @@ const WORKSPACE_NAV: {
   { href: '/admin', label: 'Admin', roles: ['ADMIN'] }
 ]
 
-const MODE_LABEL: Record<string, string> = {
-  ADVISE: 'Advise — read only',
-  DRAFT: 'Draft — prepares, never sends',
-  WAIT_FOR_APPROVAL: 'Approval required',
-  AUTO_WITHIN_SCOPE: 'Auto within scope'
-}
-
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { me, loading, hasRole, logout } = useSession()
   const pathname = usePathname()
@@ -93,7 +86,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
   if (!me) return null
 
-  const mode = me.client.default_execution_mode
   const tools = WORKSPACE_NAV.filter((item) =>
     item.platformOwner
       ? Boolean(me.user.is_platform_owner)
@@ -163,7 +155,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <Badge tone={modeTone(mode)}>{MODE_LABEL[mode] ?? mode}</Badge>
             {!me.client.allow_phi && <Badge tone="neutral">PHI off</Badge>}
             {!me.client.allow_card_data && <Badge tone="neutral">Card off</Badge>}
             <div className="hidden border-l border-border pl-3 text-right md:block">
