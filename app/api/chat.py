@@ -12,12 +12,10 @@ without dumping raw traces at ordinary users (§17).
 
 from __future__ import annotations
 
-import json
 import re
-from typing import Any, Iterator, Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, run_scope
@@ -111,9 +109,13 @@ def _open_alerts(settings: ClientSettings, ctx: TenantContext) -> list[dict[str,
         return []
 
 
-def _resolve_session_and_domain(
-    body: ChatRequest, ctx: TenantContext, settings: ClientSettings
-) -> tuple[str, str]:
+@router.post("")
+def chat(
+    body: ChatRequest,
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """One chat turn."""
     session_id = body.session_id or new_id("ses")
     if body.session_id:
         try:
@@ -124,194 +126,6 @@ def _resolve_session_and_domain(
         domain = route(body.message, settings.enabled_domains, previous=body.previous_domain)
     else:
         domain = body.domain
-    return session_id, domain
-
-
-def _prepare_grounding(
-    body: ChatRequest,
-    ctx: TenantContext,
-    settings: ClientSettings,
-    scope: Any,
-) -> tuple[Any, bool]:
-    """Analyze memory grounding and optionally pre-run candidate matching."""
-    grounded = grounding.analyze(ctx, body.message, settings.enabled_domains)
-    match_ran = False
-    keys = grounding.candidate_match_keys(grounded, body.message)
-    if keys:
-        from bizos.tools.base import guarded_call
-
-        outcome = guarded_call(
-            scope, "hr_match_candidate", {"resume_key": keys[0], "opening_key": keys[1]}
-        )
-        if outcome.ok:
-            match_ran = True
-            grounded.text += (
-                "\n\n## Structured candidate comparison (computed by the platform)\n"
-                f"{outcome.message}\nResult: {outcome.data}\n"
-                "Present this comparison starting with the verdict in the computed words "
-                "('Likely fit' or 'Weak fit'), then must-haves met and what is missing. "
-                "State that it is assistive only and the hiring decision stays with a human."
-            )
-    return grounded, match_ran
-
-
-def _short_circuit_output(
-    body: ChatRequest,
-    ctx: TenantContext,
-    settings: ClientSettings,
-    scope: Any,
-    session_id: str,
-    grounded: Any,
-) -> Any:
-    """Return a prebuilt reply when the model must not run; else None."""
-    refusal = _regulated_data_refusal(body.message, settings)
-    output: Any = (refusal[1] if refusal else None) or grounding.restricted_candidate_reply(
-        grounded, body.message
-    )
-    if refusal:
-        from bizos.audit.events import log
-        from bizos.types import AuditEventType
-
-        log(
-            AuditEventType.GUARDRAIL_TRIGGERED,
-            ctx=ctx,
-            session_id=session_id,
-            status=refusal[0],
-            execution_mode=str(scope.mode),
-        )
-    return output
-
-
-def _finalize_turn(
-    *,
-    body: ChatRequest,
-    ctx: TenantContext,
-    settings: ClientSettings,
-    scope: Any,
-    session_id: str,
-    domain: str,
-    grounded: Any,
-    match_ran: bool,
-    before: set[str],
-    output: Any,
-) -> dict[str, Any]:
-    """Post-process the model (or short-circuit) reply into the chat response."""
-    new_actions = [
-        a.to_dict()
-        for a in actions.list_actions(limit=200, ctx=ctx)
-        if a.id not in before
-    ]
-
-    content, persona_fixed = enforce_persona(
-        _separate_segments(str(getattr(output, "content", output) or "")),
-        assistant_name(settings),
-    )
-    content, restriction_fixed = grounding.enforce_restrictions(
-        content, grounded.hidden, answered_visible=bool(grounded.visible_keys)
-    )
-    content, conflict_fixed = grounding.enforce_conflicts(content, grounded.conflicts)
-    content, package_fixed = grounding.enforce_package(
-        content,
-        grounded.unpurchased,
-        company=getattr(settings, "company_name", "") or "",
-        asked_for_action=grounded.unpurchased_action,
-        answered_visible=bool(grounded.visible_keys),
-    )
-    activity = _tool_activity(output)
-    content, claim_fixed = enforce_claims(
-        content, message=body.message, activity=activity, new_actions=new_actions
-    )
-    if claim_fixed:
-        from bizos.audit.events import log
-        from bizos.types import AuditEventType
-
-        log(
-            AuditEventType.GUARDRAIL_TRIGGERED,
-            ctx=ctx,
-            session_id=session_id,
-            status="FALSE_ACTION_CLAIM_CORRECTED",
-            execution_mode=str(scope.mode),
-        )
-    ran_match = match_ran or any(t["tool"] == "hr_match_candidate" and t["ok"] for t in activity)
-    if ran_match and not re.search(r"\bhuman\b", content, re.I):
-        content = content.rstrip() + (
-            "\n\nThis comparison is assistive only — the hiring decision stays with a human."
-        )
-    if restriction_fixed:
-        from bizos.audit.events import log
-        from bizos.types import AuditEventType
-
-        log(
-            AuditEventType.GUARDRAIL_TRIGGERED,
-            ctx=ctx,
-            session_id=session_id,
-            status="RESTRICTION_NOTED",
-            execution_mode=str(scope.mode),
-        )
-    if conflict_fixed:
-        from bizos.audit.events import log
-        from bizos.types import AuditEventType
-
-        log(
-            AuditEventType.GUARDRAIL_TRIGGERED,
-            ctx=ctx,
-            session_id=session_id,
-            status="CONFLICT_ENFORCED",
-            execution_mode=str(scope.mode),
-        )
-    if package_fixed:
-        from bizos.audit.events import log
-        from bizos.types import AuditEventType
-
-        log(
-            AuditEventType.GUARDRAIL_TRIGGERED,
-            ctx=ctx,
-            session_id=session_id,
-            domain=",".join(sorted(grounded.unpurchased)),
-            status="PACKAGE_SCOPE_NOTED",
-            execution_mode=str(scope.mode),
-        )
-    if persona_fixed:
-        from bizos.audit.events import log
-        from bizos.types import AuditEventType
-
-        log(
-            AuditEventType.GUARDRAIL_TRIGGERED,
-            ctx=ctx,
-            session_id=session_id,
-            status="PERSONA_ENFORCED",
-            execution_mode=str(scope.mode),
-        )
-
-    response = {
-        "session_id": session_id,
-        "content": content,
-        "mode": str(scope.mode),
-        "domain": domain,
-        "routed": body.domain == AUTO,
-        "tool_activity": activity,
-        "actions": new_actions,
-        "awaiting_approval": [
-            a for a in new_actions if a["status"] == str(ActionStatus.PENDING_APPROVAL)
-        ],
-        "drafts": [a for a in new_actions if a["status"] == str(ActionStatus.DRAFT)],
-    }
-    _remember_turn(ctx, body.message, response)
-    return response
-
-
-def _sse(event: str, data: dict[str, Any]) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
-
-
-@router.post("")
-def chat(
-    body: ChatRequest,
-    ctx: TenantContext = Depends(current_context),
-    settings: ClientSettings = Depends(client_settings),
-) -> dict[str, Any]:
-    """One chat turn (waits for the full reply). Prefer ``/stream`` for lower perceived latency."""
-    session_id, domain = _resolve_session_and_domain(body, ctx, settings)
     with bound(ctx):
         scope = run_scope(
             ctx,
@@ -321,8 +135,40 @@ def chat(
             session_id=session_id,
         )
         before = {a.id for a in actions.list_actions(limit=200, ctx=ctx)}
-        grounded, match_ran = _prepare_grounding(body, ctx, settings, scope)
-        output = _short_circuit_output(body, ctx, settings, scope, session_id, grounded)
+        grounded = grounding.analyze(ctx, body.message, settings.enabled_domains)
+        match_ran = False
+        keys = grounding.candidate_match_keys(grounded, body.message)
+        if keys:
+            from bizos.tools.base import guarded_call
+
+            outcome = guarded_call(
+                scope, "hr_match_candidate", {"resume_key": keys[0], "opening_key": keys[1]}
+            )
+            if outcome.ok:
+                match_ran = True
+                grounded.text += (
+                    "\n\n## Structured candidate comparison (computed by the platform)\n"
+                    f"{outcome.message}\nResult: {outcome.data}\n"
+                    "Present this comparison starting with the verdict in the computed words "
+                    "('Likely fit' or 'Weak fit'), then must-haves met and what is missing. "
+                    "State that it is assistive only and the hiring decision stays with a human."
+                )
+
+        refusal = _regulated_data_refusal(body.message, settings)
+        output: Any = (refusal[1] if refusal else None) or grounding.restricted_candidate_reply(
+            grounded, body.message
+        )
+        if refusal:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
+
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status=refusal[0],
+                execution_mode=str(scope.mode),
+            )
         if output is None:
             try:
                 agent = build_agent(
@@ -336,166 +182,111 @@ def chat(
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=f"The agent could not complete: {exc}") from exc
 
-        return _finalize_turn(
-            body=body,
-            ctx=ctx,
-            settings=settings,
-            scope=scope,
-            session_id=session_id,
-            domain=domain,
-            grounded=grounded,
-            match_ran=match_ran,
-            before=before,
-            output=output,
+        # Anything the turn created that a human now needs to look at.
+        new_actions = [
+            a.to_dict()
+            for a in actions.list_actions(limit=200, ctx=ctx)
+            if a.id not in before
+        ]
+
+        content, persona_fixed = enforce_persona(
+            _separate_segments(str(getattr(output, "content", output) or "")),
+            assistant_name(settings),
         )
+        content, restriction_fixed = grounding.enforce_restrictions(
+            content, grounded.hidden, answered_visible=bool(grounded.visible_keys)
+        )
+        content, conflict_fixed = grounding.enforce_conflicts(content, grounded.conflicts)
+        content, package_fixed = grounding.enforce_package(
+            content,
+            grounded.unpurchased,
+            company=getattr(settings, "company_name", "") or "",
+            asked_for_action=grounded.unpurchased_action,
+            answered_visible=bool(grounded.visible_keys),
+        )
+        activity = _tool_activity(output)
+        content, claim_fixed = enforce_claims(
+            content, message=body.message, activity=activity, new_actions=new_actions
+        )
+        if claim_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
 
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status="FALSE_ACTION_CLAIM_CORRECTED",
+                execution_mode=str(scope.mode),
+            )
+        ran_match = match_ran or any(t["tool"] == "hr_match_candidate" and t["ok"] for t in activity)
+        if ran_match and not re.search(
+            r"\bhuman\b", content, re.I
+        ):
+            content = content.rstrip() + (
+                "\n\nThis comparison is assistive only — the hiring decision stays with a human."
+            )
+        if restriction_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
 
-@router.post("/stream")
-def chat_stream(
-    body: ChatRequest,
-    ctx: TenantContext = Depends(current_context),
-    settings: ClientSettings = Depends(client_settings),
-) -> StreamingResponse:
-    """One chat turn as Server-Sent Events — tokens as they arrive, then a final ``done``.
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status="RESTRICTION_NOTED",
+                execution_mode=str(scope.mode),
+            )
+        if conflict_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
 
-    Events:
-    - ``meta`` — session_id / domain (immediately)
-    - ``status`` — thinking / tool activity
-    - ``delta`` — text chunk ``{text}``
-    - ``done`` — full ``ChatResponse`` after guardrails
-    - ``error`` — ``{detail}``
-    """
-    session_id, domain = _resolve_session_and_domain(body, ctx, settings)
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status="CONFLICT_ENFORCED",
+                execution_mode=str(scope.mode),
+            )
+        if package_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
 
-    def generate() -> Iterator[str]:
-        try:
-            with bound(ctx):
-                scope = run_scope(
-                    ctx,
-                    settings,
-                    domain=domain,
-                    requested_mode=body.execution_mode,
-                    session_id=session_id,
-                )
-                yield _sse(
-                    "meta",
-                    {
-                        "session_id": session_id,
-                        "domain": domain,
-                        "mode": str(scope.mode),
-                        "routed": body.domain == AUTO,
-                    },
-                )
-                before = {a.id for a in actions.list_actions(limit=200, ctx=ctx)}
-                grounded, match_ran = _prepare_grounding(body, ctx, settings, scope)
-                output = _short_circuit_output(body, ctx, settings, scope, session_id, grounded)
-                if output is not None:
-                    text = str(getattr(output, "content", output) or "")
-                    if text:
-                        yield _sse("delta", {"text": text})
-                    response = _finalize_turn(
-                        body=body,
-                        ctx=ctx,
-                        settings=settings,
-                        scope=scope,
-                        session_id=session_id,
-                        domain=domain,
-                        grounded=grounded,
-                        match_ran=match_ran,
-                        before=before,
-                        output=output,
-                    )
-                    yield _sse("done", response)
-                    return
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                domain=",".join(sorted(grounded.unpurchased)),
+                status="PACKAGE_SCOPE_NOTED",
+                execution_mode=str(scope.mode),
+            )
+        if persona_fixed:
+            from bizos.audit.events import log
+            from bizos.types import AuditEventType
 
-                try:
-                    agent = build_agent(
-                        scope,
-                        session_id=session_id,
-                        message=body.message,
-                        grounding_text=grounded.text,
-                    )
-                except ModelNotConfigured as exc:
-                    yield _sse("error", {"detail": str(exc)})
-                    return
+            log(
+                AuditEventType.GUARDRAIL_TRIGGERED,
+                ctx=ctx,
+                session_id=session_id,
+                status="PERSONA_ENFORCED",
+                execution_mode=str(scope.mode),
+            )
 
-                yield _sse("status", {"phase": "thinking"})
-                try:
-                    from agno.run.agent import RunContentEvent, RunEvent, RunOutput
-                    from agno.run.agent import ToolCallStartedEvent
-
-                    stream = agent.run(
-                        body.message,
-                        stream=True,
-                        stream_events=True,
-                        yield_run_output=True,
-                    )
-                    final: Any = None
-                    for event in stream:
-                        if isinstance(event, RunOutput):
-                            final = event
-                            continue
-                        if isinstance(event, RunContentEvent):
-                            chunk = event.content
-                            if chunk:
-                                yield _sse("delta", {"text": str(chunk)})
-                            continue
-                        if isinstance(event, ToolCallStartedEvent):
-                            tool = getattr(event, "tool", None)
-                            name = (
-                                getattr(tool, "tool_name", None)
-                                if tool is not None
-                                else None
-                            ) or getattr(event, "tool_name", None)
-                            yield _sse(
-                                "status",
-                                {"phase": "tool", "tool": name or "tool"},
-                            )
-                            continue
-                        # Some Agno versions expose event as a string enum value.
-                        ev = getattr(event, "event", None)
-                        content = getattr(event, "content", None)
-                        if content and (
-                            ev in (RunEvent.run_content.value, "RunContent", None)
-                            or str(ev).endswith("run_content")
-                        ):
-                            yield _sse("delta", {"text": str(content)})
-                    if final is None:
-                        yield _sse("error", {"detail": "The agent returned no response"})
-                        return
-                    output = final
-                except Exception as exc:
-                    yield _sse("error", {"detail": f"The agent could not complete: {exc}"})
-                    return
-
-                response = _finalize_turn(
-                    body=body,
-                    ctx=ctx,
-                    settings=settings,
-                    scope=scope,
-                    session_id=session_id,
-                    domain=domain,
-                    grounded=grounded,
-                    match_ran=match_ran,
-                    before=before,
-                    output=output,
-                )
-                yield _sse("done", response)
-        except HTTPException as exc:
-            detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-            yield _sse("error", {"detail": detail})
-        except Exception as exc:  # pragma: no cover - unexpected
-            yield _sse("error", {"detail": f"Chat stream failed: {exc}"})
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+        response = {
+            "session_id": session_id,
+            "content": content,
+            "mode": str(scope.mode),
+            "domain": domain,
+            "routed": body.domain == AUTO,
+            "tool_activity": activity,
+            "actions": new_actions,
+            "awaiting_approval": [
+                a for a in new_actions if a["status"] == str(ActionStatus.PENDING_APPROVAL)
+            ],
+            "drafts": [a for a in new_actions if a["status"] == str(ActionStatus.DRAFT)],
+        }
+        _remember_turn(ctx, body.message, response)
+        return response
 
 
 #: Asking the assistant to keep, change, find or act on someone's details.

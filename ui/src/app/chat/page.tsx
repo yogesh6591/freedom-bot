@@ -89,7 +89,7 @@ function ChatView() {
   const [error, setError] = useState<string | null>(null)
   const [sessionId, setSessionId] = useState<string | undefined>()
   const [alertsOpen, setAlertsOpen] = useState(false)
-  const endRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const refreshContext = useCallback(async () => {
@@ -178,10 +178,13 @@ function ChatView() {
   }
 
   useEffect(() => {
+    const el = listRef.current
+    if (!el) return
     const reduce =
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    endRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' })
+    // Scroll only the transcript pane — scrollIntoView was jumping the whole shell up.
+    el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
   }, [turns, busy])
 
   async function send(event: React.FormEvent) {
@@ -192,92 +195,25 @@ function ChatView() {
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setBusy(true)
     setError(null)
-    setTurns((prev) => [
-      ...prev,
-      { role: 'user', content: message },
-      { role: 'assistant', content: '' }
-    ])
-    let streamed = ''
-    let finished = false
+    setTurns((prev) => [...prev, { role: 'user', content: message }])
     try {
-      await api.stream('/api/chat/stream', {
+      const response = await api.post<ChatResponse>('/api/chat', {
         message,
         session_id: sessionId,
         domain: 'auto',
         previous_domain: lastDomain
-      }, {
-        onEvent(event, data) {
-          if (event === 'meta' && data && typeof data === 'object') {
-            const meta = data as { session_id?: string; domain?: string }
-            if (meta.session_id) {
-              setSessionId(meta.session_id)
-              remember(meta.session_id)
-            }
-            if (meta.domain) setLastDomain(meta.domain)
-            return
-          }
-          if (event === 'delta' && data && typeof data === 'object') {
-            const chunk = (data as { text?: string }).text
-            if (!chunk) return
-            streamed += chunk
-            const next = streamed
-            setTurns((prev) => {
-              const copy = [...prev]
-              const last = copy[copy.length - 1]
-              if (last?.role === 'assistant') {
-                copy[copy.length - 1] = { ...last, content: next }
-              }
-              return copy
-            })
-            return
-          }
-          if (event === 'done' && data && typeof data === 'object') {
-            const response = data as ChatResponse
-            finished = true
-            setSessionId(response.session_id)
-            remember(response.session_id)
-            setLastDomain(response.domain)
-            setTurns((prev) => {
-              const copy = [...prev]
-              const last = copy[copy.length - 1]
-              if (last?.role === 'assistant') {
-                copy[copy.length - 1] = {
-                  role: 'assistant',
-                  content: response.content,
-                  response
-                }
-              } else {
-                copy.push({
-                  role: 'assistant',
-                  content: response.content,
-                  response
-                })
-              }
-              return copy
-            })
-            return
-          }
-          if (event === 'error' && data && typeof data === 'object') {
-            const detail = String((data as { detail?: unknown }).detail ?? 'Chat failed')
-            throw new ApiError(500, detail)
-          }
-        }
       })
-      if (!finished) {
-        throw new Error('Chat stream ended before a complete reply')
-      }
+      setSessionId(response.session_id)
+      remember(response.session_id)
+      setLastDomain(response.domain)
+      setTurns((prev) => [
+        ...prev,
+        { role: 'assistant', content: response.content, response }
+      ])
       void refreshContext()
       void loadHistory()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chat failed')
-      // Drop an empty placeholder bubble if nothing arrived.
-      setTurns((prev) => {
-        const last = prev[prev.length - 1]
-        if (last?.role === 'assistant' && !last.content && !last.response) {
-          return prev.slice(0, -1)
-        }
-        return prev
-      })
     } finally {
       setBusy(false)
       inputRef.current?.focus()
@@ -287,7 +223,7 @@ function ChatView() {
   const alerts = context?.inefficiency_alerts ?? []
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
       <div className="flex shrink-0 flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -390,6 +326,7 @@ function ChatView() {
       )}
 
       <div
+        ref={listRef}
         className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-border bg-background-secondary/95 p-4 shadow-panel sm:p-6"
         aria-live="polite"
       >
@@ -450,18 +387,12 @@ function ChatView() {
                   {turn.content}
                 </div>
               </div>
-            ) : !turn.content && !turn.response ? null : (
+            ) : (
               <div key={index} className="space-y-2 animate-fade-up">
                 <div className="w-full max-w-prose-chat break-words rounded-2xl rounded-bl-md border border-purple-200/80 bg-purple-50/60 px-4 py-4 text-primary shadow-panel dark:border-purple-800/50 dark:bg-purple-950/40 sm:px-5">
                   <MarkdownRenderer classname="!max-w-none gap-y-2 prose-p:my-1 prose-li:my-0.5 text-sm leading-relaxed">
                     {turn.content}
                   </MarkdownRenderer>
-                  {busy && index === turns.length - 1 && !turn.response && (
-                    <span
-                      className="ml-0.5 inline-block h-4 w-1.5 animate-pulse rounded-sm bg-purple-500/80 align-text-bottom"
-                      aria-hidden
-                    />
-                  )}
                 </div>
                 {turn.response?.domain && (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 type-caption text-purple-800 dark:border-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
@@ -472,19 +403,13 @@ function ChatView() {
               </div>
             )
           )}
-          {busy &&
-            !(
-              turns.length > 0 &&
-              turns[turns.length - 1]?.role === 'assistant' &&
-              turns[turns.length - 1]?.content
-            ) && (
+          {busy && (
             <div className="space-y-2" role="status" aria-label="Thinking">
               <div className="h-3 w-24 animate-pulse rounded-full bg-purple-200/80 dark:bg-purple-800/50" />
               <div className="h-16 max-w-prose animate-pulse rounded-2xl bg-purple-100/80 dark:bg-purple-900/40" />
               <span className="sr-only">Thinking…</span>
             </div>
           )}
-          <div ref={endRef} />
         </div>
       </div>
 

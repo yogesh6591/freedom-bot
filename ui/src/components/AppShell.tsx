@@ -208,10 +208,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className="min-h-0 flex-1 overflow-hidden">
         <div
           className={cn(
-            'mx-auto flex h-full animate-fade-up flex-col p-4 sm:p-6',
+            'mx-auto flex h-full min-h-0 flex-col p-4 sm:p-6',
             pathname.startsWith('/chat')
-              ? 'min-h-0 max-w-measure'
-              : 'max-w-6xl overflow-y-auto'
+              ? 'max-w-measure'
+              : 'max-w-6xl animate-fade-up overflow-y-auto'
           )}
         >
           {children}
