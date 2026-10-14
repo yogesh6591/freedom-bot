@@ -21,6 +21,7 @@ import {
   Field,
   LoadingBlock,
   PageStack,
+  PageHeader,
   Panel,
   SegmentedTab,
   SegmentedTabs,
@@ -71,9 +72,13 @@ function MemoryView() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const data = await api.get<{ items: MemoryItem[] }>(`/api/memory?category=${tab}`)
+      const data = await api.get<{ items: MemoryItem[] }>(
+        `/api/memory?category=${tab}`
+      )
       setItems(data.items)
-      const found = await api.get<{ items: Conflict[] }>('/api/memory/conflicts')
+      const found = await api.get<{ items: Conflict[] }>(
+        '/api/memory/conflicts'
+      )
       setConflicts(found.items)
       setError(null)
     } catch (err) {
@@ -93,10 +98,12 @@ function MemoryView() {
 
   return (
     <PageStack>
-      <Panel
-        title="Organizational memory"
-        description="What this organization has told the assistant. Values are versioned: a correction supersedes the old value and keeps it in history."
-      >
+      <PageHeader
+        eyebrow="Knowledge base"
+        title="Company memory"
+        description="Your organization’s facts, procedures, and decisions. Corrections preserve the full version history."
+      />
+      <div className="-mt-2">
         <SegmentedTabs aria-label="Memory categories">
           {TABS.map((name) => (
             <SegmentedTab
@@ -111,7 +118,7 @@ function MemoryView() {
             </SegmentedTab>
           ))}
         </SegmentedTabs>
-      </Panel>
+      </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
@@ -126,33 +133,49 @@ function MemoryView() {
                 key={conflict.topic}
                 className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm"
               >
-                <div className="mb-3 font-geist text-primary">Topic: {conflict.topic}</div>
+                <div className="mb-3 font-geist text-primary">
+                  Topic: {conflict.topic}
+                </div>
                 <ul className="space-y-2">
                   {conflict.items.map((entry) => (
-                    <li key={entry.version_id} className="flex flex-wrap items-center gap-2">
-                      <Badge tone={entry.approval_status === 'APPROVED' ? 'good' : 'warn'}>
+                    <li
+                      key={entry.version_id}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <Badge
+                        tone={
+                          entry.approval_status === 'APPROVED' ? 'good' : 'warn'
+                        }
+                      >
                         {entry.approval_status}
                       </Badge>
                       <span className="text-primary">{entry.value}</span>
                       <span className="text-muted">
                         — {entry.title} ({entry.recorded_by})
                       </span>
-                      {hasRole('APPROVER') && entry.approval_status !== 'APPROVED' && (
-                        <Btn
-                          size="sm"
-                          className="ml-auto"
-                          onClick={async () => {
-                            try {
-                              await api.post(`/api/memory/versions/${entry.version_id}/approve`)
-                              await load()
-                            } catch (err) {
-                              setError(err instanceof Error ? err.message : 'Could not resolve')
-                            }
-                          }}
-                        >
-                          This one stands
-                        </Btn>
-                      )}
+                      {hasRole('APPROVER') &&
+                        entry.approval_status !== 'APPROVED' && (
+                          <Btn
+                            size="sm"
+                            className="ml-auto"
+                            onClick={async () => {
+                              try {
+                                await api.post(
+                                  `/api/memory/versions/${entry.version_id}/approve`
+                                )
+                                await load()
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error
+                                    ? err.message
+                                    : 'Could not resolve'
+                                )
+                              }
+                            }}
+                          >
+                            This one stands
+                          </Btn>
+                        )}
                     </li>
                   ))}
                 </ul>
@@ -188,14 +211,18 @@ function MemoryView() {
                 key: 'value',
                 header: 'Current value',
                 render: (item) => (
-                  <span className="text-muted">{item.current?.content ?? '—'}</span>
+                  <span className="text-muted">
+                    {item.current?.content ?? '—'}
+                  </span>
                 )
               },
               {
                 key: 'source',
                 header: 'Source',
                 render: (item) => (
-                  <Badge tone="neutral">{item.current?.source_type ?? '—'}</Badge>
+                  <Badge tone="neutral">
+                    {item.current?.source_type ?? '—'}
+                  </Badge>
                 )
               },
               {
@@ -211,7 +238,9 @@ function MemoryView() {
                     </Badge>
                     <Badge
                       tone={
-                        item.current?.approval_status === 'APPROVED' ? 'good' : 'warn'
+                        item.current?.approval_status === 'APPROVED'
+                          ? 'good'
+                          : 'warn'
                       }
                     >
                       {item.current?.approval_status ?? '—'}
@@ -223,13 +252,19 @@ function MemoryView() {
                 key: 'updated',
                 header: 'Last updated',
                 render: (item) => (
-                  <span className="text-muted">{timestamp(item.updated_at)}</span>
+                  <span className="text-muted">
+                    {timestamp(item.updated_at)}
+                  </span>
                 )
               },
               {
                 key: 'v',
                 header: 'Ver',
-                render: (item) => <span className="text-muted">v{item.current?.version_no ?? 1}</span>
+                render: (item) => (
+                  <span className="text-muted">
+                    v{item.current?.version_no ?? 1}
+                  </span>
+                )
               }
             ]}
           />
@@ -291,7 +326,9 @@ function MemoryDetail({
       setRemoveReason('')
       await onRemoved()
     } catch (err) {
-      setRemoveError(err instanceof Error ? err.message : 'Could not remove this item')
+      setRemoveError(
+        err instanceof Error ? err.message : 'Could not remove this item'
+      )
     } finally {
       setRemoving(false)
     }
@@ -330,7 +367,10 @@ function MemoryDetail({
       title={item.title}
       description={`${item.category} · ${item.memory_key}`}
       actions={
-        <button onClick={onClose} className="text-xs text-muted hover:text-primary">
+        <button
+          onClick={onClose}
+          className="text-xs text-muted hover:text-primary"
+        >
           Close
         </button>
       }
@@ -355,7 +395,9 @@ function MemoryDetail({
                     v{version.version_no} {version.status}
                   </Badge>
                   <Badge
-                    tone={version.approval_status === 'APPROVED' ? 'good' : 'warn'}
+                    tone={
+                      version.approval_status === 'APPROVED' ? 'good' : 'warn'
+                    }
                   >
                     {version.approval_status}
                   </Badge>
@@ -372,11 +414,15 @@ function MemoryDetail({
                     </button>
                   )}
                 </div>
-                <p className="mt-1.5 font-geist text-primary">{version.content}</p>
+                <p className="mt-1.5 font-geist text-primary">
+                  {version.content}
+                </p>
                 {version.correction_reason && (
                   <p className="mt-1 text-muted">
                     Correction reason: {version.correction_reason}
-                    {version.corrected_by ? ` (by ${version.corrected_by})` : ''}
+                    {version.corrected_by
+                      ? ` (by ${version.corrected_by})`
+                      : ''}
                   </p>
                 )}
                 {version.effective_until && (
@@ -390,12 +436,16 @@ function MemoryDetail({
         </div>
 
         {canWrite ? (
-          <form onSubmit={correct} className="space-y-2 border-t border-border pt-4">
+          <form
+            onSubmit={correct}
+            className="space-y-2 border-t border-border pt-4"
+          >
             <h3 className="font-geist text-xs uppercase tracking-wide text-muted">
               Correct this value
             </h3>
             <p className="text-[11px] text-muted">
-              The current value is kept in history as superseded. Nothing is overwritten.
+              The current value is kept in history as superseded. Nothing is
+              overwritten.
             </p>
             {error && <ErrorNote>{error}</ErrorNote>}
             <Field label="New value">
@@ -425,13 +475,16 @@ function MemoryDetail({
         )}
 
         {canRemove && item.current && (
-          <form onSubmit={remove} className="space-y-2 border-t border-border pt-4">
+          <form
+            onSubmit={remove}
+            className="space-y-2 border-t border-border pt-4"
+          >
             <h3 className="font-geist text-xs uppercase tracking-wide text-muted">
               Remove from memory
             </h3>
             <p className="text-[11px] text-muted">
-              FreedomBot stops using this item in answers, search and lists. Nothing is erased —
-              the version history stays for audit.
+              FreedomBot stops using this item in answers, search and lists.
+              Nothing is erased — the version history stays for audit.
             </p>
             {removeError && <ErrorNote>{removeError}</ErrorNote>}
             <Field label="Reason for removing">
@@ -442,7 +495,12 @@ function MemoryDetail({
                 required
               />
             </Field>
-            <Btn type="submit" variant="danger" disabled={removing || !removeReason.trim()} size="sm">
+            <Btn
+              type="submit"
+              variant="danger"
+              disabled={removing || !removeReason.trim()}
+              size="sm"
+            >
               {removing ? 'Removing…' : 'Remove from memory'}
             </Btn>
           </form>

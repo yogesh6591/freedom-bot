@@ -11,6 +11,7 @@ import {
   ErrorNote,
   LoadingBlock,
   PageStack,
+  PageHeader,
   Panel,
   timestamp
 } from '@/components/common/primitives'
@@ -90,9 +91,14 @@ function OwnerView() {
 
   return (
     <PageStack>
+      <PageHeader
+        eyebrow="Portfolio oversight"
+        title="Owner overview"
+        description="Focus on exceptions, client health, and issues that need leadership attention."
+      />
       <Panel
-        title="Owner view (JeanneCAIO)"
-        description="Exception-only portfolio — client count, what they bought, implementation, risk, what needs you, history before a call, revenue. Not a CRM."
+        title="Portfolio snapshot"
+        description="A concise operational view of active clients, escalations, and risk."
       >
         {data?.disclaimer && (
           <p className="mb-4 rounded-xl border border-brand/30 bg-brand/10 px-4 py-3 text-xs text-brand-soft">
@@ -104,14 +110,25 @@ function OwnerView() {
         {data && !loading && (
           <div className="grid gap-3 sm:grid-cols-3">
             <Stat label="Clients" value={String(data.client_count)} />
-            <Stat label="Needs me" value={String(data.needs_me_count)} tone="warn" />
-            <Stat label="At risk" value={String(data.at_risk_count)} tone="bad" />
+            <Stat
+              label="Needs me"
+              value={String(data.needs_me_count)}
+              tone="warn"
+            />
+            <Stat
+              label="At risk"
+              value={String(data.at_risk_count)}
+              tone="bad"
+            />
           </div>
         )}
       </Panel>
 
       {data && data.needs_me_queue.length > 0 && (
-        <Panel title="What needs me" description="Escalations from Cepoch support (FB-046).">
+        <Panel
+          title="What needs me"
+          description="Escalations from Cepoch support (FB-046)."
+        >
           <ul className="space-y-3">
             {data.needs_me_queue.map((item) => (
               <li
@@ -119,12 +136,16 @@ function OwnerView() {
                 className="rounded-xl border border-border bg-background-elevated px-4 py-3"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone="warn">{item.escalate_reason || 'ESCALATED'}</Badge>
+                  <Badge tone="warn">
+                    {item.escalate_reason || 'ESCALATED'}
+                  </Badge>
                   <span className="font-geist text-sm font-semibold text-primary">
                     {item.subject}
                   </span>
                 </div>
-                <p className="mt-1 text-xs text-muted">{timestamp(item.updated_at)}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {timestamp(item.updated_at)}
+                </p>
               </li>
             ))}
           </ul>
@@ -143,7 +164,9 @@ function OwnerView() {
                   className="rounded-xl border border-border bg-background-elevated p-4"
                 >
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="type-subtitle text-base">{client.company_name}</h3>
+                    <h3 className="type-subtitle text-base">
+                      {client.company_name}
+                    </h3>
                     <Badge tone="neutral">{client.slug}</Badge>
                     <Badge
                       tone={
@@ -187,7 +210,9 @@ function OwnerView() {
                         {client.recent_history.map((h) => (
                           <li key={h.id}>
                             [{h.assignee}/{h.status}] {h.subject}{' '}
-                            <span className="opacity-70">{timestamp(h.updated_at)}</span>
+                            <span className="opacity-70">
+                              {timestamp(h.updated_at)}
+                            </span>
                           </li>
                         ))}
                       </ul>

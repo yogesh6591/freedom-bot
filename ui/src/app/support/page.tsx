@@ -13,6 +13,7 @@ import {
   Field,
   LoadingBlock,
   PageStack,
+  PageHeader,
   Panel,
   SegmentedTab,
   SegmentedTabs,
@@ -92,10 +93,11 @@ function SupportView() {
     event.preventDefault()
     setBusy(true)
     try {
-      const result = await api.post<{ message?: string; merged?: boolean; ticket: Ticket }>(
-        '/api/support/tickets',
-        { subject, body, severity: 'NORMAL' }
-      )
+      const result = await api.post<{
+        message?: string
+        merged?: boolean
+        ticket: Ticket
+      }>('/api/support/tickets', { subject, body, severity: 'NORMAL' })
       setSubmitted(result.message ?? null)
       if (result.merged) setSelected(result.ticket)
       setSubject('')
@@ -116,9 +118,14 @@ function SupportView() {
 
   return (
     <PageStack>
+      <PageHeader
+        eyebrow="Service desk"
+        title="Support"
+        description="Track support requests and escalations in one place. Routine work stays with the support team."
+      />
       <Panel
-        title="Support (Cepoch)"
-        description="Routine tickets stay with us. Pull Jeanne only for CEO-level judgment, relationship risk, or at-risk accounts — not a sales desk."
+        title="Support queues"
+        description="Escalate to an owner only for executive judgment, relationship risk, or at-risk accounts."
       >
         <SegmentedTabs aria-label="Queue filter">
           {FILTERS.map((option) => (
@@ -141,7 +148,10 @@ function SupportView() {
       )}
 
       <Panel title="Open a routine ticket">
-        <form className="space-y-3" onSubmit={(e) => void createTicket(e)}>
+        <form
+          className="max-w-[720px] space-y-4"
+          onSubmit={(e) => void createTicket(e)}
+        >
           <Field label="Subject">
             <input
               className={inputClass}
@@ -174,21 +184,25 @@ function SupportView() {
               key={ticket.id}
               type="button"
               onClick={() => void refreshSelected(ticket.id)}
-              className="w-full rounded-xl border border-border bg-background-secondary p-4 text-left shadow-panel ui-transition hover:border-brand-soft"
+              className="ui-transition w-full rounded-xl border border-border bg-background-secondary p-4 text-left shadow-panel hover:border-brand-soft"
             >
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={ticket.assignee === 'JEANNE' ? 'warn' : 'neutral'}>
                   {ticket.assignee}
                 </Badge>
                 <Badge tone="info">{ticket.status}</Badge>
-                <Badge tone={ticket.severity === 'CRITICAL' ? 'bad' : 'neutral'}>
+                <Badge
+                  tone={ticket.severity === 'CRITICAL' ? 'bad' : 'neutral'}
+                >
                   {ticket.severity}
                 </Badge>
                 <span className="font-geist text-sm font-semibold text-primary">
                   {ticket.subject}
                 </span>
               </div>
-              <p className="mt-1 text-xs text-muted">{timestamp(ticket.updated_at)}</p>
+              <p className="mt-1 text-xs text-muted">
+                {timestamp(ticket.updated_at)}
+              </p>
             </button>
           ))}
         </div>
@@ -204,7 +218,9 @@ function SupportView() {
             </Btn>
           }
         >
-          <p className="type-muted mb-4 whitespace-pre-wrap">{selected.body || '—'}</p>
+          <p className="type-muted mb-4 whitespace-pre-wrap">
+            {selected.body || '—'}
+          </p>
           {selected.escalate_reason && (
             <p className="mb-3 text-xs text-brand-soft">
               Escalate reason: {selected.escalate_reason}
@@ -216,7 +232,8 @@ function SupportView() {
             <ul className="space-y-2 text-xs text-muted">
               {(selected.history || []).map((entry, index) => (
                 <li key={`${entry.at}-${index}`}>
-                  <span className="text-primary">{entry.event}</span> — {entry.note}{' '}
+                  <span className="text-primary">{entry.event}</span> —{' '}
+                  {entry.note}{' '}
                   <span className="opacity-70">({timestamp(entry.at)})</span>
                 </li>
               ))}
@@ -240,7 +257,9 @@ function SupportView() {
               onClick={async () => {
                 setBusy(true)
                 try {
-                  await api.post(`/api/support/tickets/${selected.id}/notes`, { note })
+                  await api.post(`/api/support/tickets/${selected.id}/notes`, {
+                    note
+                  })
                   setNote('')
                   await refreshSelected(selected.id)
                 } finally {
@@ -291,7 +310,8 @@ function SupportView() {
           {selected.assignee !== 'JEANNE' && (
             <div className="mt-6 space-y-3 rounded-xl border border-brand/30 bg-brand/10 p-4">
               <p className="text-xs text-brand-soft">
-                Escalate to Jeanne only for exception reasons — not routine work.
+                Escalate to Jeanne only for exception reasons — not routine
+                work.
               </p>
               <Field label="Reason">
                 <select
@@ -312,14 +332,19 @@ function SupportView() {
                 onClick={async () => {
                   setBusy(true)
                   try {
-                    await api.post(`/api/support/tickets/${selected.id}/escalate`, {
-                      reason: escalateReason,
-                      note: note || undefined
-                    })
+                    await api.post(
+                      `/api/support/tickets/${selected.id}/escalate`,
+                      {
+                        reason: escalateReason,
+                        note: note || undefined
+                      }
+                    )
                     setNote('')
                     await refreshSelected(selected.id)
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : 'Escalate failed')
+                    setError(
+                      err instanceof Error ? err.message : 'Escalate failed'
+                    )
                   } finally {
                     setBusy(false)
                   }
@@ -339,9 +364,12 @@ function SupportView() {
                 onClick={async () => {
                   setBusy(true)
                   try {
-                    await api.post(`/api/support/tickets/${selected.id}/return-to-cepoch`, {
-                      note: 'Returned after Jeanne review'
-                    })
+                    await api.post(
+                      `/api/support/tickets/${selected.id}/return-to-cepoch`,
+                      {
+                        note: 'Returned after Jeanne review'
+                      }
+                    )
                     await refreshSelected(selected.id)
                   } finally {
                     setBusy(false)

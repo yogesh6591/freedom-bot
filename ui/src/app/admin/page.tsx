@@ -14,6 +14,7 @@ import {
   ErrorNote,
   Field,
   PageStack,
+  PageHeader,
   Panel,
   SegmentedTab,
   SegmentedTabs,
@@ -87,14 +88,35 @@ export default function AdminPage() {
 
 function AdminView() {
   const [tab, setTab] = useState<
-    'setup' | 'insights' | 'launch' | 'pricing' | 'users' | 'policies' | 'domains' | 'tools'
+    | 'setup'
+    | 'insights'
+    | 'launch'
+    | 'pricing'
+    | 'users'
+    | 'policies'
+    | 'domains'
+    | 'tools'
   >('setup')
   return (
     <PageStack>
-      <Panel title="Administration" description="Configure the workspace, users, policies and domain packs.">
+      <PageHeader
+        eyebrow="Workspace governance"
+        title="Administration"
+        description="Manage access, configure policies, and set how FreedomBot operates in your organization."
+      />
+      <div className="-mt-2">
         <SegmentedTabs aria-label="Admin sections">
           {(
-            ['setup', 'insights', 'launch', 'pricing', 'users', 'policies', 'domains', 'tools'] as const
+            [
+              'setup',
+              'insights',
+              'launch',
+              'pricing',
+              'users',
+              'policies',
+              'domains',
+              'tools'
+            ] as const
           ).map((name) => (
             <SegmentedTab
               key={name}
@@ -106,7 +128,7 @@ function AdminView() {
             </SegmentedTab>
           ))}
         </SegmentedTabs>
-      </Panel>
+      </div>
       {tab === 'setup' && <Setup />}
       {tab === 'insights' && <Insights />}
       {tab === 'launch' && <LaunchChecklist />}
@@ -168,7 +190,11 @@ interface Clarification {
   unverified: string[]
 }
 
-const lines = (text: string) => text.split('\n').map((s) => s.trim()).filter(Boolean)
+const lines = (text: string) =>
+  text
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean)
 
 function Setup() {
   // Nothing is pre-filled with another company's values: a new client starts
@@ -190,43 +216,51 @@ function Setup() {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
 
-  const fill = useCallback((p: OnboardingProfileView, { replace }: { replace: boolean }) => {
-    if (replace || p.goals?.length) setGoals((p.goals ?? []).join('\n'))
-    if (replace || p.systems?.length) setSystems((p.systems ?? []).join('\n'))
-    if (p.autonomy_mode) setMode(p.autonomy_mode)
-    if (replace || p.roles_notes) setRolesNotes(p.roles_notes ?? '')
-    if (replace || p.review_points?.length) setReviewPoints((p.review_points ?? []).join('\n'))
-    if (replace || p.exclusions?.length) setExclusions((p.exclusions ?? []).join('\n'))
-    if (replace || p.baselines?.length) {
-      setBaselines(
-        (p.baselines ?? []).map((b) => ({
-          id: b.id,
-          workflow: b.workflow || '',
-          metric: b.metric || '',
-          before_value: b.before_value || '',
-          after_value: b.after_value || '',
-          unit: b.unit || '',
-          notes: b.notes || ''
-        }))
-      )
-    }
-    if (p.sops?.[0]?.title) setSopTitle(p.sops[0].title)
-    if (p.sops?.[0]?.content) setSopBody(p.sops[0].content)
-    if (p.assessment && Object.keys(p.assessment).length) {
-      setAssessment(JSON.stringify(p.assessment, null, 2))
-    }
-    if (p.handoff_at || p.handoff_source) setHandoffMeta(handoffLabel(p.handoff_source, p.handoff_at))
-    setClarify({
-      open_questions: p.open_questions ?? [],
-      inconsistencies: p.inconsistencies ?? [],
-      unverified: p.unverified ?? []
-    })
-  }, [])
+  const fill = useCallback(
+    (p: OnboardingProfileView, { replace }: { replace: boolean }) => {
+      if (replace || p.goals?.length) setGoals((p.goals ?? []).join('\n'))
+      if (replace || p.systems?.length) setSystems((p.systems ?? []).join('\n'))
+      if (p.autonomy_mode) setMode(p.autonomy_mode)
+      if (replace || p.roles_notes) setRolesNotes(p.roles_notes ?? '')
+      if (replace || p.review_points?.length)
+        setReviewPoints((p.review_points ?? []).join('\n'))
+      if (replace || p.exclusions?.length)
+        setExclusions((p.exclusions ?? []).join('\n'))
+      if (replace || p.baselines?.length) {
+        setBaselines(
+          (p.baselines ?? []).map((b) => ({
+            id: b.id,
+            workflow: b.workflow || '',
+            metric: b.metric || '',
+            before_value: b.before_value || '',
+            after_value: b.after_value || '',
+            unit: b.unit || '',
+            notes: b.notes || ''
+          }))
+        )
+      }
+      if (p.sops?.[0]?.title) setSopTitle(p.sops[0].title)
+      if (p.sops?.[0]?.content) setSopBody(p.sops[0].content)
+      if (p.assessment && Object.keys(p.assessment).length) {
+        setAssessment(JSON.stringify(p.assessment, null, 2))
+      }
+      if (p.handoff_at || p.handoff_source)
+        setHandoffMeta(handoffLabel(p.handoff_source, p.handoff_at))
+      setClarify({
+        open_questions: p.open_questions ?? [],
+        inconsistencies: p.inconsistencies ?? [],
+        unverified: p.unverified ?? []
+      })
+    },
+    []
+  )
 
   useEffect(() => {
     void (async () => {
       try {
-        const data = await api.get<{ profile: OnboardingProfileView }>('/api/onboarding')
+        const data = await api.get<{ profile: OnboardingProfileView }>(
+          '/api/onboarding'
+        )
         fill(data.profile, { replace: false })
       } catch {
         // First run — empty profile is fine.
@@ -248,7 +282,8 @@ function Setup() {
     setNote(null)
     try {
       const assessmentObj = parseAssessment()
-      if (!Object.keys(assessmentObj).length) throw new Error('Paste the assessment JSON first')
+      if (!Object.keys(assessmentObj).length)
+        throw new Error('Paste the assessment JSON first')
       const result = await api.post<{
         profile: OnboardingProfileView
         needs_clarification?: Clarification
@@ -256,7 +291,10 @@ function Setup() {
       }>('/api/onboarding/handoff', { assessment: assessmentObj })
       fill(result.profile, { replace: true })
       if (result.needs_clarification) setClarify(result.needs_clarification)
-      setNote(result.message || 'Assessment handoff saved. Review fields, then Apply configuration.')
+      setNote(
+        result.message ||
+          'Assessment handoff saved. Review fields, then Apply configuration.'
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Handoff failed')
     } finally {
@@ -275,14 +313,23 @@ function Setup() {
       }>('/api/onboarding', {
         goals: lines(goals),
         systems: lines(systems),
-        sops: sopTitle.trim() && sopBody.trim()
-          ? [{ title: sopTitle.trim(), content: sopBody.trim(), key: 'onboarding_sop' }]
-          : [],
+        sops:
+          sopTitle.trim() && sopBody.trim()
+            ? [
+                {
+                  title: sopTitle.trim(),
+                  content: sopBody.trim(),
+                  key: 'onboarding_sop'
+                }
+              ]
+            : [],
         roles_notes: rolesNotes,
         autonomy_mode: mode,
         review_points: lines(reviewPoints),
         exclusions: lines(exclusions),
-        baselines: baselines.filter((b) => b.workflow.trim() || b.metric.trim()),
+        baselines: baselines.filter(
+          (b) => b.workflow.trim() || b.metric.trim()
+        ),
         assessment: parseAssessment()
       })
       if (n8nUrl.trim()) {
@@ -292,7 +339,7 @@ function Setup() {
           display_name: 'n8n Webhook',
           enabled: true,
           status: 'CONNECTED',
-          config: { webhook_url: n8nUrl.trim() },
+          config: { webhook_url: n8nUrl.trim() }
         })
       }
       if (result.needs_clarification) setClarify(result.needs_clarification)
@@ -308,7 +355,9 @@ function Setup() {
 
   const outstanding =
     clarify &&
-    (clarify.open_questions.length || clarify.inconsistencies.length || clarify.unverified.length)
+    (clarify.open_questions.length ||
+      clarify.inconsistencies.length ||
+      clarify.unverified.length)
 
   return (
     <Panel
@@ -321,7 +370,9 @@ function Setup() {
             role="status"
             className="space-y-3 rounded-lg border border-brand/40 bg-brand/10 px-4 py-3 text-sm"
           >
-            <p className="font-geist font-semibold text-primary">Needs clarification with the client</p>
+            <p className="font-geist font-semibold text-primary">
+              Needs clarification with the client
+            </p>
             {clarify.open_questions.length > 0 && (
               <div>
                 <p className="type-caption">Still to ask</p>
@@ -344,7 +395,9 @@ function Setup() {
             )}
             {clarify.unverified.length > 0 && (
               <div>
-                <p className="type-caption">Client assumptions — not recorded as facts</p>
+                <p className="type-caption">
+                  Client assumptions — not recorded as facts
+                </p>
                 <ul className="mt-1 list-disc space-y-1 pl-5 text-muted">
                   {clarify.unverified.map((q) => (
                     <li key={q}>{q}</li>
@@ -380,7 +433,11 @@ function Setup() {
             />
           </Field>
           <Field label="Autonomy mode">
-            <select value={mode} onChange={(e) => setMode(e.target.value)} className={inputClass}>
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value)}
+              className={inputClass}
+            >
               {MODES.map((m) => (
                 <option key={m} value={m}>
                   {m}
@@ -424,7 +481,8 @@ function Setup() {
         <div className="space-y-2">
           <p className="type-caption">Baseline metrics (FB-044)</p>
           <p className="text-xs text-muted">
-            Record before values for sold workflows at setup. After values fill once live.
+            Record before values for sold workflows at setup. After values fill
+            once live.
           </p>
           {baselines.map((row, index) => (
             <div key={row.id || index} className="grid gap-2 md:grid-cols-3">
@@ -474,7 +532,9 @@ function Setup() {
                   variant="secondary"
                   size="sm"
                   aria-label="Remove baseline"
-                  onClick={() => setBaselines(baselines.filter((_, i) => i !== index))}
+                  onClick={() =>
+                    setBaselines(baselines.filter((_, i) => i !== index))
+                  }
                 >
                   Remove
                 </Btn>
@@ -503,9 +563,7 @@ function Setup() {
             Add baseline
           </Btn>
         </div>
-        {handoffMeta && (
-          <p className="text-xs text-positive">{handoffMeta}</p>
-        )}
+        {handoffMeta && <p className="text-xs text-positive">{handoffMeta}</p>}
         <Field label="Assessment JSON (manual fallback — prefer sale webhook)">
           <textarea
             value={assessment}
@@ -572,12 +630,18 @@ function Insights() {
 
   const load = useCallback(async () => {
     try {
-      const a = await api.get<{ items: InsightAlert[]; scanned_at?: string }>('/api/insights/alerts')
-      const b = await api.get<{ items: BaselineRow[]; disclaimer?: string }>('/api/insights/baselines')
+      const a = await api.get<{ items: InsightAlert[]; scanned_at?: string }>(
+        '/api/insights/alerts'
+      )
+      const b = await api.get<{ items: BaselineRow[]; disclaimer?: string }>(
+        '/api/insights/baselines'
+      )
       setAlerts(a.items)
       setScannedAt(a.scanned_at ?? null)
       setBaselines(b.items)
-      setDisclaimer(b.disclaimer || 'Directional before/after only. No guaranteed ROI.')
+      setDisclaimer(
+        b.disclaimer || 'Directional before/after only. No guaranteed ROI.'
+      )
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load insights')
@@ -616,7 +680,9 @@ function Insights() {
   }
 
   function updateRow(index: number, patch: Partial<BaselineRow>) {
-    setBaselines((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)))
+    setBaselines((rows) =>
+      rows.map((row, i) => (i === index ? { ...row, ...patch } : row))
+    )
   }
 
   async function saveBaselines() {
@@ -624,7 +690,10 @@ function Insights() {
     setNote(null)
     setError(null)
     try {
-      const result = await api.put<{ items: BaselineRow[]; disclaimer?: string }>(
+      const result = await api.put<{
+        items: BaselineRow[]
+        disclaimer?: string
+      }>(
         '/api/insights/baselines',
         // The server keeps only the input fields; the computed comparison is ignored.
         { items: baselines }
@@ -645,7 +714,12 @@ function Insights() {
         title="Inefficiency alerts (FB-041)"
         description="Recurring, material waste detected in this workspace's own data. At most two are current. Directional $ only — not an always-on engine."
         actions={
-          <Btn variant="secondary" size="sm" disabled={busy} onClick={() => void scan()}>
+          <Btn
+            variant="secondary"
+            size="sm"
+            disabled={busy}
+            onClick={() => void scan()}
+          >
             {busy ? 'Scanning…' : 'Scan now'}
           </Btn>
         }
@@ -670,19 +744,29 @@ function Insights() {
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="font-geist text-sm text-primary">{alert.title}</p>
+                  <p className="font-geist text-sm text-primary">
+                    {alert.title}
+                  </p>
                   <p className="mt-1 text-xs text-muted">{alert.detail}</p>
                   {alert.directional_cost && (
-                    <p className="mt-1 text-[11px] text-brand-soft">{alert.directional_cost}</p>
+                    <p className="mt-1 text-[11px] text-brand-soft">
+                      {alert.directional_cost}
+                    </p>
                   )}
                   <p className="mt-1 text-[10px] uppercase text-muted/70">
                     {ALERT_STATUS_LABEL[alert.status || 'open'] ?? alert.status}
                     {' · '}
-                    {alert.source === 'scan' ? 'Detected from your data' : 'Demo example'}
-                    {alert.access_area ? ` · visible to ${alert.access_area} area` : ''}
+                    {alert.source === 'scan'
+                      ? 'Detected from your data'
+                      : 'Demo example'}
+                    {alert.access_area
+                      ? ` · visible to ${alert.access_area} area`
+                      : ''}
                   </p>
                 </div>
-                {(alert.status === 'open' || alert.status === 'held' || !alert.status) && (
+                {(alert.status === 'open' ||
+                  alert.status === 'held' ||
+                  !alert.status) && (
                   <Btn
                     variant="ghost"
                     size="sm"
@@ -700,30 +784,40 @@ function Insights() {
 
       <Panel
         title="Baseline vs after (FB-050)"
-        description={disclaimer || 'Directional before/after for one sold workflow. No guaranteed ROI.'}
+        description={
+          disclaimer ||
+          'Directional before/after for one sold workflow. No guaranteed ROI.'
+        }
       >
         <div className="space-y-4">
           {baselines.length === 0 && (
             <p className="text-xs text-muted">
-              No metrics recorded yet. Add the workflow&apos;s baseline before go-live, then the
-              after value once it is measured.
+              No metrics recorded yet. Add the workflow&apos;s baseline before
+              go-live, then the after value once it is measured.
             </p>
           )}
           {baselines.map((row, index) => (
-            <div key={row.id} className="space-y-2 rounded-lg border border-border p-3">
+            <div
+              key={row.id}
+              className="space-y-2 rounded-lg border border-border p-3"
+            >
               <div className="grid gap-3 md:grid-cols-2">
                 <Field label="Workflow">
                   <input
                     className={inputClass}
                     value={row.workflow}
-                    onChange={(e) => updateRow(index, { workflow: e.target.value })}
+                    onChange={(e) =>
+                      updateRow(index, { workflow: e.target.value })
+                    }
                   />
                 </Field>
                 <Field label="Metric">
                   <input
                     className={inputClass}
                     value={row.metric}
-                    onChange={(e) => updateRow(index, { metric: e.target.value })}
+                    onChange={(e) =>
+                      updateRow(index, { metric: e.target.value })
+                    }
                   />
                 </Field>
               </div>
@@ -733,7 +827,9 @@ function Insights() {
                     className={inputClass}
                     inputMode="decimal"
                     value={row.before_value}
-                    onChange={(e) => updateRow(index, { before_value: e.target.value })}
+                    onChange={(e) =>
+                      updateRow(index, { before_value: e.target.value })
+                    }
                   />
                 </Field>
                 <Field label="After (number)">
@@ -741,7 +837,9 @@ function Insights() {
                     className={inputClass}
                     inputMode="decimal"
                     value={row.after_value}
-                    onChange={(e) => updateRow(index, { after_value: e.target.value })}
+                    onChange={(e) =>
+                      updateRow(index, { after_value: e.target.value })
+                    }
                   />
                 </Field>
                 <Field label="Unit">
@@ -770,7 +868,9 @@ function Insights() {
               <Btn
                 variant="ghost"
                 size="sm"
-                onClick={() => setBaselines((rows) => rows.filter((_, i) => i !== index))}
+                onClick={() =>
+                  setBaselines((rows) => rows.filter((_, i) => i !== index))
+                }
               >
                 Remove metric
               </Btn>
@@ -851,13 +951,21 @@ function ResalePricing() {
       const r = data.rules
       setRules(r)
       // No rule stored means no price — never pre-fill a demo number.
-      setCustomerPrice(r.customer_price_usd != null ? String(r.customer_price_usd) : '')
+      setCustomerPrice(
+        r.customer_price_usd != null ? String(r.customer_price_usd) : ''
+      )
       setCost(r.cepoch_cost_usd != null ? String(r.cepoch_cost_usd) : '')
-      setStatus(r.configured === false ? 'draft' : r.quote_status || 'pending_venu_confirm')
+      setStatus(
+        r.configured === false
+          ? 'draft'
+          : r.quote_status || 'pending_venu_confirm'
+      )
       setNotes(r.notes || '')
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load resale rules')
+      setError(
+        err instanceof Error ? err.message : 'Could not load resale rules'
+      )
     }
   }, [])
 
@@ -870,15 +978,14 @@ function ResalePricing() {
     setNote(null)
     setError(null)
     try {
-      const data = await api.put<{ rules: { margin_percent?: number; disclaimer?: string } }>(
-        '/api/pricing/resale-rules',
-        {
-          customer_price_usd: Number(customerPrice),
-          cepoch_cost_usd: Number(cost),
-          quote_status: status,
-          notes
-        }
-      )
+      const data = await api.put<{
+        rules: { margin_percent?: number; disclaimer?: string }
+      }>('/api/pricing/resale-rules', {
+        customer_price_usd: Number(customerPrice),
+        cepoch_cost_usd: Number(cost),
+        quote_status: status,
+        notes
+      })
       setRules((prev) => ({ ...(prev || {}), ...data.rules }))
       setNote(
         `Saved. Margin ${data.rules.margin_percent ?? '—'}%. Placeholder until Jeanne + Venu confirm.`
@@ -895,7 +1002,9 @@ function ResalePricing() {
   const costN = Number(cost) || 0
   const bothEntered = customerPrice.trim() !== '' && cost.trim() !== ''
   const liveMargin =
-    bothEntered && priceN > 0 ? (((priceN - costN) / priceN) * 100).toFixed(1) : '—'
+    bothEntered && priceN > 0
+      ? (((priceN - costN) / priceN) * 100).toFixed(1)
+      : '—'
 
   return (
     <Panel
@@ -910,22 +1019,40 @@ function ResalePricing() {
       {note && <p className="mb-3 text-xs text-positive">{note}</p>}
       {rules?.configured === false && (
         <p className="mb-3 text-xs text-muted">
-          No resale price is set for this client yet. Quotes stay unavailable until you enter one.
+          No resale price is set for this client yet. Quotes stay unavailable
+          until you enter one.
         </p>
       )}
 
       <div className="mb-4 grid gap-2 text-[11px] text-muted md:grid-cols-2">
         <p>
-          Price set by: <span className="font-geist text-primary">{rules?.price_set_by || 'JeanneCAIO'}</span>
+          Price set by:{' '}
+          <span className="font-geist text-primary">
+            {rules?.price_set_by || 'JeanneCAIO'}
+          </span>
         </p>
         <p>
-          Confirm by: <span className="font-geist text-primary">{rules?.confirm_by || 'Venu'}</span>
+          Confirm by:{' '}
+          <span className="font-geist text-primary">
+            {rules?.confirm_by || 'Venu'}
+          </span>
         </p>
-        <p>Public package price: <strong className="text-primary">forbidden</strong></p>
-        <p>Per-seat pricing: <strong className="text-primary">forbidden</strong></p>
+        <p>
+          Public package price:{' '}
+          <strong className="text-primary">forbidden</strong>
+        </p>
+        <p>
+          Per-seat pricing: <strong className="text-primary">forbidden</strong>
+        </p>
         <p className="md:col-span-2">
           Legacy prices blocked:{' '}
-          {(rules?.forbidden_legacy_examples || ['$2K', '$75K', 'module package list']).join(' · ')}
+          {(
+            rules?.forbidden_legacy_examples || [
+              '$2K',
+              '$75K',
+              'module package list'
+            ]
+          ).join(' · ')}
         </p>
       </div>
 
@@ -952,7 +1079,11 @@ function ResalePricing() {
           </Field>
         </div>
         <Field label="Quote status">
-          <select className={inputClass} value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select
+            className={inputClass}
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+          >
             <option value="draft">Draft</option>
             <option value="pending_venu_confirm">Pending Venu confirm</option>
             <option value="venu_confirmed">Venu confirmed</option>
@@ -965,7 +1096,11 @@ function ResalePricing() {
             onChange={(e) => setNotes(e.target.value)}
           />
         </Field>
-        <Btn disabled={busy || !bothEntered} onClick={() => void save()} size="sm">
+        <Btn
+          disabled={busy || !bothEntered}
+          onClick={() => void save()}
+          size="sm"
+        >
           {busy ? 'Saving…' : 'Save face quote'}
         </Btn>
       </div>
@@ -973,7 +1108,13 @@ function ResalePricing() {
   )
 }
 
-const BASE_DOMAINS = ['general', 'operations', 'sales', 'intake', 'planning'] as const
+const BASE_DOMAINS = [
+  'general',
+  'operations',
+  'sales',
+  'intake',
+  'planning'
+] as const
 const ADDON_DOMAINS = ['strategy', 'finance', 'brand', 'legal'] as const
 const AUTONOMY_MODES = [
   'ADVISE',
@@ -1010,11 +1151,15 @@ function ConsultPricing() {
 
   const load = useCallback(async () => {
     try {
-      const data = await api.get<{ config: typeof config }>('/api/pricing/consult-config')
+      const data = await api.get<{ config: typeof config }>(
+        '/api/pricing/consult-config'
+      )
       setConfig(data.config)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load consult config')
+      setError(
+        err instanceof Error ? err.message : 'Could not load consult config'
+      )
     }
   }, [])
 
@@ -1047,7 +1192,9 @@ function ConsultPricing() {
       setQuote(data.quote)
       if (data.saved?.id) {
         setSavedId(data.saved.id)
-        setNote(`Saved consult quote ${data.saved.id}. Replace face prices later in Resale rules.`)
+        setNote(
+          `Saved consult quote ${data.saved.id}. Replace face prices later in Resale rules.`
+        )
       } else {
         setNote('Calculated from face FB-048 rules + face scope weights.')
       }
@@ -1073,7 +1220,9 @@ function ConsultPricing() {
 
       <div className="space-y-4">
         <div>
-          <p className="type-caption mb-2">Base package (included in face base price)</p>
+          <p className="type-caption mb-2">
+            Base package (included in face base price)
+          </p>
           <div className="flex flex-wrap gap-2">
             {BASE_DOMAINS.map((d) => (
               <Badge key={d} tone="neutral">
@@ -1142,7 +1291,12 @@ function ConsultPricing() {
           <Btn size="sm" disabled={busy} onClick={() => void run(false)}>
             {busy ? 'Calculating…' : 'Calculate quote'}
           </Btn>
-          <Btn size="sm" variant="secondary" disabled={busy} onClick={() => void run(true)}>
+          <Btn
+            size="sm"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => void run(true)}
+          >
             Calculate & save
           </Btn>
         </div>
@@ -1173,7 +1327,8 @@ function ConsultPricing() {
             <ul className="space-y-1 text-xs text-muted">
               {(quote.lines || []).map((line) => (
                 <li key={`${line.kind}-${line.domain}`}>
-                  {line.kind}: {line.domain} — ${line.customer_usd.toLocaleString()}
+                  {line.kind}: {line.domain} — $
+                  {line.customer_usd.toLocaleString()}
                 </li>
               ))}
               <li>
@@ -1195,7 +1350,12 @@ function ConsultPricing() {
 
 function Users() {
   const [users, setUsers] = useState<SessionUser[]>([])
-  const [form, setForm] = useState({ email: '', password: '', display_name: '', role: 'VIEWER' })
+  const [form, setForm] = useState({
+    email: '',
+    password: '',
+    display_name: '',
+    role: 'VIEWER'
+  })
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -1237,7 +1397,9 @@ function Users() {
     if (current.has(area)) current.delete(area)
     else current.add(area)
     try {
-      await api.patch(`/api/users/${user.id}/scopes`, { data_scopes: Array.from(current) })
+      await api.patch(`/api/users/${user.id}/scopes`, {
+        data_scopes: Array.from(current)
+      })
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not change access')
@@ -1289,7 +1451,9 @@ function Users() {
               header: 'Restricted data access',
               render: (u) =>
                 u.roles.includes('ADMIN') ? (
-                  <span className="text-[11px] text-muted">all areas (admin)</span>
+                  <span className="text-[11px] text-muted">
+                    all areas (admin)
+                  </span>
                 ) : (
                   <div className="flex flex-wrap gap-1">
                     {DATA_AREAS.map((area) => {
@@ -1299,7 +1463,9 @@ function Users() {
                           key={area}
                           onClick={() => void toggleScope(u, area)}
                           className={`rounded border px-1.5 py-0.5 text-[10px] ${
-                            on ? 'border-brand bg-brand/20 text-primary' : 'border-border text-muted'
+                            on
+                              ? 'border-brand bg-brand/20 text-primary'
+                              : 'border-border text-muted'
                           }`}
                         >
                           {area}
@@ -1321,14 +1487,18 @@ function Users() {
               type="email"
               required
               value={form.email}
-              onChange={(event) => setForm({ ...form, email: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, email: event.target.value })
+              }
             />
           </Field>
           <Field label="Name">
             <input
               className={inputClass}
               value={form.display_name}
-              onChange={(event) => setForm({ ...form, display_name: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, display_name: event.target.value })
+              }
             />
           </Field>
           <Field label="Password" hint="Minimum 12 characters.">
@@ -1338,14 +1508,18 @@ function Users() {
               minLength={12}
               required
               value={form.password}
-              onChange={(event) => setForm({ ...form, password: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, password: event.target.value })
+              }
             />
           </Field>
           <Field label="Role">
             <select
               className={inputClass}
               value={form.role}
-              onChange={(event) => setForm({ ...form, role: event.target.value })}
+              onChange={(event) =>
+                setForm({ ...form, role: event.target.value })
+              }
             >
               {ROLES.map((role) => (
                 <option key={role} value={role}>
@@ -1382,7 +1556,8 @@ function Policies() {
     void load()
   }, [load])
 
-  if (!data) return <Panel>{error ? <ErrorNote>{error}</ErrorNote> : 'Loading…'}</Panel>
+  if (!data)
+    return <Panel>{error ? <ErrorNote>{error}</ErrorNote> : 'Loading…'}</Panel>
 
   const settings = data.settings
   const risk = settings.risk_policy
@@ -1410,7 +1585,9 @@ function Policies() {
           <select
             className={inputClass}
             value={settings.default_execution_mode}
-            onChange={(event) => void save({ default_execution_mode: event.target.value })}
+            onChange={(event) =>
+              void save({ default_execution_mode: event.target.value })
+            }
           >
             {MODES.map((mode) => (
               <option key={mode} value={mode}>
@@ -1424,7 +1601,9 @@ function Policies() {
             className={inputClass}
             value={risk.auto_allowed_max_risk}
             onChange={(event) =>
-              void save({ risk_policy: { auto_allowed_max_risk: event.target.value } })
+              void save({
+                risk_policy: { auto_allowed_max_risk: event.target.value }
+              })
             }
           >
             {['LOW', 'MEDIUM', 'HIGH'].map((level) => (
@@ -1439,7 +1618,9 @@ function Policies() {
             className={inputClass}
             value={risk.always_approve_at_or_above}
             onChange={(event) =>
-              void save({ risk_policy: { always_approve_at_or_above: event.target.value } })
+              void save({
+                risk_policy: { always_approve_at_or_above: event.target.value }
+              })
             }
           >
             {['MEDIUM', 'HIGH', 'CRITICAL'].map((level) => (
@@ -1455,7 +1636,11 @@ function Policies() {
             type="number"
             defaultValue={risk.max_records_per_action}
             onBlur={(event) =>
-              void save({ risk_policy: { max_records_per_action: Number(event.target.value) } })
+              void save({
+                risk_policy: {
+                  max_records_per_action: Number(event.target.value)
+                }
+              })
             }
           />
         </Field>
@@ -1465,7 +1650,11 @@ function Policies() {
             type="number"
             defaultValue={risk.max_financial_amount}
             onBlur={(event) =>
-              void save({ risk_policy: { max_financial_amount: Number(event.target.value) } })
+              void save({
+                risk_policy: {
+                  max_financial_amount: Number(event.target.value)
+                }
+              })
             }
           />
         </Field>
@@ -1475,11 +1664,16 @@ function Policies() {
             type="number"
             defaultValue={risk.max_emails_per_run}
             onBlur={(event) =>
-              void save({ risk_policy: { max_emails_per_run: Number(event.target.value) } })
+              void save({
+                risk_policy: { max_emails_per_run: Number(event.target.value) }
+              })
             }
           />
         </Field>
-        <Field label="Approved recipient domains" hint="Comma separated. Empty means no restriction.">
+        <Field
+          label="Approved recipient domains"
+          hint="Comma separated. Empty means no restriction."
+        >
           <input
             className={inputClass}
             defaultValue={risk.approved_recipient_domains.join(', ')}
@@ -1515,8 +1709,9 @@ function Policies() {
           <div>
             <p className="type-caption mb-1">Order / DPA allows (FB-039)</p>
             <p className="mb-2 text-xs text-muted">
-              One setting from the signed Order/DPA — anything unticked is refused. PHI also needs
-              a BAA with the model vendor; OpenAI has none, so PHI stays blocked on OpenAI.
+              One setting from the signed Order/DPA — anything unticked is
+              refused. PHI also needs a BAA with the model vendor; OpenAI has
+              none, so PHI stays blocked on OpenAI.
             </p>
             {(
               [
@@ -1528,7 +1723,10 @@ function Policies() {
             ).map(([key, label]) => {
               const allowed = new Set(settings.order_dpa_allows ?? [])
               return (
-                <label key={key} className="flex items-center gap-2 text-xs text-muted">
+                <label
+                  key={key}
+                  className="flex items-center gap-2 text-xs text-muted"
+                >
                   <input
                     type="checkbox"
                     checked={allowed.has(key)}
@@ -1547,13 +1745,17 @@ function Policies() {
               <input
                 type="checkbox"
                 checked={Boolean(settings.llm_baa_covered)}
-                onChange={(event) => void save({ llm_baa_covered: event.target.checked })}
+                onChange={(event) =>
+                  void save({ llm_baa_covered: event.target.checked })
+                }
               />
               Model vendor has signed a BAA for this client
             </label>
             <p className="mt-1 text-[11px] text-muted">
-              Model vendor: {settings.llm_vendor || 'openai'} (set by the deployment)
-              {settings.order_dpa_allows?.includes('phi') && !settings.llm_baa_covered
+              Model vendor: {settings.llm_vendor || 'openai'} (set by the
+              deployment)
+              {settings.order_dpa_allows?.includes('phi') &&
+              !settings.llm_baa_covered
                 ? ' · PHI is blocked until a BAA is in place'
                 : ''}
             </p>
@@ -1606,7 +1808,9 @@ function LaunchChecklist() {
       setSignedOff(data.signed_off_at ?? null)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load launch checklist')
+      setError(
+        err instanceof Error ? err.message : 'Could not load launch checklist'
+      )
     }
   }, [])
 
@@ -1646,7 +1850,11 @@ function LaunchChecklist() {
       setSignedOff(data.signed_off_at ?? null)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign-off blocked — finish pending items')
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Sign-off blocked — finish pending items'
+      )
     } finally {
       setBusy(false)
     }
@@ -1659,7 +1867,9 @@ function LaunchChecklist() {
     >
       <div className="space-y-3">
         {note && <p className="text-xs text-muted">{note}</p>}
-        {signedOff && <p className="text-xs text-positive">Signed off at {signedOff}</p>}
+        {signedOff && (
+          <p className="text-xs text-positive">Signed off at {signedOff}</p>
+        )}
         <ul className="space-y-2">
           {items.map((item) => (
             <li
@@ -1669,7 +1879,9 @@ function LaunchChecklist() {
               <div>
                 <p className="text-sm text-primary">{item.title}</p>
                 <p className="text-xs text-muted">{item.detail}</p>
-                <p className="mt-1 text-[11px] uppercase tracking-wide text-muted">{item.status}</p>
+                <p className="mt-1 text-[11px] uppercase tracking-wide text-muted">
+                  {item.status}
+                </p>
               </div>
               {item.id !== 'sign_off' && item.status === 'pending' && (
                 <Btn
@@ -1686,8 +1898,16 @@ function LaunchChecklist() {
           ))}
         </ul>
         {error && <ErrorNote>{error}</ErrorNote>}
-        <Btn disabled={busy || !ready || Boolean(signedOff)} onClick={() => void signOff()} size="sm">
-          {signedOff ? 'Signed off' : ready ? 'Sign off launch' : 'Finish pending items first'}
+        <Btn
+          disabled={busy || !ready || Boolean(signedOff)}
+          onClick={() => void signOff()}
+          size="sm"
+        >
+          {signedOff
+            ? 'Signed off'
+            : ready
+              ? 'Sign off launch'
+              : 'Finish pending items first'}
         </Btn>
       </div>
     </Panel>
@@ -1708,7 +1928,9 @@ function Domains() {
 
   async function toggle(domain: DomainPack) {
     try {
-      await api.patch(`/api/domains/${domain.name}`, { enabled: !domain.enabled })
+      await api.patch(`/api/domains/${domain.name}`, {
+        enabled: !domain.enabled
+      })
       setError(null)
       await load()
     } catch (err) {
@@ -1717,14 +1939,18 @@ function Domains() {
   }
 
   async function changeOrder(domain: DomainPack) {
-    const reference = window.prompt(`Change order reference for adding ${domain.title}:`)
+    const reference = window.prompt(
+      `Change order reference for adding ${domain.title}:`
+    )
     if (!reference) return
     try {
       await api.post(`/api/domains/${domain.name}/change-order`, { reference })
       setError(null)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not record change order')
+      setError(
+        err instanceof Error ? err.message : 'Could not record change order'
+      )
     }
   }
 
@@ -1738,8 +1964,18 @@ function Domains() {
         rows={items}
         empty="No domains."
         columns={[
-          { key: 'n', header: 'Domain', render: (d) => <span className="font-geist text-primary">{d.title}</span> },
-          { key: 'd', header: 'Description', render: (d) => <span className="text-muted">{d.description}</span> },
+          {
+            key: 'n',
+            header: 'Domain',
+            render: (d) => (
+              <span className="font-geist text-primary">{d.title}</span>
+            )
+          },
+          {
+            key: 'd',
+            header: 'Description',
+            render: (d) => <span className="text-muted">{d.description}</span>
+          },
           {
             key: 'p',
             header: 'Depth',
@@ -1749,18 +1985,30 @@ function Domains() {
               </Badge>
             )
           },
-          { key: 't', header: 'Tools', render: (d) => <span className="text-muted">{d.tools.length}</span> },
+          {
+            key: 't',
+            header: 'Tools',
+            render: (d) => <span className="text-muted">{d.tools.length}</span>
+          },
           {
             key: 'm',
             header: 'Mode ceiling',
             render: (d) =>
-              d.mode_ceiling ? <Badge tone={modeTone(d.mode_ceiling)}>{d.mode_ceiling}</Badge> : '—'
+              d.mode_ceiling ? (
+                <Badge tone={modeTone(d.mode_ceiling)}>{d.mode_ceiling}</Badge>
+              ) : (
+                '—'
+              )
           },
           {
             key: 'pu',
             header: 'Package',
             render: (d) =>
-              d.purchased ? <Badge tone="good">purchased</Badge> : <Badge tone="neutral">add-on</Badge>
+              d.purchased ? (
+                <Badge tone="good">purchased</Badge>
+              ) : (
+                <Badge tone="neutral">add-on</Badge>
+              )
           },
           {
             key: 'e',
@@ -1803,7 +2051,9 @@ function Tools() {
 
   async function setToolMode(tool: string, mode: string) {
     try {
-      await api.put('/api/policies/settings', { tool_modes: { [tool]: mode || null } })
+      await api.put('/api/policies/settings', {
+        tool_modes: { [tool]: mode || null }
+      })
       setError(null)
       await load()
     } catch (err) {
@@ -1829,19 +2079,34 @@ function Tools() {
             header: 'Tool',
             render: (t) => (
               <div>
-                <div className="font-dmmono text-[11px] text-primary">{t.name}</div>
+                <div className="font-dmmono text-[11px] text-primary">
+                  {t.name}
+                </div>
                 <div className="text-[10px] text-muted">{t.title}</div>
               </div>
             )
           },
           { key: 'c', header: 'Category', render: (t) => t.category },
-          { key: 'r', header: 'Risk', render: (t) => <Badge tone={riskTone(t.risk)}>{t.risk}</Badge> },
-          { key: 'cl', header: 'Class', render: (t) => <Badge tone="neutral">{t.classification}</Badge> },
-          { key: 'w', header: 'Write', render: (t) => (t.write ? 'yes' : 'no') },
+          {
+            key: 'r',
+            header: 'Risk',
+            render: (t) => <Badge tone={riskTone(t.risk)}>{t.risk}</Badge>
+          },
+          {
+            key: 'cl',
+            header: 'Class',
+            render: (t) => <Badge tone="neutral">{t.classification}</Badge>
+          },
+          {
+            key: 'w',
+            header: 'Write',
+            render: (t) => (t.write ? 'yes' : 'no')
+          },
           {
             key: 'a',
             header: 'Data area',
-            render: (t) => (t.data_area ? <Badge tone="warn">{t.data_area}</Badge> : '—')
+            render: (t) =>
+              t.data_area ? <Badge tone="warn">{t.data_area}</Badge> : '—'
           },
           {
             key: 'mode',
@@ -1849,7 +2114,9 @@ function Tools() {
             render: (t) => (
               <select
                 value={toolModes[t.name] ?? ''}
-                onChange={(event) => void setToolMode(t.name, event.target.value)}
+                onChange={(event) =>
+                  void setToolMode(t.name, event.target.value)
+                }
                 className="rounded border border-border bg-background px-1 py-0.5 text-[10px]"
               >
                 <option value="">workspace</option>
@@ -1864,7 +2131,12 @@ function Tools() {
           {
             key: 'i',
             header: 'Built',
-            render: (t) => (t.implemented ? <Badge tone="good">yes</Badge> : <Badge tone="warn">declared</Badge>)
+            render: (t) =>
+              t.implemented ? (
+                <Badge tone="good">yes</Badge>
+              ) : (
+                <Badge tone="warn">declared</Badge>
+              )
           },
           ...ROLES.map((role) => ({
             key: role,
@@ -1873,13 +2145,19 @@ function Tools() {
               <div className="leading-tight">
                 <span
                   className={
-                    t.effective_permissions[role] === 'DENIED' ? 'text-muted/50' : 'text-primary'
+                    t.effective_permissions[role] === 'DENIED'
+                      ? 'text-muted/50'
+                      : 'text-primary'
                   }
                 >
-                  {t.effective_permissions[role]?.replace('EXECUTE_AFTER_APPROVAL', 'EXEC_APPR') ?? '—'}
+                  {t.effective_permissions[role]?.replace(
+                    'EXECUTE_AFTER_APPROVAL',
+                    'EXEC_APPR'
+                  ) ?? '—'}
                 </span>
                 <div className="text-[9px] text-muted">
-                  {t.view?.[role] ? 'view' : '—'} / {t.run?.[role] ? 'run' : 'no run'}
+                  {t.view?.[role] ? 'view' : '—'} /{' '}
+                  {t.run?.[role] ? 'run' : 'no run'}
                 </div>
               </div>
             )

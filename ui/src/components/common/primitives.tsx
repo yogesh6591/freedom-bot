@@ -1,6 +1,6 @@
 'use client'
 
-/** Shared UI primitives — purple design system tokens via Tailwind theme. */
+/** Shared workspace primitives — functional components, consistent enterprise styling. */
 
 import { cn } from '@/lib/utils'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
@@ -12,7 +12,34 @@ export function PageStack({
   children: ReactNode
   className?: string
 }) {
-  return <div className={cn('flex flex-col gap-6', className)}>{children}</div>
+  return (
+    <div className={cn('flex flex-col gap-6 pb-9', className)}>{children}</div>
+  )
+}
+
+export function PageHeader({
+  title,
+  description,
+  eyebrow = 'Workspace',
+  actions
+}: {
+  title: string
+  description?: string
+  eyebrow?: string
+  actions?: ReactNode
+}) {
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-4 pb-1">
+      <div className="min-w-0">
+        <p className="page-eyebrow">{eyebrow}</p>
+        <h1 className="page-heading">{title}</h1>
+        {description && <p className="page-description">{description}</p>}
+      </div>
+      {actions && (
+        <div className="flex shrink-0 items-center gap-2">{actions}</div>
+      )}
+    </header>
+  )
 }
 
 export function Panel({
@@ -31,7 +58,7 @@ export function Panel({
   return (
     <section
       className={cn(
-        'rounded-xl border border-border bg-background-secondary p-5 shadow-panel sm:p-6',
+        'rounded-xl border border-border bg-background-secondary p-5 shadow-panel sm:p-6 lg:p-7',
         className
       )}
     >
@@ -50,12 +77,12 @@ export function Panel({
 }
 
 const TONES = {
-  neutral: 'bg-background-elevated text-muted border-border',
+  neutral: 'bg-background-elevated text-secondary border-border',
   info: 'bg-info/10 text-info border-info/25',
   good: 'bg-success/10 text-success border-success/25',
   warn: 'bg-warning/15 text-warning border-warning/35',
   bad: 'bg-error/10 text-error border-error/25',
-  brand: 'bg-brand text-brand-ink border-brand-soft/40'
+  brand: 'bg-purple-50 text-brand border-purple-200'
 } as const
 
 export type Tone = keyof typeof TONES
@@ -72,7 +99,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex items-center rounded-full border px-2.5 py-1 type-caption',
+        'inline-flex min-h-[25px] items-center rounded-md border px-2 py-0.5 font-geist text-[11px] font-semibold leading-4 tracking-[0.005em]',
         TONES[tone],
         className
       )}
@@ -139,22 +166,22 @@ export function modeTone(mode?: string | null): Tone {
 }
 
 const BTN_BASE =
-  'inline-flex items-center justify-center gap-2 rounded-lg font-geist font-semibold ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400/80 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 active:scale-[0.98]'
+  'inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-geist font-semibold ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/70 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-45 active:translate-y-px'
 
 const BTN_VARIANT = {
   primary: 'btn-primary-fill border border-transparent',
   secondary:
-    'border border-border bg-background-elevated text-secondary hover:border-purple-400 hover:bg-purple-50 hover:text-primary dark:hover:bg-purple-900/40',
-  ghost: 'text-muted hover:bg-purple-50 hover:text-primary dark:hover:bg-purple-900/35',
+    'border border-border bg-background-secondary text-primary shadow-sm hover:border-slate-300 hover:bg-background-elevated',
+  ghost: 'text-secondary hover:bg-background-elevated hover:text-primary',
   positive: 'bg-success text-white hover:brightness-105',
   danger: 'bg-error text-white hover:brightness-105',
   destructive: 'bg-error text-white hover:brightness-105'
 } as const
 
 const BTN_SIZE = {
-  sm: 'min-h-9 px-3 text-xs rounded-md',
-  md: 'min-h-11 px-4 text-sm rounded-lg',
-  lg: 'min-h-12 px-6 text-base rounded-lg'
+  sm: 'min-h-10 px-3.5 text-[13px] rounded-lg',
+  md: 'min-h-11 px-4 text-[13px] rounded-lg',
+  lg: 'min-h-12 px-5 text-sm rounded-lg'
 } as const
 
 export type BtnVariant = keyof typeof BTN_VARIANT
@@ -209,7 +236,11 @@ export function Chip({
       type={type}
       aria-pressed={active}
       data-active={active ? 'true' : undefined}
-      className={cn('segmented-item capitalize', !active && 'bg-transparent', className)}
+      className={cn(
+        'segmented-item capitalize',
+        !active && 'bg-transparent',
+        className
+      )}
       {...props}
     >
       {children}
@@ -228,7 +259,11 @@ export function SegmentedTabs({
   className?: string
 }) {
   return (
-    <div role="tablist" aria-label={ariaLabel} className={cn('segmented', className)}>
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      className={cn('segmented', className)}
+    >
       {children}
     </div>
   )
@@ -258,7 +293,7 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return (
     <div
       role="status"
-      className="rounded-xl border border-dashed border-border bg-background-elevated/60 px-6 py-16 text-center type-muted"
+      className="type-muted rounded-xl border border-dashed border-border bg-background-elevated/60 px-6 py-16 text-center"
     >
       {children}
     </div>
@@ -291,7 +326,9 @@ export function Field({
 }) {
   return (
     <label className="block space-y-2" htmlFor={htmlFor}>
-      <span className="font-geist text-sm font-medium text-primary">{label}</span>
+      <span className="font-geist text-sm font-medium text-primary">
+        {label}
+      </span>
       {children}
       {error ? (
         <span className="block text-xs font-medium text-error" role="alert">
@@ -305,9 +342,15 @@ export function Field({
 }
 
 export const inputClass =
-  'w-full min-h-11 rounded-lg border border-border bg-background-secondary px-3.5 py-2.5 font-geist text-sm text-primary outline-none ui-transition placeholder:text-muted/55 focus:border-purple-400 focus:shadow-glow disabled:opacity-50'
+  'w-full min-h-11 rounded-lg border border-border bg-background-secondary px-3.5 py-2.5 font-geist text-sm text-primary outline-none ui-transition placeholder:text-muted/60 focus:border-brand focus:ring-[3px] focus:ring-brand/10 disabled:opacity-50'
 
-export function LoadingBlock({ rows = 3, className }: { rows?: number; className?: string }) {
+export function LoadingBlock({
+  rows = 3,
+  className
+}: {
+  rows?: number
+  className?: string
+}) {
   return (
     <div
       role="status"
@@ -319,7 +362,7 @@ export function LoadingBlock({ rows = 3, className }: { rows?: number; className
         <div
           key={index}
           className={cn(
-            'h-12 animate-pulse rounded-lg bg-purple-100/80 dark:bg-purple-900/40',
+            'h-12 animate-pulse rounded-lg bg-background-elevated',
             index === 1 && 'opacity-80',
             index === 2 && 'opacity-60',
             index >= 3 && 'opacity-45'
@@ -338,7 +381,12 @@ export function DataTable<T>({
   onRowClick
 }: {
   rows: T[]
-  columns: { key: string; header: string; render: (row: T) => ReactNode; className?: string }[]
+  columns: {
+    key: string
+    header: string
+    render: (row: T) => ReactNode
+    className?: string
+  }[]
   empty: string
   onRowClick?: (row: T) => void
 }) {
@@ -352,7 +400,7 @@ export function DataTable<T>({
               <th
                 key={column.key}
                 scope="col"
-                className="px-4 py-3 type-caption text-left"
+                className="whitespace-nowrap px-5 py-3.5 text-left font-geist text-[11px] font-semibold uppercase tracking-[0.075em] text-muted"
               >
                 {column.header}
               </th>
@@ -376,15 +424,18 @@ export function DataTable<T>({
               }
               tabIndex={onRowClick ? 0 : undefined}
               className={cn(
-                'border-b border-border/50 align-top ui-transition last:border-0',
+                'ui-transition border-b border-border/75 align-top last:border-0 odd:bg-background-secondary even:bg-background-elevated/35',
                 onRowClick &&
-                  'cursor-pointer hover:bg-purple-50/70 focus-visible:bg-purple-50/70 focus-visible:outline-none dark:hover:bg-purple-900/25 dark:focus-visible:bg-purple-900/25'
+                  'cursor-pointer hover:!bg-purple-50 focus-visible:!bg-purple-50 focus-visible:outline-none dark:hover:!bg-background-elevated dark:focus-visible:!bg-background-elevated'
               )}
             >
               {columns.map((column) => (
                 <td
                   key={column.key}
-                  className={cn('px-4 py-3.5 text-sm text-primary', column.className)}
+                  className={cn(
+                    'px-5 py-4 text-[13px] leading-[1.55] text-primary',
+                    column.className
+                  )}
                 >
                   {column.render(row)}
                 </td>

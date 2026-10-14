@@ -13,6 +13,7 @@ import {
   DataTable,
   ErrorNote,
   PageStack,
+  PageHeader,
   Panel,
   inputClass,
   modeTone,
@@ -46,12 +47,17 @@ function AuditView() {
   const [total, setTotal] = useState(0)
   const [selected, setSelected] = useState<AuditRow | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [retention, setRetention] = useState<{ audit_days: number; effective_days: number } | null>(null)
+  const [retention, setRetention] = useState<{
+    audit_days: number
+    effective_days: number
+  } | null>(null)
   const { hasRole } = useSession()
 
   useEffect(() => {
     void api
-      .get<{ audit_days: number; effective_days: number }>('/api/audit/retention')
+      .get<{ audit_days: number; effective_days: number }>(
+        '/api/audit/retention'
+      )
       .then(setRetention)
       .catch(() => undefined)
     void api
@@ -74,7 +80,9 @@ function AuditView() {
       setTotal(data.total)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not load the audit log')
+      setError(
+        err instanceof Error ? err.message : 'Could not load the audit log'
+      )
     }
   }, [filters])
 
@@ -88,8 +96,13 @@ function AuditView() {
 
   return (
     <PageStack>
+      <PageHeader
+        eyebrow="Activity & compliance"
+        title="Audit log"
+        description="Review actions, decisions, and tool activity across your workspace."
+      />
       <Panel
-        title="Audit"
+        title="Find events"
         description={`${total} events recorded in this workspace — who acted, what, with which tool, in which mode. Append-only: entries cannot be edited, and are deleted only by the retention rule${
           retention
             ? retention.effective_days > 0
@@ -103,7 +116,12 @@ function AuditView() {
               variant="secondary"
               size="sm"
               onClick={async () => {
-                if (!window.confirm(`Delete audit events older than ${retention.effective_days} days?`)) return
+                if (
+                  !window.confirm(
+                    `Delete audit events older than ${retention.effective_days} days?`
+                  )
+                )
+                  return
                 try {
                   await api.post('/api/audit/purge')
                   await load()
@@ -120,6 +138,7 @@ function AuditView() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-4">
           <select
             className={inputClass}
+            aria-label="Event type"
             value={filters.event_type}
             onChange={(event) => set('event_type', event.target.value)}
           >
@@ -133,48 +152,56 @@ function AuditView() {
           <input
             className={inputClass}
             placeholder="User id"
+            aria-label="User identifier"
             value={filters.user_id}
             onChange={(event) => set('user_id', event.target.value)}
           />
           <input
             className={inputClass}
             placeholder="Tool"
+            aria-label="Tool name"
             value={filters.tool}
             onChange={(event) => set('tool', event.target.value)}
           />
           <input
             className={inputClass}
             placeholder="Integration"
+            aria-label="Integration"
             value={filters.integration}
             onChange={(event) => set('integration', event.target.value)}
           />
           <input
             className={inputClass}
             placeholder="Workflow"
+            aria-label="Workflow identifier"
             value={filters.workflow_id}
             onChange={(event) => set('workflow_id', event.target.value)}
           />
           <input
             className={inputClass}
             placeholder="Status"
+            aria-label="Status"
             value={filters.status}
             onChange={(event) => set('status', event.target.value)}
           />
           <input
             className={inputClass}
             type="datetime-local"
+            aria-label="Start date and time"
             value={filters.date_from}
             onChange={(event) => set('date_from', event.target.value)}
           />
           <input
             className={inputClass}
             type="datetime-local"
+            aria-label="End date and time"
             value={filters.date_to}
             onChange={(event) => set('date_to', event.target.value)}
           />
           <input
             className={`${inputClass} col-span-2 md:col-span-4`}
             placeholder="Search text"
+            aria-label="Search audit events"
             value={filters.q}
             onChange={(event) => set('q', event.target.value)}
           />
@@ -189,23 +216,81 @@ function AuditView() {
           empty="No matching audit events."
           onRowClick={setSelected}
           columns={[
-            { key: 't', header: 'When', render: (r) => <span className="text-muted">{timestamp(r.created_at)}</span> },
-            { key: 'e', header: 'Event', render: (r) => <Badge tone="neutral">{r.event_type}</Badge> },
-            { key: 'u', header: 'User', render: (r) => <span className="text-muted">{r.user_id ?? '—'}</span> },
+            {
+              key: 't',
+              header: 'When',
+              render: (r) => (
+                <span className="text-muted">{timestamp(r.created_at)}</span>
+              )
+            },
+            {
+              key: 'e',
+              header: 'Event',
+              render: (r) => <Badge tone="neutral">{r.event_type}</Badge>
+            },
+            {
+              key: 'u',
+              header: 'User',
+              render: (r) => (
+                <span className="text-muted">{r.user_id ?? '—'}</span>
+              )
+            },
             { key: 'tool', header: 'Tool', render: (r) => r.tool ?? '—' },
             {
               key: 'm',
               header: 'Mode',
-              render: (r) => (r.execution_mode ? <Badge tone={modeTone(r.execution_mode)}>{r.execution_mode}</Badge> : '—')
+              render: (r) =>
+                r.execution_mode ? (
+                  <Badge tone={modeTone(r.execution_mode)}>
+                    {r.execution_mode}
+                  </Badge>
+                ) : (
+                  '—'
+                )
             },
             {
               key: 'd',
               header: 'Decision',
-              render: (r) => (r.decision ? <Badge tone={statusTone(r.decision === 'ALLOW' ? 'COMPLETED' : 'PENDING_APPROVAL')}>{r.decision}</Badge> : '—')
+              render: (r) =>
+                r.decision ? (
+                  <Badge
+                    tone={statusTone(
+                      r.decision === 'ALLOW' ? 'COMPLETED' : 'PENDING_APPROVAL'
+                    )}
+                  >
+                    {r.decision}
+                  </Badge>
+                ) : (
+                  '—'
+                )
             },
-            { key: 's', header: 'Status', render: (r) => (r.status ? <Badge tone={statusTone(r.status)}>{r.status}</Badge> : '—') },
-            { key: 'r', header: 'Risk', render: (r) => (r.risk_level ? <Badge tone={riskTone(r.risk_level)}>{r.risk_level}</Badge> : '—') },
-            { key: 'l', header: 'ms', render: (r) => <span className="text-muted">{r.latency_ms ?? '—'}</span> }
+            {
+              key: 's',
+              header: 'Status',
+              render: (r) =>
+                r.status ? (
+                  <Badge tone={statusTone(r.status)}>{r.status}</Badge>
+                ) : (
+                  '—'
+                )
+            },
+            {
+              key: 'r',
+              header: 'Risk',
+              render: (r) =>
+                r.risk_level ? (
+                  <Badge tone={riskTone(r.risk_level)}>{r.risk_level}</Badge>
+                ) : (
+                  '—'
+                )
+            },
+            {
+              key: 'l',
+              header: 'ms',
+              render: (r) => (
+                <span className="text-muted">{r.latency_ms ?? '—'}</span>
+              )
+            }
           ]}
         />
       </Panel>

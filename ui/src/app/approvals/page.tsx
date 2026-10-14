@@ -19,6 +19,7 @@ import {
   ErrorNote,
   LoadingBlock,
   PageStack,
+  PageHeader,
   SegmentedTab,
   SegmentedTabs,
   riskTone,
@@ -64,12 +65,15 @@ function ApprovalsView() {
   const [loading, setLoading] = useState(true)
 
   const canApprove = hasRole('APPROVER') || hasRole('ADMIN')
-  const canExecute = hasRole('OPERATOR') || hasRole('APPROVER') || hasRole('ADMIN')
+  const canExecute =
+    hasRole('OPERATOR') || hasRole('APPROVER') || hasRole('ADMIN')
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const path = filter ? `/api/approvals?status=${filter}` : '/api/approvals/all'
+      const path = filter
+        ? `/api/approvals?status=${filter}`
+        : '/api/approvals/all'
       const data = await api.get<{ items: ActionRecord[] }>(path)
       setItems(data.items)
       setError(null)
@@ -84,29 +88,25 @@ function ApprovalsView() {
     void load()
   }, [load])
 
-  const pendingCount =
-    filter === 'PENDING_APPROVAL' ? items.length : null
+  const pendingCount = filter === 'PENDING_APPROVAL' ? items.length : null
 
   return (
     <PageStack className="gap-5">
-      <header className="space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0 max-w-prose">
-            <h1 className="type-title">Approvals</h1>
-            <p className="type-muted mt-1.5">
-              Review what the assistant proposed before anything runs outside the
-              workspace.
-            </p>
-          </div>
-          {pendingCount !== null && !loading && (
-            <p className="shrink-0 font-dmmono text-xs uppercase tracking-wide text-muted">
+      <PageHeader
+        eyebrow="Action governance"
+        title="Approvals"
+        description="Review and decide on proposed actions before they are executed."
+        actions={
+          pendingCount !== null && !loading ? (
+            <Badge tone={pendingCount === 0 ? 'good' : 'warn'}>
               {pendingCount === 0
                 ? 'Queue clear'
-                : `${pendingCount} waiting`}
-            </p>
-          )}
-        </div>
-
+                : `${pendingCount} awaiting review`}
+            </Badge>
+          ) : undefined
+        }
+      />
+      <div className="-mt-2">
         <SegmentedTabs aria-label="Filter by status">
           {FILTERS.map((option) => (
             <SegmentedTab
@@ -118,7 +118,7 @@ function ApprovalsView() {
             </SegmentedTab>
           ))}
         </SegmentedTabs>
-      </header>
+      </div>
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {loading && <LoadingBlock rows={4} />}
@@ -166,9 +166,7 @@ function ActionCard({
   const headline =
     action.content?.headline?.trim() || action.title || action.tool
   const requester =
-    action.requested_by_name ||
-    action.requested_by_role ||
-    action.requested_by
+    action.requested_by_name || action.requested_by_role || action.requested_by
 
   async function act(path: string, body?: unknown) {
     setBusy(true)
@@ -191,7 +189,7 @@ function ActionCard({
   return (
     <article
       className={cn(
-        'overflow-hidden rounded-2xl border bg-background-secondary shadow-panel ui-transition',
+        'ui-transition overflow-hidden rounded-2xl border bg-background-secondary shadow-panel',
         pending
           ? 'border-purple-300 ring-1 ring-purple-200/80 dark:border-purple-700 dark:ring-purple-800/50'
           : 'border-border'
@@ -203,14 +201,16 @@ function ActionCard({
           <Badge tone={statusTone(action.status)}>
             {STATUS_LABEL[action.status] ?? action.status}
           </Badge>
-          <Badge tone={riskTone(action.risk_level)}>{action.risk_level} risk</Badge>
+          <Badge tone={riskTone(action.risk_level)}>
+            {action.risk_level} risk
+          </Badge>
           {action.domain && (
             <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 font-dmmono text-[10px] uppercase tracking-wide text-purple-800 dark:border-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
               {action.domain}
             </span>
           )}
         </div>
-        <h2 className="font-geist text-lg font-semibold leading-snug tracking-tight text-primary text-balance">
+        <h2 className="text-balance font-geist text-lg font-semibold leading-snug tracking-tight text-primary">
           {headline}
         </h2>
         {action.content?.headline &&
@@ -255,7 +255,8 @@ function ActionCard({
 
         {/* What happens if approved */}
         {action.content &&
-          (action.content.fields.length > 0 || action.content.lines.length > 0) && (
+          (action.content.fields.length > 0 ||
+            action.content.lines.length > 0) && (
             <section
               aria-label="What needs approval"
               className="rounded-xl border border-border bg-background-elevated/70 px-4 py-4"
@@ -284,7 +285,10 @@ function ActionCard({
                 <ul className="mt-3 space-y-1.5 border-t border-border pt-3 text-sm text-secondary">
                   {action.content.lines.map((line) => (
                     <li key={line} className="flex gap-2">
-                      <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand" aria-hidden />
+                      <span
+                        className="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand"
+                        aria-hidden
+                      />
                       <span>{line}</span>
                     </li>
                   ))}
@@ -297,14 +301,21 @@ function ActionCard({
         <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
           <Meta label="Tool" value={humanTool(action.tool)} mono />
           <Meta label="Domain" value={action.domain ?? '—'} />
-          <Meta label="Mode" value={action.execution_mode.replaceAll('_', ' ')} />
+          <Meta
+            label="Mode"
+            value={action.execution_mode.replaceAll('_', ' ')}
+          />
         </dl>
 
         {/* Policy reason — one calm callout */}
         {action.policy_reason && (
           <p className="rounded-xl border border-warning/25 bg-warning/5 px-4 py-3 text-sm leading-relaxed text-secondary">
-            <span className="font-medium text-warning">Why a decision is needed</span>
-            <span className="mt-1 block text-muted">{action.policy_reason}</span>
+            <span className="font-medium text-warning">
+              Why a decision is needed
+            </span>
+            <span className="mt-1 block text-muted">
+              {action.policy_reason}
+            </span>
           </p>
         )}
 
@@ -314,12 +325,12 @@ function ActionCard({
             type="button"
             aria-expanded={payloadOpen}
             onClick={() => setPayloadOpen((open) => !open)}
-            className="inline-flex items-center gap-2 font-geist text-xs font-medium text-muted ui-transition hover:text-primary"
+            className="ui-transition inline-flex items-center gap-2 font-geist text-xs font-medium text-muted hover:text-primary"
           >
             <span
               aria-hidden
               className={cn(
-                'inline-block ui-transition',
+                'ui-transition inline-block',
                 payloadOpen ? 'rotate-90' : 'rotate-0'
               )}
             >
@@ -356,7 +367,7 @@ function ActionCard({
                 onChange={(event) => setComment(event.target.value)}
                 placeholder="Add a comment (optional)"
                 aria-label="Optional comment"
-                className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-background-secondary px-3.5 font-geist text-sm text-primary outline-none ui-transition placeholder:text-muted/55 focus:border-brand-soft focus:shadow-glow"
+                className="ui-transition min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-background-secondary px-3.5 font-geist text-sm text-primary outline-none placeholder:text-muted/55 focus:border-brand-soft focus:shadow-glow"
               />
             )}
             <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-auto">
@@ -366,7 +377,9 @@ function ActionCard({
                     variant="danger"
                     size="md"
                     disabled={busy}
-                    onClick={() => void act('reject', { comment: comment || null })}
+                    onClick={() =>
+                      void act('reject', { comment: comment || null })
+                    }
                   >
                     Reject
                   </Btn>
@@ -374,14 +387,20 @@ function ActionCard({
                     variant="positive"
                     size="md"
                     disabled={busy}
-                    onClick={() => void act('approve', { comment: comment || null })}
+                    onClick={() =>
+                      void act('approve', { comment: comment || null })
+                    }
                   >
                     Approve
                   </Btn>
                 </>
               )}
               {approved && canExecute && (
-                <Btn size="md" disabled={busy} onClick={() => void act('execute')}>
+                <Btn
+                  size="md"
+                  disabled={busy}
+                  onClick={() => void act('execute')}
+                >
                   Execute now
                 </Btn>
               )}
