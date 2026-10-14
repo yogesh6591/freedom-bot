@@ -224,16 +224,27 @@ function AuditView() {
               )
             },
             {
+              key: 'person',
+              header: 'Person',
+              render: (r) => (
+                <span title={r.user_id ?? undefined}>
+                  {r.user_name || r.user_id || '—'}
+                </span>
+              )
+            },
+            {
+              key: 'what',
+              header: 'What',
+              render: (r) => (
+                <span className="max-w-[28rem] truncate" title={r.summary ?? undefined}>
+                  {r.summary || r.event_type}
+                </span>
+              )
+            },
+            {
               key: 'e',
               header: 'Event',
               render: (r) => <Badge tone="neutral">{r.event_type}</Badge>
-            },
-            {
-              key: 'u',
-              header: 'User',
-              render: (r) => (
-                <span className="text-muted">{r.user_id ?? '—'}</span>
-              )
             },
             { key: 'tool', header: 'Tool', render: (r) => r.tool ?? '—' },
             {

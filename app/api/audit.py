@@ -17,6 +17,80 @@ router = APIRouter(prefix="/api/audit", tags=["audit"])
 #: records. Viewers and drafters do not get it.
 _reader = require_role(Role.APPROVER, Role.OPERATOR, Role.ADMIN)
 
+#: Short human labels for the Audit UI "What" column.
+_EVENT_LABELS: dict[str, str] = {
+    "LOGIN": "Signed in",
+    "LOGIN_FAILED": "Failed sign-in",
+    "LOGOUT": "Signed out",
+    "KNOWLEDGE_LOOKUP": "Looked up knowledge",
+    "MEMORY_CREATED": "Created memory",
+    "MEMORY_CORRECTED": "Corrected memory",
+    "MEMORY_ARCHIVED": "Archived memory",
+    "MEMORY_READ": "Read memory",
+    "TOOL_CALL": "Called tool",
+    "ACTION_PROPOSED": "Proposed action",
+    "POLICY_DECISION": "Policy decision",
+    "APPROVAL_REQUESTED": "Requested approval",
+    "APPROVAL_GRANTED": "Approved action",
+    "APPROVAL_REJECTED": "Rejected action",
+    "APPROVAL_CHANGES_REQUESTED": "Requested changes",
+    "ACTION_EXECUTED": "Executed action",
+    "ACTION_FAILED": "Action failed",
+    "CONNECTOR_RESPONSE": "Connector response",
+    "WORKFLOW_STARTED": "Started workflow",
+    "WORKFLOW_COMPLETED": "Completed workflow",
+    "WORKFLOW_FAILED": "Workflow failed",
+    "CONFIG_CHANGED": "Changed configuration",
+    "HUMAN_REVIEW_CREATED": "Created review",
+    "HUMAN_REVIEW_RESOLVED": "Resolved review",
+    "GUARDRAIL_TRIGGERED": "Guardrail triggered",
+    "MEMORY_CONFLICT": "Memory conflict",
+    "CHANGE_ORDER": "Change order",
+    "DATA_SCOPES_CHANGED": "Changed data scopes",
+    "AUDIT_PURGED": "Purged audit log",
+}
+
+
+def _summary(row: dict[str, Any]) -> str:
+    """One-line description of what happened for the Audit table."""
+    event_type = str(row.get("event_type") or "")
+    label = _EVENT_LABELS.get(event_type) or event_type.replace("_", " ").title() or "Event"
+    parts = [label]
+    tool = row.get("tool")
+    if tool:
+        parts.append(str(tool))
+    decision = row.get("decision")
+    if decision:
+        parts.append(str(decision))
+    elif row.get("status") and event_type in {
+        "TOOL_CALL",
+        "ACTION_EXECUTED",
+        "ACTION_FAILED",
+        "POLICY_DECISION",
+        "WORKFLOW_COMPLETED",
+        "WORKFLOW_FAILED",
+    }:
+        parts.append(str(row["status"]))
+    return " · ".join(parts)
+
+
+def _enrich(rows: list[dict[str, Any]], ctx: TenantContext) -> list[dict[str, Any]]:
+    """Attach display name + summary so the UI can show who did what."""
+    from bizos.control import store as control
+
+    try:
+        users = {u.id: u for u in control.list_users(ctx.client_id)}
+    except Exception:
+        users = {}
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        user = users.get(row.get("user_id") or "")
+        item["user_name"] = (user.display_name or user.email) if user else None
+        item["summary"] = _summary(row)
+        out.append(item)
+    return out
+
 
 @router.get("")
 def search(
@@ -53,7 +127,11 @@ def search(
             limit=limit,
             offset=offset,
         )
-        return {"items": rows, "count": len(rows), "total": audit.count(ctx)}
+        return {
+            "items": _enrich(rows, ctx),
+            "count": len(rows),
+            "total": audit.count(ctx),
+        }
 
 
 @router.get("/event-types")

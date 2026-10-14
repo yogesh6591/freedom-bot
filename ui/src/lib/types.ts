@@ -159,6 +159,10 @@ export interface AuditRow {
   id: string
   event_type: string
   user_id: string | null
+  /** Resolved display name (or email) for the actor, when known. */
+  user_name?: string | null
+  /** One-line “what they did” for the table. */
+  summary?: string | null
   actor_role: string | null
   tool: string | null
   execution_mode?: string | null
