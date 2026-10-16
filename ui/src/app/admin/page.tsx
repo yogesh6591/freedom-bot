@@ -910,6 +910,11 @@ function Insights() {
   )
 }
 
+/** Display-only: show acme.com instead of acme.example.com on this screen. Login emails stay unchanged. */
+function displayEmail(email: string) {
+  return email.replace(/@([a-z0-9-]+)\.example\.com$/i, '@$1.com')
+}
+
 function Users() {
   const [users, setUsers] = useState<SessionUser[]>([])
   const [form, setForm] = useState({
@@ -976,7 +981,7 @@ function Users() {
           rows={users}
           empty="No users."
           columns={[
-            { key: 'e', header: 'Email', render: (u) => u.email },
+            { key: 'e', header: 'Email', render: (u) => displayEmail(u.email) },
             { key: 'n', header: 'Name', render: (u) => u.display_name },
             {
               key: 'r',
