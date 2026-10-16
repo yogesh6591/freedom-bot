@@ -8,6 +8,8 @@ from fastapi.testclient import TestClient
 
 from app.api.chat import (
     BIOMETRICS_REFUSAL,
+    CARD_DATA_REFUSAL,
+    CHILD_DATA_REFUSAL,
     PHI_REFUSAL,
     _regulated_data_refusal,
 )
@@ -129,6 +131,24 @@ def test_chat_refuses_regulated_data_before_the_model():
     # Talking about the business is not handing over regulated data.
     assert _regulated_data_refusal("Find our patient retention rate", default) is None
     assert _regulated_data_refusal("What did the diagnosis tool vendor charge?", default) is None
+
+    # Typed PHI / card / child / biometric payloads refuse even without "store".
+    assert _regulated_data_refusal(
+        "Is this patient diagnosis covered? Diagnosis: diabetes. MRN 998877.", default
+    ) == ("PHI_BLOCKED", PHI_REFUSAL)
+    assert _regulated_data_refusal("Store this card: 4111 1111 1111 1111", default) == (
+        "CARD_DATA_BLOCKED",
+        CARD_DATA_REFUSAL,
+    )
+    assert _regulated_data_refusal(
+        "What's the child's date of birth for this enrollment?", default
+    ) == ("CHILD_DATA_BLOCKED", CHILD_DATA_REFUSAL)
+    assert _regulated_data_refusal(
+        "Use this fingerprint biometric template for login.", default
+    ) == ("BIOMETRICS_BLOCKED", BIOMETRICS_REFUSAL)
+
+    card_ok = ClientSettings.from_dict({"order_dpa_allows": ["card"]})
+    assert _regulated_data_refusal("Store this card: 4111 1111 1111 1111", card_ok) is None
 
 
 def test_settings_api_edits_the_one_order_dpa_setting(app_client, client_a, restore):

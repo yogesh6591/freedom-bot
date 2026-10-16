@@ -71,6 +71,53 @@ def test_grounding_hides_conflicted_facts_and_names_the_conflict(client_a, ctx_f
     assert "Fact: Receipts required over $25" not in grounded.text
 
 
+def test_unrelated_conflict_sharing_one_word_does_not_hijack_the_answer(client_a, ctx_factory):
+    admin = ctx_factory(client_a, "admin")
+    with tenant_scope(admin):
+        for key, value in (("m04_intake_a", "one business day"), ("m04_intake_b", "two business days")):
+            memory.put(
+                category=MemoryCategory.SOP, memory_key=key, title="Inbound intake reply",
+                content=f"Reply to every inbound intake request within {value}.",
+                attributes={"topic": "inbound_intake_m04"}, settings=client_a.settings, ctx=admin,
+            )
+        memory.put(
+            category=MemoryCategory.SOP, memory_key="m04_dock_claims", title="Dock damage claims",
+            content="Damaged pallets go to bay 14 and the carrier claim is filed within 48 hours.",
+            settings=client_a.settings, ctx=admin,
+        )
+        grounded = grounding.analyze(
+            admin,
+            "Within how many hours must the carrier claim be filed for a damaged pallet?",
+            list(client_a.settings.enabled_domains),
+        )
+    assert not any(c["topic"] == "inbound_intake_m04" for c in grounded.conflicts)
+    assert "48 hours" in grounded.text
+
+
+def test_conflict_named_by_its_subject_still_escalates_when_another_record_matches_better(
+    client_a, ctx_factory
+):
+    admin = ctx_factory(client_a, "admin")
+    with tenant_scope(admin):
+        for key, value in (("m04_mileage_a", "$0.50"), ("m04_mileage_b", "$0.70")):
+            memory.put(
+                category=MemoryCategory.FACT, memory_key=key, title="Mileage rate",
+                content=f"Mileage is reimbursed at {value} per mile.",
+                attributes={"topic": "mileage_rate_m04"}, settings=client_a.settings, ctx=admin,
+            )
+        memory.put(
+            category=MemoryCategory.SOP, memory_key="m04_driver_expense_claims", title="Driver expense claims",
+            content="Drivers submit expense claims weekly through the driver portal with trip logs.",
+            settings=client_a.settings, ctx=admin,
+        )
+        grounded = grounding.analyze(
+            admin,
+            "A driver submitted expense claims for 100 miles. What mileage do we pay under the driver policy?",
+            list(client_a.settings.enabled_domains),
+        )
+    assert any(c["topic"] == "mileage_rate_m04" for c in grounded.conflicts)
+
+
 def test_enforce_conflicts_rewrites_silent_choice():
     conflicts = [
         {

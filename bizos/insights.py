@@ -24,34 +24,6 @@ from bizos.tenancy.context import TenantContext
 from bizos.types import ExecutionMode
 from bizos.util.timeutil import utcnow
 
-#: Default Acme alerts (FB-041). Rare, directional — not an always-on engine.
-DEFAULT_ALERTS: list[dict[str, Any]] = [
-    {
-        "id": "alert_payroll_delay",
-        "title": "Payroll still waiting on attendance",
-        "detail": (
-            "Month-end payroll draft often sits 2–3 days after attendance upload "
-            "while exceptions are cleared by hand."
-        ),
-        "directional_cost": "~$1.2k/mo in delayed close + overtime chase",
-        "status": "open",
-        "source": "demo",
-        "access_area": "ops",
-    },
-    {
-        "id": "alert_expensive_on_routine",
-        "title": "Senior time on routine SOP replay",
-        "detail": (
-            "Leads re-explain the payroll-from-attendance steps each month instead "
-            "of reusing the recorded process."
-        ),
-        "directional_cost": "~4–6 senior hrs/mo on work the SOP already covers",
-        "status": "open",
-        "source": "demo",
-        "access_area": "ops",
-    },
-]
-
 #: Default Acme baseline for one sold workflow (FB-050). Directional only.
 DEFAULT_BASELINES: list[dict[str, Any]] = [
     {
@@ -82,26 +54,15 @@ def _save_onboarding(
     return updated.settings
 
 
-_DEMO_AREAS = {a["id"]: a.get("access_area") for a in DEFAULT_ALERTS}
-
-
-def _with_area(alert: dict[str, Any]) -> dict[str, Any]:
-    """Demo alerts stored before areas existed still carry their area."""
-    if "access_area" not in alert and alert.get("id") in _DEMO_AREAS:
-        alert = {**alert, "access_area": _DEMO_AREAS[alert["id"]], "source": "demo"}
-    return alert
-
-
 def list_alerts(settings: ClientSettings) -> list[dict[str, Any]]:
-    """Open + dismissed alerts recorded for *this* client.
+    """Alerts detected from *this* client's own data.
 
-    A client with nothing stored has no alerts. The Acme demo alerts are seeded
-    explicitly by :func:`ensure_default_alerts`; they are never a fallback, or
-    every new client would show another company's payroll findings.
+    A client with nothing stored has no alerts. Hand-written demo alerts from
+    older versions are not shown: every alert must come from a scan.
     """
     raw = _blob(settings).get("inefficiency_alerts")
     if isinstance(raw, list):
-        return [_with_area(dict(a)) for a in raw if isinstance(a, dict)]
+        return [dict(a) for a in raw if isinstance(a, dict) and a.get("source") == "scan"]
     return []
 
 
@@ -155,6 +116,18 @@ QUESTION_WINDOW_DAYS = 30
 FAILURE_WINDOW_DAYS = 14
 #: A dismissed alert is not raised again for this long, however often it recurs.
 SNOOZE_DAYS = 30
+#: Unapproved memory older than this is knowledge nobody can rely on yet.
+PENDING_MEMORY_DAYS = 3
+ACTION_WINDOW_DAYS = 30
+#: Share of a question's key words a memory item must contain to count as answering it.
+COVERAGE_RATIO = 0.6
+#: Directional blended hourly cost, overridable per client in onboarding.hourly_rates.
+DEFAULT_HOURLY_RATES = {"senior": 120.0, "staff": 45.0}
+#: Directional minutes of human effort per occurrence.
+MINUTES_PER_REPEAT_ANSWER = 15
+MINUTES_PER_ROUTINE_ACTION = 10
+MINUTES_PER_ROUTINE_APPROVAL = 5
+SENIOR_ROLES = ("ADMIN",)
 
 _STOPWORDS = frozenset(
     "a an and are be can do does for from how i in is it me my of on or our please should "
@@ -228,7 +201,59 @@ def _approval_delay_findings(ctx: TenantContext) -> list[dict[str, Any]]:
     return out
 
 
-def _repeated_question_findings(ctx: TenantContext) -> list[dict[str, Any]]:
+def _rates(settings: Optional[ClientSettings]) -> dict[str, float]:
+    rates = dict(DEFAULT_HOURLY_RATES)
+    custom = _blob(settings).get("hourly_rates") if settings else None
+    if isinstance(custom, dict):
+        for key in rates:
+            try:
+                value = float(custom.get(key))
+            except (TypeError, ValueError):
+                continue
+            if value > 0:
+                rates[key] = value
+    return rates
+
+
+def _dollars(minutes: float, rate: float) -> str:
+    amount = minutes / 60 * rate
+    if amount >= 1000:
+        return f"~${amount / 1000:.1f}k"
+    return f"~${amount:.0f}"
+
+
+def _words(text_: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", (text_ or "").casefold()) if w not in _STOPWORDS}
+
+
+def _approved_memory(ctx: TenantContext) -> list[tuple[str, set[str]]]:
+    """Titles and words of every approved, current memory item (facts, SOPs, decisions)."""
+    from bizos.tenancy.registry import workspace_connection
+
+    with workspace_connection(ctx, readonly=True) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT i.title, v.content FROM memory_items i JOIN memory_versions v "
+                "ON v.item_id = i.id WHERE v.status = 'ACTIVE' AND v.approval_status = 'APPROVED'"
+            )
+        ).fetchall()
+    return [(r.title, _words(f"{r.title} {r.content}")) for r in rows]
+
+
+def _covered_by(key: str, memory: list[tuple[str, set[str]]]) -> Optional[str]:
+    words = set(key.split())
+    if len(words) < 2:
+        return None
+    for title, mem_words in memory:
+        if len(words & mem_words) / len(words) >= COVERAGE_RATIO:
+            return title
+    return None
+
+
+def _repeated_question_findings(
+    ctx: TenantContext, settings: Optional[ClientSettings] = None
+) -> list[dict[str, Any]]:
+    """Trapped knowledge: the same question from several people, with no approved answer in memory."""
     from bizos import chat_history
     from bizos.tenancy.registry import workspace_connection
 
@@ -246,13 +271,19 @@ def _repeated_question_findings(ctx: TenantContext) -> list[dict[str, Any]]:
         key = _question_key(r.content)
         if len(key.split()) >= 2:
             groups.setdefault(key, []).append((r.user_id, r.content))
+    memory = _approved_memory(ctx) if groups else []
+    rate = _rates(settings)["staff"]
     out = []
     for key, asks in groups.items():
         people = {u for u, _ in asks}
         if len(asks) < MIN_OCCURRENCES or len(people) < 2:
             continue
+        # Memory already holds an approved answer: the assistant answers it, no waste.
+        if _covered_by(key, memory):
+            continue
         example = asks[0][1].strip()
         example = example[:120] + ("…" if len(example) > 120 else "")
+        minutes = len(asks) * MINUTES_PER_REPEAT_ANSWER
         out.append(
             {
                 "id": "scan_repeated_question_" + re.sub(r"[^a-z0-9]+", "_", key)[:60],
@@ -260,12 +291,13 @@ def _repeated_question_findings(ctx: TenantContext) -> list[dict[str, Any]]:
                 "title": "Same question keeps coming up",
                 "detail": (
                     f"Asked {len(asks)} times by {len(people)} people in the last "
-                    f"{QUESTION_WINDOW_DAYS} days, e.g. “{example}”. The answer may live in "
-                    "someone's head — consider recording it as an SOP."
+                    f"{QUESTION_WINDOW_DAYS} days, e.g. “{example}”. No approved fact or SOP "
+                    "in memory answers it, so the answer lives in someone's head — consider "
+                    "recording it as an SOP."
                 ),
                 "directional_cost": (
-                    f"~{len(asks) * 15} minutes of repeated explaining in {QUESTION_WINDOW_DAYS} "
-                    "days (directional estimate)"
+                    f"{_dollars(minutes, rate)} (~{minutes} min of repeated explaining) in "
+                    f"{QUESTION_WINDOW_DAYS} days (directional estimate)"
                 ),
                 "evidence": {"count": len(asks), "people": len(people)},
                 "score": float(len(asks) * len(people)),
@@ -273,6 +305,136 @@ def _repeated_question_findings(ctx: TenantContext) -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+def _pending_memory_findings(ctx: TenantContext) -> list[dict[str, Any]]:
+    """Knowledge recorded but never approved — or stuck in a conflict — so nobody can rely on it."""
+    from bizos.tenancy.registry import workspace_connection
+
+    with workspace_connection(ctx, readonly=True) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT i.id, i.title, i.access_area, v.created_at, "
+                "(v.attributes ? 'conflict_with') AS conflict "
+                "FROM memory_items i JOIN memory_versions v ON v.item_id = i.id "
+                "WHERE v.status = 'ACTIVE' AND v.approval_status = 'PENDING' "
+                "AND v.created_at <= NOW() - make_interval(days => :d)"
+            ),
+            {"d": PENDING_MEMORY_DAYS},
+        ).fetchall()
+    if len(rows) < MIN_OCCURRENCES:
+        return []
+    conflicts = sum(1 for r in rows if r.conflict)
+    titles = ", ".join(sorted({r.title for r in rows})[:4])
+    areas = {r.access_area for r in rows}
+    return [
+        {
+            "id": "scan_pending_memory",
+            "kind": "pending_memory",
+            "title": "Recorded knowledge waiting on approval",
+            "detail": (
+                f"{len(rows)} memory items have waited over {PENDING_MEMORY_DAYS} days for "
+                f"approval ({conflicts} of them conflicting policies), e.g. {titles}. Until "
+                "someone approves them the assistant can only give them as estimates."
+            ),
+            "directional_cost": (
+                "Answers on these topics stay estimates instead of facts (directional, not measured)"
+            ),
+            "evidence": {"count": len(rows), "conflicts": conflicts, "item_ids": [r.id for r in rows][:10]},
+            "score": float(len(rows) + conflicts * 2),
+            "access_area": next(iter(areas)) if len(areas) == 1 else None,
+        }
+    ]
+
+
+def _senior_routine_findings(
+    ctx: TenantContext, settings: Optional[ClientSettings] = None
+) -> list[dict[str, Any]]:
+    """Expensive people on routine work: senior roles repeatedly running the same low-risk tool."""
+    from bizos.rbac.registry import get_spec
+    from bizos.tenancy.registry import workspace_connection
+
+    with workspace_connection(ctx, readonly=True) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT tool, COUNT(*) AS n, COUNT(DISTINCT requested_by) AS people "
+                "FROM actions WHERE requested_by_role = ANY(:roles) AND risk_level = 'LOW' "
+                "AND status <> 'CANCELLED' "
+                "AND created_at >= NOW() - make_interval(days => :d) GROUP BY tool"
+            ),
+            {"roles": list(SENIOR_ROLES), "d": ACTION_WINDOW_DAYS},
+        ).fetchall()
+    rate = _rates(settings)["senior"]
+    out = []
+    for r in rows:
+        if r.n < MIN_OCCURRENCES:
+            continue
+        spec = get_spec(r.tool)
+        label = spec.title if spec else r.tool
+        minutes = r.n * MINUTES_PER_ROUTINE_ACTION
+        out.append(
+            {
+                "id": f"scan_senior_routine_{r.tool}",
+                "kind": "senior_routine",
+                "title": "Senior time on routine work",
+                "detail": (
+                    f"Admins ran “{label}” {r.n} times in the last {ACTION_WINDOW_DAYS} days. "
+                    "It is low-risk and repeatable — an operator or the assistant within scope "
+                    "could take it."
+                ),
+                "directional_cost": (
+                    f"{_dollars(minutes, rate)} of senior time (~{minutes} min) in "
+                    f"{ACTION_WINDOW_DAYS} days (directional estimate)"
+                ),
+                "evidence": {"count": r.n, "people": r.people, "tool": r.tool},
+                "score": float(r.n) * 1.5,
+                "access_area": spec.data_area if spec else None,
+            }
+        )
+    return out
+
+
+def _routine_approval_findings(
+    ctx: TenantContext, settings: Optional[ClientSettings] = None
+) -> list[dict[str, Any]]:
+    """Delays from people approving low-risk actions one by one."""
+    from bizos.tenancy.registry import workspace_connection
+
+    with workspace_connection(ctx, readonly=True) as conn:
+        rows = conn.execute(
+            text(
+                "SELECT a.tool, COUNT(*) AS n FROM approval_requests r "
+                "JOIN actions a ON a.id = r.action_id WHERE a.risk_level = 'LOW' "
+                "AND r.status = 'APPROVED' AND r.decided_at IS NOT NULL "
+                "AND r.created_at >= NOW() - make_interval(days => :d) GROUP BY a.tool"
+            ),
+            {"d": ACTION_WINDOW_DAYS},
+        ).fetchall()
+    total = sum(r.n for r in rows)
+    if total < MIN_OCCURRENCES * 2:
+        return []
+    rate = _rates(settings)["senior"]
+    minutes = total * MINUTES_PER_ROUTINE_APPROVAL
+    tools = ", ".join(sorted(r.tool for r in rows)[:4])
+    return [
+        {
+            "id": "scan_routine_approvals",
+            "kind": "routine_approvals",
+            "title": "Low-risk actions all approved by hand",
+            "detail": (
+                f"{total} low-risk actions were approved one by one in the last "
+                f"{ACTION_WINDOW_DAYS} days ({tools}). If these are routinely approved, raising "
+                "the auto ceiling for these tools would remove the wait."
+            ),
+            "directional_cost": (
+                f"{_dollars(minutes, rate)} of approver time (~{minutes} min) in "
+                f"{ACTION_WINDOW_DAYS} days (directional estimate)"
+            ),
+            "evidence": {"count": total, "tools": [r.tool for r in rows]},
+            "score": float(total),
+            "access_area": None,
+        }
+    ]
 
 
 def _failure_findings(ctx: TenantContext) -> list[dict[str, Any]]:
@@ -317,7 +479,12 @@ def scan_alerts(
     resolved instead of lingering. Figures are directional, never promised.
     """
     findings = (
-        _approval_delay_findings(ctx) + _repeated_question_findings(ctx) + _failure_findings(ctx)
+        _approval_delay_findings(ctx)
+        + _repeated_question_findings(ctx, settings)
+        + _pending_memory_findings(ctx)
+        + _senior_routine_findings(ctx, settings)
+        + _routine_approval_findings(ctx, settings)
+        + _failure_findings(ctx)
     )
     now = utcnow()
     found_ids = {f["id"] for f in findings}
@@ -346,13 +513,11 @@ def scan_alerts(
 
     # Keep it rare: only the most material detected alerts are current.
     candidates = sorted(
-        (a for a in stored.values() if a.get("source") == "scan" and a.get("status") in {"open", "held"}),
+        (a for a in stored.values() if a.get("status") in {"open", "held"}),
         key=lambda a: -float(a.get("score") or 0),
     )
-    demo_open = sum(1 for a in stored.values() if a.get("source") != "scan" and a.get("status", "open") == "open")
-    slots = max(0, MAX_OPEN_ALERTS - demo_open)
     for index, alert in enumerate(candidates):
-        alert["status"] = "open" if index < slots else "held"
+        alert["status"] = "open" if index < MAX_OPEN_ALERTS else "held"
 
     alerts = list(stored.values())
     _save_onboarding(
@@ -368,14 +533,19 @@ def last_scanned(settings: ClientSettings) -> Optional[str]:
     return _blob(settings).get("alerts_scanned_at")
 
 
-def ensure_default_alerts(
-    *, client_id: str, settings: ClientSettings, actor: str = "__bootstrap__"
-) -> None:
-    if _blob(settings).get("inefficiency_alerts"):
-        return
-    _save_onboarding(
-        client_id, settings, {"inefficiency_alerts": list(DEFAULT_ALERTS)}, actor=actor
-    )
+#: Alerts are rescanned on read once the last scan is older than this.
+RESCAN_MINUTES = 15
+
+
+def refresh_if_stale(
+    *, client_id: str, settings: ClientSettings, ctx: TenantContext
+) -> ClientSettings:
+    """Rescan when the stored alerts are older than ``RESCAN_MINUTES``; return current settings."""
+    scanned = last_scanned(settings)
+    if scanned and datetime.fromisoformat(scanned) >= utcnow() - timedelta(minutes=RESCAN_MINUTES):
+        return settings
+    scan_alerts(client_id=client_id, settings=settings, ctx=ctx)
+    return control.get_client(client_id).settings
 
 
 def _metric_number(value: Any) -> Optional[float]:

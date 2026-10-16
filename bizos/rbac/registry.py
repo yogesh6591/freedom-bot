@@ -266,6 +266,29 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         always_requires_approval=True,
         tags=frozenset({"write", "memory", "conflict"}),
     ),
+    # ------------------------------------------------------------ support
+    _spec(
+        "support_create_ticket",
+        "Raise a support ticket",
+        "Open a ticket with Cepoch support for a problem with FreedomBot or the platform "
+        "(something broken, access, setup, how-to). Routed to Cepoch, never to Jeanne. "
+        "Not for buying, pricing or upgrades.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        write=True,
+        risk=RiskLevel.LOW,
+        permissions=matrix.REQUEST_ALL,
+        draft_safe=True,
+        tags=frozenset({"write", "support"}),
+    ),
+    _spec(
+        "support_my_tickets",
+        "List my support tickets",
+        "List the support tickets this user raised, with status and latest update.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        tags=frozenset({"read", "support"}),
+    ),
     # --------------------------------------------------------------- CRM
     _spec(
         "crm_search_contacts",

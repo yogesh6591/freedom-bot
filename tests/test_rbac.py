@@ -42,7 +42,8 @@ def test_viewer_never_sees_a_write_tool(client_a, scope_factory):
     scope = scope_factory(client_a, "viewer", mode=ExecutionMode.AUTO_WITHIN_SCOPE)
     with tenant_scope(scope.ctx):
         specs = visible_specs(scope, [get_pack("sales"), get_pack("general")])
-    assert [s.name for s in specs if s.write] == []
+    # Asking Cepoch for help (FB-046) changes no business record.
+    assert [s.name for s in specs if s.write] == ["support_create_ticket"]
 
 
 @pytest.mark.parametrize(

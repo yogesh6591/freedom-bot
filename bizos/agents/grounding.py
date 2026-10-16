@@ -459,12 +459,22 @@ def _relevant_conflicts(
         return []
     if not all_conflicts:
         return []
-    scored_ids = {i.id for i, _ in scored}
+    # A conflict replaces the whole reply, so a retrieved item drags its conflict in
+    # only when it is a real match: several shared words, the best match, or a
+    # shared word that names the conflict's subject — not one generic word in a
+    # long question ("within", "day") while another record answers it far better.
+    best = max((len(h) for _, h in scored), default=0)
+    hits_by_id = {i.id: h for i, h in scored}
     query_l = (query or "").casefold()
     out: list[dict[str, Any]] = []
     for conflict in all_conflicts:
-        item_ids = {entry["item_id"] for entry in conflict["items"]}
-        if item_ids & scored_ids:
+        subject = " ".join(
+            [conflict.get("topic") or "", *(str(e.get("title") or "") for e in conflict["items"])]
+        ).casefold()
+        if any(
+            len(h) >= 2 or len(h) == best or any(memory._hits(w, subject) for w in h)
+            for h in (hits_by_id[e["item_id"]] for e in conflict["items"] if e["item_id"] in hits_by_id)
+        ):
             out.append(conflict)
             continue
         haystack = " ".join(

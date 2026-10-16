@@ -44,6 +44,10 @@ READ_ALL = _matrix(P.ALLOWED, P.ALLOWED, P.ALLOWED, P.ALLOWED)
 #: pull raw sensitive records.
 READ_SENSITIVE = _matrix(P.DENIED, P.ALLOWED, P.ALLOWED, P.ALLOWED)
 
+#: Asking Cepoch for help (FB-046). Anyone who can use the workspace may raise
+#: a support ticket; it changes no business record.
+REQUEST_ALL = _matrix(P.ALLOWED, P.ALLOWED, P.ALLOWED, P.ALLOWED)
+
 #: Low-risk writes confined to the workspace (an internal note, a task, a tag).
 #: Nothing leaves the customer's own database.
 WRITE_INTERNAL = _matrix(P.DENIED, P.ALLOWED, P.ALLOWED, P.ALLOWED)
@@ -75,6 +79,7 @@ MATRIX_TEMPLATES: Mapping[str, Mapping[Role, ToolPermission]] = MappingProxyType
     {
         "READ_ALL": READ_ALL,
         "READ_SENSITIVE": READ_SENSITIVE,
+        "REQUEST_ALL": REQUEST_ALL,
         "WRITE_INTERNAL": WRITE_INTERNAL,
         "DRAFT_ONLY_WRITE": DRAFT_ONLY_WRITE,
         "WRITE_PROTECTED": WRITE_PROTECTED,

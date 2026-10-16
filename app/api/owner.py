@@ -28,8 +28,10 @@ _bearer = HTTPBearer(auto_error=False)
 
 
 class PortfolioBody(BaseModel):
-    implementation_status: str = "live"
-    account_risk: str = "healthy"
+    """Jeanne's override. Leave a field empty to go back to the derived value."""
+
+    implementation_status: Optional[str] = None
+    account_risk: Optional[str] = None
     owner_notes: str = Field(default="", max_length=2000)
 
 

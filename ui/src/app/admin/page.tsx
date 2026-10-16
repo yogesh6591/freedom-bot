@@ -4,12 +4,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { AppShell } from '@/components/AppShell'
+import { PricingStudio } from '@/components/admin/Pricing'
 import { api } from '@/lib/api'
 import type { DomainPack, Role, SessionUser } from '@/lib/types'
 import {
   Badge,
   Btn,
-  Chip,
   DataTable,
   ErrorNote,
   Field,
@@ -132,12 +132,7 @@ function AdminView() {
       {tab === 'setup' && <Setup />}
       {tab === 'insights' && <Insights />}
       {tab === 'launch' && <LaunchChecklist />}
-      {tab === 'pricing' && (
-        <>
-          <ResalePricing />
-          <ConsultPricing />
-        </>
-      )}
+      {tab === 'pricing' && <PricingStudio />}
       {tab === 'users' && <Users />}
       {tab === 'policies' && <Policies />}
       {tab === 'domains' && <Domains />}
@@ -608,8 +603,18 @@ interface InsightAlert {
   directional_cost?: string
   status?: string
   source?: string
+  kind?: string
   access_area?: string | null
   last_seen_at?: string
+}
+
+const ALERT_KIND_LABEL: Record<string, string> = {
+  repeated_question: 'From chat questions not answered by memory',
+  pending_memory: 'From memory awaiting approval',
+  senior_routine: 'From user actions',
+  routine_approvals: 'From the approval queue',
+  approval_delay: 'From the approval queue',
+  action_failures: 'From user actions'
 }
 
 const ALERT_STATUS_LABEL: Record<string, string> = {
@@ -756,9 +761,7 @@ function Insights() {
                   <p className="mt-1 text-[10px] uppercase text-muted/70">
                     {ALERT_STATUS_LABEL[alert.status || 'open'] ?? alert.status}
                     {' · '}
-                    {alert.source === 'scan'
-                      ? 'Detected from your data'
-                      : 'Demo example'}
+                    {ALERT_KIND_LABEL[alert.kind || ''] ?? 'Detected from your data'}
                     {alert.access_area
                       ? ` · visible to ${alert.access_area} area`
                       : ''}
@@ -904,447 +907,6 @@ function Insights() {
         </div>
       </Panel>
     </>
-  )
-}
-
-function ResalePricing() {
-  const [customerPrice, setCustomerPrice] = useState('')
-  const [cost, setCost] = useState('')
-  const [status, setStatus] = useState('pending_venu_confirm')
-  const [notes, setNotes] = useState('')
-  const [rules, setRules] = useState<{
-    disclaimer?: string
-    price_set_by?: string
-    confirm_by?: string
-    margin_percent?: number
-    allow_public_package_price?: boolean
-    allow_per_seat_pricing?: boolean
-    forbid_legacy_prices?: boolean
-    forbidden_legacy_examples?: string[]
-    placeholder?: boolean
-    configured?: boolean
-  } | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [note, setNote] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    try {
-      const data = await api.get<{
-        rules: {
-          customer_price_usd: number | null
-          cepoch_cost_usd: number | null
-          configured?: boolean
-          quote_status: string
-          notes: string
-          disclaimer?: string
-          price_set_by?: string
-          confirm_by?: string
-          margin_percent?: number
-          allow_public_package_price?: boolean
-          allow_per_seat_pricing?: boolean
-          forbid_legacy_prices?: boolean
-          forbidden_legacy_examples?: string[]
-          placeholder?: boolean
-        }
-      }>('/api/pricing/resale-rules')
-      const r = data.rules
-      setRules(r)
-      // No rule stored means no price — never pre-fill a demo number.
-      setCustomerPrice(
-        r.customer_price_usd != null ? String(r.customer_price_usd) : ''
-      )
-      setCost(r.cepoch_cost_usd != null ? String(r.cepoch_cost_usd) : '')
-      setStatus(
-        r.configured === false
-          ? 'draft'
-          : r.quote_status || 'pending_venu_confirm'
-      )
-      setNotes(r.notes || '')
-      setError(null)
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Could not load resale rules'
-      )
-    }
-  }, [])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  async function save() {
-    setBusy(true)
-    setNote(null)
-    setError(null)
-    try {
-      const data = await api.put<{
-        rules: { margin_percent?: number; disclaimer?: string }
-      }>('/api/pricing/resale-rules', {
-        customer_price_usd: Number(customerPrice),
-        cepoch_cost_usd: Number(cost),
-        quote_status: status,
-        notes
-      })
-      setRules((prev) => ({ ...(prev || {}), ...data.rules }))
-      setNote(
-        `Saved. Margin ${data.rules.margin_percent ?? '—'}%. Placeholder until Jeanne + Venu confirm.`
-      )
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const priceN = Number(customerPrice) || 0
-  const costN = Number(cost) || 0
-  const bothEntered = customerPrice.trim() !== '' && cost.trim() !== ''
-  const liveMargin =
-    bothEntered && priceN > 0
-      ? (((priceN - costN) / priceN) * 100).toFixed(1)
-      : '—'
-
-  return (
-    <Panel
-      title="Resale price rules (FB-048)"
-      description="JeanneCAIO sets customer price and margin. Venu confirms. No public package price, no per-seat, no legacy $2K/$75K lists."
-    >
-      <div className="mb-4 rounded-lg border border-brand/30 bg-brand/10 px-3 py-2 text-xs text-brand-soft">
-        {rules?.disclaimer ||
-          'Placeholder face values for FB-048. Replace after JeanneCAIO + Venu confirm. Not a public price list.'}
-      </div>
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {note && <p className="mb-3 text-xs text-positive">{note}</p>}
-      {rules?.configured === false && (
-        <p className="mb-3 text-xs text-muted">
-          No resale price is set for this client yet. Quotes stay unavailable
-          until you enter one.
-        </p>
-      )}
-
-      <div className="mb-4 grid gap-2 text-[11px] text-muted md:grid-cols-2">
-        <p>
-          Price set by:{' '}
-          <span className="font-geist text-primary">
-            {rules?.price_set_by || 'JeanneCAIO'}
-          </span>
-        </p>
-        <p>
-          Confirm by:{' '}
-          <span className="font-geist text-primary">
-            {rules?.confirm_by || 'Venu'}
-          </span>
-        </p>
-        <p>
-          Public package price:{' '}
-          <strong className="text-primary">forbidden</strong>
-        </p>
-        <p>
-          Per-seat pricing: <strong className="text-primary">forbidden</strong>
-        </p>
-        <p className="md:col-span-2">
-          Legacy prices blocked:{' '}
-          {(
-            rules?.forbidden_legacy_examples || [
-              '$2K',
-              '$75K',
-              'module package list'
-            ]
-          ).join(' · ')}
-        </p>
-      </div>
-
-      <div className="space-y-3">
-        <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Customer price USD (face)">
-            <input
-              className={inputClass}
-              type="number"
-              value={customerPrice}
-              onChange={(e) => setCustomerPrice(e.target.value)}
-            />
-          </Field>
-          <Field label="Cepoch cost USD (face)">
-            <input
-              className={inputClass}
-              type="number"
-              value={cost}
-              onChange={(e) => setCost(e.target.value)}
-            />
-          </Field>
-          <Field label="Margin % (auto)">
-            <input className={inputClass} value={liveMargin} readOnly />
-          </Field>
-        </div>
-        <Field label="Quote status">
-          <select
-            className={inputClass}
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-          >
-            <option value="draft">Draft</option>
-            <option value="pending_venu_confirm">Pending Venu confirm</option>
-            <option value="venu_confirmed">Venu confirmed</option>
-          </select>
-        </Field>
-        <Field label="Notes">
-          <textarea
-            className={`${inputClass} min-h-[64px]`}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </Field>
-        <Btn
-          disabled={busy || !bothEntered}
-          onClick={() => void save()}
-          size="sm"
-        >
-          {busy ? 'Saving…' : 'Save face quote'}
-        </Btn>
-      </div>
-    </Panel>
-  )
-}
-
-const BASE_DOMAINS = [
-  'general',
-  'operations',
-  'sales',
-  'intake',
-  'planning'
-] as const
-const ADDON_DOMAINS = ['strategy', 'finance', 'brand', 'legal'] as const
-const AUTONOMY_MODES = [
-  'ADVISE',
-  'DRAFT',
-  'WAIT_FOR_APPROVAL',
-  'AUTO_WITHIN_SCOPE'
-] as const
-
-function ConsultPricing() {
-  const [addons, setAddons] = useState<string[]>([])
-  const [autonomy, setAutonomy] = useState('WAIT_FOR_APPROVAL')
-  const [integrations, setIntegrations] = useState('2')
-  const [label, setLabel] = useState('Face consult quote')
-  const [config, setConfig] = useState<{
-    disclaimer?: string
-    addon_usd?: Record<string, number>
-    autonomy_factor?: Record<string, number>
-    integrations_included?: number
-    integration_usd?: number
-  } | null>(null)
-  const [quote, setQuote] = useState<{
-    customer_price_usd: number
-    cepoch_cost_usd: number
-    margin_percent: number
-    subtotal_usd: number
-    disclaimer?: string
-    lines?: { domain: string; customer_usd: number; kind: string }[]
-    inputs?: { autonomy_factor?: number; extra_integrations?: number }
-  } | null>(null)
-  const [savedId, setSavedId] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [note, setNote] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    try {
-      const data = await api.get<{ config: typeof config }>(
-        '/api/pricing/consult-config'
-      )
-      setConfig(data.config)
-      setError(null)
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Could not load consult config'
-      )
-    }
-  }, [])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  function toggleAddon(name: string) {
-    setAddons((prev) =>
-      prev.includes(name) ? prev.filter((d) => d !== name) : [...prev, name]
-    )
-  }
-
-  async function run(save: boolean) {
-    setBusy(true)
-    setError(null)
-    setNote(null)
-    setSavedId(null)
-    try {
-      const data = await api.post<{
-        quote: NonNullable<typeof quote>
-        saved?: { id: string } | null
-      }>('/api/pricing/consult-quote', {
-        domains: [...BASE_DOMAINS, ...addons],
-        autonomy,
-        integrations: Number(integrations) || 0,
-        label,
-        save
-      })
-      setQuote(data.quote)
-      if (data.saved?.id) {
-        setSavedId(data.saved.id)
-        setNote(
-          `Saved consult quote ${data.saved.id}. Replace face prices later in Resale rules.`
-        )
-      } else {
-        setNote('Calculated from face FB-048 rules + face scope weights.')
-      }
-    } catch (err) {
-      setQuote(null)
-      setError(err instanceof Error ? err.message : 'Consult quote failed')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Panel
-      title="Consult pricing math (FB-049)"
-      description="Pick scope on a call — price/cost/margin calculate from face FB-048 rules. Swap Admin → Pricing numbers after Jeanne + Venu confirm; no rebuild needed."
-    >
-      <div className="mb-4 rounded-xl border border-brand/30 bg-brand/10 px-4 py-3 text-xs text-brand-soft">
-        {config?.disclaimer ||
-          'FB-049 face scope weights. Replace after JeanneCAIO + Venu confirm commercials.'}
-      </div>
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {note && <p className="mb-3 text-xs text-positive">{note}</p>}
-
-      <div className="space-y-4">
-        <div>
-          <p className="type-caption mb-2">
-            Base package (included in face base price)
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {BASE_DOMAINS.map((d) => (
-              <Badge key={d} tone="neutral">
-                {d}
-              </Badge>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p className="type-caption mb-2">Add-on domains (face USD)</p>
-          <div className="flex flex-wrap gap-2">
-            {ADDON_DOMAINS.map((d) => {
-              const active = addons.includes(d)
-              const usd = config?.addon_usd?.[d]
-              return (
-                <Chip key={d} active={active} onClick={() => toggleAddon(d)}>
-                  {d}
-                  {usd != null ? ` · $${usd}` : ''}
-                </Chip>
-              )
-            })}
-          </div>
-        </div>
-
-        <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Autonomy">
-            <select
-              className={inputClass}
-              value={autonomy}
-              onChange={(e) => setAutonomy(e.target.value)}
-            >
-              {AUTONOMY_MODES.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                  {config?.autonomy_factor?.[m] != null
-                    ? ` (×${config.autonomy_factor[m]})`
-                    : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            label="Integrations"
-            hint={`First ${config?.integrations_included ?? 2} included; then +$${config?.integration_usd ?? 250} each (face).`}
-          >
-            <input
-              className={inputClass}
-              type="number"
-              min={0}
-              max={50}
-              value={integrations}
-              onChange={(e) => setIntegrations(e.target.value)}
-            />
-          </Field>
-          <Field label="Quote label (when saving)">
-            <input
-              className={inputClass}
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-          </Field>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Btn size="sm" disabled={busy} onClick={() => void run(false)}>
-            {busy ? 'Calculating…' : 'Calculate quote'}
-          </Btn>
-          <Btn
-            size="sm"
-            variant="secondary"
-            disabled={busy}
-            onClick={() => void run(true)}
-          >
-            Calculate & save
-          </Btn>
-        </div>
-
-        {quote && (
-          <div className="space-y-3 rounded-xl border border-border bg-background-elevated px-4 py-4">
-            <p className="text-xs text-muted">{quote.disclaimer}</p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div>
-                <p className="type-caption">Customer price</p>
-                <p className="font-geist text-lg font-semibold text-primary">
-                  ${quote.customer_price_usd.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="type-caption">Cepoch cost</p>
-                <p className="font-geist text-lg font-semibold text-primary">
-                  ${quote.cepoch_cost_usd.toLocaleString()}
-                </p>
-              </div>
-              <div>
-                <p className="type-caption">Margin</p>
-                <p className="font-geist text-lg font-semibold text-primary">
-                  {quote.margin_percent}%
-                </p>
-              </div>
-            </div>
-            <ul className="space-y-1 text-xs text-muted">
-              {(quote.lines || []).map((line) => (
-                <li key={`${line.kind}-${line.domain}`}>
-                  {line.kind}: {line.domain} — $
-                  {line.customer_usd.toLocaleString()}
-                </li>
-              ))}
-              <li>
-                Subtotal ${quote.subtotal_usd.toLocaleString()}
-                {quote.inputs?.autonomy_factor != null
-                  ? ` × autonomy ${quote.inputs.autonomy_factor}`
-                  : ''}
-              </li>
-            </ul>
-            {savedId && (
-              <p className="text-xs text-positive">Saved as {savedId}</p>
-            )}
-          </div>
-        )}
-      </div>
-    </Panel>
   )
 }
 
@@ -1707,18 +1269,19 @@ function Policies() {
         </Field>
         <div className="space-y-3">
           <div>
-            <p className="type-caption mb-1">Order / DPA allows (FB-039)</p>
+            <p className="type-caption mb-1">Regulated data blocking (FB-039)</p>
             <p className="mb-2 text-xs text-muted">
-              One setting from the signed Order/DPA — anything unticked is
-              refused. PHI also needs a BAA with the model vendor; OpenAI has
-              none, so PHI stays blocked on OpenAI.
+              Ticked = blocked: the assistant refuses to add, store or look up
+              that data. Untick only when the signed Order/DPA allows it. PHI
+              also needs a BAA with the model vendor; OpenAI has none, so PHI
+              stays blocked on OpenAI.
             </p>
             {(
               [
-                ['phi', 'PHI / medical'],
-                ['card', 'Payment card data'],
-                ['child', "Children's personal data"],
-                ['biometrics', 'Biometrics']
+                ['phi', 'Block PHI / medical'],
+                ['card', 'Block payment card data'],
+                ['child', "Block children's personal data"],
+                ['biometrics', 'Block biometrics']
               ] as const
             ).map(([key, label]) => {
               const allowed = new Set(settings.order_dpa_allows ?? [])
@@ -1729,11 +1292,11 @@ function Policies() {
                 >
                   <input
                     type="checkbox"
-                    checked={allowed.has(key)}
+                    checked={!allowed.has(key)}
                     onChange={(event) => {
                       const next = new Set(allowed)
-                      if (event.target.checked) next.add(key)
-                      else next.delete(key)
+                      if (event.target.checked) next.delete(key)
+                      else next.add(key)
                       void save({ order_dpa_allows: Array.from(next) })
                     }}
                   />
@@ -1756,7 +1319,7 @@ function Policies() {
               deployment)
               {settings.order_dpa_allows?.includes('phi') &&
               !settings.llm_baa_covered
-                ? ' · PHI is blocked until a BAA is in place'
+                ? ' · PHI is unblocked here but stays blocked until a BAA is in place'
                 : ''}
             </p>
           </div>

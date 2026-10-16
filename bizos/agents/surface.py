@@ -133,6 +133,8 @@ ARGUMENT_HINTS: dict[str, str] = {
     "memory_record_decision": "title (str), decision (str), decided_on (str), approved_by (str), context (str), reason (str, optional), status (str, optional)",
     "memory_correct": "key (str) or item_id (str), new_content (str), reason (str)",
     "memory_escalate_conflict": "topic (str), item_ids (list[str]), question (str)",
+    "support_create_ticket": "subject (str), body (str, optional), severity (NORMAL|HIGH|CRITICAL, optional)",
+    "support_my_tickets": "no arguments",
     "crm_search_contacts": "query (str), lifecycle (str, optional), limit (int, optional)",
     "crm_get_contact": "contact_id (str) — id or email",
     "crm_search_companies": "query (str), limit (int, optional)",

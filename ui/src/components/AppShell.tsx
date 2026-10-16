@@ -320,8 +320,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
               <p className="text-[11px] leading-[1.6] text-[#98b0b2]">
                 {[
-                  !me.client.allow_phi ? 'Health data disabled' : null,
-                  !me.client.allow_card_data ? 'Card data disabled' : null
+                  !me.client.allow_phi ? 'Health data blocked' : null,
+                  !me.client.allow_card_data ? 'Card data blocked' : null
                 ]
                   .filter(Boolean)
                   .join(' · ')}

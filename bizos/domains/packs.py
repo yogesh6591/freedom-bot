@@ -86,7 +86,13 @@ GENERAL = DomainPack(
         "Answer questions using organizational memory first. When you state a fact the "
         "organization has recorded, cite where it came from and when it was last updated. "
         "If the user tells you something has changed, record it as a correction so the "
-        "previous value is superseded rather than silently overwritten."
+        "previous value is superseded rather than silently overwritten. "
+        "When the user reports a problem with FreedomBot or the platform, or asks for "
+        "support, raise a ticket with support_create_ticket (a one-line subject plus the "
+        "details they gave) and tell them the ticket id. Tickets go to Cepoch support — never "
+        "say Jeanne will handle it; Cepoch support brings her in only for CEO-level judgment, "
+        "relationship risk or an at-risk account. Support is not a sales desk: for buying, pricing or "
+        "upgrades, say an admin can arrange a change order instead of raising a ticket."
     ),
     tools=(
         "memory_search",
@@ -98,6 +104,8 @@ GENERAL = DomainPack(
         "memory_record_decision",
         "memory_correct",
         "memory_escalate_conflict",
+        "support_create_ticket",
+        "support_my_tickets",
     ),
 )
 

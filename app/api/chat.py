@@ -102,8 +102,9 @@ def chat_context(
 
 def _open_alerts(settings: ClientSettings, ctx: TenantContext) -> list[dict[str, Any]]:
     try:
-        from bizos.insights import open_alerts
+        from bizos.insights import open_alerts, refresh_if_stale
 
+        settings = refresh_if_stale(client_id=ctx.client_id, settings=settings, ctx=ctx)
         return open_alerts(settings, ctx)
     except Exception:
         return []
@@ -292,9 +293,21 @@ def chat(
 #: Asking the assistant to keep, change, find or act on someone's details.
 _HANDLE_INTENT = re.compile(
     r"\b(add|create|store|save|record|remember|register|enrol+|enter|log|put|upload|import|"
-    r"update|look ?up|find|search|send|email|text|call|contact|schedule|book|onboard|sign up)\b",
+    r"update|look ?up|find|search|send|email|text|call|contact|schedule|book|onboard|sign up|"
+    r"use|cover(?:ed|age)?|process)\b",
     re.I,
 )
+
+#: Concrete PHI identifiers in the message — refuse even without a "store/look up" verb,
+#: so typed MRNs / labelled diagnoses are not answered from memory.
+_PHI_PAYLOAD = re.compile(
+    r"(?i)\b(?:mrn|medical record(?: number| no\.?)?)\s*[:#]?\s*[A-Z0-9]"
+    r"|\bdiagnosis\s*:\s*\w+"
+    r"|\b\d{3}-\d{2}-\d{4}\b"
+)
+
+#: Payment-card digit run (same shape the classifier uses).
+_CARD_DIGITS = re.compile(r"\b(?:\d[ -]?){13,19}\b")
 
 CHILD_DATA_REFUSAL = (
     "I can't process personal details about a child here. This workspace isn't authorized "
@@ -309,12 +322,13 @@ def _child_data_refusal(message: str, settings: ClientSettings) -> Optional[str]
 
     The policy engine also denies any tool call whose payload carries child data;
     this stops the assistant from asking for more of it in the first place.
+    Child + personal markers (DOB, name, school) are enough — no "store" verb required.
     """
-    if getattr(settings, "allow_child_data", False):
+    if settings.order_dpa_allows_category("child") or getattr(settings, "allow_child_data", False):
         return None
     from bizos.policy.classifier import classify_text
 
-    if classify_text(message).contains_child_data and _HANDLE_INTENT.search(message or ""):
+    if classify_text(message).contains_child_data:
         return CHILD_DATA_REFUSAL
     return None
 
@@ -338,6 +352,12 @@ BIOMETRICS_REFUSAL = (
     "look it up. An admin can update the Order/DPA setting if your contract covers it."
 )
 
+CARD_DATA_REFUSAL = (
+    "I can't process payment card data here. This workspace's Order/DPA doesn't allow card "
+    "numbers or related payment details, so I won't add, store or look them up — and please "
+    "don't share more of them. An admin can update the Order/DPA setting if your contract covers it."
+)
+
 
 def _regulated_data_refusal(
     message: str, settings: ClientSettings
@@ -349,22 +369,40 @@ def _regulated_data_refusal(
     The policy engine still denies tool calls carrying this data; this keeps it
     from reaching the model at all.
     """
+    from bizos.policy.classifier import classify_text, identifiable_phi
+
     child = _child_data_refusal(message, settings)
     if child:
         return "CHILD_DATA_BLOCKED", child
-    if not _HANDLE_INTENT.search(message or ""):
-        return None
-    from bizos.policy.classifier import classify_text, identifiable_phi
 
-    if identifiable_phi(message) and not settings.phi_permitted():
+    found = classify_text(message)
+    handling = bool(_HANDLE_INTENT.search(message or ""))
+    phi_payload = bool(_PHI_PAYLOAD.search(message or ""))
+    card_digits = bool(_CARD_DIGITS.search(message or ""))
+
+    # PHI: handling intent, or a concrete identifier / labelled diagnosis in the message.
+    if (
+        (handling or phi_payload)
+        and identifiable_phi(message)
+        and not settings.phi_permitted()
+    ):
         if not settings.order_dpa_allows_category("phi"):
             return "PHI_BLOCKED", PHI_REFUSAL
         vendor = "OpenAI" if settings.llm_vendor in {"openai", "open_ai"} else settings.llm_vendor
         return "PHI_NO_BAA_BLOCKED", PHI_NO_BAA_REFUSAL.format(vendor=vendor)
-    if classify_text(message).contains_biometrics and not settings.order_dpa_allows_category(
-        "biometrics"
+
+    # Card: digit PAN or classified card talk while handling / looking up.
+    if (
+        (handling or card_digits)
+        and (found.contains_card_data or card_digits)
+        and not settings.order_dpa_allows_category("card")
     ):
+        return "CARD_DATA_BLOCKED", CARD_DATA_REFUSAL
+
+    # Biometrics: strong biometric talk does not need a "store" verb ("use this fingerprint").
+    if found.contains_biometrics and not settings.order_dpa_allows_category("biometrics"):
         return "BIOMETRICS_BLOCKED", BIOMETRICS_REFUSAL
+
     return None
 
 

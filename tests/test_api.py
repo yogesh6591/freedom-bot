@@ -332,8 +332,9 @@ def test_chat_reports_the_mode_and_surface(app_client, client_a):
     context = app_client.get("/api/chat/context?domain=sales", headers=_auth(viewer)).json()
     assert context["role"] == "VIEWER"
     assert context["mode"] == str(client_a.settings.mode)
-    # A viewer can see write processes exist (FB-037) but can run none of them.
-    assert [t for t in context["tools"] if t["write"] and t["can_run"]] == []
+    # A viewer can see write processes exist (FB-037) but can run none of them —
+    # apart from raising a support ticket (FB-046), which changes no business record.
+    assert [t["name"] for t in context["tools"] if t["write"] and t["can_run"]] == ["support_create_ticket"]
     assert any(t["write"] and t["can_view"] for t in context["tools"])
 
 

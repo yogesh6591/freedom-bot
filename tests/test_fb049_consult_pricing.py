@@ -122,3 +122,117 @@ def test_save_consult_quote_persists(client_a, ctx_factory):
         control.update_client_settings(
             client_a.id, ClientSettings.from_dict(original), updated_by="pytest"
         )
+
+
+def _priced_with(client, ctx, **rules):
+    with tenant_scope(ctx):
+        return save_rules(
+            client_id=client.id,
+            settings=control.get_client(client.id).settings,
+            rules=rules,
+            ctx=ctx,
+        )
+
+
+def test_jeanne_sets_margin_and_her_own_scope_weights(client_a, ctx_factory):
+    ctx = ctx_factory(client_a, "admin")
+    original = control.get_client(client_a.id).settings.to_dict()
+    try:
+        rules = _priced_with(
+            client_a,
+            ctx,
+            customer_price_usd=20000,
+            margin_percent=45,
+            scope_rules={
+                "addon_usd": {"finance": 3500, "legal": 2500},
+                "integrations_included": 1,
+                "integration_usd": 400,
+                "round_to_usd": 500,
+            },
+        )
+        assert rules["cepoch_cost_usd"] == 11000.0 and rules["margin_percent"] == 45.0
+        cfg = face_scope_config(control.get_client(client_a.id).settings)
+        assert cfg["addon_usd"] == {"finance": 3500.0, "legal": 2500.0}
+        assert cfg["placeholder"] is False
+
+        quote = calculate_consult_quote(
+            control.get_client(client_a.id).settings,
+            domains=["finance"],
+            autonomy="DRAFT",
+            integrations=3,
+        )
+        # 20000 + 3500 + 2 extra × 400 = 24300, rounded up to 24500.
+        assert quote["subtotal_usd"] == 24300.0
+        assert quote["customer_price_usd"] == 24500.0
+        assert [line["kind"] for line in quote["lines"]] == ["base", "addon", "integrations", "rounding"]
+        assert "per seat" in quote["talk_track"] and "$24,500" in quote["talk_track"]
+
+        # Strategy is no longer priced for this client, so it cannot be quoted.
+        with pytest.raises(ValueError, match="no add-on price set for: strategy"):
+            calculate_consult_quote(
+                control.get_client(client_a.id).settings, domains=["strategy"], autonomy="DRAFT"
+            )
+    finally:
+        control.update_client_settings(client_a.id, ClientSettings.from_dict(original), updated_by="pytest")
+
+
+def test_legacy_prices_and_negative_margins_are_refused(client_a, ctx_factory):
+    ctx = ctx_factory(client_a, "admin")
+    original = control.get_client(client_a.id).settings.to_dict()
+    try:
+        for bad in (2000, 75000):
+            with pytest.raises(ValueError, match="old package price"):
+                _priced_with(client_a, ctx, customer_price_usd=bad, cepoch_cost_usd=100)
+        with pytest.raises(ValueError, match="negative margin"):
+            _priced_with(client_a, ctx, customer_price_usd=10000, cepoch_cost_usd=12000)
+        with pytest.raises(ValueError, match="old package price"):
+            _priced_with(
+                client_a, ctx, customer_price_usd=10000, cepoch_cost_usd=6000,
+                scope_rules={"addon_usd": {"legal": 2000}},
+            )
+    finally:
+        control.update_client_settings(client_a.id, ClientSettings.from_dict(original), updated_by="pytest")
+
+
+def test_venu_confirmation_is_recorded_and_reset_by_any_change(client_a, ctx_factory):
+    ctx = ctx_factory(client_a, "admin")
+    original = control.get_client(client_a.id).settings.to_dict()
+    try:
+        _priced_with(client_a, ctx, customer_price_usd=10000, cepoch_cost_usd=6000)
+        confirmed = _priced_with(client_a, ctx, quote_status="venu_confirmed")
+        assert confirmed["quote_status"] == "venu_confirmed"
+        assert confirmed["placeholder"] is False and confirmed["confirmed_by"] == ctx.user_id
+        quote = calculate_consult_quote(control.get_client(client_a.id).settings, domains=[], autonomy="DRAFT")
+        assert quote["placeholder"] is False and "Pending Venu" not in quote["talk_track"]
+
+        # Notes alone keep the confirmation; a new number needs Venu again.
+        assert _priced_with(client_a, ctx, notes="call notes")["quote_status"] == "venu_confirmed"
+        changed = _priced_with(client_a, ctx, customer_price_usd=11000, quote_status="venu_confirmed")
+        assert changed["quote_status"] == "pending_venu_confirm"
+        assert changed["reconfirm_needed"] is True and changed["placeholder"] is True
+        assert [h["event"] for h in changed["rules_history"]][-2:] == ["confirmed", "reconfirm_needed"]
+    finally:
+        control.update_client_settings(client_a.id, ClientSettings.from_dict(original), updated_by="pytest")
+
+
+def test_discount_is_capped_and_margin_floor_blocks_saving(client_a, ctx_factory):
+    ctx = ctx_factory(client_a, "admin")
+    original = control.get_client(client_a.id).settings.to_dict()
+    try:
+        _priced_with(
+            client_a, ctx, customer_price_usd=10000, cepoch_cost_usd=6000,
+            scope_rules={"min_margin_percent": 35, "max_discount_percent": 20},
+        )
+        settings = control.get_client(client_a.id).settings
+        with pytest.raises(ValueError, match="over the 20% cap"):
+            calculate_consult_quote(settings, domains=[], autonomy="DRAFT", discount_percent=25)
+        ok = calculate_consult_quote(settings, domains=[], autonomy="DRAFT", discount_percent=5)
+        # 10000 − 5% = 9500 against unchanged cost 6000 → 36.8%
+        assert ok["customer_price_usd"] == 9500.0 and ok["cepoch_cost_usd"] == 6000.0
+        assert ok["margin_percent"] == 36.8 and ok["below_floor"] is False
+        thin = calculate_consult_quote(settings, domains=[], autonomy="DRAFT", discount_percent=15)
+        assert thin["below_floor"] is True and any("floor" in w for w in thin["warnings"])
+        with tenant_scope(ctx), pytest.raises(ValueError, match="margin floor"):
+            save_consult_quote(client_id=client_a.id, settings=settings, quote=thin, ctx=ctx)
+    finally:
+        control.update_client_settings(client_a.id, ClientSettings.from_dict(original), updated_by="pytest")

@@ -706,21 +706,16 @@ def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:
     )
     template.seed_memory(admin_context(acme), template.load_template(), acme.settings)
     from bizos.audit.events import purge_expired
-    from bizos.insights import ensure_default_alerts, ensure_default_baselines
-    from bizos.owner import ensure_portfolio_defaults
+    from bizos.insights import ensure_default_baselines
     from bizos.pricing import ensure_default_rules
     from bizos.support import ensure_demo_tickets
 
-    # FB-041 / FB-050 — seed rare alerts + one baseline for the Acme demo.
-    ensure_default_alerts(client_id=acme.id, settings=acme.settings, actor="bootstrap")
-    acme = control.get_client(acme.id)
+    # FB-050 — one baseline for the Acme demo. FB-041 alerts come only from scans.
     ensure_default_baselines(client_id=acme.id, settings=acme.settings, actor="bootstrap")
     acme = control.get_client(acme.id)
     # FB-048 — face resale rules until Jeanne/Venu confirm.
     ensure_default_rules(client_id=acme.id, settings=acme.settings, actor="bootstrap")
     acme = control.get_client(acme.id)
-    # FB-047 — face portfolio fields for owner view.
-    ensure_portfolio_defaults(client_id=acme.id, actor="bootstrap")
     # FB-046 — routine Cepoch tickets + one Jeanne escalation.
     ensure_demo_tickets(client_id=acme.id, actor="bootstrap")
     acme = control.get_client(acme.id)

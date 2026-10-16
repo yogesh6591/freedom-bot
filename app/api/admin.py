@@ -28,6 +28,7 @@ from bizos.rbac.matrix import MATRIX_TEMPLATES
 from bizos.rbac.registry import TOOL_SPECS
 from bizos.tenancy.context import TenantContext
 from bizos.types import AuditEventType, Role, ToolPermission
+from bizos.util.timeutil import utcnow
 
 router = APIRouter(prefix="/api", tags=["admin"])
 
@@ -459,7 +460,15 @@ def record_change_order(
     if body.enable:
         settings.enabled_domains = sorted(set(settings.enabled_domains) | {domain})
     orders = list((settings.onboarding or {}).get("change_orders") or [])
-    orders.append({"domain": domain, "reference": body.reference, "note": body.note, "by": ctx.user_id})
+    orders.append(
+        {
+            "domain": domain,
+            "reference": body.reference,
+            "note": body.note,
+            "by": ctx.user_id,
+            "at": utcnow().isoformat(),
+        }
+    )
     settings.onboarding = {**(settings.onboarding or {}), "change_orders": orders}
     client = control.update_client_settings(ctx.client_id, settings, updated_by=ctx.user_id)
     with bound(ctx):
@@ -575,25 +584,14 @@ def get_alerts(
 ) -> dict[str, Any]:
     """Rare inefficiency alerts for this client (FB-041).
 
-    Detected from the client's own workspace data (M09-11), rescanned when the
-    last scan is over an hour old (M09-13), and filtered to the areas this
-    caller may see (M09-14).
+    Detected from the client's own memory, chat questions and actions (M09-11),
+    rescanned when the last scan is stale (M09-13), and filtered to the areas
+    this caller may see (M09-14).
     """
-    from datetime import timedelta
+    from bizos.insights import last_scanned, list_alerts, open_alerts, refresh_if_stale, visible_to
 
-    from bizos.insights import last_scanned, list_alerts, open_alerts, scan_alerts, visible_to
-    from bizos.util.timeutil import utcnow
-
-    scanned = last_scanned(settings)
-    stale = True
-    if scanned:
-        from datetime import datetime
-
-        stale = datetime.fromisoformat(scanned) < utcnow() - timedelta(hours=1)
-    if stale:
-        with bound(ctx):
-            scan_alerts(client_id=ctx.client_id, settings=settings, ctx=ctx)
-        settings = control.get_client(ctx.client_id).settings
+    with bound(ctx):
+        settings = refresh_if_stale(client_id=ctx.client_id, settings=settings, ctx=ctx)
     return {
         "items": [a for a in list_alerts(settings) if visible_to(a, ctx)],
         "open": open_alerts(settings, ctx),
@@ -808,8 +806,11 @@ class ResaleRulesBody(BaseModel):
 
     customer_price_usd: Optional[float] = None
     cepoch_cost_usd: Optional[float] = None
+    #: Target margin; used to derive cost when cepoch_cost_usd is omitted.
+    margin_percent: Optional[float] = None
     quote_status: Optional[str] = None
     notes: Optional[str] = None
+    scope_rules: Optional[dict[str, Any]] = None
 
 
 @router.put("/pricing/resale-rules")
@@ -835,8 +836,9 @@ def put_resale_rules(
         status="RESALE_RULES_UPDATED",
         request={
             "customer_price_usd": rules["customer_price_usd"],
+            "margin_percent": rules["margin_percent"],
             "quote_status": rules["quote_status"],
-            "placeholder": True,
+            "reconfirm_needed": rules.get("reconfirm_needed", False),
         },
     )
     return {"rules": rules}
@@ -850,17 +852,28 @@ def get_consult_config(
     ctx: TenantContext = Depends(require_admin),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    """Face scope weights + current FB-048 rules for the consult calculator."""
+    """This client's scope weights + FB-048 rules for the consult calculator."""
     from bizos.pricing import face_scope_config, get_rules
 
-    return {"config": face_scope_config(), "rules": get_rules(settings)}
+    return {"config": face_scope_config(settings), "rules": get_rules(settings)}
+
+
+@router.get("/pricing/consult-quotes")
+def get_consult_quotes(
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    from bizos.pricing import list_consult_quotes
+
+    return {"items": list_consult_quotes(settings)}
 
 
 class ConsultQuoteBody(BaseModel):
     domains: list[str] = Field(default_factory=list)
     autonomy: str = "WAIT_FOR_APPROVAL"
     integrations: int = Field(default=0, ge=0, le=50)
-    label: str = ""
+    discount_percent: float = Field(default=0, ge=0, le=100)
+    label: str = Field(default="", max_length=200)
     save: bool = False
 
 
@@ -879,19 +892,23 @@ def post_consult_quote(
             domains=body.domains,
             autonomy=body.autonomy,
             integrations=body.integrations,
+            discount_percent=body.discount_percent,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     saved = None
     if body.save:
-        saved = save_consult_quote(
-            client_id=ctx.client_id,
-            settings=settings,
-            quote=quote,
-            ctx=ctx,
-            label=body.label,
-        )
+        try:
+            saved = save_consult_quote(
+                client_id=ctx.client_id,
+                settings=settings,
+                quote=quote,
+                ctx=ctx,
+                label=body.label,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         audit.log(
             AuditEventType.CONFIG_CHANGED,
             ctx=ctx,
@@ -900,7 +917,7 @@ def post_consult_quote(
                 "id": saved["id"],
                 "customer_price_usd": saved["customer_price_usd"],
                 "domains": saved["inputs"]["domains"],
-                "placeholder": True,
+                "placeholder": saved["placeholder"],
             },
         )
 

@@ -153,6 +153,15 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["topic", "question"],
     ),
+    "support_create_ticket": _obj(
+        {
+            "subject": _s("One-line summary of the problem"),
+            "body": _s("What happened, what the user expected, any error text"),
+            "severity": _s("NORMAL (default), HIGH (blocking work) or CRITICAL (platform down)"),
+        },
+        ["subject"],
+    ),
+    "support_my_tickets": _obj({}),
     "crm_search_contacts": _obj(
         {
             "query": _s("Name or email fragment"),
