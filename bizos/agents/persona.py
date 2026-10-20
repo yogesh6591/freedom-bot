@@ -50,13 +50,18 @@ _SIGNALS: dict[str, tuple[str, ...]] = {
         # M06-05: email lives in the sales pack; without these a plain "send an
         # email to John" fell to general, which has no send tool.
         "email", "emails", "e-mail", "mail", "send an email", "send email", "email to",
-        "reply to", "outreach", "inbox", "thread", "threads",
+        "reply to", "outreach", "inbox", "thread", "threads", "gmail", "unread",
     ),
     "intake": (
         "intake", "inbound", "new lead", "qualify", "qualification", "enquiry", "inquiry",
         "resume", "job opening", "candidate", "hiring", "recruit",
     ),
-    "planning": ("plan", "planning", "meeting", "calendar", "agenda", "timeline", "milestone", "week"),
+    "planning": (
+        "plan", "planning", "meeting", "meetings", "calendar", "agenda", "timeline", "milestone",
+        "week", "event", "events", "appointment", "appointments", "availability",
+        "busy", "free slot", "free time", "google calendar", "am i free", "free on", "free at",
+        "free today", "free tomorrow", "free this", "my day",
+    ),
     "brand": ("brand", "voice", "tone", "messaging", "copy", "tagline", "style guide"),
     "legal": ("legal", "contract", "clause", "msa", "nda", "terms of service", "liability", "counsel"),
 }

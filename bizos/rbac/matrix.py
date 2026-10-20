@@ -64,6 +64,11 @@ WRITE_PROTECTED = _matrix(P.DENIED, P.DRAFT_ONLY, P.EXECUTE_AFTER_APPROVAL, P.AL
 #: Approver or Operator may execute only an action already APPROVED.
 WRITE_CRITICAL = _matrix(P.DENIED, P.DENIED, P.EXECUTE_AFTER_APPROVAL, P.EXECUTE_AFTER_APPROVAL)
 
+#: Deciding a queued action (approve, reject, send back). Viewers and drafters
+#: never decide; the action store then requires the workspace's configured
+#: approver role and refuses self-approval.
+DECIDE_APPROVAL = _matrix(P.DENIED, P.DENIED, P.ALLOWED, P.ALLOWED)
+
 #: Administrative configuration changes.
 ADMIN_ONLY = MappingProxyType(
     {
@@ -84,6 +89,7 @@ MATRIX_TEMPLATES: Mapping[str, Mapping[Role, ToolPermission]] = MappingProxyType
         "DRAFT_ONLY_WRITE": DRAFT_ONLY_WRITE,
         "WRITE_PROTECTED": WRITE_PROTECTED,
         "WRITE_CRITICAL": WRITE_CRITICAL,
+        "DECIDE_APPROVAL": DECIDE_APPROVAL,
         "ADMIN_ONLY": ADMIN_ONLY,
     }
 )

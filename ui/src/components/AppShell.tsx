@@ -18,6 +18,7 @@ import {
   LogOut,
   Menu,
   MessageSquareText,
+  Plug,
   ScrollText,
   Settings2,
   ShieldCheck,
@@ -48,7 +49,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: '/chat', label: 'Assistant', icon: MessageSquareText },
       { href: '/memory', label: 'Memory', icon: BookOpenText },
-      { href: '/approvals', label: 'Approvals', icon: CheckCircle2 }
+      { href: '/approvals', label: 'Approvals', icon: CheckCircle2 },
+      { href: '/integrations', label: 'Integrations', icon: Plug }
     ]
   },
   {

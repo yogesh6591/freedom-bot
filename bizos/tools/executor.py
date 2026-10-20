@@ -96,7 +96,12 @@ def execute_approved_action(scope: RunScope, action_id: str) -> ToolOutcome:
 
     started = time.monotonic()
     action_store.mark_executing(action_id, ctx=scope.ctx)
-    outcome = _execute_effect(scope, spec, action.payload, decision, started, action_id=action_id)
+    previous_owner = scope.on_behalf_of
+    scope.on_behalf_of = action.requested_by
+    try:
+        outcome = _execute_effect(scope, spec, action.payload, decision, started, action_id=action_id)
+    finally:
+        scope.on_behalf_of = previous_owner
 
     if outcome.ok:
         action_store.mark_completed(action_id, {"summary": outcome.message, "data": outcome.data}, ctx=scope.ctx)

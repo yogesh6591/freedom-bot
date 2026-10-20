@@ -107,7 +107,7 @@ def _make_tool(scope: RunScope, spec: ToolSpec) -> Callable:
     that, Agno publishes a nested empty ``kwargs`` object and the model cannot
     pass real fields (blank memory writes, empty approval payloads).
     """
-    description = f"{_describe(spec, scope)}\n\nArguments: {ARGUMENT_HINTS.get(spec.name, 'see description')}"
+    description = f"{_describe(spec, scope)}\n\nArguments: {_hint(spec.name)}"
 
     @tool(name=spec.name, description=description)
     def _invoke(**kwargs: Any) -> str:
@@ -119,6 +119,15 @@ def _make_tool(scope: RunScope, spec: ToolSpec) -> Callable:
     # Replace Agno's **kwargs schema before the agent processes the tool.
     _invoke.parameters = schema_for_tool(spec.name)
     return _invoke
+
+
+def _hint(name: str) -> str:
+    if name in ARGUMENT_HINTS:
+        return ARGUMENT_HINTS[name]
+    schema = schema_for_tool(name)
+    if schema.get("additionalProperties"):
+        return "see description"
+    return ", ".join(schema.get("properties") or {}) or "no arguments"
 
 
 #: Argument documentation per tool. Kept beside the surface builder rather than in
@@ -153,6 +162,11 @@ ARGUMENT_HINTS: dict[str, str] = {
     "email_create_draft": "recipients (list of str), subject (str), body (str), cc (list, optional)",
     "email_send_message": "recipients (list of str), subject (str), body (str), cc (list, optional)",
     "calendar_list_events": "start (ISO datetime, optional), end (ISO datetime, optional), limit (int, optional)",
+    "youtube_search_videos": "query (str), limit (int, optional), order (relevance|date|viewCount|rating, optional)",
+    "youtube_my_channel": "no arguments",
+    "youtube_my_videos": "limit (int, optional)",
+    "youtube_video_details": "video_ids (list[str])",
+    "youtube_video_comments": "video_id (str), limit (int, optional), order (relevance|time, optional)",
     "calendar_check_availability": "start (ISO datetime), end (ISO datetime), slot_minutes (int, optional)",
     "calendar_create_event": "title (str), starts_at (ISO datetime), ends_at (ISO datetime), attendees (list, optional), description (str, optional), location (str, optional)",
     "calendar_reschedule_event": "event_id (str), starts_at (ISO datetime), ends_at (ISO datetime)",
@@ -165,7 +179,13 @@ ARGUMENT_HINTS: dict[str, str] = {
     "finance_propose_adjustment": "customer (str), amount (number), reason (str), kind (str, optional)",
     "hr_match_candidate": "candidate_name (str, e.g. 'Jordan Lee'), opening (str, e.g. 'Operations Coordinator'), opening_key/resume_key (str, optional), resume_text (str, optional)",
     "finance_list_invoices": "customer (str, optional), limit (int, optional)",
-    "approvals_list_pending": "none",
+    "approvals_list": "status (pending|drafts|approved|completed|failed|rejected|cancelled|all, optional), mine (bool, optional), limit (int, optional)",
+    "approvals_get": "action_id (str) or match (title words)",
+    "approvals_approve": "action_id (str) or match (title words), comment (str, optional)",
+    "approvals_reject": "action_id (str) or match (title words), comment (str, optional)",
+    "approvals_request_changes": "action_id (str) or match (title words), comment (str)",
+    "approvals_submit": "action_id (str) or match (title words)",
+    "approvals_cancel": "action_id (str) or match (title words), comment (str, optional)",
     "brand_get_voice": "query (str, optional)",
     "legal_find_clause": "query (str)",
     "legal_flag_for_counsel": "question (str), context (str, optional), urgency (str, optional)",

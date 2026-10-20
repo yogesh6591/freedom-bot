@@ -98,6 +98,18 @@ def client_b():
     _destroy(client)
 
 
+@pytest.fixture(scope="module")
+def client_scratch():
+    """A WAIT_FOR_APPROVAL client a test module may reconfigure freely."""
+    suffix = uuid.uuid4().hex[:8]
+    client = _make_client(
+        f"Test Scratch {suffix}", f"tscratch{suffix}", DeploymentType.DEDICATED_SCHEMA,
+        ExecutionMode.WAIT_FOR_APPROVAL,
+    )
+    yield client
+    _destroy(client)
+
+
 def _user(client, prefix: str):
     email = f"{prefix}@{client.slug}.example.com"
     return next(u for u in control.list_users(client.id) if u.email == email)

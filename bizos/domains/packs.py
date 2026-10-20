@@ -22,8 +22,11 @@ from dataclasses import dataclass
 from typing import Optional
 
 from bizos.domains.catalog import DOMAIN_CATALOG, DomainCatalogEntry, get_entry
-from bizos.rbac.registry import ToolSpec, specs_for_domain
+from bizos.rbac.registry import CATEGORY_ADMIN, TOOL_SPECS, ToolSpec, specs_for_domain
 from bizos.types import ExecutionMode
+
+#: Administration-page tools; the registry limits them to admins.
+ADMIN_TOOLS = tuple(s.name for s in TOOL_SPECS if s.category == CATEGORY_ADMIN)
 
 
 @dataclass(frozen=True)
@@ -98,7 +101,14 @@ GENERAL = DomainPack(
         "memory_search",
         "memory_get_fact",
         "memory_history",
-        "approvals_list_pending",
+        "approvals_list",
+        "approvals_get",
+        "approvals_approve",
+        "approvals_reject",
+        "approvals_request_changes",
+        "approvals_submit",
+        "approvals_cancel",
+        *ADMIN_TOOLS,
         "memory_add_fact",
         "memory_add_sop",
         "memory_record_decision",
@@ -106,6 +116,11 @@ GENERAL = DomainPack(
         "memory_escalate_conflict",
         "support_create_ticket",
         "support_my_tickets",
+        "youtube_search_videos",
+        "youtube_my_channel",
+        "youtube_my_videos",
+        "youtube_video_details",
+        "youtube_video_comments",
     ),
 )
 

@@ -111,7 +111,9 @@ def enforce_claims(
 
     # Something was written. An approval claim still needs an action that is
     # actually pending approval — a saved draft is not in any queue.
-    pending = any(_status(a) == "PENDING_APPROVAL" for a in new_actions)
+    pending = any(_status(a) == "PENDING_APPROVAL" for a in new_actions) or any(
+        c.get("ok") and c.get("tool") == "approvals_submit" for c in activity
+    )
     if pending or not _APPROVAL_CLAIM.search(reply):
         return reply, False
     cleaned = _drop(reply, _APPROVAL_CLAIM)

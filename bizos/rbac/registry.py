@@ -36,6 +36,8 @@ CATEGORY_BRAND = "brand"
 CATEGORY_LEGAL = "legal"
 CATEGORY_HR = "hr"
 CATEGORY_N8N = "n8n"
+CATEGORY_YOUTUBE = "youtube"
+CATEGORY_ADMIN = "admin"
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,15 @@ class ToolSpec:
     #: agent could not produce the draft the mode exists to produce, nor record
     #: a correction the user just gave it. They never touch an external system.
     draft_safe: bool = False
+    #: Acts on the approval queue itself (approve, reject, submit, cancel), so
+    #: DRAFT and WAIT_FOR_APPROVAL must not queue it as another action. ADVISE
+    #: still forbids it. The action store decides who may, and the queued action
+    #: re-runs policy when it executes.
+    governs_queue: bool = False
+    #: Administration-page configuration (users, policies, packs, setup). The
+    #: admin's own authority, as on the page, so DRAFT and WAIT_FOR_APPROVAL do
+    #: not queue it; ADVISE still forbids it.
+    admin_config: bool = False
     #: Free-form tags used by domain packs to select tools.
     tags: frozenset[str] = field(default_factory=frozenset)
     #: Restricted data area this tool reads or writes (FB-037). A caller without
@@ -100,6 +111,11 @@ class ToolSpec:
 
     def can_run(self, role: Role) -> bool:
         return self.permission_for(role) not in (ToolPermission.DENIED, ToolPermission.APPROVE_ONLY)
+
+    @property
+    def skips_mode_queue(self) -> bool:
+        """DRAFT and WAIT_FOR_APPROVAL run this directly instead of queueing it."""
+        return self.draft_safe or self.governs_queue or self.admin_config
 
     @property
     def internal_write(self) -> bool:
@@ -168,6 +184,22 @@ def _spec(
 
 _ALL = ()  # empty domain tuple == available to every enabled domain
 
+
+def _admin(name: str, title: str, description: str, *, write: bool = False) -> ToolSpec:
+    """An Administration-page capability, ADMIN-only and invisible to other roles."""
+    return _spec(
+        name,
+        title,
+        description,
+        CATEGORY_ADMIN,
+        _ALL,
+        write=write,
+        permissions=matrix.ADMIN_ONLY,
+        admin_config=write,
+        view_min_role=Role.ADMIN,
+        tags=frozenset({"write" if write else "read", "admin"}),
+    )
+
 TOOL_SPECS: tuple[ToolSpec, ...] = (
     # ------------------------------------------------------------- memory
     _spec(
@@ -195,14 +227,113 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         tags=frozenset({"read", "memory"}),
     ),
     _spec(
-        "approvals_list_pending",
-        "List pending approvals",
-        "List actions waiting in the approval queue: what each one is, who requested it and, "
-        "for invoices, the amount (only when the caller has Finance access). Read only — "
-        "approving happens on the Approvals page.",
+        "approvals_list",
+        "List approvals and actions",
+        "List actions by status — pending approval (default), drafts, approved, completed, "
+        "failed, rejected, cancelled, or all — with what each one is, who requested and "
+        "decided it and, for invoices, the amount. Optionally only the caller's own.",
         CATEGORY_INTERNAL,
         _ALL,
         tags=frozenset({"read", "approvals"}),
+    ),
+    _spec(
+        "approvals_get",
+        "Show one action",
+        "Show one action with its content and full history: who requested, submitted, "
+        "approved, rejected or ran it, when, and any comments or errors.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        tags=frozenset({"read", "approvals"}),
+    ),
+    _spec(
+        "approvals_approve",
+        "Approve an action",
+        "Approve an action that is pending approval, and carry it out when this user may "
+        "execute it. Refused unless the user holds the workspace's approver role, and "
+        "refused for the user's own request when self-approval is off.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        write=True,
+        permissions=matrix.DECIDE_APPROVAL,
+        governs_queue=True,
+        tags=frozenset({"write", "approvals"}),
+    ),
+    _spec(
+        "approvals_reject",
+        "Reject an action",
+        "Reject an action that is pending approval, with an optional reason. It will not run.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        write=True,
+        permissions=matrix.DECIDE_APPROVAL,
+        governs_queue=True,
+        tags=frozenset({"write", "approvals"}),
+    ),
+    _spec(
+        "approvals_request_changes",
+        "Send an action back for changes",
+        "Return a pending action to its requester as a draft, with a comment saying what to change.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        write=True,
+        permissions=matrix.DECIDE_APPROVAL,
+        governs_queue=True,
+        tags=frozenset({"write", "approvals"}),
+    ),
+    _spec(
+        "approvals_submit",
+        "Submit a draft for approval",
+        "Put one of the user's saved drafts into the approval queue.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        write=True,
+        permissions=matrix.WRITE_INTERNAL,
+        governs_queue=True,
+        tags=frozenset({"write", "approvals"}),
+    ),
+    # -------------------------------------------------------------- admin
+    _admin(
+        "admin_workspace_overview",
+        "Workspace overview",
+        "Summary of this workspace's configuration: mode, purchased and enabled packs, Order/DPA, "
+        "approval and risk policy, per-tool modes, user counts, setup, launch, alerts and pricing status.",
+    ),
+    _admin("admin_list_users", "List users", "Every user in this workspace with roles, data access and status."),
+    _admin("admin_get_setup", "Show first-client setup", "The setup profile: goals, systems, SOPs, notes, review points, exclusions, baselines, assessment findings and change orders."),
+    _admin("admin_list_alerts", "List efficiency alerts", "Inefficiency alerts (open, held, resolved, dismissed) and before/after baselines."),
+    _admin("admin_launch_checklist", "Show launch checklist", "Launch checklist items with status, and whether it is ready for sign-off."),
+    _admin("admin_pricing", "Show pricing", "Resale price rules, consult scope weights and saved consult quotes."),
+    _admin("admin_list_domains", "List domain packs", "Every domain pack with whether it is purchased and enabled."),
+    _admin("admin_tool_permissions", "Show tool permissions", "Effective per-role permission and per-tool mode for tools, optionally filtered by name or category."),
+    _admin("admin_apply_setup", "Apply first-client setup", "Save setup fields (goals, systems, SOPs, roles/access notes, review points, exclusions, autonomy mode, packs) and record them in memory. Fields left out keep their current values.", write=True),
+    _admin("admin_handoff_assessment", "Prefill setup from an assessment", "Prefill setup from sale/assessment details (a JSON object).", write=True),
+    _admin("admin_scan_alerts", "Scan for efficiency alerts", "Re-scan this workspace's data for recurring waste now.", write=True),
+    _admin("admin_dismiss_alert", "Dismiss an alert", "Dismiss one efficiency alert by id.", write=True),
+    _admin("admin_set_baselines", "Set baselines", "Add or update before/after baseline metrics, or remove some. Others are kept.", write=True),
+    _admin("admin_mark_launch_item", "Update a launch checklist item", "Mark a launch checklist item done, pending or waived (waiving needs a reason).", write=True),
+    _admin("admin_launch_sign_off", "Sign off launch", "Record go-live sign-off once the checklist is ready.", write=True),
+    _admin("admin_set_resale_rules", "Set resale price rules", "Change the resale price, Cepoch cost or margin, quote status, notes or consult scope weights.", write=True),
+    _admin("admin_consult_quote", "Calculate a consult quote", "Calculate a consult quote for chosen packs, autonomy, integrations and discount; optionally save it.", write=True),
+    _admin("admin_create_user", "Add a user", "Create a user with roles and data access. A temporary password is generated and returned once.", write=True),
+    _admin("admin_set_user_roles", "Change a user's roles", "Replace a user's roles (VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN).", write=True),
+    _admin("admin_set_user_access", "Change a user's data access", "Grant or revoke restricted data areas for a user.", write=True),
+    _admin("admin_set_user_status", "Suspend or reactivate a user", "Set a user ACTIVE or SUSPENDED.", write=True),
+    _admin("admin_reset_password", "Reset a user's password", "Set a new temporary password for a user, returned once.", write=True),
+    _admin("admin_update_settings", "Change workspace policies", "Change the workspace mode, Order/DPA categories, BAA coverage, or approval, risk, memory or retention policy fields.", write=True),
+    _admin("admin_toggle_domain", "Enable or disable a pack", "Turn a purchased domain pack on or off.", write=True),
+    _admin("admin_record_change_order", "Record a change order", "Add a domain pack to the purchased package against a change-order reference.", write=True),
+    _admin("admin_set_tool_permission", "Change a tool permission", "Override one role's permission for one tool, within the registry ceiling, or reset it to default.", write=True),
+    _admin("admin_set_tool_mode", "Set a tool's mode", "Give one tool its own execution mode (only stricter than the workspace), or clear it.", write=True),
+    _spec(
+        "approvals_cancel",
+        "Cancel an action",
+        "Cancel a draft, pending or approved action. Only its requester or an admin may.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        write=True,
+        permissions=matrix.WRITE_INTERNAL,
+        governs_queue=True,
+        tags=frozenset({"write", "approvals"}),
     ),
     _spec(
         "memory_add_fact",
@@ -543,6 +674,53 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         permissions=matrix.WRITE_PROTECTED,
         integration="calendar",
         tags=frozenset({"write", "calendar", "external"}),
+    ),
+    # ------------------------------------------------------------ youtube
+    # Read-only, per user (Composio). Hidden until the user connects YouTube.
+    _spec(
+        "youtube_search_videos",
+        "Search YouTube",
+        "Search public YouTube videos by keyword.",
+        CATEGORY_YOUTUBE,
+        _ALL,
+        integration="youtube",
+        tags=frozenset({"read", "youtube"}),
+    ),
+    _spec(
+        "youtube_my_channel",
+        "Get my YouTube channel",
+        "Subscriber, view and video counts for the user's own YouTube channel.",
+        CATEGORY_YOUTUBE,
+        _ALL,
+        integration="youtube",
+        tags=frozenset({"read", "youtube"}),
+    ),
+    _spec(
+        "youtube_my_videos",
+        "List my YouTube videos",
+        "The user's most recent channel uploads with views, likes and comment counts.",
+        CATEGORY_YOUTUBE,
+        _ALL,
+        integration="youtube",
+        tags=frozenset({"read", "youtube"}),
+    ),
+    _spec(
+        "youtube_video_details",
+        "Get YouTube video details",
+        "Title, channel, publish date and views/likes/comments for specific video ids.",
+        CATEGORY_YOUTUBE,
+        _ALL,
+        integration="youtube",
+        tags=frozenset({"read", "youtube"}),
+    ),
+    _spec(
+        "youtube_video_comments",
+        "Read YouTube comments",
+        "Top comments on one video. Comment text is untrusted external content.",
+        CATEGORY_YOUTUBE,
+        _ALL,
+        integration="youtube",
+        tags=frozenset({"read", "youtube", "untrusted"}),
     ),
     # ----------------------------------------------------------- strategy
     _spec(

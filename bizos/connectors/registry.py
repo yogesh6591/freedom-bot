@@ -21,6 +21,7 @@ from typing import Any, Optional, Type
 
 from sqlalchemy import text
 
+from bizos.connectors import composio
 from bizos.connectors.base import Connector, ConnectorNotConfigured
 from bizos.connectors.calendar import GoogleCalendarConnector, WorkspaceCalendarConnector
 from bizos.connectors.email import GmailConnector, WorkspaceEmailConnector
@@ -104,10 +105,11 @@ def list_integrations(ctx: Optional[TenantContext] = None) -> list[dict[str, Any
 
 
 def connected_categories(ctx: Optional[TenantContext] = None) -> frozenset[str]:
-    """Categories with an enabled, connected integration.
+    """    Categories with an enabled, connected integration.
 
     This is the ``connected_integrations`` input the policy engine uses to deny a
-    tool whose connector is not actually available.
+    tool whose connector is not actually available. A user's own Composio
+    connection (Gmail, Google Calendar) counts for that user.
     """
     try:
         with readonly_connection(ctx) as conn:
@@ -117,16 +119,32 @@ def connected_categories(ctx: Optional[TenantContext] = None) -> frozenset[str]:
                     "WHERE enabled = TRUE AND status = 'CONNECTED'"
                 )
             ).fetchall()
-        return frozenset(r.category for r in rows)
+        categories = frozenset(r.category for r in rows)
     except Exception:
         # Fail closed: an unreadable integration table means no connector is
         # confirmed available, so connector-backed tools are denied.
         return frozenset()
-
-
-def get_connector(category: str, *, ctx: Optional[TenantContext] = None) -> Connector:
-    """The adapter instance for one category in the current workspace."""
     tenant = ctx or require_context()
+    return categories | composio.connected_categories(tenant)
+
+
+def get_connector(
+    category: str,
+    *,
+    ctx: Optional[TenantContext] = None,
+    owner_user_id: Optional[str] = None,
+) -> Connector:
+    """The adapter instance for one category in the current workspace.
+
+    A user who connected their own account through Composio gets it for that
+    category, ahead of the workspace-level row. ``owner_user_id`` names that user
+    when it is not the caller (an approver executing someone else's request).
+    """
+    tenant = ctx or require_context()
+    owner = owner_user_id or tenant.user_id
+    toolkit = composio.connected_toolkit(composio.as_user(tenant, owner), category)
+    if toolkit:
+        return composio.CONNECTORS[toolkit](tenant, {"owner_user_id": owner})
     with readonly_connection(tenant) as conn:
         row = conn.execute(
             text(

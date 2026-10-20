@@ -13,9 +13,8 @@ from typing import Any, Optional
 from bizos.connectors.base import ConnectorResult
 from bizos.connectors.registry import get_connector
 from bizos.memory import store as memory
-from bizos.rbac.registry import get_spec
 from bizos.tools.base import RunScope, effect, precheck
-from bizos.types import ApprovalStatus, MemoryCategory, Role, SourceType
+from bizos.types import ApprovalStatus, MemoryCategory, SourceType
 
 
 def _hit(i: Any) -> dict:
@@ -204,48 +203,6 @@ def _draft_invoice_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[s
         "line_items": data.get("items") or [],
     }
     return None
-
-
-@effect("approvals_list_pending")
-def approvals_list_pending(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """The approval queue as the caller may see it."""
-    from bizos.actions import store as actions
-    from bizos.control import store as control
-    from bizos.types import ActionStatus
-
-    try:
-        names = {u.id: u.display_name or u.email for u in control.list_users(scope.ctx.client_id)}
-    except Exception:
-        names = {}
-    items = []
-    for a in actions.list_actions(statuses=[ActionStatus.PENDING_APPROVAL], limit=50, ctx=scope.ctx):
-        spec_area = getattr(get_spec(a.tool), "data_area", None)
-        if spec_area and not scope.ctx.can_see_area(spec_area):
-            continue
-        entry: dict[str, Any] = {
-            "action_id": a.id,
-            "title": a.title,
-            "tool": a.tool,
-            "requested_by": names.get(a.requested_by, a.requested_by),
-            "requested_by_role": a.requested_by_role,
-            "created_at": a.created_at.isoformat() if a.created_at else None,
-        }
-        customer = (a.payload or {}).get("customer")
-        if a.tool == "finance_draft_invoice" and customer:
-            entry["customer"] = customer
-            listed = finance_list_pending_billables(scope, {"customer": customer})
-            entry["amount"] = (listed.data or {}).get("total")
-            entry["line_items"] = (listed.data or {}).get("items")
-        items.append(entry)
-    can_approve = scope.ctx.is_admin or scope.ctx.at_least(Role.APPROVER)
-    return ConnectorResult(
-        ok=True,
-        data={"pending": items, "you_can_approve": can_approve},
-        summary=(
-            f"{len(items)} action(s) awaiting approval"
-            + ("; this user can approve them on the Approvals page" if can_approve else "; this user cannot approve")
-        ),
-    )
 
 
 @effect("finance_list_invoices")

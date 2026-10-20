@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, current_context, require_admin
+from bizos.audit import events as audit
+from bizos.connectors import composio
 from bizos.connectors import registry as connectors
+from bizos.connectors.base import ConnectorNotConfigured
 from bizos.tenancy.context import TenantContext
+from bizos.types import AuditEventType
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
@@ -61,3 +65,69 @@ def health(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
     """Ping every connected integration."""
     with bound(ctx):
         return {"results": connectors.health_check(ctx)}
+
+
+# ------------------------------------------------------------ composio (per user)
+
+
+class ConnectRequest(BaseModel):
+    #: Where Composio sends the browser after Google sign-in. Must be a UI origin.
+    callback_url: Optional[str] = Field(default=None, max_length=2000)
+
+
+def _safe_callback(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    from bizos import settings
+
+    for origin in settings.cors_origins():
+        if url == origin or url.startswith(origin.rstrip("/") + "/"):
+            return url
+    raise HTTPException(status_code=400, detail="callback_url must point at this app")
+
+
+def _composio_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, ValueError):
+        return HTTPException(status_code=400, detail=str(exc))
+    if isinstance(exc, ConnectorNotConfigured):
+        return HTTPException(status_code=503, detail=str(exc))
+    return HTTPException(status_code=502, detail=f"Composio request failed: {exc}")
+
+
+@router.get("/composio")
+def composio_status(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """The signed-in user's own Gmail / Google Calendar connections."""
+    return composio.status(ctx)
+
+
+@router.post("/composio/{toolkit}/connect")
+def composio_connect(
+    toolkit: str, body: ConnectRequest, ctx: TenantContext = Depends(current_context)
+) -> dict[str, Any]:
+    """Start Google sign-in for one toolkit; the UI redirects to ``redirect_url``."""
+    callback = _safe_callback(body.callback_url)
+    try:
+        url = composio.connect_url(ctx, toolkit, callback)
+    except Exception as exc:
+        raise _composio_error(exc) from exc
+    with bound(ctx):
+        audit.log(AuditEventType.CONFIG_CHANGED, ctx=ctx, integration=toolkit, status="CONNECT_STARTED")
+    return {"redirect_url": url}
+
+
+@router.post("/composio/{toolkit}/disconnect")
+def composio_disconnect(toolkit: str, ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    try:
+        composio.disconnect(ctx, toolkit)
+    except Exception as exc:
+        raise _composio_error(exc) from exc
+    with bound(ctx):
+        audit.log(AuditEventType.CONFIG_CHANGED, ctx=ctx, integration=toolkit, status="DISCONNECTED")
+    return {"ok": True}
+
+
+@router.post("/composio/refresh")
+def composio_refresh(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """Drop the cached status, e.g. right after returning from Google sign-in."""
+    composio.invalidate(ctx)
+    return composio.status(ctx)

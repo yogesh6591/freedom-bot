@@ -6,10 +6,15 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 sqlalchemy==2.0.36
 psycopg[binary]==3.2.3
-pydantic==2.10.4
-pydantic-settings==2.7.0
+# composio 0.19+ needs pydantic>=2.11.9; keep under 3.0 for FastAPI.
+pydantic==2.11.9
+pydantic-settings==2.10.1
 email-validator==2.2.0
 PyJWT==2.10.1
 pgvector==0.3.6
 openai>=1.106.0
 cryptography==44.0.0
+# Per-user Gmail / Google Calendar via Composio managed OAuth.
+composio==0.19.0
+# IANA zones for zoneinfo on slim images (calendar time zones).
+tzdata>=2024.1

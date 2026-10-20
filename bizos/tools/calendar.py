@@ -10,7 +10,7 @@ from bizos.tools.base import RunScope, effect, risk_inputs
 
 
 def _calendar(scope: RunScope):
-    return get_connector("calendar", ctx=scope.ctx)
+    return get_connector("calendar", ctx=scope.ctx, owner_user_id=scope.on_behalf_of)
 
 
 def _attendees(args: dict[str, Any]) -> list[str]:

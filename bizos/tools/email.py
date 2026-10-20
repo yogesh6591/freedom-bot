@@ -20,7 +20,7 @@ from bizos.tools.base import RunScope, effect, risk_inputs
 
 
 def _email(scope: RunScope):
-    return get_connector("email", ctx=scope.ctx)
+    return get_connector("email", ctx=scope.ctx, owner_user_id=scope.on_behalf_of)
 
 
 def _recipients(args: dict[str, Any]) -> list[str]:

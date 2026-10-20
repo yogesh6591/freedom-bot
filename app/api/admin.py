@@ -8,29 +8,39 @@ client configuration and the tool permission matrix.
 Every route here requires ADMIN and every write is audited. User management is
 scoped to the caller's own client: an admin at one customer cannot see, create or
 modify users at another, because the client id comes from their token.
+
+The changes themselves live in :mod:`bizos.admin_ops`, shared with the admin
+chat tools.
 """
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 
 from app.api.deps import bound, client_settings, current_context, require_admin
-from bizos.audit import events as audit
+from bizos import admin_ops as ops
 from bizos.control import store as control
 from bizos.control.models import ClientSettings
-from bizos.domains.catalog import DOMAIN_NAMES
 from bizos.domains.packs import PACKS
 from bizos.rbac import permissions as perms
 from bizos.rbac.matrix import MATRIX_TEMPLATES
 from bizos.rbac.registry import TOOL_SPECS
 from bizos.tenancy.context import TenantContext
-from bizos.types import AuditEventType, Role, ToolPermission
-from bizos.util.timeutil import utcnow
+from bizos.types import Role
 
 router = APIRouter(prefix="/api", tags=["admin"])
+
+T = TypeVar("T")
+
+
+def _run(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    try:
+        return fn(*args, **kwargs)
+    except ops.AdminError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
 
 class UserCreate(BaseModel):
@@ -88,14 +98,6 @@ class PermissionOverride(BaseModel):
     permission: str
 
 
-def _roles(names: list[str]) -> frozenset[Role]:
-    parsed = {Role.parse(n) for n in names}
-    resolved = frozenset(r for r in parsed if r is not None)
-    if not resolved:
-        raise HTTPException(status_code=400, detail=f"No valid roles in {names}")
-    return resolved  # type: ignore[return-value]
-
-
 # --------------------------------------------------------------------- users
 
 
@@ -106,56 +108,22 @@ def list_users(ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
 
 @router.post("/users", status_code=201)
 def create_user(body: UserCreate, ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
-    try:
-        user = control.create_user(
-            client_id=ctx.client_id,
-            email=str(body.email),
-            password=body.password,
-            display_name=body.display_name,
-            roles=_roles(body.roles),
-            created_by=ctx.user_id,
-            data_scopes=body.data_scopes,
-        )
-    except control.DuplicateUser as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    with bound(ctx):
-        audit.log(
-            AuditEventType.CONFIG_CHANGED,
-            ctx=ctx,
-            status="USER_CREATED",
-            request={"email": str(body.email), "roles": body.roles},
-        )
-    return user.to_dict()
-
-
-def _assert_same_client(ctx: TenantContext, user_id: str) -> None:
-    """An admin may only act on users in their own workspace."""
-    try:
-        user = control.get_user(user_id)
-    except control.UserNotFound as exc:
-        raise HTTPException(status_code=404, detail="No such user") from exc
-    if user.client_id != ctx.client_id:
-        # Same response as "not found": an admin must not be able to probe
-        # whether a user id exists at another customer.
-        raise HTTPException(status_code=404, detail="No such user")
+    return _run(
+        ops.create_user,
+        ctx,
+        email=str(body.email),
+        password=body.password,
+        display_name=body.display_name,
+        roles=body.roles,
+        data_scopes=body.data_scopes,
+    ).to_dict()
 
 
 @router.patch("/users/{user_id}/roles")
 def set_roles(
     user_id: str, body: RoleUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
-    _assert_same_client(ctx, user_id)
-    user = control.set_user_roles(user_id, _roles(body.roles), granted_by=ctx.user_id)
-    with bound(ctx):
-        audit.log(
-            AuditEventType.CONFIG_CHANGED,
-            ctx=ctx,
-            status="ROLES_CHANGED",
-            request={"user_id": user_id, "roles": body.roles},
-        )
-    return user.to_dict()
+    return _run(ops.set_roles, ctx, user_id, body.roles).to_dict()
 
 
 @router.patch("/users/{user_id}/scopes")
@@ -163,19 +131,7 @@ def set_scopes(
     user_id: str, body: ScopeUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
     """Grant or revoke restricted data areas (exec/hr/salary/finance/legal)."""
-    _assert_same_client(ctx, user_id)
-    try:
-        user = control.set_user_scopes(user_id, body.data_scopes)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    with bound(ctx):
-        audit.log(
-            AuditEventType.DATA_SCOPES_CHANGED,
-            ctx=ctx,
-            status="DATA_SCOPES_CHANGED",
-            request={"user_id": user_id, "data_scopes": sorted(user.data_scopes)},
-        )
-    return user.to_dict()
+    return _run(ops.set_scopes, ctx, user_id, body.data_scopes).to_dict()
 
 
 @router.get("/data-areas")
@@ -189,21 +145,14 @@ def list_data_areas() -> dict[str, Any]:
 def set_status(
     user_id: str, body: StatusUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
-    _assert_same_client(ctx, user_id)
-    return control.set_user_status(user_id, body.status).to_dict()
+    return _run(ops.set_status, ctx, user_id, body.status).to_dict()
 
 
 @router.post("/users/{user_id}/password")
 def set_password(
     user_id: str, body: PasswordUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, str]:
-    _assert_same_client(ctx, user_id)
-    control.set_password(user_id, body.password)
-    with bound(ctx):
-        audit.log(
-            AuditEventType.CONFIG_CHANGED, ctx=ctx, status="PASSWORD_RESET",
-            request={"user_id": user_id},
-        )
+    _run(ops.set_password, ctx, user_id, body.password)
     return {"status": "updated"}
 
 
@@ -261,57 +210,7 @@ def update_settings(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Update the §21 tenant configuration. Values are clamped to platform floors."""
-    changes = body.model_dump(exclude_none=True)
-    if "enabled_domains" in changes:
-        unpaid = [d for d in changes["enabled_domains"] if not settings.domain_purchased(d)]
-        if unpaid:
-            raise HTTPException(status_code=409, detail=_change_order_detail(unpaid))
-    if "tool_modes" in changes:
-        changes["tool_modes"] = _validated_tool_modes(settings, changes["tool_modes"])
-    _fold_legacy_dpa_flags(changes, settings)
-    payload = settings.to_dict()
-    for key, value in changes.items():
-        if key == "tool_modes":
-            payload[key] = value
-            continue
-        if isinstance(value, dict) and isinstance(payload.get(key), dict):
-            payload[key] = {**payload[key], **value}
-        else:
-            payload[key] = value
-    updated = ClientSettings.from_dict(payload)
-    client = control.update_client_settings(ctx.client_id, updated, updated_by=ctx.user_id)
-    with bound(ctx):
-        audit.log(
-            AuditEventType.CONFIG_CHANGED,
-            ctx=ctx,
-            status="SETTINGS_UPDATED",
-            request={"changes": body.model_dump(exclude_none=True)},
-            result={"settings": client.settings.to_dict()},
-        )
-    return client.settings.to_dict()
-
-
-_LEGACY_DPA_FIELDS = {
-    "allow_phi": "phi",
-    "allow_card_data": "card",
-    "allow_child_data": "child",
-    "allow_biometrics": "biometrics",
-}
-
-
-def _fold_legacy_dpa_flags(changes: dict[str, Any], settings: ClientSettings) -> None:
-    """FB-039: turn legacy ``allow_*`` switches into an ``order_dpa_allows`` edit.
-
-    The Order/DPA list is the only stored setting, so a legacy switch must edit
-    it — otherwise the list would silently override the switch on save.
-    """
-    legacy = {k: changes.pop(k) for k in list(changes) if k in _LEGACY_DPA_FIELDS}
-    if not legacy or "order_dpa_allows" in changes:
-        return
-    allowed = set(settings.order_dpa_allows)
-    for key, on in legacy.items():
-        (allowed.add if on else allowed.discard)(_LEGACY_DPA_FIELDS[key])
-    changes["order_dpa_allows"] = sorted(allowed)
+    return _run(ops.update_settings, ctx, settings, body.model_dump(exclude_none=True)).to_dict()
 
 
 @router.put("/policies/tool-permissions")
@@ -319,38 +218,14 @@ def set_tool_permission(
     body: PermissionOverride, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
     """Override one role's permission for one tool, within the registry ceiling."""
-    role = Role.parse(body.role)
-    permission = ToolPermission.parse(body.permission)
-    if role is None or permission is None:
-        raise HTTPException(status_code=400, detail="Unknown role or permission")
-    with bound(ctx):
-        try:
-            perms.set_override(
-                ctx, tool=body.tool, role=role, permission=permission, updated_by=ctx.user_id  # type: ignore[arg-type]
-            )
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        except PermissionError as exc:
-            raise HTTPException(status_code=403, detail=str(exc)) from exc
-        audit.log(
-            AuditEventType.CONFIG_CHANGED,
-            ctx=ctx,
-            tool=body.tool,
-            status="TOOL_PERMISSION_OVERRIDE",
-            request={"role": body.role, "permission": body.permission},
-        )
-    return {"tool": body.tool, "role": str(role), "permission": str(permission)}
+    return _run(ops.set_tool_permission, ctx, tool=body.tool, role=body.role, permission=body.permission)
 
 
 @router.delete("/policies/tool-permissions")
 def clear_tool_permission(
     tool: str, role: str, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, str]:
-    parsed = Role.parse(role)
-    if parsed is None:
-        raise HTTPException(status_code=400, detail="Unknown role")
-    with bound(ctx):
-        perms.clear_override(ctx, tool=tool, role=parsed)  # type: ignore[arg-type]
+    _run(ops.clear_tool_permission, ctx, tool=tool, role=role)
     return {"status": "cleared"}
 
 
@@ -388,54 +263,8 @@ def toggle_domain(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Enable or disable a domain pack for this client."""
-    if domain not in DOMAIN_NAMES:
-        raise HTTPException(status_code=404, detail=f"Unknown domain {domain}")
-    if domain == "general" and not body.enabled:
-        raise HTTPException(
-            status_code=400,
-            detail="The General pack provides organizational memory and cannot be disabled.",
-        )
-    if body.enabled and not settings.domain_purchased(domain):
-        raise HTTPException(status_code=409, detail=_change_order_detail([domain]))
-    enabled = set(settings.enabled_domains)
-    enabled.add(domain) if body.enabled else enabled.discard(domain)
-    settings.enabled_domains = sorted(enabled)
-    client = control.update_client_settings(ctx.client_id, settings, updated_by=ctx.user_id)
-    with bound(ctx):
-        audit.log(
-            AuditEventType.CONFIG_CHANGED,
-            ctx=ctx,
-            domain=domain,
-            status="DOMAIN_TOGGLED",
-            request={"enabled": body.enabled},
-        )
-    return {"domain": domain, "enabled": body.enabled, "enabled_domains": client.settings.enabled_domains}
-
-
-def _change_order_detail(domains: list[str]) -> str:
-    return (
-        f"{', '.join(domains)} is not part of this client's purchased package. "
-        "Record a change order first (POST /api/domains/{domain}/change-order)."
-    )
-
-
-def _validated_tool_modes(settings: ClientSettings, raw: dict[str, Optional[str]]) -> dict[str, str]:
-    """Merge per-tool mode changes; ``None``/"" clears an entry."""
-    from bizos.rbac.registry import TOOLS_BY_NAME
-    from bizos.types import ExecutionMode
-
-    merged = dict(settings.tool_modes)
-    for tool, mode in raw.items():
-        if tool not in TOOLS_BY_NAME:
-            raise HTTPException(status_code=404, detail=f"Unknown tool {tool}")
-        if not mode:
-            merged.pop(tool, None)
-            continue
-        parsed = ExecutionMode.parse(mode)
-        if parsed is None:
-            raise HTTPException(status_code=400, detail=f"Unknown execution mode {mode}")
-        merged[tool] = parsed.value
-    return merged
+    updated = _run(ops.toggle_domain, ctx, settings, domain, body.enabled)
+    return {"domain": domain, "enabled": body.enabled, "enabled_domains": updated.enabled_domains}
 
 
 class ChangeOrder(BaseModel):
@@ -452,37 +281,14 @@ def record_change_order(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """FB-035: add a domain to the purchased package against a change order."""
-    if domain not in DOMAIN_NAMES:
-        raise HTTPException(status_code=404, detail=f"Unknown domain {domain}")
-    purchased = set(settings.purchased_domains)
-    purchased.add(domain)
-    settings.purchased_domains = sorted(purchased)
-    if body.enable:
-        settings.enabled_domains = sorted(set(settings.enabled_domains) | {domain})
-    orders = list((settings.onboarding or {}).get("change_orders") or [])
-    orders.append(
-        {
-            "domain": domain,
-            "reference": body.reference,
-            "note": body.note,
-            "by": ctx.user_id,
-            "at": utcnow().isoformat(),
-        }
+    updated = _run(
+        ops.record_change_order, ctx, settings, domain,
+        reference=body.reference, note=body.note, enable=body.enable,
     )
-    settings.onboarding = {**(settings.onboarding or {}), "change_orders": orders}
-    client = control.update_client_settings(ctx.client_id, settings, updated_by=ctx.user_id)
-    with bound(ctx):
-        audit.log(
-            AuditEventType.CHANGE_ORDER,
-            ctx=ctx,
-            domain=domain,
-            status="DOMAIN_PURCHASED",
-            request={"reference": body.reference, "note": body.note},
-        )
     return {
         "domain": domain,
-        "purchased_domains": client.settings.purchased_domains,
-        "enabled_domains": client.settings.enabled_domains,
+        "purchased_domains": updated.purchased_domains,
+        "enabled_domains": updated.enabled_domains,
     }
 
 
@@ -538,40 +344,7 @@ def apply_onboarding(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Apply guided first-client config: memory + domains + autonomy mode."""
-    from bizos.onboarding import OnboardingProfile, apply_profile, get_profile
-
-    unpaid = [d for d in body.enabled_domains or [] if not settings.domain_purchased(d)]
-    if unpaid:
-        raise HTTPException(status_code=409, detail=_change_order_detail(unpaid))
-    profile = OnboardingProfile(
-        goals=body.goals,
-        systems=body.systems,
-        sops=body.sops,
-        roles_notes=body.roles_notes,
-        access_notes=body.access_notes,
-        autonomy_mode=body.autonomy_mode,
-        enabled_domains=body.enabled_domains or list(settings.enabled_domains),
-        review_points=body.review_points,
-        assessment=body.assessment,
-        exclusions=body.exclusions,
-        baselines=body.baselines if body.baselines is not None else get_profile(settings).baselines,
-    )
-    with bound(ctx):
-        result = apply_profile(
-            client_id=ctx.client_id, profile=profile, settings=settings, ctx=ctx
-        )
-        audit.log(
-            AuditEventType.CONFIG_CHANGED,
-            ctx=ctx,
-            status="ONBOARDING_APPLIED",
-            request={
-                "goals": len(body.goals),
-                "systems": len(body.systems),
-                "sops": len(body.sops),
-                "autonomy_mode": body.autonomy_mode,
-            },
-        )
-    return result
+    return _run(ops.apply_onboarding, ctx, settings, **body.model_dump())
 
 
 # -------------------------------------------------------------- insights (FB-041 / 043 / 050)
@@ -627,15 +400,7 @@ def dismiss_alert_route(
     ctx: TenantContext = Depends(require_admin),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    from bizos.insights import dismiss_alert
-
-    try:
-        items = dismiss_alert(
-            client_id=ctx.client_id, settings=settings, alert_id=body.alert_id, ctx=ctx
-        )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=f"Unknown alert {exc}") from exc
-    return {"items": items}
+    return {"items": _run(ops.dismiss_alert, ctx, settings, body.alert_id)}
 
 
 @router.get("/insights/baselines")
@@ -662,20 +427,7 @@ def put_baselines(
     ctx: TenantContext = Depends(require_admin),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    from bizos.insights import save_baselines
-
-    try:
-        items = save_baselines(
-            client_id=ctx.client_id, settings=settings, baselines=body.items, ctx=ctx
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    audit.log(
-        AuditEventType.CONFIG_CHANGED,
-        ctx=ctx,
-        status="BASELINES_UPDATED",
-        request={"count": len(items)},
-    )
+    items = _run(ops.save_baselines, ctx, settings, body.items)
     return {"items": items, "disclaimer": "Directional before/after only. No guaranteed ROI."}
 
 
@@ -694,24 +446,7 @@ def onboarding_handoff(
     Prefer ``POST /api/owner/sale-events`` after checkout/contract so this is
     not needed by hand.
     """
-    from bizos.insights import handoff_assessment
-
-    if not body.assessment:
-        raise HTTPException(status_code=400, detail="assessment JSON object is required")
-    result = handoff_assessment(
-        client_id=ctx.client_id,
-        settings=settings,
-        assessment=body.assessment,
-        ctx=ctx,
-        source="manual",
-    )
-    audit.log(
-        AuditEventType.CONFIG_CHANGED,
-        ctx=ctx,
-        status="ASSESSMENT_HANDOFF",
-        request={"keys": sorted(body.assessment.keys())[:20], "source": "manual"},
-    )
-    return result
+    return _run(ops.handoff_assessment, ctx, settings, body.assessment)
 
 
 # -------------------------------------------------------------- launch checklist (FB-045)
@@ -741,19 +476,10 @@ def mark_launch_item(
     ctx: TenantContext = Depends(require_admin),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    from bizos.launch import mark_item
-
-    try:
-        return mark_item(
-            client_id=ctx.client_id,
-            settings=settings,
-            item_id=body.item_id,
-            status=body.status,
-            actor=ctx.user_id,
-            waive_reason=body.waive_reason,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _run(
+        ops.mark_launch_item, ctx, settings,
+        item_id=body.item_id, status=body.status, waive_reason=body.waive_reason,
+    )
 
 
 class LaunchSignOffBody(BaseModel):
@@ -767,24 +493,7 @@ def launch_sign_off(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Record go-live sign-off when the checklist is ready (FB-045)."""
-    from bizos.launch import sign_off
-
-    try:
-        result = sign_off(
-            client_id=ctx.client_id,
-            settings=settings,
-            actor=ctx.user_id,
-            force=body.force,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    audit.log(
-        AuditEventType.CONFIG_CHANGED,
-        ctx=ctx,
-        status="LAUNCH_SIGNED_OFF",
-        request={"force": body.force},
-    )
-    return result
+    return _run(ops.launch_sign_off, ctx, settings, force=body.force)
 
 
 # -------------------------------------------------------------- resale pricing (FB-048)
@@ -819,29 +528,7 @@ def put_resale_rules(
     ctx: TenantContext = Depends(require_admin),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    from bizos.pricing import save_rules
-
-    try:
-        rules = save_rules(
-            client_id=ctx.client_id,
-            settings=settings,
-            rules=body.model_dump(exclude_none=True),
-            ctx=ctx,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    audit.log(
-        AuditEventType.CONFIG_CHANGED,
-        ctx=ctx,
-        status="RESALE_RULES_UPDATED",
-        request={
-            "customer_price_usd": rules["customer_price_usd"],
-            "margin_percent": rules["margin_percent"],
-            "quote_status": rules["quote_status"],
-            "reconfirm_needed": rules.get("reconfirm_needed", False),
-        },
-    )
-    return {"rules": rules}
+    return {"rules": _run(ops.save_resale_rules, ctx, settings, body.model_dump(exclude_none=True))}
 
 
 # -------------------------------------------------------------- consult pricing (FB-049)
@@ -884,42 +571,4 @@ def post_consult_quote(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """FB-049: calculate (and optionally save) a consult quote from face rules."""
-    from bizos.pricing import calculate_consult_quote, save_consult_quote
-
-    try:
-        quote = calculate_consult_quote(
-            settings,
-            domains=body.domains,
-            autonomy=body.autonomy,
-            integrations=body.integrations,
-            discount_percent=body.discount_percent,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    saved = None
-    if body.save:
-        try:
-            saved = save_consult_quote(
-                client_id=ctx.client_id,
-                settings=settings,
-                quote=quote,
-                ctx=ctx,
-                label=body.label,
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        audit.log(
-            AuditEventType.CONFIG_CHANGED,
-            ctx=ctx,
-            status="CONSULT_QUOTE_SAVED",
-            request={
-                "id": saved["id"],
-                "customer_price_usd": saved["customer_price_usd"],
-                "domains": saved["inputs"]["domains"],
-                "placeholder": saved["placeholder"],
-            },
-        )
-
-    return {"quote": quote, "saved": saved}
-
+    return _run(ops.consult_quote, ctx, settings, **body.model_dump())

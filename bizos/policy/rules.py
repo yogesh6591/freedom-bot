@@ -310,7 +310,7 @@ def rule_mode(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
         )
 
     if mode == ExecutionMode.DRAFT:
-        if inp.spec.draft_safe:
+        if inp.spec.skips_mode_queue:
             return None
         return Constraint(
             "MODE_DRAFT",
@@ -320,7 +320,7 @@ def rule_mode(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
         )
 
     if mode == ExecutionMode.WAIT_FOR_APPROVAL:
-        if inp.spec.draft_safe:
+        if inp.spec.skips_mode_queue:
             return None
         return Constraint(
             "MODE_WAIT_FOR_APPROVAL",
@@ -336,7 +336,7 @@ def rule_auto_risk_ceiling(req: PolicyRequest, inp: EvaluationInputs) -> Optiona
     """In AUTO mode, only risk at or below the configured ceiling runs unattended."""
     if inp.mode != ExecutionMode.AUTO_WITHIN_SCOPE or not inp.spec.write:
         return None
-    if inp.spec.draft_safe:
+    if inp.spec.skips_mode_queue:
         return None
     if risk_rank(inp.risk) > risk_rank(req.settings.auto_max_risk):
         return Constraint(

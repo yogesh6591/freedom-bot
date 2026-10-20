@@ -307,6 +307,25 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         ["event_id", "starts_at", "ends_at"],
     ),
     "calendar_cancel_event": _obj({"event_id": _s("Event id")}, ["event_id"]),
+    "youtube_search_videos": _obj(
+        {
+            "query": _s("Search terms"),
+            "limit": _i("Max results (default 5)"),
+            "order": _s("relevance|date|viewCount|rating"),
+        },
+        ["query"],
+    ),
+    "youtube_my_channel": _obj({}),
+    "youtube_my_videos": _obj({"limit": _i("Max videos (default 10)")}),
+    "youtube_video_details": _obj({"video_ids": _arr("YouTube video ids")}, ["video_ids"]),
+    "youtube_video_comments": _obj(
+        {
+            "video_id": _s("YouTube video id"),
+            "limit": _i("Max comments (default 20)"),
+            "order": _s("relevance|time"),
+        },
+        ["video_id"],
+    ),
     "strategy_list_priorities": _obj({"query": _s("Optional search")}),
     "strategy_record_option": _obj(
         {
@@ -354,7 +373,199 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "resume_text": _s("Raw resume text if not already in memory"),
         }
     ),
-    "approvals_list_pending": _obj({}),
+    "approvals_list": _obj(
+        {
+            "status": _s(
+                "pending (default) | drafts | approved | completed | failed | rejected | "
+                "cancelled | all — several may be comma-separated"
+            ),
+            "mine": {"type": "boolean", "description": "Only actions this user requested"},
+            "limit": _i("Max rows (default 25)"),
+        }
+    ),
+    "approvals_get": _obj(
+        {
+            "action_id": _s("Action id, e.g. act_…"),
+            "match": _s("Words from the action's title, when the id is not known"),
+        }
+    ),
+    "approvals_approve": _obj(
+        {
+            "action_id": _s("Action id, e.g. act_…"),
+            "match": _s("Words from the action's title, when the id is not known"),
+            "comment": _s("Optional approval note"),
+        }
+    ),
+    "approvals_reject": _obj(
+        {
+            "action_id": _s("Action id, e.g. act_…"),
+            "match": _s("Words from the action's title, when the id is not known"),
+            "comment": _s("Why it was rejected"),
+        }
+    ),
+    "approvals_request_changes": _obj(
+        {
+            "action_id": _s("Action id, e.g. act_…"),
+            "match": _s("Words from the action's title, when the id is not known"),
+            "comment": _s("What needs to change"),
+        },
+        ["comment"],
+    ),
+    "approvals_submit": _obj(
+        {
+            "action_id": _s("Draft action id, e.g. act_…"),
+            "match": _s("Words from the draft's title, when the id is not known"),
+        }
+    ),
+    "admin_workspace_overview": _obj({}),
+    "admin_list_users": _obj({}),
+    "admin_get_setup": _obj({}),
+    "admin_list_alerts": _obj({}),
+    "admin_launch_checklist": _obj({}),
+    "admin_pricing": _obj({}),
+    "admin_list_domains": _obj({}),
+    "admin_tool_permissions": _obj({"tool": _s("Optional tool name, title words or category, e.g. email")}),
+    "admin_apply_setup": _obj(
+        {
+            "goals": _arr("Business goals (replaces the list)"),
+            "systems": _arr("Systems the client uses (replaces the list)"),
+            "sops": {
+                "type": "array",
+                "description": "SOPs to record: {title, content}",
+                "items": {"type": "object", "properties": {"title": _s("Title"), "content": _s("Steps")}},
+            },
+            "roles_notes": _s("Who does what"),
+            "access_notes": _s("Access notes"),
+            "review_points": _arr("Where a human must review (replaces the list)"),
+            "exclusions": _arr("Out-of-scope items (replaces the list)"),
+            "autonomy_mode": _s("ADVISE | DRAFT | WAIT_FOR_APPROVAL | AUTO_WITHIN_SCOPE"),
+            "enabled_domains": _arr("Purchased packs to enable"),
+        }
+    ),
+    "admin_handoff_assessment": _obj(
+        {"assessment": {"type": "object", "description": "Sale/assessment details as key/value pairs"}},
+        ["assessment"],
+    ),
+    "admin_scan_alerts": _obj({}),
+    "admin_dismiss_alert": _obj({"alert_id": _s("Alert id from admin_list_alerts")}, ["alert_id"]),
+    "admin_set_baselines": _obj(
+        {
+            "items": {
+                "type": "array",
+                "description": "Baselines to add or update (matched by id, or workflow+metric)",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": _s("Existing id, to update"),
+                        "workflow": _s("Workflow, e.g. Invoice approvals"),
+                        "metric": _s("Metric, e.g. hours per week"),
+                        "before_value": _s("Before"),
+                        "after_value": _s("After"),
+                        "unit": _s("Unit"),
+                        "notes": _s("Notes"),
+                    },
+                },
+            },
+            "remove": _arr("Ids or workflow names to remove"),
+        }
+    ),
+    "admin_mark_launch_item": _obj(
+        {
+            "item_id": _s("Checklist item id from admin_launch_checklist"),
+            "status": _s("done | pending | waived"),
+            "waive_reason": _s("Required when waiving"),
+        },
+        ["item_id"],
+    ),
+    "admin_launch_sign_off": _obj({"force": {"type": "boolean", "description": "Only if the user explicitly insists on signing off with items pending"}}),
+    "admin_set_resale_rules": _obj(
+        {
+            "customer_price_usd": _f("Customer price in USD"),
+            "cepoch_cost_usd": _f("Cepoch cost in USD"),
+            "margin_percent": _f("Target margin %, derives cost when cost is not given"),
+            "quote_status": _s("draft | pending | confirmed"),
+            "notes": _s("Notes"),
+            "scope_rules": {"type": "object", "description": "Consult scope weights to change, e.g. addon_usd, integration_usd, max_discount_percent"},
+        }
+    ),
+    "admin_consult_quote": _obj(
+        {
+            "domains": _arr("Packs in scope"),
+            "autonomy": _s("ADVISE | DRAFT | WAIT_FOR_APPROVAL | AUTO_WITHIN_SCOPE"),
+            "integrations": _i("Number of integrations"),
+            "discount_percent": _f("Discount %"),
+            "label": _s("Label when saving"),
+            "save": {"type": "boolean", "description": "Save the quote"},
+        }
+    ),
+    "admin_create_user": _obj(
+        {
+            "email": _s("Email address"),
+            "display_name": _s("Name"),
+            "roles": _arr("VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN"),
+            "data_access": _arr("Restricted data areas, e.g. finance, hr"),
+        },
+        ["email"],
+    ),
+    "admin_set_user_roles": _obj(
+        {"user": _s("Email or name"), "roles": _arr("The full new set of roles")}, ["user", "roles"]
+    ),
+    "admin_set_user_access": _obj(
+        {
+            "user": _s("Email or name"),
+            "data_access": _arr("The full new set of areas (omit to edit with add/remove)"),
+            "add": _arr("Areas to grant"),
+            "remove": _arr("Areas to revoke"),
+        },
+        ["user"],
+    ),
+    "admin_set_user_status": _obj(
+        {"user": _s("Email or name"), "status": _s("ACTIVE | SUSPENDED")}, ["user", "status"]
+    ),
+    "admin_reset_password": _obj({"user": _s("Email or name")}, ["user"]),
+    "admin_update_settings": _obj(
+        {
+            "default_execution_mode": _s("ADVISE | DRAFT | WAIT_FOR_APPROVAL | AUTO_WITHIN_SCOPE"),
+            "order_dpa_allows": _arr("Full list of allowed regulated categories: phi, card, child, biometrics"),
+            "llm_baa_covered": {"type": "boolean", "description": "Model vendor has a signed BAA"},
+            "approval_policy": {"type": "object", "description": "Fields to change, e.g. allow_self_approval, approver_role, expires_after_hours"},
+            "risk_policy": {"type": "object", "description": "Fields to change, e.g. max_records_per_action, max_emails_per_run, auto_allowed_max_risk"},
+            "memory_policy": {"type": "object", "description": "Fields to change"},
+            "retention_policy": {"type": "object", "description": "Fields to change, e.g. audit_days"},
+        }
+    ),
+    "admin_toggle_domain": _obj(
+        {"domain": _s("Pack name, e.g. finance"), "enabled": {"type": "boolean", "description": "On or off"}},
+        ["domain", "enabled"],
+    ),
+    "admin_record_change_order": _obj(
+        {
+            "domain": _s("Pack name"),
+            "reference": _s("Change-order reference, e.g. CO-2026-014"),
+            "note": _s("Optional note"),
+            "enable": {"type": "boolean", "description": "Also enable it (default true)"},
+        },
+        ["domain", "reference"],
+    ),
+    "admin_set_tool_permission": _obj(
+        {
+            "tool": _s("Tool name, e.g. email_send_message"),
+            "role": _s("VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN"),
+            "permission": _s("DENIED | DRAFT_ONLY | APPROVE_ONLY | EXECUTE_AFTER_APPROVAL | ALLOWED | default"),
+        },
+        ["tool", "role", "permission"],
+    ),
+    "admin_set_tool_mode": _obj(
+        {"tool": _s("Tool name"), "mode": _s("ADVISE | DRAFT | WAIT_FOR_APPROVAL | AUTO_WITHIN_SCOPE | default")},
+        ["tool", "mode"],
+    ),
+    "approvals_cancel": _obj(
+        {
+            "action_id": _s("Action id, e.g. act_…"),
+            "match": _s("Words from the action's title, when the id is not known"),
+            "comment": _s("Optional reason"),
+        }
+    ),
     "finance_list_invoices": _obj(
         {
             "customer": _s("Customer / company name"),

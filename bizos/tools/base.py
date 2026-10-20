@@ -108,6 +108,9 @@ class RunScope:
     workflow_run_id: Optional[str] = None
     #: Mutable per-run counters, e.g. the outbound-email cap.
     counters: dict[str, int] = field(default_factory=dict)
+    #: User whose connected accounts an effect acts through. Set to the requester
+    #: when an approver executes an approved action, so mail goes out as them.
+    on_behalf_of: Optional[str] = None
     _integrations: Optional[frozenset[str]] = None
 
     @property
