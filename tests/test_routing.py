@@ -176,18 +176,7 @@ def test_route_query_returns_the_models_structured_route(fake_model):
     assert result.route.domains == ["crm", "email"] and result.route.entities == {"contact": "Raj"}
 
 
-@pytest.fixture
-def router_log(monkeypatch, caplog):
-    """The router's logger, re-enabled: the test session's in-process Alembic run (logging.config.fileConfig)
-    disables loggers that already exist."""
-    import logging
-
-    monkeypatch.setattr(logging.getLogger("bizos.agents.router_agent"), "disabled", False)
-    return caplog
-
-
-def test_a_router_failure_routes_nowhere_and_logs_why(fake_model, router_log):
-    caplog = router_log
+def test_a_router_failure_routes_nowhere_and_logs_why(fake_model, caplog):
     SCRIPT[:] = [{"status": 500, "message": "boom"}] * 3
     with caplog.at_level("WARNING", logger="bizos.agents.router_agent"):
         result = route_query("route this", "hello")
@@ -196,8 +185,7 @@ def test_a_router_failure_routes_nowhere_and_logs_why(fake_model, router_log):
     assert len(logged) == 1 and logged[0].reason == result.fallback_reason
 
 
-def test_an_unstructured_reply_is_a_logged_fallback(fake_model, router_log):
-    caplog = router_log
+def test_an_unstructured_reply_is_a_logged_fallback(fake_model, caplog):
     SCRIPT[:] = [{"content": "I think this is about CRM"}]
     with caplog.at_level("WARNING", logger="bizos.agents.router_agent"):
         result = route_query("route this", "hello")
@@ -251,3 +239,10 @@ def test_playbooks_keep_general_rules_and_only_routed_domains(client_scratch, ct
     assert "admin_list_users" not in text and "approvals_decide" not in text
     assert "approvals_cancel" in text and "45 minutes" in text and "Asia/Kolkata" in text
     assert "## crm" not in text and "{" not in text
+
+
+def test_the_test_session_keeps_existing_loggers_enabled():
+    """The in-process Alembic migration in conftest must not disable loggers created before it."""
+    import logging
+
+    assert not logging.getLogger("bizos.agents.router_agent").disabled

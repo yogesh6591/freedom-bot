@@ -12,7 +12,8 @@ import acquisition.models  # noqa: F401 — register models
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers that already exist (the app's and the tests' own) working when migrations run in-process.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
