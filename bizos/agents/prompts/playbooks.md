@@ -1,4 +1,5 @@
-<!-- The pipeline inserts only the sections for the routed domains. -->
+<!-- The pipeline inserts only the sections for the routed domains, and drops any bullet that names a
+     tool the user cannot see. Keep each bullet about one tool, so general rules survive. -->
 
 ## crm
 - Find before you change: crm_search_contacts, crm_search_companies or crm_search_deals, then use the ID.
@@ -20,7 +21,9 @@
 ## calendar
 - Check availability before creating or rescheduling.
 - Use the user's timezone ({timezone}) unless they name another.
-- Attendee emails come from crm_get_contact or admin_list_users. Never guess.
+- Never guess attendee emails.
+- Customers' and leads' emails come from crm_get_contact.
+- Colleagues' emails come from admin_list_users.
 - Default meeting length when none is given: {default_meeting_minutes} minutes.
 
 ## finance
@@ -40,10 +43,11 @@
 ## approvals
 - Find the action_id with approvals_list or approvals_get first.
 - approvals_decide for approve, reject or request changes (request changes needs a comment).
-  approvals_cancel only for the user's own submissions.
+- approvals_cancel only for the user's own submissions.
 
 ## ops
-- support_create_ticket is for asking Cepoch support about the product; sales follow-ups are crm_create_task.
+- support_create_ticket is for asking Cepoch support about the product.
+- Sales follow-ups are crm_create_task, not support tickets.
 - legal_find_clause only searches. legal_flag_for_counsel when the user wants a lawyer's review.
 - n8n_trigger_webhook only when the user names the automation. It always needs approval.
 

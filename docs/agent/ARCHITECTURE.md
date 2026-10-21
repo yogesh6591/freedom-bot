@@ -91,7 +91,9 @@ class Route(BaseModel):
     clarify: str | None = None
 ```
 - Model: `ROUTER_MODEL_ID` (`provider:model`), falling back to `MODEL_ID`. Wiring in
-  `bizos/agents/router_agent.py`; a router failure routes nowhere and the executor uses `load_tools`.
+  `bizos/agents/router_agent.py`. A router failure (an error, or no structured route) routes nowhere and
+  the executor uses `load_tools`. Every fallback is logged as `v2_router_fallback` with its reason and is
+  returned in `RouteResult.fallback_reason`.
 - Domains the user was not offered are dropped in code (`clean_route`), whatever the model returns.
 - Optimised for recall: include a domain when unsure.
 - Runs in parallel with memory_search on the raw query.
@@ -111,7 +113,9 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
 
 ### 5.6 Executor (strong model)
 - Prompt: bizos/agents/prompts/executor.md plus the playbook sections for the routed domains
-  (bizos/agents/prompts/playbooks.md).
+  (bizos/agents/prompts/playbooks.md), rendered by `routing.render_playbooks`: any bullet that names a
+  tool the user cannot see is dropped, so a playbook never points at a pack-gated or role-gated tool.
+  Keep each playbook bullet about one tool so general rules survive.
 - `{default_meeting_minutes}`: the workspace's default meeting length if its settings define one,
   otherwise 30. (No such setting exists today, so it is 30.)
 - Temperature 0. Max 8 tool calls per request.

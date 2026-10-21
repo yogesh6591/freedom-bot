@@ -11,7 +11,7 @@ import pytest
 
 from app.assistant.assistant import _packs_for
 from bizos.agents.merged_tools import MERGED, WRAPPED
-from bizos.agents.router_agent import FALLBACK_ROUTE, route_and_prefetch, route_query
+from bizos.agents.router_agent import FALLBACK_EVENT, FALLBACK_ROUTE, RouteResult, route_and_prefetch, route_query
 from bizos.agents.routing import (
     ALWAYS_ON, BUNDLE_EXTRAS, DOMAIN_DESCRIPTIONS, LOAD_TOOLS, MODEL_TOOLS, Route, ToolLoader, bundle,
     clean_route, domain_menu, home_tools, render_router_prompt, tools_for_route, visible_tools,
@@ -171,13 +171,38 @@ def test_router_prompt_lists_only_the_menu_and_keeps_its_examples():
 def test_route_query_returns_the_models_structured_route(fake_model):
     SCRIPT[:] = [{"content": json.dumps({"domains": ["crm", "email"], "kind": "task",
                                           "entities": {"contact": "Raj"}, "clarify": None})}]
-    route = route_query("route this", "Move the Acme deal to won and email Raj")
-    assert route.domains == ["crm", "email"] and route.entities == {"contact": "Raj"}
+    result = route_query("route this", "Move the Acme deal to won and email Raj")
+    assert result.fallback_reason is None
+    assert result.route.domains == ["crm", "email"] and result.route.entities == {"contact": "Raj"}
 
 
-def test_a_router_failure_routes_nowhere_instead_of_failing(fake_model):
+@pytest.fixture
+def router_log(monkeypatch, caplog):
+    """The router's logger, re-enabled: the test session's in-process Alembic run (logging.config.fileConfig)
+    disables loggers that already exist."""
+    import logging
+
+    monkeypatch.setattr(logging.getLogger("bizos.agents.router_agent"), "disabled", False)
+    return caplog
+
+
+def test_a_router_failure_routes_nowhere_and_logs_why(fake_model, router_log):
+    caplog = router_log
     SCRIPT[:] = [{"status": 500, "message": "boom"}] * 3
-    assert route_query("route this", "hello") == FALLBACK_ROUTE
+    with caplog.at_level("WARNING", logger="bizos.agents.router_agent"):
+        result = route_query("route this", "hello")
+    assert result.route == FALLBACK_ROUTE and result.fallback_reason
+    logged = [r for r in caplog.records if getattr(r, "event", None) == FALLBACK_EVENT]
+    assert len(logged) == 1 and logged[0].reason == result.fallback_reason
+
+
+def test_an_unstructured_reply_is_a_logged_fallback(fake_model, router_log):
+    caplog = router_log
+    SCRIPT[:] = [{"content": "I think this is about CRM"}]
+    with caplog.at_level("WARNING", logger="bizos.agents.router_agent"):
+        result = route_query("route this", "hello")
+    assert result.route == FALLBACK_ROUTE and result.fallback_reason
+    assert [r for r in caplog.records if getattr(r, "event", None) == FALLBACK_EVENT]
 
 
 def test_memory_prefetch_runs_in_parallel_with_routing(client_scratch, ctx_factory, monkeypatch):
@@ -193,10 +218,36 @@ def test_memory_prefetch_runs_in_parallel_with_routing(client_scratch, ctx_facto
     def slow_route():
         # Only finishes if memory_search started while routing was still running.
         assert started.wait(timeout=10), "memory_search did not start in parallel"
-        return Route(domains=["memory"], kind="question")
+        return RouteResult(Route(domains=["memory"], kind="question"))
 
     ctx = ctx_factory(client_scratch, "drafter")
     scope = RunScope(ctx=ctx, settings=_settings(client_scratch), domain="general")
     with tenant_scope(ctx):
         out = route_and_prefetch(slow_route, scope, "refund policy")
-    assert out.route.domains == ["memory"] and out.memory is not None and out.memory.ok
+    assert out.route.route.domains == ["memory"] and out.memory is not None and out.memory.ok
+
+
+# --------------------------------------------------------------------------- playbooks
+
+
+def test_playbooks_drop_lines_that_name_a_tool_the_user_cannot_see():
+    from bizos.agents.routing import render_playbooks
+
+    everything = frozenset(MODEL_TOOLS)
+    no_brand = everything - {"brand_get_voice"}
+    assert "brand_get_voice" in render_playbooks(["email"], everything, timezone="UTC")
+    text = render_playbooks(["email"], no_brand, timezone="UTC")
+    assert "brand_get_voice" not in text and "email_create_draft" in text
+
+
+def test_playbooks_keep_general_rules_and_only_routed_domains(client_scratch, ctx_factory):
+    from bizos.agents.routing import KNOWN_TOOLS, render_playbooks
+
+    visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "drafter"))
+    text = render_playbooks(["calendar", "approvals"], visible, timezone="Asia/Kolkata", default_meeting_minutes=45)
+    named = set(re.findall(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b", text)) & KNOWN_TOOLS
+    assert named <= visible | {"load_tools"}, named - visible
+    assert "Never guess attendee emails." in text  # survives although admin_list_users is hidden
+    assert "admin_list_users" not in text and "approvals_decide" not in text
+    assert "approvals_cancel" in text and "45 minutes" in text and "Asia/Kolkata" in text
+    assert "## crm" not in text and "{" not in text

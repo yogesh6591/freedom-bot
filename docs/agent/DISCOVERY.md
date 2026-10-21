@@ -244,3 +244,23 @@ through them.
    in an enabled pack). Any other caller of `guarded_call` with `domain="general"` would get them. Is
    `general` in those domains intended? Related: the email playbook says to call `brand_get_voice` before
    writing to outsiders, but it is only available when the brand pack is on, which is not the default.
+
+   **Outcome of the check (before Phase 6): something relies on it, so nothing was changed.** No code
+   path *executes* these four tools under the general domain while their pack is off. The unified
+   assistant, the legacy engine and the chat context offer them only through their own packs, and the
+   approved-action executor never sees them (they are reads and are never queued). But
+   `bizos/agents/grounding.py:blocked_capabilities`, which writes the "capabilities you lack access for"
+   lines in the prompt, does rely on `general`. In a default workspace (finance and legal packs off), a
+   user without the data area is told "Look up finance policy — needs Finance access" and "Find a
+   recorded clause summary — needs Legal access". Both lines exist only because `general` is in those
+   tools' domains, and removing it would drop them. `brand_get_voice` and `strategy_list_priorities`
+   have no data area, so they are unaffected. Waiting for a decision. Brand voice is not widened: v2
+   playbook rendering drops any line that names a tool the user cannot see.
+
+4. **The test session disables loggers that already exist (found before Phase 6).**
+   `acquisition_alembic/env.py` calls `logging.config.fileConfig(...)`, whose default
+   `disable_existing_loggers=True` disables every logger created before the in-process migration that
+   `tests/conftest.py` runs. So log output from those modules is silently dropped in tests. The app does
+   not run Alembic in-process, so production logging is unaffected, but any future in-process migration
+   would do the same. A one-word fix (`disable_existing_loggers=False`) is out of scope here; the v2
+   router tests re-enable their own logger instead.

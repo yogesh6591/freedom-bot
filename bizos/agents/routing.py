@@ -14,6 +14,7 @@ tools; they never make a tool visible.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Optional
@@ -193,3 +194,54 @@ def clean_route(route: Route, menu: list[str]) -> Route:
     if len(kept) != len(route.domains):
         log.info("v2 router chose unavailable domains: %s", [d for d in route.domains if d not in menu])
     return route.model_copy(update={"domains": kept})
+
+
+# --------------------------------------------------------------------------- playbooks
+
+_TOOL_WORD = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+#: Every tool name a playbook line could mention (old, merged and campaign tools).
+KNOWN_TOOLS: frozenset[str] = frozenset({s.name for s in TOOL_SPECS} | set(MERGED) | {LOAD_TOOLS})
+
+
+def _sections(text: str) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    current: Optional[str] = None
+    for line in text.splitlines():
+        if line.startswith("## "):
+            current = line[3:].strip()
+            out[current] = []
+        elif current is not None:
+            out[current].append(line)
+    return out
+
+
+def _items(lines: list[str]) -> list[list[str]]:
+    """Group a section's lines into bullets: a "- " line plus its indented continuation lines."""
+    items: list[list[str]] = []
+    for line in lines:
+        if line.startswith("- ") or not items:
+            items.append([line])
+        else:
+            items[-1].append(line)
+    return items
+
+
+def render_playbooks(domains: list[str], visible: frozenset[str], *, timezone: str, default_meeting_minutes: int = 30) -> str:
+    """The playbook sections for the routed domains, without any line that names a tool this user cannot see.
+
+    Covers pack-gated tools such as brand_get_voice: a playbook never tells the model to call a tool it
+    was not given.
+    """
+    sections = _sections((PROMPTS / "playbooks.md").read_text(encoding="utf-8"))
+    rendered: list[str] = []
+    for domain in domains:
+        kept = []
+        for item in _items(sections.get(domain, [])):
+            named = {w for w in _TOOL_WORD.findall(" ".join(item)) if w in KNOWN_TOOLS}
+            if named - visible - {LOAD_TOOLS}:
+                continue
+            kept.extend(line for line in item if line.strip())
+        if kept:
+            rendered.append(f"## {domain}\n" + "\n".join(kept))
+    text = "\n\n".join(rendered)
+    return text.replace("{timezone}", timezone).replace("{default_meeting_minutes}", str(default_meeting_minutes))
