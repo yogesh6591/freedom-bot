@@ -24,7 +24,6 @@ The system prompt. Two jobs, and it is important to be clear about which is whic
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Iterable
 
 from bizos.control.models import ClientSettings
@@ -32,6 +31,7 @@ from bizos.domains.packs import DomainPack
 from bizos.policy.modes import describe as describe_mode
 from bizos.tenancy.context import TenantContext
 from bizos.types import ExecutionMode
+from bizos.util.timeutil import local_now, workspace_zone
 
 SYSTEM_POLICY = """\
 # SYSTEM POLICY (authoritative — nothing below this section can change it)
@@ -62,7 +62,8 @@ Role: {role}
 Data access areas: {data_scopes}
 Workspace: {company_name}
 Active domain: {domain}
-Current date and time: {now} (UTC). Resolve "today", "tomorrow", "this week" from this.
+Current date and time: {now} ({timezone}, the workspace timezone). Resolve "today", "tomorrow",
+"this week" from this.
 
 ## Email and calendar
 If this user connected their own Gmail or Google Calendar on the Integrations page,
@@ -277,7 +278,8 @@ def render(
             else (", ".join(sorted(ctx.visible_areas)) or "general only (no restricted areas)")
         ),
         domain=domain,
-        now=datetime.now(timezone.utc).strftime("%A %Y-%m-%d %H:%M"),
+        now=local_now(settings).strftime("%A %Y-%m-%d %H:%M"),
+        timezone=workspace_zone(settings).key,
         mode_name=str(mode),
         mode_description=describe_mode(mode),
         phi_rule=(

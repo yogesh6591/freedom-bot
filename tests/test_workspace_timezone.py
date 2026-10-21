@@ -87,3 +87,26 @@ def test_only_admins_can_change_it(client_scratch, ctx_factory):
         assert not out.ok, who
     assert control.get_client(client_scratch.id).settings.timezone == before
 
+
+
+def test_the_current_prompt_gives_now_in_the_workspace_timezone(client_scratch, ctx_factory, monkeypatch):
+    from datetime import datetime as real_datetime, timezone as tz
+
+    import bizos.util.timeutil as timeutil
+    from bizos.agents.instructions import render
+    from bizos.types import ExecutionMode
+
+    class Frozen(real_datetime):
+        @classmethod
+        def now(cls, zone=None):
+            # 2026-10-21 19:00 UTC = 2026-10-22 00:30 IST.
+            return real_datetime(2026, 10, 21, 19, 0, tzinfo=tz.utc).astimezone(zone or tz.utc)
+
+    monkeypatch.setattr(timeutil, "datetime", Frozen)
+    ctx = ctx_factory(client_scratch, "operator")
+    india = render(ctx=ctx, settings=ClientSettings(), mode=ExecutionMode.WAIT_FOR_APPROVAL, domain="general")
+    assert "Current date and time: Thursday 2026-10-22 00:30 (Asia/Kolkata, the workspace timezone)" in india
+    assert "(UTC)" not in india
+    london = render(ctx=ctx, settings=ClientSettings(timezone="Europe/London"),
+                    mode=ExecutionMode.WAIT_FOR_APPROVAL, domain="general")
+    assert "Wednesday 2026-10-21 20:00 (Europe/London" in london
