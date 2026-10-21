@@ -144,3 +144,5 @@ STOP.
 ## Later (not v1)
 - Confirm cards using Agno's requires_confirmation and new UI, for actions the policy currently
   runs without any gate.
+- Persist campaign state so sends can be approval-queued. Then relabel send_approved by its real
+  risk and drop its not_queueable refusal (DISCOVERY.md §9.2).

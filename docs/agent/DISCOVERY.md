@@ -227,3 +227,11 @@ through them.
    ADVISE mode ceiling. So the policy check denies both tools for every role, admins included, and the
    current assistant never shows them. Is that intended? Owner: product. Pack logic is unchanged until
    this is answered. Under v2 both stay hidden by the "always deny → hidden" rule (plan.md Phase 5).
+
+2. **`send_approved` is labelled MEDIUM risk (deliberate compromise, Phase 2).** A campaign send can
+   reach many people, so it is not really medium risk. The label and the admin's-own-authority flag
+   (`admin_config`) exist only for behaviour parity: with the default approval floor (HIGH), a HIGH
+   label would queue every admin send for approval, and a queued send can never run because the
+   campaign selection and draft live only in the chat turn. Under settings that would queue it anyway,
+   the send is refused outright (`ToolSpec.not_queueable`). Revisit once campaign state is persisted
+   (plan.md "Later").

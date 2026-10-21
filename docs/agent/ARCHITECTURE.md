@@ -126,8 +126,11 @@ Order:
    value was typed by the user. Otherwise: "look it up first".
 3. **Prerequisites.** `requires_prior` tools have succeeded in this session. Campaign:
    `send_approved` requires `approval_evidence` that matches text in the user's latest message
-   (case- and whitespace-insensitive, non-empty). This lives in shared code (Phase 2), so the current
-   assistant gets it too. The evidence is logged with every send.
+   (case- and whitespace-insensitive, whole words, non-empty). This lives in shared code (Phase 2),
+   so the current assistant gets it too. The evidence is logged with every send attempt.
+   A tool with `ToolSpec.not_queueable` set (the campaign tools) is refused, not queued, whenever
+   the policy check would queue it: its state lives only in the chat turn, so a queued call could
+   never run.
 4. **Existing policy check, unchanged:** RBAC and per-tool overrides, data areas, domain and
    integration checks, PHI/card/child/biometric data, licensed judgment, always-requires-approval,
    CRITICAL risk, approval floor, execution mode, auto risk ceiling, record, financial and email
