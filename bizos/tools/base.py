@@ -232,19 +232,42 @@ def _explain(spec: ToolSpec, arguments: dict[str, Any], decision: PolicyDecision
     )
 
 
-def guarded_call(
-    scope: RunScope, tool: str, arguments: Optional[dict[str, Any]] = None
-) -> ToolOutcome:
-    """Evaluate policy for ``tool`` and act on the verdict. The only way to act."""
+@dataclass
+class Assessment:
+    """What a call *would* do: the policy decision plus the checks around it, before acting.
+
+    ``refused`` is set when the call stops here (unregistered tool, policy DENY, a failed
+    precondition, or a not-queueable tool the policy would queue); ``effect`` and ``message``
+    then say why. Otherwise ``effect`` is the policy's ALLOW, DRAFT_ONLY or REQUIRE_APPROVAL.
+    """
+
+    tool: str
+    spec: Optional[ToolSpec]
+    request: Optional[PolicyRequest]
+    decision: PolicyDecision
+    effect: PolicyEffect
+    message: str
+    refused: bool
+    #: Which check decided: "unregistered", "policy", "precheck" or "not_queueable".
+    stage: str
+
+
+def assess(
+    scope: RunScope, tool: str, arguments: Optional[dict[str, Any]] = None, *, record: bool = True
+) -> Assessment:
+    """Run every check :func:`guarded_call` runs before acting, without acting.
+
+    ``record=False`` writes nothing (no audit rows); it is the policy dry-run. Risk inputs and
+    preconditions only read the workspace.
+    """
     arguments = dict(arguments or {})
     spec = get_spec(tool)
-    started = time.monotonic()
 
     if spec is None:
         decision = evaluate(
             PolicyRequest(ctx=scope.ctx, settings=scope.settings, tool=tool, domain=scope.domain)
         )
-        return ToolOutcome(tool, PolicyEffect.DENY, False, decision.user_message(), decision)
+        return Assessment(tool, None, None, decision, PolicyEffect.DENY, decision.user_message(), True, "unregistered")
 
     # Risk inputs are computed from the *current state of the workspace*, not
     # from what the model claimed. A model that says "this only touches 2
@@ -255,13 +278,14 @@ def guarded_call(
         try:
             extra = extractor(scope, arguments) or {}
         except Exception as exc:
-            audit.log(
-                AuditEventType.TOOL_CALL,
-                ctx=scope.ctx,
-                tool=tool,
-                status="RISK_INPUT_FAILED",
-                error=str(exc),
-            )
+            if record:
+                audit.log(
+                    AuditEventType.TOOL_CALL,
+                    ctx=scope.ctx,
+                    tool=tool,
+                    status="RISK_INPUT_FAILED",
+                    error=str(exc),
+                )
             extra = {}
 
     request = PolicyRequest(
@@ -291,26 +315,45 @@ def guarded_call(
         request.licensed_categories = tuple(sorted(classified.categories))
 
     decision = evaluate(request)
-    audit.log_policy_decision(decision, ctx=scope.ctx, arguments=arguments, domain=scope.domain)
+    if record:
+        audit.log_policy_decision(decision, ctx=scope.ctx, arguments=arguments, domain=scope.domain)
 
     # ---------------------------------------------------------------- DENY
     if decision.denied:
-        return ToolOutcome(tool, decision.effect, False, decision.user_message(), decision)
+        return Assessment(tool, spec, request, decision, decision.effect, decision.user_message(), True, "policy")
 
     check = PRECHECKS.get(tool)
     if check is not None:
         reason = check(scope, arguments)
         if reason:
-            audit.log(AuditEventType.TOOL_CALL, ctx=scope.ctx, tool=tool, status="PRECONDITION_FAILED", error=reason)
-            return ToolOutcome(tool, PolicyEffect.DENY, False, reason, decision)
+            if record:
+                audit.log(AuditEventType.TOOL_CALL, ctx=scope.ctx, tool=tool, status="PRECONDITION_FAILED", error=reason)
+            return Assessment(tool, spec, request, decision, PolicyEffect.DENY, reason, True, "precheck")
 
     # --------------------------------------------------- DRAFT / APPROVAL
     if (decision.draft_only or decision.needs_approval) and spec.not_queueable:
-        audit.log(
-            AuditEventType.TOOL_CALL, ctx=scope.ctx, tool=tool, status="NOT_QUEUEABLE",
-            decision=str(decision.effect), error=spec.not_queueable,
-        )
-        return ToolOutcome(tool, PolicyEffect.DENY, False, spec.not_queueable, decision)
+        if record:
+            audit.log(
+                AuditEventType.TOOL_CALL, ctx=scope.ctx, tool=tool, status="NOT_QUEUEABLE",
+                decision=str(decision.effect), error=spec.not_queueable,
+            )
+        return Assessment(tool, spec, request, decision, PolicyEffect.DENY, spec.not_queueable, True, "not_queueable")
+
+    return Assessment(tool, spec, request, decision, decision.effect, decision.user_message(), False, "policy")
+
+
+def guarded_call(
+    scope: RunScope, tool: str, arguments: Optional[dict[str, Any]] = None
+) -> ToolOutcome:
+    """Evaluate policy for ``tool`` and act on the verdict. The only way to act."""
+    arguments = dict(arguments or {})
+    started = time.monotonic()
+
+    checked = assess(scope, tool, arguments, record=True)
+    if checked.refused:
+        return ToolOutcome(tool, checked.effect, False, checked.message, checked.decision)
+    spec, request, decision = checked.spec, checked.request, checked.decision
+    assert spec is not None and request is not None
 
     if decision.draft_only or decision.needs_approval:
         status = (
