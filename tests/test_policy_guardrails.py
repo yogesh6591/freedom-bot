@@ -148,7 +148,8 @@ def test_bulk_action_over_the_limit_requires_approval(client_a, scope_factory, s
                     {"i": new_id("con"), "n": str(index), "e": f"bulk{index}@bulk.test"},
                 )
         outcome = guarded_call(
-            scope, "crm_bulk_update_contacts", {"field": "owner", "value": "rep@acme.test"}
+            scope, "crm_bulk_update_contacts",
+            {"field": "owner", "value": "rep@acme.test", "lifecycle_stage": "ALL"},
         )
 
     assert outcome.effect == PolicyEffect.REQUIRE_APPROVAL

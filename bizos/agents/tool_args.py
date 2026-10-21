@@ -54,6 +54,10 @@ def _arr(description: str, item_type: str = "string") -> dict[str, Any]:
     }
 
 
+def _enum(description: str, values: list[str]) -> dict[str, Any]:
+    return {"type": "string", "description": description, "enum": values}
+
+
 def _obj(
     properties: dict[str, Any],
     required: list[str] | None = None,
@@ -197,6 +201,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "title": _s("Task title"),
             "body": _s("Details"),
             "contact_id": _s("Contact id"),
+            "deal_id": _s("Deal id from crm_search_deals, to link the task to a deal"),
             "assignee": _s("Assignee"),
             "due_at": _s("ISO datetime"),
         },
@@ -237,11 +242,17 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     ),
     "crm_bulk_update_contacts": _obj(
         {
-            "field": _s("Field name"),
+            "field": _enum(
+                "Contact field to set",
+                ["owner", "lifecycle", "title", "company", "phone", "email", "first_name", "last_name"],
+            ),
             "value": _s("New value"),
-            "lifecycle_filter": _s("Only contacts in this lifecycle"),
+            "lifecycle_stage": _s(
+                "Which contacts: one lifecycle stage such as lead or customer. Pass ALL only when the "
+                "user clearly means every contact in the CRM."
+            ),
         },
-        ["field", "value"],
+        ["field", "value", "lifecycle_stage"],
     ),
     "crm_delete_record": _obj(
         {
@@ -550,13 +561,22 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "admin_set_tool_permission": _obj(
         {
             "tool": _s("Tool name, e.g. email_send_message"),
-            "role": _s("VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN"),
-            "permission": _s("DENIED | DRAFT_ONLY | APPROVE_ONLY | EXECUTE_AFTER_APPROVAL | ALLOWED | default"),
+            "role": _enum("Role whose permission changes", ["VIEWER", "DRAFTER", "APPROVER", "OPERATOR", "ADMIN"]),
+            "permission": _enum(
+                "What that role may do with the tool; default restores the registry value",
+                ["DENIED", "DRAFT_ONLY", "APPROVE_ONLY", "EXECUTE_AFTER_APPROVAL", "ALLOWED", "default"],
+            ),
         },
         ["tool", "role", "permission"],
     ),
     "admin_set_tool_mode": _obj(
-        {"tool": _s("Tool name"), "mode": _s("ADVISE | DRAFT | WAIT_FOR_APPROVAL | AUTO_WITHIN_SCOPE | default")},
+        {
+            "tool": _s("Tool name"),
+            "mode": _enum(
+                "Stricter mode for this tool (it can only tighten the workspace mode); default clears it",
+                ["ADVISE", "DRAFT", "WAIT_FOR_APPROVAL", "default"],
+            ),
+        },
         ["tool", "mode"],
     ),
     "approvals_cancel": _obj(

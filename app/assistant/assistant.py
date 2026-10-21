@@ -30,11 +30,11 @@ from __future__ import annotations
 # ------------------------------------------------------------------------------------------------
 # crm  (bizos/tools/crm.py) - CRM Tool Effects
 # ------------------------------------------------------------------------------------------------
-from typing import Any
+from typing import Any, Optional
 
 from bizos.connectors.base import ConnectorResult
 from bizos.connectors.registry import get_connector
-from bizos.tools.base import RunScope, effect, risk_inputs
+from bizos.tools.base import RunScope, effect, precheck, risk_inputs
 
 
 def _crm(scope: RunScope):
@@ -152,10 +152,25 @@ def _deal_stage_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
     return {"fields": ("stage",), "record_count": 1}
 
 
+_EVERY_CONTACT = "ALL"
+
+
+def _bulk_scope(args: dict[str, Any]) -> tuple[bool, Optional[str]]:
+    """(scope given?, lifecycle filter). ``lifecycle_stage="ALL"`` means every contact.
+
+    ``lifecycle_filter`` is the older argument, still accepted for actions queued before the rename.
+    """
+    stage = str(args.get("lifecycle_stage") or "").strip()
+    if stage:
+        return True, None if stage.upper() == _EVERY_CONTACT else stage
+    legacy = str(args.get("lifecycle_filter") or "").strip()
+    return bool(legacy), legacy or None
+
+
 @effect("crm_bulk_update_contacts")
 def crm_bulk_update_contacts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     return _crm(scope).bulk_update_contacts(
-        lifecycle_filter=args.get("lifecycle_filter"),
+        lifecycle_filter=_bulk_scope(args)[1],
         field=str(args.get("field", "")),
         value=args.get("value"),
     )
@@ -168,8 +183,19 @@ def _bulk_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
     This is what makes the §30 bulk-action scenario real: the agent asking to
     change 1000 leads is measured against the workspace, not trusted.
     """
-    count = _crm(scope).count_contacts(lifecycle=args.get("lifecycle_filter"))
+    count = _crm(scope).count_contacts(lifecycle=_bulk_scope(args)[1])
     return {"record_count": count, "fields": (str(args.get("field", "")),)}
+
+
+@precheck("crm_bulk_update_contacts")
+def _bulk_needs_a_scope(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    """Changing every contact must be asked for explicitly, never the result of a missing argument."""
+    if not _bulk_scope(args)[0]:
+        return (
+            "lifecycle_stage is required: pass one lifecycle stage such as lead, or ALL only when the "
+            "user clearly means every contact. Nothing was changed."
+        )
+    return None
 
 
 @effect("crm_delete_record")
