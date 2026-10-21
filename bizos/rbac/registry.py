@@ -890,7 +890,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         "Trigger an n8n webhook",
         "Call the client's n8n webhook with a structured event after approval.",
         CATEGORY_N8N,
-        ("operations", "sales", "intake", "planning", "general"),
+        ("operations", "sales", "intake", "planning"),
         write=True,
         external=True,
         risk=RiskLevel.HIGH,

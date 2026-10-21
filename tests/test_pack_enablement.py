@@ -38,9 +38,10 @@ def _ctx_with_every_area(client, ctx_factory):
     return dataclasses.replace(ctx, data_scopes=frozenset({"finance", "legal", "hr", "exec", "salary", "ops"}))
 
 
-def _decide(ctx, settings, tool, domain):
+def _decide(ctx, settings, tool, domain, integrations=frozenset()):
     with tenant_scope(ctx):
-        return evaluate(PolicyRequest(ctx=ctx, settings=settings, tool=tool, domain=domain))
+        return evaluate(PolicyRequest(ctx=ctx, settings=settings, tool=tool, domain=domain,
+                                      connected_integrations=frozenset(integrations)))
 
 
 @pytest.mark.parametrize("tool,pack", PACK_ONLY.items())
@@ -67,3 +68,13 @@ def test_blocked_capabilities_only_name_capabilities_whose_pack_is_on(client_scr
     on = "\n".join(blocked_capabilities(viewer, ALL_PACKS))
     assert "Look up finance policy" not in off and "Find a recorded clause summary" not in off
     assert "Look up finance policy" in on and "Find a recorded clause summary" in on
+
+
+def test_n8n_is_denied_under_the_general_domain_and_unchanged_in_its_packs(client_scratch, ctx_factory):
+    ctx = _ctx_with_every_area(client_scratch, ctx_factory)
+    settings = _settings(client_scratch, ALL_PACKS)
+    general = _decide(ctx, settings, "n8n_trigger_webhook", "general", {"n8n"})
+    assert general.effect == PolicyEffect.DENY and general.rule == "TOOL_OUTSIDE_DOMAIN"
+    for pack in ("operations", "sales", "intake", "planning"):
+        # Always needs approval, as before.
+        assert _decide(ctx, settings, "n8n_trigger_webhook", pack, {"n8n"}).effect == PolicyEffect.REQUIRE_APPROVAL, pack
