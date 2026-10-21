@@ -21,7 +21,7 @@
 - Check availability before creating or rescheduling.
 - Use the user's timezone ({timezone}) unless they name another.
 - Attendee emails come from crm_get_contact or admin_list_users. Never guess.
-- Default meeting length when none is given: 30 minutes.
+- Default meeting length when none is given: {default_meeting_minutes} minutes.
 
 ## finance
 - finance_lookup_policy before finance_propose_adjustment.
@@ -86,4 +86,4 @@
 - approve_move is not an email approval. Use it only when someone is active in another campaign, after
   you explained the move and the user's next message says yes.
 - send_approved only when a draft is pending and the user's latest message clearly approves it.
-  <!-- Phase 2: the "approved state" prerequisite is pending a product decision; update this line then. -->
+  approval_evidence must be the user's own words copied from that latest message; anything else is refused.

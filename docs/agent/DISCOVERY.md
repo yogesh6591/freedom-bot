@@ -10,7 +10,7 @@ The code is the source of truth. Wherever it disagrees with `docs/agent/ARCHITEC
 
 | Expected | Found |
 |---|---|
-| `docs/agent/PLAN.md` | **Missing.** It is not in the repo or the git history. The phases after Phase 0 are not defined. |
+| `docs/agent/plan.md` | **Missing at the time.** It was not in the repo or the git history. (Since added.) |
 | `bizos/agent/prompts/` | `bizos/agents/prompts/` (plural `agents`). ARCHITECTURE.md §5.2 and §5.5 use the wrong path. |
 | `CLAUDE.md` | `claude.md` (lowercase, untracked). It works on macOS because the filesystem ignores case, but on Linux or CI anything that looks for `CLAUDE.md` will not find it. |
 | `docs/agent/drafts/` | Missing. TOOL_DESCRIPTIONS.md mentions it. |
@@ -194,7 +194,7 @@ through them.
 
 ## 8. Decisions needed before Phase 1
 
-1. **PLAN.md.** Please add it, or tell me the phases. I can't proceed past Phase 0 without it.
+1. **plan.md.** Please add it, or tell me the phases. I can't proceed past Phase 0 without it. (Resolved.)
 2. **admin_update_user vs CLAUDE.md.** The spec merges `admin_set_user_status` (deactivate) into
    `admin_update_user`, but CLAUDE.md forbids merging deactivate with another tool. Options: keep a
    separate `admin_set_user_status`, or merge roles and access only.
@@ -219,3 +219,11 @@ through them.
    the v2 guard, while keeping `CampaignSession` as the executor?
 9. **Zero-active-admins rule.** It doesn't exist today. Should it be added to the shared admin layer
    (protecting the REST API too), or only to the v2 guard?
+
+## 9. Open product questions (after Phase 1)
+
+1. **ADVISE cap on the strategy and legal packs.** `strategy_record_option` and
+   `legal_flag_for_counsel` are listed only in the strategy and legal packs, and both packs have an
+   ADVISE mode ceiling. So the policy check denies both tools for every role, admins included, and the
+   current assistant never shows them. Is that intended? Owner: product. Pack logic is unchanged until
+   this is answered. Under v2 both stay hidden by the "always deny → hidden" rule (plan.md Phase 5).

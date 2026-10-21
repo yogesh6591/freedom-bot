@@ -73,6 +73,9 @@ A tool is visible only if **all** of these hold. This is the existing logic in
 
 Each tool stays bound to the scope of the first pack that lets it through (`pack_scope`), so the
 policy check sees that pack's domain and mode ceiling. Campaign tools are visible to admins only.
+
+v2 rule: a tool whose policy dry-run is "deny" for the current user regardless of arguments is hidden
+from the model and from `load_tools`. This applies to every tool.
 The router's domain menu shows a routing domain only if at least one of its tools is visible.
 
 ### 5.3 Router (fast model, structured output)
@@ -103,6 +106,8 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
 ### 5.6 Executor (strong model)
 - Prompt: bizos/agents/prompts/executor.md plus the playbook sections for the routed domains
   (bizos/agents/prompts/playbooks.md).
+- `{default_meeting_minutes}`: the workspace's default meeting length if its settings define one,
+  otherwise 30. (No such setting exists today, so it is 30.)
 - Temperature 0. Max 8 tool calls per request.
 - A new Agent instance is created per request with exactly the loaded tools.
 
@@ -120,9 +125,9 @@ Order:
    names or emails (`crm_get_contact.contact_id`, approvals `match`, admin `user`) pass when the
    value was typed by the user. Otherwise: "look it up first".
 3. **Prerequisites.** `requires_prior` tools have succeeded in this session. Campaign:
-   `send_approved` gets an "approved state" prerequisite in shared code (Phase 2), so the current
-   assistant gets it too. What counts as approved is an open decision: today send_approved itself
-   approves pending prospects (`fulfill_approved_email`), and the only approval is the user's yes in chat.
+   `send_approved` requires `approval_evidence` that matches text in the user's latest message
+   (case- and whitespace-insensitive, non-empty). This lives in shared code (Phase 2), so the current
+   assistant gets it too. The evidence is logged with every send.
 4. **Existing policy check, unchanged:** RBAC and per-tool overrides, data areas, domain and
    integration checks, PHI/card/child/biometric data, licensed judgment, always-requires-approval,
    CRITICAL risk, approval floor, execution mode, auto risk ceiling, record, financial and email
@@ -179,7 +184,8 @@ Things that change a gate (all in the policy check):
   **recipient domains**.
 - **Pack ceilings.** The strategy and legal packs are ADVISE and brand is DRAFT. Today this means
   `strategy_record_option` and `legal_flag_for_counsel` are **denied for every role**, because those
-  packs are their only packs. v2 does not change pack logic. See DISCOVERY.md.
+  packs are their only packs. v2 does not change pack logic and hides both. Open product question:
+  DISCOVERY.md §9.
 - **Per-tool admin overrides:** `admin_set_tool_permission` (one of the five levels per role) and
   `admin_set_tool_mode` (tighten-only), plus `approval_policy.always_require_approval`.
 
@@ -215,10 +221,12 @@ The chat response keeps the current contract (`content`, `actions`, `awaiting_ap
 
 ## 6. Tool consolidation (89 → 82 model-visible tools, plus load_tools)
 Old functions stay. A merged tool is a thin wrapper:
-- it calls `guarded_call` under the **old tool's name**, so per-tool overrides keep applying and the
-  audit log keeps the old name;
-- its gate is the strictest gate of the old tools it wraps (checked by the dry-run). A parity
-  test proves this.
+- each call is gated as the **specific old tool its arguments map to**: it calls `guarded_call` under
+  that old tool's name, so per-tool overrides keep applying and the audit log keeps the old name
+  (mappings in plan.md Phase 4). `admin_update_user` changing both roles and access must pass both;
+- it is visible only if at least one mapped old tool is allowed for the user, and its enums are
+  narrowed per request to the allowed values;
+- a parity test proves each call is gated exactly like the old tool it maps to.
 
 Merge test: same object, compatible arguments, identical policy rules (permissions matrix, risk,
 write/external, flags, packs, risk inputs, prechecks).

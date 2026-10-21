@@ -38,8 +38,10 @@ Each fix is a separate commit with tests.
   zero active admins, and block users from removing their own admin role. This covers the REST API
   and both assistant paths.
 - Register the six campaign tools in the registry so every call goes through the policy check.
-  Admin-only, as today. Add the prerequisite: send_approved only for items in the approved state
-  according to the campaign system.
+  Admin-only, as today. Add the prerequisite: send_approved requires approval_evidence that matches
+  text in the user's latest message (case- and whitespace-insensitive, non-empty); otherwise deny and
+  tell the model to ask the user for approval. Log the evidence with every send. No approved-state
+  requirement; admins' workflow is otherwise unchanged.
 Done when: tests prove the new rules, and tests prove admins' campaign behaviour is unchanged
 apart from the new prerequisite.
 STOP.
@@ -73,8 +75,21 @@ Do not merge
   policy rules are identical.
 - admin_set_tool_permission and admin_set_tool_mode stay separate. The permission tool uses an enum
   of the five real levels; the mode tool is described as tighten-only.
-Done when: tests cover every merged tool's argument mapping, and a parity test shows each merged
-tool is gated exactly as strictly as the strictest old tool it wraps.
+Gating of merged tools
+- Each call is gated as the specific old tool its arguments map to, by calling guarded_call under
+  that old tool's name:
+  - approvals_decide: decision=approve → approvals_approve, reject → approvals_reject,
+    request_changes → approvals_request_changes.
+  - memory_add: kind=fact → memory_add_fact, sop → memory_add_sop, decision → memory_record_decision.
+  - admin_update_user: roles_add/roles_remove → admin_set_user_roles; access_grant/access_revoke →
+    admin_set_user_access. A call that changes both must pass both, or nothing changes.
+  - youtube_my_channel / youtube_video: include_videos / include_comments map to the old video or
+    comments tool; the base call maps to the old channel or details tool.
+- A merged tool is visible only if at least one mapped old tool is allowed for the user.
+- Its enums are narrowed per request to the allowed values (e.g. "reject" is dropped for a role that
+  cannot reject; kind "sop" is dropped if memory_add_sop is denied).
+Done when: tests cover every merged tool's argument mapping and enum narrowing, and a parity test
+shows each call is gated exactly like the old tool it maps to.
 STOP.
 
 ## Phase 5: Router and tool loading
@@ -82,8 +97,12 @@ STOP.
 - Domain menu filtered by enabled packs, pack mode limits and the user's role.
 - Bundles, ALWAYS_ON (memory_search, load_tools), and load_tools (intersected with visible tools, logged).
 - memory_search prefetch in parallel with routing.
+- Any tool whose policy dry-run is "deny" for the current user regardless of arguments is hidden from
+  the model and from load_tools. Applies to every tool (e.g. strategy_record_option and
+  legal_flag_for_counsel while their packs are capped at ADVISE; see DISCOVERY.md §9).
 Done when: tests cover bundle ∩ visibility; non-admins never see admin_* or campaign domains;
-load_tools can't add a hidden tool; disabled packs hide their tools.
+load_tools can't add a hidden tool; disabled packs hide their tools; a tool that is always denied for
+the user is hidden from the model and from load_tools.
 STOP.
 
 ## Phase 6: Guard integration
