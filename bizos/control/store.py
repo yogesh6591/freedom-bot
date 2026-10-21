@@ -48,6 +48,10 @@ class DuplicateUser(ValueError):
     pass
 
 
+class LastActiveAdmin(ValueError):
+    """The change would leave a client with no active admin."""
+
+
 # ---------------------------------------------------------------------------
 # Clients
 # ---------------------------------------------------------------------------
@@ -325,21 +329,51 @@ def set_platform_owner(user_id: str, flag: bool) -> User:
     return get_user(user_id)
 
 
+def _keep_an_active_admin(conn: Any, user_id: str, *, loses_admin: bool) -> None:
+    """Refuse a change that would leave the user's client with no active admin.
+
+    Locks the client row first, so two admins demoting each other at the same
+    time are serialized instead of both passing the count.
+    """
+    row = conn.execute(
+        text(
+            "SELECT u.client_id, u.status, "
+            "EXISTS (SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = :admin) AS is_admin "
+            "FROM users u WHERE u.id = :i"
+        ),
+        {"i": user_id, "admin": str(Role.ADMIN)},
+    ).first()
+    if row is None:
+        raise UserNotFound(user_id)
+    if not loses_admin or row.client_id is None or not row.is_admin or row.status != "ACTIVE":
+        return
+    conn.execute(text("SELECT 1 FROM clients WHERE id = :c FOR UPDATE"), {"c": row.client_id})
+    others = conn.execute(
+        text(
+            "SELECT count(*) FROM users u JOIN user_roles r ON r.user_id = u.id "
+            "WHERE u.client_id = :c AND u.id <> :i AND u.status = 'ACTIVE' AND r.role = :admin"
+        ),
+        {"c": row.client_id, "i": user_id, "admin": str(Role.ADMIN)},
+    ).scalar()
+    if not others:
+        raise LastActiveAdmin(user_id)
+
+
 def set_user_roles(user_id: str, roles: Iterable[Role], *, granted_by: str) -> User:
-    """Replace a user's role grants wholesale."""
+    """Replace a user's role grants wholesale. Never leaves a client without an active admin."""
     role_set = frozenset(roles)
     if not role_set:
         raise ValueError("a user must hold at least one role")
     with control_connection() as conn:
-        if not conn.execute(text("SELECT 1 FROM users WHERE id = :i"), {"i": user_id}).first():
-            raise UserNotFound(user_id)
+        _keep_an_active_admin(conn, user_id, loses_admin=Role.ADMIN not in role_set)
         _replace_roles(conn, user_id, role_set, granted_by)
     return get_user(user_id)
 
 
 def set_user_status(user_id: str, status: str) -> User:
-    """Activate or suspend a user."""
+    """Activate or suspend a user. Never leaves a client without an active admin."""
     with control_connection() as conn:
+        _keep_an_active_admin(conn, user_id, loses_admin=status != "ACTIVE")
         result = conn.execute(
             text("UPDATE users SET status = :s, updated_at = NOW() WHERE id = :i"),
             {"s": status, "i": user_id},

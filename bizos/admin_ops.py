@@ -146,10 +146,22 @@ def create_user(
     return user
 
 
+_LAST_ADMIN = (
+    "Not changed: this would leave the workspace with no active admin. "
+    "Make someone else an admin first."
+)
+
+
 def set_roles(ctx: TenantContext, user_id: str, roles: Iterable[str]):
     user_in_client(ctx, user_id)
     role_names = list(roles)
-    user = control.set_user_roles(user_id, parse_roles(role_names), granted_by=ctx.user_id)
+    parsed = parse_roles(role_names)
+    if user_id == ctx.user_id and Role.ADMIN not in parsed:
+        raise AdminForbidden("You cannot remove your own Admin role. Ask another admin.")
+    try:
+        user = control.set_user_roles(user_id, parsed, granted_by=ctx.user_id)
+    except control.LastActiveAdmin as exc:
+        raise AdminConflict(_LAST_ADMIN) from exc
     _log(ctx, AuditEventType.CONFIG_CHANGED, "ROLES_CHANGED", request={"user_id": user_id, "roles": role_names})
     return user
 
@@ -175,7 +187,12 @@ def set_status(ctx: TenantContext, user_id: str, status: str):
     wanted = (status or "").strip().upper()
     if wanted not in USER_STATUSES:
         raise AdminError(f"Status must be one of {', '.join(USER_STATUSES)}")
-    user = control.set_user_status(user_id, wanted)
+    if user_id == ctx.user_id and wanted != "ACTIVE":
+        raise AdminForbidden("You cannot suspend your own account. Ask another admin.")
+    try:
+        user = control.set_user_status(user_id, wanted)
+    except control.LastActiveAdmin as exc:
+        raise AdminConflict(_LAST_ADMIN) from exc
     _log(ctx, AuditEventType.CONFIG_CHANGED, "USER_STATUS_CHANGED", request={"user_id": user_id, "status": wanted})
     return user
 
