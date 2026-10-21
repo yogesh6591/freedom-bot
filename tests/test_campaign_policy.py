@@ -157,3 +157,42 @@ def test_empty_or_partial_word_evidence_is_denied(fake_model, acq, client_scratc
     _out, result = _send_turn(ctx, client_scratch.settings, sid, "send it", evidence)
     assert "approval_not_found" in result
     assert sends == []
+
+
+# --------------------------------------------------------------------------- no dead approval cards
+
+
+def _queued_send_is_refused(ctx, draft_settings, send_settings, sends):
+    sid = _draft_for_nina(ctx, draft_settings)
+    with tenant_scope(ctx):
+        before = {a.id for a in actions.list_actions(limit=200, ctx=ctx)}
+    SCRIPT[:] = [call("send_approved", approval_evidence="send it"), final("I couldn't send it.")]
+    out = ask(ctx, send_settings, "send it", session_id=sid)
+    result = [c for c in out["trace"]["tool_log"] if c["tool"] == "send_approved"][0]["result"]
+    assert "can't wait for approval" in result and "send it directly" in result, result
+    assert sends == []
+    assert out["trace"]["tool"] != "execute"
+    with tenant_scope(ctx):
+        assert {a.id for a in actions.list_actions(limit=200, ctx=ctx)} == before, "no approval card is created"
+        assert audit.search(ctx=ctx, tool="send_approved", status="NOT_QUEUEABLE", limit=5)
+
+
+def test_a_send_the_policy_would_queue_is_refused_instead(fake_model, acq, client_scratch, ctx_factory, sends):
+    from bizos.control.models import ClientSettings
+
+    strict = client_scratch.settings.to_dict()
+    strict["risk_policy"] = {**strict["risk_policy"], "always_approve_at_or_above": "MEDIUM"}
+    _queued_send_is_refused(
+        ctx_factory(client_scratch, "admin"), client_scratch.settings, ClientSettings.from_dict(strict), sends
+    )
+
+
+def test_an_admin_override_requiring_approval_refuses_the_send(fake_model, acq, client_scratch, ctx_factory, sends):
+    from bizos import admin_ops as ops
+
+    ctx = ctx_factory(client_scratch, "admin")
+    ops.set_tool_permission(ctx, tool="send_approved", role="ADMIN", permission="EXECUTE_AFTER_APPROVAL")
+    try:
+        _queued_send_is_refused(ctx, client_scratch.settings, client_scratch.settings, sends)
+    finally:
+        ops.clear_tool_permission(ctx, tool="send_approved", role="ADMIN")

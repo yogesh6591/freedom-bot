@@ -106,6 +106,10 @@ class ToolSpec:
     #: this tool exists and what it does. Whether they may *run* it is the
     #: separate ``permissions`` matrix.
     view_min_role: Role = Role.VIEWER
+    #: Set when a queued call could never run later (its state lives only in the chat
+    #: turn). Whenever the policy check would queue it for approval or as a draft, the call
+    #: is refused with this reason instead, so no dead approval card is created.
+    not_queueable: Optional[str] = None
 
     def can_view(self, ctx) -> bool:
         return ctx.at_least(self.view_min_role) and ctx.can_see_area(self.data_area)
@@ -149,6 +153,7 @@ class ToolSpec:
             "tags": sorted(self.tags),
             "data_area": self.data_area,
             "view_min_role": str(self.view_min_role),
+            "not_queueable": self.not_queueable,
             "view": {str(r): role_rank(r) >= role_rank(self.view_min_role) for r in Role},
             "run": {str(r): self.can_run(r) for r in Role},
         }
@@ -186,6 +191,12 @@ def _spec(
 _ALL = ()  # empty domain tuple == available to every enabled domain
 
 
+_CAMPAIGN_NOT_QUEUEABLE = (
+    "Campaign sends can't wait for approval under this workspace's current settings. "
+    "Nothing was sent. An admin must send it directly, or change the setting that requires approval."
+)
+
+
 def _campaign(name: str, title: str, description: str, *, write: bool = False) -> ToolSpec:
     """An outbound-campaign tool: ADMIN-only and invisible to other roles."""
     return _spec(
@@ -201,6 +212,8 @@ def _campaign(name: str, title: str, description: str, *, write: bool = False) -
         admin_config=write,
         view_min_role=Role.ADMIN,
         tags=frozenset({"write" if write else "read", "campaign"}),
+        # The campaign selection and draft live only in the chat turn, so a queued call could never run.
+        not_queueable=_CAMPAIGN_NOT_QUEUEABLE,
     )
 
 

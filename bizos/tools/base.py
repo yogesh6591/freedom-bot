@@ -305,6 +305,13 @@ def guarded_call(
             return ToolOutcome(tool, PolicyEffect.DENY, False, reason, decision)
 
     # --------------------------------------------------- DRAFT / APPROVAL
+    if (decision.draft_only or decision.needs_approval) and spec.not_queueable:
+        audit.log(
+            AuditEventType.TOOL_CALL, ctx=scope.ctx, tool=tool, status="NOT_QUEUEABLE",
+            decision=str(decision.effect), error=spec.not_queueable,
+        )
+        return ToolOutcome(tool, PolicyEffect.DENY, False, spec.not_queueable, decision)
+
     if decision.draft_only or decision.needs_approval:
         status = (
             ActionStatus.DRAFT if decision.draft_only else ActionStatus.PENDING_APPROVAL

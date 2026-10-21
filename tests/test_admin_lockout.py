@@ -185,4 +185,5 @@ def test_chat_tools_cannot_remove_the_last_active_admin(client):
         status = guarded_call(scope, "admin_set_user_status", {"user": second.email, "status": "SUSPENDED"})
     assert not roles.ok and "no active admin" in roles.message
     assert not status.ok and "no active admin" in status.message
+    assert roles.message.count("Not changed") == 1, roles.message
     assert _active_admins(client) == [second.email]

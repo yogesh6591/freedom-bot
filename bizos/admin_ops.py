@@ -146,10 +146,7 @@ def create_user(
     return user
 
 
-_LAST_ADMIN = (
-    "Not changed: this would leave the workspace with no active admin. "
-    "Make someone else an admin first."
-)
+_LAST_ADMIN = "This would leave the workspace with no active admin. Make someone else an admin first."
 
 
 def set_roles(ctx: TenantContext, user_id: str, roles: Iterable[str]):
