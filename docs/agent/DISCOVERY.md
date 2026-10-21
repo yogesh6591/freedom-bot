@@ -254,13 +254,20 @@ through them.
    user without the data area is told "Look up finance policy — needs Finance access" and "Find a
    recorded clause summary — needs Legal access". Both lines exist only because `general` is in those
    tools' domains, and removing it would drop them. `brand_get_voice` and `strategy_list_priorities`
-   have no data area, so they are unaffected. Waiting for a decision. Brand voice is not widened: v2
-   playbook rendering drops any line that names a tool the user cannot see.
+   have no data area, so they are unaffected. Brand voice is not widened: v2 playbook rendering drops
+   any line that names a tool the user cannot see.
+
+   **Decision: remove `general` (done in `86152f7`).** We accept losing the two blocked-capability lines:
+   when a pack is off, "needs Finance/Legal access" is misleading, because access alone would not make
+   the capability available. The policy check now enforces pack enablement for these four tools.
+   `finance_list_pending_billables`, `finance_list_invoices`, `hr_match_candidate`,
+   `n8n_trigger_webhook` and the campaign tools still list `general`, and were not part of this decision.
+   (`hr_match_candidate` relies on it: the assistant runs it in the general scope for resume matching.)
 
 4. **The test session disables loggers that already exist (found before Phase 6).**
    `acquisition_alembic/env.py` calls `logging.config.fileConfig(...)`, whose default
    `disable_existing_loggers=True` disables every logger created before the in-process migration that
    `tests/conftest.py` runs. So log output from those modules is silently dropped in tests. The app does
    not run Alembic in-process, so production logging is unaffected, but any future in-process migration
-   would do the same. A one-word fix (`disable_existing_loggers=False`) is out of scope here; the v2
-   router tests re-enable their own logger instead.
+   would do the same. **Fixed in `e1fd027`** (`disable_existing_loggers=False`). The CLI output is
+   unchanged, and the router tests no longer re-enable their logger.

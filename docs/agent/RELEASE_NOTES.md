@@ -13,6 +13,8 @@ outside `AGENT_PIPELINE_V2` loads.
 | `3b14712` | A campaign send that the policy would queue (lowered approval floor, or an override requiring approval) is refused with a clear message instead of creating an approval card that could never run. The last-admin chat message no longer says "Not changed:" twice. |
 | `127fafc` | Refactor only, no intended behaviour change: `guarded_call`'s pre-action checks move into the shared `assess()` so the dry-run can reuse them. Listed because it touches the one path every tool call takes. |
 | `ffc5dc4` | `crm_bulk_update_contacts` requires `lifecycle_stage` and refuses calls with no scope. `crm_create_task` accepts `deal_id`. The tool-permission and tool-mode schemas offer fixed values (details below). |
+| `e1fd027` | Test-only effect: the acquisition migration environment keeps existing loggers enabled (`disable_existing_loggers=False`). The migration CLI output is unchanged; loggers are no longer silenced during the test session's in-process migration. |
+| `86152f7` | `finance_lookup_policy`, `legal_find_clause`, `brand_get_voice` and `strategy_list_priorities` drop `general` from their registry domains. The policy check now denies them outside their own pack. When the finance or legal pack is off, users are no longer told "needs Finance/Legal access" for those capabilities. |
 
 Already on `cepoch/club-freedom` before this work, and not part of it: `fe5b089`, `6afd759`.
 
