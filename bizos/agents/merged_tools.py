@@ -346,7 +346,8 @@ def run(name: str, args: dict[str, Any], scope_for: Callable[[str], RunScope]) -
         if len({c.effect for c in checks}) > 1:
             result.refused = (
                 "Nothing was changed: these changes would not be handled the same way "
-                f"({', '.join(f'{c.tool}: {c.effect}' for c in checks)}). Make them one at a time."
+                f"({', '.join(f'{c.tool}: {c.effect}' for c in checks)}). "
+                "Make the two changes as separate requests."
             )
             return result
 

@@ -247,3 +247,27 @@ def test_permission_and_mode_tools_offer_only_real_values():
     assert props["role"]["enum"] == ["VIEWER", "DRAFTER", "APPROVER", "OPERATOR", "ADMIN"]
     assert schema_for_tool("admin_set_tool_mode")["properties"]["mode"]["enum"] == ["ADVISE", "DRAFT", "WAIT_FOR_APPROVAL", "default"]
     assert "deal_id" in schema_for_tool("crm_create_task")["properties"]
+
+
+def test_parts_gated_differently_are_refused_with_separate_requests_advice(client_scratch, ctx_factory, monkeypatch):
+    from bizos.agents import merged_tools
+
+    real = merged_tools.assess
+
+    def mixed(scope, tool, arguments=None, *, record=True):
+        checked = real(scope, tool, arguments, record=record)
+        if tool == "admin_set_user_access":  # pretend this part would be queued for approval
+            checked.effect = PolicyEffect.REQUIRE_APPROVAL
+        return checked
+
+    monkeypatch.setattr(merged_tools, "assess", mixed)
+    admin = ctx_factory(client_scratch, "admin")
+    scope_for, _, _ = _scope_for(client_scratch, admin)
+    viewer = _user(client_scratch, "viewer")
+    before = ({str(r) for r in viewer.roles}, set(viewer.data_scopes))
+    with tenant_scope(admin):
+        result = run("admin_update_user", {"user": viewer.email, "roles_add": ["APPROVER"],
+                                           "access_grant": ["finance"]}, scope_for)
+    assert result.outcomes == [] and "Make the two changes as separate requests." in result.refused
+    after = _user(client_scratch, "viewer")
+    assert ({str(r) for r in after.roles}, set(after.data_scopes)) == before

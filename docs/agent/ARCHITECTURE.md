@@ -241,7 +241,9 @@ The chat response keeps the current contract (`content`, `actions`, `awaiting_ap
 `tool_activity`, admin-only `trace`), so the UI does not change.
 
 ## 6. Tool consolidation (89 → 82 model-visible tools, plus load_tools)
-Old functions stay. A merged tool is a thin wrapper (`bizos/agents/merged_tools.py`):
+Five merged tools replace 12 old tools (approvals 3, memory 3, admin users 2, YouTube 2 + 2):
+89 − 12 + 5 = 82. Because `youtube_my_channel` keeps its name as the merged tool, 11 old names leave
+the model's view (`merged_tools.WRAPPED`) and 4 new names arrive. Old functions stay. A merged tool is a thin wrapper (`bizos/agents/merged_tools.py`):
 - each call is gated as the **specific old tool its arguments map to**: it calls `guarded_call` under
   that old tool's name, so per-tool overrides keep applying and the audit log keeps the old name
   (mappings in plan.md Phase 4). `admin_update_user` changing both roles and access must pass both;
