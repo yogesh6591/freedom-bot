@@ -82,9 +82,16 @@ def dry_run_for_user(
 def is_visible(scope: RunScope, tool: str, packs: list[DomainPack]) -> bool:
     """Whether the live assistant would show ``tool`` to this user (the policy check, no arguments).
 
-    No preconditions are run, so a tool is never hidden just because arguments are missing.
+    Like the live surface, a tool must be in one of ``packs`` (the campaign tools, which belong to no
+    pack, are the exception). No preconditions are run, so a tool is never hidden just because
+    arguments are missing.
     """
     from bizos.agents.surface import _visible
+    from bizos.rbac.registry import CATEGORY_CAMPAIGN
 
     spec = get_spec(tool)
-    return spec is not None and spec.implemented and _visible(bound_scope(scope, tool, packs), spec)
+    if spec is None or not spec.implemented:
+        return False
+    if spec.category != CATEGORY_CAMPAIGN and not any(spec in p.tool_specs() for p in packs):
+        return False
+    return _visible(bound_scope(scope, tool, packs), spec)

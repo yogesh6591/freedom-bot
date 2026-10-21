@@ -75,7 +75,10 @@ Each tool stays bound to the scope of the first pack that lets it through (`pack
 policy check sees that pack's domain and mode ceiling. Campaign tools are visible to admins only.
 
 v2 rule: a tool whose policy dry-run is "deny" for the current user regardless of arguments is hidden
-from the model and from `load_tools`. This applies to every tool.
+from the model and from `load_tools`. This applies to every tool. As on the live surface, a tool must
+also be listed by an enabled pack (campaign tools excepted). Code: `bizos/agents/routing.py`
+(`visible_tools`, `domain_menu`, `tools_for_route`, `ToolLoader`), using `bizos/tools/dry_run.py:is_visible`.
+A test asserts v2 visibility equals the current assistant's surface for every role.
 The router's domain menu shows a routing domain only if at least one of its tools is visible.
 
 ### 5.3 Router (fast model, structured output)
@@ -87,6 +90,9 @@ class Route(BaseModel):
     entities: dict[str, str] = {}
     clarify: str | None = None
 ```
+- Model: `ROUTER_MODEL_ID` (`provider:model`), falling back to `MODEL_ID`. Wiring in
+  `bizos/agents/router_agent.py`; a router failure routes nowhere and the executor uses `load_tools`.
+- Domains the user was not offered are dropped in code (`clean_route`), whatever the model returns.
 - Optimised for recall: include a domain when unsure.
 - Runs in parallel with memory_search on the raw query.
 - chitchat / out_of_scope → short reply, no tools.

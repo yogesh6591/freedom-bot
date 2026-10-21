@@ -235,3 +235,12 @@ through them.
    campaign selection and draft live only in the chat turn. Under settings that would queue it anyway,
    the send is refused outright (`ToolSpec.not_queueable`). Revisit once campaign state is persisted
    (plan.md "Later").
+
+3. **Four tools rely on the surface, not the policy check, to stay off when their pack is disabled
+   (found in Phase 5).** `finance_lookup_policy`, `strategy_list_priorities`, `brand_get_voice` and
+   `legal_find_clause` list `general` among their registry domains. So the policy check alone allows them
+   in the general domain even when the finance, strategy, brand or legal pack is off. What keeps them away
+   today is that the general pack's explicit tool list omits them. v2 matches the surface (a tool must be
+   in an enabled pack). Any other caller of `guarded_call` with `domain="general"` would get them. Is
+   `general` in those domains intended? Related: the email playbook says to call `brand_get_voice` before
+   writing to outsiders, but it is only available when the brand pack is on, which is not the default.
