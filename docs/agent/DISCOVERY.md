@@ -276,6 +276,33 @@ through them.
      stop naming them when both the finance and operations packs are off. The direct function calls
      (approval list, approval preview, invoice drafting) bypass the policy check and do not depend on
      domains. Waiting for a decision.
+
+     **Decision (before Phase 8): keep `general` for now; history below for the team.**
+     - *Registry entries.* Both tools were added in `d93d6e4` (2026-09-30, "Fix client isolation and
+       package-scope failures from 30 Sep QA run"), with domains `("finance", "operations", "general")`
+       from the first line, and have not changed since. The commit message names QA fixes M01–M03 plus
+       "the FB-041..FB-050 work that was pending in the tree". It gives no reason for `general`, and no
+       doc or QA row mentions it.
+     - *The test.* `tests/test_dhanu_dept_demo.py` was added in the same commit and has not changed
+       since. Its docstring is "Department people + Dhanu demo scenarios (… invoices)". It mirrors
+       `docs/FB-033-038_UI_test_script.md` rows 34–35: `finance@` lists Acme Logistics billables;
+       `ops@` is **blocked**. What it checks is the **data area**: the finance user succeeds and the ops
+       user, who lacks finance access, is refused. It uses a bare `RunScope`, and `RunScope.domain`
+       defaults to `"general"`. The test never names a domain, so the general-domain path may be
+       incidental rather than intended.
+     - *What the test does not tell us.* The Acme demo client has every pack enabled
+       (`bizos/bootstrap.py`, "The demo client has bought every domain"). So under the finance domain
+       this test's calls would get the same results (finance user allowed, ops refused on data area). It
+       cannot tell whether a workspace with the finance pack **off** is meant to list billables from a
+       general thread. On the surface, only the finance pack offers these tools
+       (`bizos/domains/packs.py`), so the assistant never shows them with that pack off. `general` (and
+       `operations`) matter only to a direct `guarded_call` caller, whom the policy check lets list
+       billables and invoices with the finance pack off.
+     - *For the team to decide.* (a) Is "list billables/invoices with the finance pack off" a product
+       feature? If yes, keep `general`. If no, remove it and set `domain="finance"` on the test's
+       `RunScope`. That keeps what the test asserts (the data-area wall) without relying on
+       `general`. (b) Either way, `operations` gives direct callers the same path that skips the
+       finance pack. That is a separate question, not raised before.
    - `hr_match_candidate` and the campaign tools keep `general` by design.
 
 4. **The test session disables loggers that already exist (found before Phase 6).**
@@ -295,7 +322,7 @@ through them.
    load balancer or proxy in front that is set to retry POSTs, add an optional client message id that
    the chat endpoint dedupes on.
 
-6. **Approval `match` only searches the newest 200 actions (shared code, not changed).**
+6. **Approval `match` only searched the newest 200 actions (shared code; fixed before Phase 8).**
    `app/assistant/assistant.py:_resolve` refuses a phrase that matches more than one request ("More than
    one action matches …; ask the user which one"), which was confirmed with two matching pending requests.
    But it only considers `list_actions(statuses, limit=200)`, newest first. In a workspace with more than
@@ -305,9 +332,69 @@ through them.
    on it: v2 decisions and cancellations require the request's `action_id`, which must come from
    `approvals_list` or `approvals_get` (provenance).
 
+   **Fixed in `477b6dc` (before Phase 8).** `_resolve` now pages through every action in the requested statuses, 200 at a
+   time, and stops once it has more matches than the refusal lists (8). A phrase matching one newer and one
+   older request is refused as ambiguous (`tests/test_approval_match_window.py`). One side effect: a phrase
+   that matches only an older request now finds it. Before, the tool said "No action matching …". The
+   approver and self-approval checks on the decision itself are unchanged. Cost: in a workspace with many
+   open requests, an unmatched phrase reads every open request once (one extra query per request for its
+   approval row, as `list_actions` already does).
+
 7. **Known issues outside this project (not fixed, by decision).**
    - `alembic -c acquisition_alembic.ini check` exits with an error on a fresh database: it reports
      index differences between the models and the migrations (for example
      `ix_after_booking_youtube_enabled_order`, `uq_prospects_npi`). This predates this work.
    - Every Alembic INFO line is printed twice by the migration CLI. This also predates this work, and is
      unchanged by `e1fd027`.
+
+8. **Mixed campaign turns in v2 (checked before Phase 8).** Example (admin, auto chat): "send the
+   approved campaign emails and add a note on Acme".
+   - *Router includes `campaign`* (the expected case: `campaign` is on an admin's menu, and the router
+     may return several domains). `app/assistant/v2.py` hands the **whole turn** to the current
+     assistant (`reply()`), CRM part included. v2's router, guard and composer play no part. The
+     current assistant offers every enabled pack's tools plus the six campaign tools in one turn, so it
+     can do both, exactly as with the flag off. The CRM note then goes through the current path
+     (`guarded_call`), not through v2's guard (no provenance or prerequisite checks).
+   - *Router misses `campaign`* (returns only `crm`). v2 runs the turn. If the executor then calls
+     `load_tools("campaign")`, the six campaign tools are loaded, but v2 has no campaign session. So any
+     campaign call goes through the policy check and then fails with "The campaign tools only work
+     inside an admin's chat turn." Nothing is sent (confirmed with a scripted run), but the user sees a
+     confusing refusal, and only the CRM part is done. Options: (a) `load_tools("campaign")` in v2
+     replies "Campaign requests are handled on their own; ask the user to send that part as a separate
+     message"; (b) re-hand the turn to the current assistant when `campaign` is loaded mid-run, which
+     risks running the CRM write twice; (c) leave as is until the native v2 campaign flow (plan.md
+     "Later"). Not changed; waiting for a decision.
+   - *Non-admin.* `campaign` is not on the menu, so the router cannot pick it, and `clean_route` drops it
+     if it does. v2 handles the turn and has no campaign tools, as with the flag off.
+
+9. **Timezone (checked before Phase 8): the current path reads "today" in UTC, and times in a
+   calendar-dependent zone.** Nothing in the repo stores or receives a user's timezone: there is no
+   user-profile field, no workspace setting (`ClientSettings`), no `ChatRequest` field, and the UI
+   sends no browser timezone (`ui/src` has no `Intl`/`resolvedOptions`/`getTimezoneOffset`).
+   - *"Today", "tomorrow" (current assistant).* `bizos/agents/instructions.py:280` puts
+     `datetime.now(timezone.utc)` in the prompt as "Current date and time: … (UTC). Resolve 'today',
+     'tomorrow', 'this week' from this." So between 00:00 and 05:30 IST, "tomorrow" resolves to the
+     IST date of today.
+   - *Times, Google Calendar connected* (`bizos/connectors/composio.py`, `ComposioCalendarConnector`).
+     The connector reads the calendar's own `timeZone` from Google (`GOOGLECALENDAR_GET_CALENDAR`,
+     cached per user; UTC if the call fails). A naive time from the model ("2026-10-22T15:00:00") is
+     read as wall-clock time in that zone. So "3pm" lands at 15:00 IST for a calendar set to
+     Asia/Kolkata. A time the model sends with an offset or `Z` is used as given.
+   - *Times, workspace calendar* (`bizos/connectors/calendar.py`). The naive string goes straight into
+     `CAST(:s AS TIMESTAMPTZ)`, so Postgres reads it in the **database server's** `TimeZone` setting.
+     The app sets no session timezone (`bizos/tenancy/registry.py` sets only `search_path`). The local
+     dev Postgres here reports `Asia/Kolkata`. The `pgvector/pgvector:pg17` image in `compose.yaml`
+     sets no `TZ`, so it uses the image default (UTC). With that image, "3pm" is stored as 15:00 UTC =
+     20:30 IST. So the result depends on deployment.
+   - *v2 today.* v2 passes "UTC" as `{timezone}` to the router, executor and playbooks, and the calendar
+     playbook says "Use the user's timezone ({timezone}) unless they name another". That nudges the
+     model to send explicit `+00:00`/`Z` times. With Google Calendar, those override the calendar's own
+     zone, so v2 can be **worse** than the current path ("3pm" → 20:30 IST). v2 is behind the flag and
+     off by default.
+   - *Decision needed.* There is no per-user or per-workspace timezone to reuse, so v2 cannot "use the
+     same source" without inheriting UTC for "today". Options: (a) add a workspace timezone setting
+     (default `Asia/Kolkata`?) and use it for "today" in both paths, for the workspace calendar session,
+     and as the zone v2 names; keep Google's own zone for Google calendars; (b) send the browser's
+     IANA zone with each chat request (per user, no setting); (c) for v2 only, stop naming UTC: tell the
+     model to send naive local times and leave the zone to the calendar. That fixes Google but not
+     "today" or the workspace calendar. (a) and (b) change shared code.

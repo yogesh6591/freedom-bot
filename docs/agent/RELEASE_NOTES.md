@@ -17,6 +17,7 @@ outside `AGENT_PIPELINE_V2` loads.
 | `86152f7` | `finance_lookup_policy`, `legal_find_clause`, `brand_get_voice` and `strategy_list_priorities` drop `general` from their registry domains. The policy check now denies them outside their own pack. When the finance or legal pack is off, users are no longer told "needs Finance/Legal access" for those capabilities. |
 | `1bc6210` | `app/api/chat.py`: the chat endpoint calls the v2 pipeline when `AGENT_PIPELINE_V2` is `1`, `true`, `yes` or `on`. With the flag unset or off (the default), the endpoint behaves exactly as before. |
 | `4cf0d85` | `n8n_trigger_webhook` drops `general` from its registry domains. The policy check denies it under the general domain (nothing called it there); it still always needs approval in operations, sales, intake and planning. |
+| `477b6dc` | Approval decisions and cancellations by `match` phrase consider every request in the relevant statuses, not only the newest 200. A phrase that also matches an older request is refused as ambiguous instead of acting on the newer one. A phrase matching only an older request now finds it (before: "No action matching"). |
 
 Already on `cepoch/club-freedom` before this work, and not part of it: `fe5b089`, `6afd759`.
 

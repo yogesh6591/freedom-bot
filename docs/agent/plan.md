@@ -140,6 +140,12 @@ STOP.
   with their reasons.
 - Report how often the guard rejects a call for unknown arguments (schema stage, "Additional properties
   are not allowed"), per tool, so frequent ones can be fixed in the descriptions.
+- Mixed campaign turn (admin): "send the approved campaign emails and add a note on Acme". Expect the
+  whole turn to be handed to the current assistant, which offers both the campaign and the CRM tools.
+  Check that it does both, or says what it did not do. Include a variant where the router misses
+  `campaign` (see DISCOVERY.md §9.8).
+- Timezone cases, once the timezone source is decided (DISCOVERY.md §9.9): "book at 3pm" and
+  "tomorrow" sent late at night in IST.
 - Gates (confirm with me after the baseline): 0 false-success; 100% on permission and
   forbidden-tool cases; at least 95% correct tool selection.
 STOP.
@@ -156,3 +162,5 @@ STOP.
   runs without any gate.
 - Persist campaign state so sends can be approval-queued. Then relabel send_approved by its real
   risk and drop its not_queueable refusal (DISCOVERY.md §9.2).
+- Native campaign flow in v2. Today v2 hands every turn routed to `campaign` to the current assistant
+  (DISCOVERY.md §9.8).
