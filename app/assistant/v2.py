@@ -1,0 +1,332 @@
+"""The v2 assistant pipeline (behind AGENT_PIPELINE_V2). See docs/agent/ARCHITECTURE.md.
+
+One chat turn:
+  pre-model refusals + grounding (the same functions the current assistant calls)
+  -> visibility filter -> router (+ memory_search in parallel) -> tool loading
+  -> one executor Agent (fresh per request, tool_call_limit 8) whose every tool call goes through the guard
+  -> reply composed from tool results.
+
+The rules live in plain modules under bizos/agents (routing, guard, merged_tools, composer, tool_meta);
+this file only wires them together with Agno and the chat API. With the flag off nothing here runs.
+
+Campaign turns (an admin routed to the campaign domain) are handed to the current assistant, which owns
+the campaign flow, so admins' campaign behaviour is unchanged.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any, Callable, Optional
+
+from agno.agent import Agent
+from agno.models.message import Message
+from agno.run.base import RunStatus
+from agno.tools import tool
+from fastapi import HTTPException
+
+from bizos import chat_history
+from bizos import settings as app_settings
+from bizos.actions import store as actions
+from bizos.agents import grounding
+from bizos.agents import instructions as agent_instructions
+from bizos.agents.composer import compose
+from bizos.agents.guard import Guard, KnownValues, make_guard_hook
+from bizos.agents.merged_tools import MERGED, schema_for
+from bizos.agents.persona import AUTO
+from bizos.agents.router_agent import route_and_prefetch, route_query
+from bizos.agents.routing import (
+    LOAD_TOOLS, PROMPTS, ToolLoader, allowed_old_tools, clean_route, domain_menu, render_playbooks,
+    render_router_prompt, visible_tools,
+)
+from bizos.agents.tool_args import normalize_tool_arguments
+from bizos.agents.tool_meta import GATE_TEXT, TOOL_META, render
+from bizos.tools.base import RunScope
+from bizos.tools.dry_run import bound_scope, policy_gate
+from bizos.types import ActionStatus
+from bizos.util.ids import new_id
+
+log = logging.getLogger(__name__)
+
+TOOL_CALL_LIMIT = 8
+#: Extra executor runs allowed after load_tools added tools mid-run.
+MAX_RELOADS = 2
+
+
+def enabled() -> bool:
+    return os.environ.get("AGENT_PIPELINE_V2", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# --------------------------------------------------------------------------- session state
+
+
+def _v2_state(saved: dict) -> dict:
+    for message in reversed(saved.get("messages") or []):
+        meta = message.get("meta") or {}
+        if message.get("role") == "assistant" and isinstance(meta.get("v2"), dict):
+            return meta["v2"]
+    return {}
+
+
+def _known(saved: dict, message: str) -> tuple[KnownValues, set[str]]:
+    """Known values and successful tools for this conversation: carried over, plus every user message."""
+    state = _v2_state(saved)
+    known = KnownValues(structured=set(state.get("known") or []))
+    for m in saved.get("messages") or []:
+        if m.get("role") == "user":
+            known.add_user_message(m.get("content") or "")
+    known.add_user_message(message)
+    return known, set(state.get("succeeded") or [])
+
+
+# --------------------------------------------------------------------------- tools for the executor
+
+
+def _description(name: str, scope: RunScope, packs, menu: list[str]) -> str:
+    if name == LOAD_TOOLS:
+        return (
+            "Load the tools for another domain when the ones you have cannot do what the user asked. "
+            f"Domains: {', '.join(menu)}. You cannot load tools the user is not allowed to use."
+        )
+    text = TOOL_META[name].description
+    if "{gate}" not in text:
+        return text
+    olds = [t for t in MERGED[name].wraps] if name in MERGED else [name]
+    gates = [policy_gate(scope, t, packs) for t in olds]
+    gate = next((g for g in gates if g in GATE_TEXT), "run")
+    return render(name, gate)
+
+
+def _make_tool(name: str, description: str, schema: dict, run: Callable[[dict], str]) -> Callable:
+    @tool(name=name, description=description)
+    def _invoke(**kwargs: Any) -> str:
+        return run(normalize_tool_arguments(kwargs))
+
+    _invoke.parameters = schema
+    _invoke.strict = False
+    _invoke.skip_entrypoint_processing = True
+    return _invoke
+
+
+def build_executor_tools(
+    names: list[str], guard: Guard, loader: ToolLoader, scope: RunScope, packs, menu: list[str]
+) -> list[Callable]:
+    tools: list[Callable] = []
+    for name in names:
+        if name == LOAD_TOOLS:
+            schema = {"type": "object", "properties": {"domain": {"type": "string", "enum": menu}},
+                      "required": ["domain"], "additionalProperties": False}
+            tools.append(_make_tool(name, _description(name, scope, packs, menu), schema,
+                                    lambda args: loader.load_tools(str(args.get("domain") or ""))[1]))
+            continue
+        tools.append(_make_tool(name, _description(name, scope, packs, menu), guard.schema(name),
+                                lambda args, _n=name: guard.execute(_n, args).text))
+    return tools
+
+
+def guard_hook_for(guard: Guard) -> Callable:
+    checks = make_guard_hook(guard)
+
+    def hook(function_name: str, function_call: Callable, arguments: dict[str, Any]) -> Any:
+        if function_name == LOAD_TOOLS:
+            return function_call(**arguments)
+        return checks(function_name=function_name, function_call=function_call,
+                      arguments=normalize_tool_arguments(arguments))
+
+    return hook
+
+
+# --------------------------------------------------------------------------- prompts
+
+
+def _executor_prompt(ctx, settings, *, memory_context: str, playbooks: str, grounded: str) -> str:
+    text = (PROMPTS / "executor.md").read_text(encoding="utf-8")
+    now = datetime.now(timezone.utc)
+    for key, value in {
+        "{user_name}": ctx.display_name or ctx.email or "the user",
+        "{user_roles}": ", ".join(sorted(str(r) for r in ctx.roles)),
+        "{workspace_name}": getattr(settings, "company_name", "") or ctx.client_slug,
+        "{today}": now.date().isoformat(),
+        "{timezone}": "UTC",
+        "{memory_context}": memory_context or "(nothing relevant recorded)",
+        "{playbooks}": playbooks or "(none)",
+    }.items():
+        text = text.replace(key, value)
+    if grounded:
+        text += "\n\n" + grounded
+    return text
+
+
+def _memory_context(outcome) -> str:
+    if outcome is None or not outcome.ok or not outcome.data:
+        return ""
+    items = outcome.data.get("items") if isinstance(outcome.data, dict) else outcome.data
+    lines = []
+    for item in (items or [])[:5]:
+        if isinstance(item, dict):
+            lines.append(f"- {item.get('title')}: {str(item.get('content') or '')[:300]}")
+    return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- the turn
+
+
+def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
+    """One chat turn through the v2 pipeline. Must be called with the tenant bound."""
+    from app.api.chat import _regulated_data_refusal as regulated_data_refusal
+    from app.api.deps import run_scope
+    from app.assistant.assistant import _guardrail_audit, _history, _model, _packs_for, reply
+
+    session_id = body.session_id or new_id("ses")
+    saved: dict = {"messages": []}
+    if body.session_id:
+        try:
+            chat_history.assert_can_continue(ctx, body.session_id)
+            saved = chat_history.get_session(ctx, body.session_id)
+        except chat_history.SessionNotFound:
+            if chat_history.owner_of(ctx, body.session_id) is not None:
+                raise HTTPException(status_code=404, detail="Conversation not found") from None
+    if not app_settings.llm_available():
+        raise HTTPException(status_code=503, detail="Chat requires a model. Set OPENAI_API_KEY (and MODEL_ID).")
+
+    message = body.message
+    scope = run_scope(ctx, settings, domain="general", requested_mode=getattr(body, "execution_mode", None),
+                      session_id=session_id)
+    before = {a.id for a in actions.list_actions(limit=200, ctx=ctx)}
+    trace: dict[str, Any] = {"engine": "v2"}
+
+    # ---- before the model, exactly as the current assistant: regulated data and restricted candidates
+    grounded = grounding.analyze(ctx, message, settings.enabled_domains)
+    refusal = regulated_data_refusal(message, settings)
+    canned = (refusal[1] if refusal else None) or grounding.restricted_candidate_reply(grounded, message)
+    if canned is not None:
+        if refusal:
+            _guardrail_audit(ctx, scope, session_id, refusal[0])
+        return _respond(ctx, scope, body, session_id, saved, text=canned, before=before, guard=None, trace=trace)
+
+    # ---- visibility, router and memory prefetch
+    pinned = getattr(body, "domain", AUTO)
+    packs = _packs_for(settings, pinned)
+    campaign_allowed = bool(ctx.is_admin and pinned in (AUTO, "acquisition", None))
+    visible = visible_tools(scope, packs, campaign_allowed=campaign_allowed)
+    menu = domain_menu(visible)
+    history = _history(saved)
+    recent = "\n".join(f"{m.role}: {str(m.content)[:300]}" for m in history[-6:])
+    router_prompt = render_router_prompt(
+        user_name=ctx.display_name or ctx.email or "the user", user_roles=sorted(str(r) for r in ctx.roles),
+        today=datetime.now(timezone.utc).date().isoformat(), timezone="UTC", recent_messages=recent, menu=menu,
+    )
+    memory_scope = bound_scope(scope, "memory_search", packs) if "memory_search" in visible else None
+    pre = route_and_prefetch(lambda: route_query(router_prompt, message), memory_scope, message)
+    route = clean_route(pre.route.route, menu)
+    trace.update(route=route.model_dump(), fallback_reason=pre.route.fallback_reason)
+
+    if "campaign" in route.domains:
+        # The campaign flow (selection state, records, its own checks) belongs to the current assistant.
+        return reply(body, ctx, settings)
+    if route.clarify:
+        return _respond(ctx, scope, body, session_id, saved, text=route.clarify, before=before, guard=None,
+                        trace=trace)
+
+    # ---- guard, tools and executor
+    known, succeeded = _known(saved, message)
+    guard = Guard(lambda t: bound_scope(scope, t, packs), known=known, succeeded=succeeded)
+    if pre.memory is not None:
+        guard._record("memory_search", pre.memory)
+    allowed_old = set(allowed_old_tools(scope, packs))
+    loader = ToolLoader.for_route(route, visible)
+    if route.kind in ("chitchat", "out_of_scope"):
+        loader.loaded = []
+    for name in loader.loaded:
+        if name in MERGED:
+            guard.schemas[name] = schema_for(name, allowed_old)
+
+    grounded_text = grounded.text
+    next_input: list[Message] = history + [Message(role="user", content=message)]
+    calls_left, text, output = TOOL_CALL_LIMIT, "", None
+    for _ in range(MAX_RELOADS + 1):
+        for name in loader.loaded:
+            if name in MERGED and name not in guard.schemas:
+                guard.schemas[name] = schema_for(name, allowed_old)
+        prompt = _executor_prompt(
+            ctx, settings, memory_context=_memory_context(pre.memory), grounded=grounded_text,
+            playbooks=render_playbooks(sorted({TOOL_META[t].domain for t in loader.loaded if t in TOOL_META}),
+                                       visible, timezone="UTC"),
+        )
+        loaded_before = list(loader.loaded)
+        agent = Agent(
+            name=agent_instructions.assistant_name(settings),
+            id="bizos-assistant-v2",
+            model=_model(None),
+            user_id=ctx.user_id,
+            session_id=session_id,
+            instructions=prompt,
+            tools=build_executor_tools(loader.loaded, guard, loader, scope, packs, menu),
+            tool_hooks=[guard_hook_for(guard)],
+            tool_call_limit=calls_left,
+            add_history_to_context=False,
+            cache_callables=False,
+            enable_agentic_memory=False,
+            telemetry=False,
+            store_events=False,
+        )
+        try:
+            output = agent.run(input=next_input)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Model call failed: {exc}") from exc
+        if output.status == RunStatus.error:
+            raise HTTPException(status_code=502, detail=f"Model call failed: {output.content}")
+        text = str(output.content or "")
+        calls_left -= len(output.tools or [])
+        if loader.loaded == loaded_before or calls_left <= 0:
+            break
+        # load_tools added tools: carry the run forward with them available.
+        next_input = [m for m in (output.messages or []) if m.role not in ("system", "developer")]
+
+    trace.update(loaded=loader.loaded, load_tools_misses=loader.misses)
+    return _respond(ctx, scope, body, session_id, saved, text=text, before=before, guard=guard, trace=trace,
+                    task=route.kind == "task")
+
+
+def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, guard: Optional[Guard],
+             trace: dict, task: bool = True) -> dict[str, Any]:
+    from app.assistant.assistant import _pending_state
+
+    results = [r for d in (guard.log if guard else []) if d.stage in ("policy", "duplicate") for r in d.results]
+    acknowledgement = compose(text, results, task=task) if guard else None
+    content = acknowledgement.text if acknowledgement else text
+    new_actions = [a.to_dict() for a in actions.list_actions(limit=200, ctx=ctx) if a.id not in before]
+    activity = [{"tool": d.tool, "ok": any(r.status != "error" for r in d.results)}
+                for d in (guard.log if guard else []) if d.stage == "policy"]
+    if guard is not None:
+        trace["guard_log"] = [{"tool": d.tool, "stage": d.stage, "text": d.text[:300],
+                               "idempotency_key": d.idempotency_key} for d in guard.log]
+    if not ctx.is_admin:
+        trace = {"engine": "v2"}
+    response = {
+        "session_id": session_id,
+        "content": content,
+        "response": content,
+        "mode": str(scope.mode),
+        "domain": "general",
+        "routed": getattr(body, "domain", AUTO) == AUTO,
+        "tool_activity": activity,
+        "actions": new_actions,
+        "awaiting_approval": [a for a in new_actions if a["status"] == str(ActionStatus.PENDING_APPROVAL)],
+        "drafts": [a for a in new_actions if a["status"] == str(ActionStatus.DRAFT)],
+        "email_draft": "",
+        "trace": trace,
+    }
+    v2_state = {}
+    if guard is not None:
+        v2_state = {"known": sorted(guard.known.structured)[:500], "succeeded": sorted(guard.succeeded)}
+    try:
+        chat_history.record_turn(
+            ctx, session_id=session_id, user_message=body.message, reply=content, domain="general",
+            meta={"engine": "agno-v2", "mode": response["mode"], "tool_activity": activity,
+                  "state": _pending_state(saved), "v2": v2_state, "json": response["trace"]},
+        )
+    except Exception as exc:  # noqa: BLE001 - a storage failure must not lose the reply
+        log.warning("v2: could not save the turn: %s", exc)
+    return response

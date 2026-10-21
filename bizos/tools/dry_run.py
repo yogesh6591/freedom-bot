@@ -95,3 +95,19 @@ def is_visible(scope: RunScope, tool: str, packs: list[DomainPack]) -> bool:
     if spec.category != CATEGORY_CAMPAIGN and not any(spec in p.tool_specs() for p in packs):
         return False
     return _visible(bound_scope(scope, tool, packs), spec)
+
+
+def policy_gate(scope: RunScope, tool: str, packs: list[DomainPack]) -> str:
+    """The gate the policy check gives this tool with no arguments and no preconditions, in its pack scope.
+
+    For a tool's "Effect:" line: what calling it would do, before the specific arguments are known.
+    """
+    from bizos.policy.engine import evaluate
+    from bizos.policy.models import PolicyRequest
+
+    bound = bound_scope(scope, tool, packs)
+    probe = PolicyRequest(
+        ctx=bound.ctx, settings=bound.settings, tool=tool, requested_mode=bound.requested_mode,
+        domain=bound.domain, connected_integrations=bound.integrations,
+    )
+    return GATE_FOR_EFFECT[evaluate(probe).effect]

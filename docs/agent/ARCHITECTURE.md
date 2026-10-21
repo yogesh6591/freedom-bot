@@ -111,6 +111,21 @@ ALWAYS_ON = {memory_search, load_tools}
 ### 5.5 Memory context
 Top memory_search results (SOPs, facts) are injected into the executor prompt.
 
+### 5.5b The v2 turn (`app/assistant/v2.py:handle`, on when `AGENT_PIPELINE_V2` is `1/true/yes/on`)
+- Pre-model refusals and grounding: the same functions as the current assistant, in the same order.
+- Visibility, menu, router plus memory prefetch, `clean_route`. A `clarify` route returns the question
+  with no tools. Chitchat and out-of-scope turns get no tools.
+- **Campaign turns** (an admin routed to `campaign`) are handed to the current assistant, which owns the
+  campaign flow's state, records and checks, so admins' campaign behaviour is unchanged.
+- Executor: a fresh Agent per run with exactly the loaded tools and `tool_hooks=[guard]`. The 8-call
+  limit is shared across the request. If `load_tools` added tools, the run is continued with them
+  (at most twice).
+- Known values and successful tools are kept per conversation in the chat history (`meta.v2`), and every
+  user message counts.
+- The response keeps the current contract (`content`, `actions`, `awaiting_approval`, `drafts`,
+  `tool_activity`, admin-only `trace`), so the UI is unchanged. Pending work appears on the existing
+  approval and draft cards.
+
 ### 5.6 Executor (strong model)
 - Prompt: bizos/agents/prompts/executor.md plus the playbook sections for the routed domains
   (bizos/agents/prompts/playbooks.md), rendered by `routing.render_playbooks`: any bullet that names a
@@ -262,7 +277,12 @@ The acknowledgement is rendered from the run's tool results:
 ❌ Couldn't create the invoice: no pending billables for Acme
 ```
 The model's final text is only a one-line lead-in, or the answer to a question.
-If no write tool succeeded, the reply never says "done".
+If no write tool succeeded, the reply never says "done". On task turns, the composer
+(`bizos/agents/composer.py`) removes any lead-in sentence that claims a write: the platform's claim
+patterns from `claims.py`, plus done-words, sentences starting with a write verb ("Saved the note."), and
+a thing plus a write verb ("Invoice drafted!"). Approval is only mentioned when a write is actually waiting
+for approval. Answers to questions are left alone, because they may truthfully say a record "was created"
+in March.
 The chat response keeps the current contract (`content`, `actions`, `awaiting_approval`, `drafts`,
 `tool_activity`, admin-only `trace`), so the UI does not change.
 

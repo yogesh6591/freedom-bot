@@ -167,6 +167,11 @@ def chat(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """One chat turn."""
+    from app.assistant import v2
+
+    if v2.enabled():  # AGENT_PIPELINE_V2: the routed pipeline (off by default)
+        with bound(ctx):
+            return v2.handle(body, ctx, settings)
     if _engine() != "legacy":
         from app.assistant.assistant import reply
 
