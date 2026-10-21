@@ -15,7 +15,7 @@ outside `AGENT_PIPELINE_V2` loads.
 | `ffc5dc4` | `crm_bulk_update_contacts` requires `lifecycle_stage` and refuses calls with no scope. `crm_create_task` accepts `deal_id`. The tool-permission and tool-mode schemas offer fixed values (details below). |
 | `e1fd027` | Test-only effect: the acquisition migration environment keeps existing loggers enabled (`disable_existing_loggers=False`). The migration CLI output is unchanged; loggers are no longer silenced during the test session's in-process migration. |
 | `86152f7` | `finance_lookup_policy`, `legal_find_clause`, `brand_get_voice` and `strategy_list_priorities` drop `general` from their registry domains. The policy check now denies them outside their own pack. When the finance or legal pack is off, users are no longer told "needs Finance/Legal access" for those capabilities. |
-| (Phase 7) | `app/api/chat.py`: the chat endpoint calls the v2 pipeline when `AGENT_PIPELINE_V2` is `1`, `true`, `yes` or `on`. With the flag unset or off (the default), the endpoint behaves exactly as before. |
+| `1bc6210` | `app/api/chat.py`: the chat endpoint calls the v2 pipeline when `AGENT_PIPELINE_V2` is `1`, `true`, `yes` or `on`. With the flag unset or off (the default), the endpoint behaves exactly as before. |
 | `4cf0d85` | `n8n_trigger_webhook` drops `general` from its registry domains. The policy check denies it under the general domain (nothing called it there); it still always needs approval in operations, sales, intake and planning. |
 
 Already on `cepoch/club-freedom` before this work, and not part of it: `fe5b089`, `6afd759`.
