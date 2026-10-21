@@ -138,6 +138,8 @@ STOP.
 - Baseline: run a flat agent (all visible tools, no router) and v2, and report both.
 - Report the number of router fallbacks (RouteResult.fallback_reason set; logged as v2_router_fallback),
   with their reasons.
+- Report how often the guard rejects a call for unknown arguments (schema stage, "Additional properties
+  are not allowed"), per tool, so frequent ones can be fixed in the descriptions.
 - Gates (confirm with me after the baseline): 0 false-success; 100% on permission and
   forbidden-tool cases; at least 95% correct tool selection.
 STOP.

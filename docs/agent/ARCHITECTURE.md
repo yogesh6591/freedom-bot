@@ -174,6 +174,10 @@ write repeated with the same arguments is not run again; the model is told it wa
 key lives at the guard layer; connectors are unchanged. All guard decisions go back to the model as
 plain text (`ToolOutcome.agent_text()` for the policy step).
 
+Approval decisions and cancellations name the request by `action_id` (from `approvals_list` or
+`approvals_get`). v2 does not accept title words (`match`) for them, because a phrase can pick the wrong
+request (DISCOVERY.md §9.6). `approvals_get` still accepts `match`, since it only reads.
+
 Code: `bizos/agents/guard.py`. `Guard.pre_check` runs schema (JSON Schema, using the model-facing schema
 narrowed per user for merged tools), provenance and hard prerequisites. `Guard.execute` runs the policy
 step through `guarded_call` or the merged-tool mapping, and records known values and successes.

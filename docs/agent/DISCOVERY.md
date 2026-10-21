@@ -264,6 +264,20 @@ through them.
    `n8n_trigger_webhook` and the campaign tools still list `general`, and were not part of this decision.
    (`hr_match_candidate` relies on it: the assistant runs it in the general scope for resume matching.)
 
+   **Same check for the remaining tools (before Phase 7).**
+   - `n8n_trigger_webhook`: nothing relies on `general`. The surfaces bind it to operations, sales, intake
+     or planning; approved actions re-run under the domain they were queued in; it has no data area, so
+     prompts never mention it. **Removed** in `4cf0d85`; the policy check now denies it under the general
+     domain, and it still always needs approval in its packs.
+   - `finance_list_pending_billables`, `finance_list_invoices`: **something relies on it, so nothing was
+     changed.** `tests/test_dhanu_dept_demo.py::test_invoice_list_and_block_without_finance` calls
+     `finance_list_pending_billables` with a bare `RunScope`, whose default domain is `general`, and
+     expects it to succeed. Both tools also have the finance data area, so `blocked_capabilities` would
+     stop naming them when both the finance and operations packs are off. The direct function calls
+     (approval list, approval preview, invoice drafting) bypass the policy check and do not depend on
+     domains. Waiting for a decision.
+   - `hr_match_candidate` and the campaign tools keep `general` by design.
+
 4. **The test session disables loggers that already exist (found before Phase 6).**
    `acquisition_alembic/env.py` calls `logging.config.fileConfig(...)`, whose default
    `disable_existing_loggers=True` disables every logger created before the in-process migration that
@@ -271,3 +285,29 @@ through them.
    not run Alembic in-process, so production logging is unaffected, but any future in-process migration
    would do the same. **Fixed in `e1fd027`** (`disable_existing_loggers=False`). The CLI output is
    unchanged, and the router tests no longer re-enable their logger.
+
+5. **Can a chat message reach the server twice (checked before Phase 7)?** Not through anything in this
+   repo. Browsers never retry a `fetch` POST. The chat page (`ui/src/app/chat/page.tsx:send`) sends once,
+   blocks a second send while one is in flight (`busy`), and has no retry. Next.js only proxies
+   `/acquire/*`. The API is served by uvicorn directly, and no reverse proxy is configured here (the
+   compose `retries` settings are container health checks). If the client sees an error, the user must
+   retype to resend, which is a new, deliberate request. So no dedupe was added. If production puts a
+   load balancer or proxy in front that is set to retry POSTs, add an optional client message id that
+   the chat endpoint dedupes on.
+
+6. **Approval `match` only searches the newest 200 actions (shared code, not changed).**
+   `app/assistant/assistant.py:_resolve` refuses a phrase that matches more than one request ("More than
+   one action matches …; ask the user which one"), which was confirmed with two matching pending requests.
+   But it only considers `list_actions(statuses, limit=200)`, newest first. In a workspace with more than
+   200 open requests, an older matching request is invisible, so a phrase matching one newer and one
+   older request looks unique and the tool acts on the newer one. Suggested shared fix: match in SQL over
+   all requests in those statuses (or page until exhausted) before deciding uniqueness. v2 does not depend
+   on it: v2 decisions and cancellations require the request's `action_id`, which must come from
+   `approvals_list` or `approvals_get` (provenance).
+
+7. **Known issues outside this project (not fixed, by decision).**
+   - `alembic -c acquisition_alembic.ini check` exits with an error on a fresh database: it reports
+     index differences between the models and the migrations (for example
+     `ix_after_booking_youtube_enabled_order`, `uq_prospects_npi`). This predates this work.
+   - Every Alembic INFO line is printed twice by the migration CLI. This also predates this work, and is
+     unchanged by `e1fd027`.
