@@ -7,6 +7,7 @@ import re
 import pytest
 
 from app.assistant.assistant import CAMPAIGN_TOOLS, _packs_for
+from bizos.agents.merged_tools import MERGED, WRAPPED
 from bizos.agents.tool_args import schema_for_tool
 from bizos.agents.tool_meta import DOMAINS, GATE_TEXT, TOOL_META, render
 from bizos.control import store as control
@@ -15,9 +16,22 @@ from bizos.tenancy.context import tenant_scope
 from bizos.tools.base import RunScope
 from bizos.tools.dry_run import DENY, dry_run_for_user
 
-NAMES = [s.name for s in TOOL_SPECS]
+REGISTERED = [s.name for s in TOOL_SPECS]
+NAMES = sorted(set(REGISTERED) | set(MERGED))
+#: What the v2 model sees: merged tools replace the old tools they wrap.
+VISIBLE = sorted((set(REGISTERED) - WRAPPED) | set(MERGED))
 
-#: Confusable groups from TOOL_DESCRIPTIONS.md, in today's tool names (merges come in Phase 4).
+#: Hard prerequisites the guard enforces (Phase 6). Anything else is a suggestion only.
+HARD_PRIOR = {
+    "admin_launch_sign_off": ("admin_launch_checklist",),
+    "admin_apply_setup": ("admin_get_setup",),
+    "admin_update_settings": ("admin_get_setup",),
+    "admin_set_tool_permission": ("admin_tool_permissions",),
+    "admin_set_tool_mode": ("admin_tool_permissions",),
+    "finance_propose_adjustment": ("finance_lookup_policy",),
+}
+
+#: Confusable groups from TOOL_DESCRIPTIONS.md, in the final (model-visible) names.
 CONFUSABLE = [
     ("email_send_message", "propose_email", "send_approved"),
     ("email_create_draft", "email_send_message"),
@@ -28,17 +42,17 @@ CONFUSABLE = [
     ("crm_search_contacts", "show_contacts"),
     ("crm_create_task", "support_create_ticket"),
     ("admin_list_users", "crm_search_contacts"),
-    ("admin_set_user_roles", "admin_set_user_status"),
-    ("admin_set_user_roles", "admin_set_tool_permission"),
+    ("admin_update_user", "admin_set_user_status"),
+    ("admin_update_user", "admin_set_tool_permission"),
     ("admin_set_tool_permission", "admin_set_tool_mode"),
-    ("admin_set_user_access", "admin_toggle_domain"),
+    ("admin_update_user", "admin_toggle_domain"),
     ("admin_list_alerts", "admin_scan_alerts", "admin_dismiss_alert", "admin_set_baselines"),
     ("admin_pricing", "admin_consult_quote", "admin_record_change_order"),
-    ("memory_add_fact", "memory_correct", "memory_escalate_conflict"),
+    ("memory_add", "memory_correct", "memory_escalate_conflict"),
     ("memory_get_fact", "memory_history", "memory_search"),
     ("calendar_list_events", "calendar_check_availability"),
-    ("approvals_approve", "approvals_cancel"),
-    ("approvals_reject", "approvals_cancel"),
+    ("approvals_decide", "approvals_cancel"),
+    ("youtube_my_channel", "youtube_video", "youtube_search_videos"),
     ("finance_draft_invoice", "finance_propose_adjustment"),
 ]
 
@@ -54,9 +68,11 @@ def _renders(name: str) -> list[str]:
     return [render(name, g) for g in GATE_TEXT] if "{gate}" in text else [text]
 
 
-def test_every_registered_tool_has_metadata_and_nothing_else_does():
+def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
+    assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
+    assert len(VISIBLE) == 82
     assert {n for n in NAMES if TOOL_META[n].domain == "campaign"} == {t["function"]["name"] for t in CAMPAIGN_TOOLS}
 
 
@@ -69,7 +85,8 @@ def test_description_format(name):
     assert not lines[0].startswith(("Use when", "Don't use", "Needs", "Effect")), "starts with a plain sentence"
     if meta.id_fields:
         assert any(line.startswith("Needs:") for line in lines), "a tool that takes IDs says where they come from"
-    if get_spec(name).write:
+    spec = get_spec(name)
+    if (spec and spec.write and name not in MERGED) or (name in MERGED and any(get_spec(t).write for t in MERGED[name].wraps)):
         assert "{gate}" in text, "a write states its gate from the dry-run"
     if "{gate}" in text:
         effect = next(line for line in lines if line.startswith("Effect:"))
@@ -101,15 +118,28 @@ def test_confusable_tools_name_their_siblings(group):
 def test_id_fields_and_prerequisites_are_real(name):
     meta = TOOL_META[name]
     props = set((schema_for_tool(name) or {}).get("properties") or {})
+    if name in MERGED:
+        props = set(MERGED[name].schema["properties"])
     campaign = next((t for t in CAMPAIGN_TOOLS if t["function"]["name"] == name), None)
     if campaign:
         props = set(campaign["function"]["parameters"].get("properties") or {})
     assert set(meta.id_fields) <= props, (name, set(meta.id_fields) - props)
-    assert all(p in TOOL_META and p != name for p in meta.requires_prior), name
+    for prior in meta.requires_prior + meta.suggested_prior:
+        assert prior in VISIBLE and prior != name, (name, prior)
+
+
+def test_hard_prerequisites_are_exactly_the_agreed_set():
+    assert {n: TOOL_META[n].requires_prior for n in NAMES if TOOL_META[n].requires_prior} == HARD_PRIOR
+
+
+@pytest.mark.parametrize("name", VISIBLE)
+def test_visible_descriptions_never_name_a_hidden_tool(name):
+    named = {w for w in WRAPPED if re.search(rf"\b{w}\b", TOOL_META[name].description)}
+    assert not named, (name, named)
 
 
 def test_at_least_fifteen_tools_have_a_hindi_or_hinglish_phrasing():
-    assert sum(1 for n in NAMES if HINGLISH.search(TOOL_META[n].description)) >= 15
+    assert sum(1 for n in VISIBLE if HINGLISH.search(TOOL_META[n].description)) >= 15
 
 
 @pytest.mark.parametrize("who", ["viewer", "drafter", "approver", "operator", "admin"])
@@ -119,7 +149,7 @@ def test_effect_line_matches_the_dry_run_for_every_role(client_scratch, ctx_fact
     scope = RunScope(ctx=ctx, settings=settings, domain="general")
     packs = _packs_for(settings, "")
     with tenant_scope(ctx):
-        for name in NAMES:
+        for name in REGISTERED:
             if "{gate}" not in TOOL_META[name].description:
                 continue
             gate = dry_run_for_user(scope, name, {}, packs=packs).gate

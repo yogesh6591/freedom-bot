@@ -77,3 +77,14 @@ def dry_run_for_user(
 ) -> DryRun:
     """The gate the user would get from the assistant for this call."""
     return dry_run(bound_scope(scope, tool, packs), tool, arguments)
+
+
+def is_visible(scope: RunScope, tool: str, packs: list[DomainPack]) -> bool:
+    """Whether the live assistant would show ``tool`` to this user (the policy check, no arguments).
+
+    No preconditions are run, so a tool is never hidden just because arguments are missing.
+    """
+    from bizos.agents.surface import _visible
+
+    spec = get_spec(tool)
+    return spec is not None and spec.implemented and _visible(bound_scope(scope, tool, packs), spec)
