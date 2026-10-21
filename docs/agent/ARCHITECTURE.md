@@ -149,8 +149,12 @@ plain text (`ToolOutcome.agent_text()` for the policy step).
 or stricter than the current path.
 
 ### 5.8 Gates come from the policy check
-There is no separate tier table. To find a tool's gate for a user, ask the policy dry-run (Phase 3),
-which reuses `evaluate()`. It never re-implements the rules. Tool descriptions' "Effect:" lines
+There is no separate tier table. To find a tool's gate for a user, ask the policy dry-run
+(`bizos/tools/dry_run.py`). It calls `bizos.tools.base.assess`, the same checks `guarded_call` runs
+before acting, with nothing recorded. It never re-implements the rules. A parity test compares it with
+`guarded_call` for every tool × role × mode. The description metadata lives in
+`bizos/agents/tool_meta.py`: a write's "Effect:" line ends with `{gate}`, filled from the dry-run for
+the current user. Tool descriptions' "Effect:" lines
 and eval expectations are generated or checked against the dry-run.
 
 What the code does with the shipped defaults (`WAIT_FOR_APPROVAL` mode, approval floor HIGH,
@@ -197,7 +201,8 @@ v1 uses the existing approval and draft cards (`awaiting_approval`, `drafts` in 
 There are no confirm cards in v1 (see "Later").
 
 ### 5.10 Reply composer (code)
-Every tool returns (directly or through an adapter that wraps `ToolOutcome`):
+Every tool returns (directly or through the adapter `bizos/agents/tool_result.py:from_outcome`, which
+wraps `ToolOutcome`):
 ```python
 class ToolResult(BaseModel):
     status: Literal["success", "error", "pending"]
