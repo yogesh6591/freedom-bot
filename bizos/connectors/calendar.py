@@ -13,7 +13,7 @@ asserts against ("the calendar remains unchanged until an approver accepts").
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, tzinfo
 from typing import Any, Optional
 
 from sqlalchemy import text
@@ -22,12 +22,34 @@ from bizos.connectors.base import Connector, ConnectorNotConfigured, ConnectorRe
 from bizos.connectors.untrusted import wrap_many
 from bizos.tenancy.registry import readonly_connection, workspace_connection
 from bizos.util.ids import new_id
-from bizos.util.timeutil import ensure_utc, utcnow
+from bizos.util.timeutil import workspace_zone
 
 
 class WorkspaceCalendarConnector(Connector):
     category = "calendar"
     provider = "workspace"
+
+    # -- times ----------------------------------------------------------------
+    # Times are converted here, never by the database: a time without an offset is wall-clock time in the
+    # workspace timezone, every stored time is timezone-aware, and times are returned in the workspace zone.
+
+    def _zone(self) -> tzinfo:
+        if not hasattr(self, "_zone_cached"):
+            from bizos.control import store as control
+
+            self._zone_cached = workspace_zone(control.get_client(self.ctx.client_id).settings)
+        return self._zone_cached
+
+    def _moment(self, value: Any) -> datetime:
+        """An ISO time as an aware datetime; raises ValueError when it is not one."""
+        moment = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+        return moment.replace(tzinfo=self._zone()) if moment.tzinfo is None else moment
+
+    def _local(self, row: dict[str, Any]) -> dict[str, Any]:
+        for key in ("starts_at", "ends_at"):
+            if isinstance(row.get(key), datetime):
+                row[key] = row[key].astimezone(self._zone()).isoformat()
+        return row
 
     def health(self) -> ConnectorResult:
         with readonly_connection(self.ctx) as conn:
@@ -41,12 +63,15 @@ class WorkspaceCalendarConnector(Connector):
     ) -> ConnectorResult:
         clauses = ["status <> 'cancelled'"]
         params: dict[str, Any] = {"limit": max(1, min(limit, 200))}
-        if start:
-            clauses.append("starts_at >= CAST(:start AS TIMESTAMPTZ)")
-            params["start"] = start
-        if end:
-            clauses.append("starts_at <= CAST(:end AS TIMESTAMPTZ)")
-            params["end"] = end
+        try:
+            if start:
+                clauses.append("starts_at >= :start")
+                params["start"] = self._moment(start)
+            if end:
+                clauses.append("starts_at <= :end")
+                params["end"] = self._moment(end)
+        except ValueError:
+            return ConnectorResult.failure("start and end must be ISO datetimes")
         with readonly_connection(self.ctx) as conn:
             rows = conn.execute(
                 text(
@@ -57,7 +82,7 @@ class WorkspaceCalendarConnector(Connector):
             ).fetchall()
         # Titles and descriptions can be set by external invitees.
         events, findings = wrap_many(
-            [dict(r._mapping) for r in rows], source="calendar_event", text_field="description"
+            [self._local(dict(r._mapping)) for r in rows], source="calendar_event", text_field="description"
         )
         return ConnectorResult(
             ok=True, data=events, summary=f"{len(events)} event(s)", untrusted_findings=findings
@@ -67,18 +92,21 @@ class WorkspaceCalendarConnector(Connector):
         self, *, start: str, end: str, slot_minutes: int = 30
     ) -> ConnectorResult:
         """Free windows in a range. Returns free/busy only, never event details."""
+        try:
+            window_start, window_end = self._moment(start), self._moment(end)
+        except ValueError:
+            return ConnectorResult.failure("start and end must be ISO datetimes")
         with readonly_connection(self.ctx) as conn:
             rows = conn.execute(
                 text(
                     "SELECT starts_at, ends_at FROM calendar_events "
-                    "WHERE status <> 'cancelled' AND ends_at > CAST(:s AS TIMESTAMPTZ) "
-                    "AND starts_at < CAST(:e AS TIMESTAMPTZ) ORDER BY starts_at"
+                    "WHERE status <> 'cancelled' AND ends_at > :s AND starts_at < :e ORDER BY starts_at"
                 ),
-                {"s": start, "e": end},
+                {"s": window_start, "e": window_end},
             ).fetchall()
-        window_start = ensure_utc(datetime.fromisoformat(start))
-        window_end = ensure_utc(datetime.fromisoformat(end))
-        busy = [(ensure_utc(r.starts_at), ensure_utc(r.ends_at)) for r in rows]
+        zone = self._zone()
+        window_start, window_end = window_start.astimezone(zone), window_end.astimezone(zone)
+        busy = [(r.starts_at.astimezone(zone), r.ends_at.astimezone(zone)) for r in rows]
 
         free: list[dict[str, str]] = []
         cursor = window_start
@@ -110,13 +138,17 @@ class WorkspaceCalendarConnector(Connector):
         location: Optional[str] = None,
         calendar_id: str = "primary",
     ) -> ConnectorResult:
+        try:
+            start, end = self._moment(starts_at), self._moment(ends_at)
+        except ValueError:
+            return ConnectorResult.failure("starts_at and ends_at must be ISO datetimes")
         event_id = new_id("evt")
         with workspace_connection(self.ctx) as conn:
             conn.execute(
                 text(
                     "INSERT INTO calendar_events (id, calendar_id, title, description, location, "
                     "starts_at, ends_at, attendees, organizer, created_by) VALUES "
-                    "(:i, :c, :t, :d, :l, CAST(:s AS TIMESTAMPTZ), CAST(:e AS TIMESTAMPTZ), :a, :o, :u)"
+                    "(:i, :c, :t, :d, :l, :s, :e, :a, :o, :u)"
                 ),
                 {
                     "i": event_id,
@@ -124,8 +156,8 @@ class WorkspaceCalendarConnector(Connector):
                     "t": title,
                     "d": description,
                     "l": location,
-                    "s": starts_at,
-                    "e": ends_at,
+                    "s": start,
+                    "e": end,
                     "a": list(attendees or []),
                     "o": self.ctx.email or self.ctx.user_id,
                     "u": self.ctx.user_id,
@@ -133,22 +165,28 @@ class WorkspaceCalendarConnector(Connector):
             )
         return ConnectorResult(
             ok=True,
-            data={"event_id": event_id, "title": title, "starts_at": starts_at},
-            summary=f"event '{title}' created at {starts_at}",
+            data={"event_id": event_id, "title": title, "starts_at": start.astimezone(self._zone()).isoformat(),
+                  "ends_at": end.astimezone(self._zone()).isoformat()},
+            summary=f"event '{title}' created for {_shown(start, self._zone())}",
         )
 
     def reschedule_event(self, event_id: str, *, starts_at: str, ends_at: str) -> ConnectorResult:
+        try:
+            start, end = self._moment(starts_at), self._moment(ends_at)
+        except ValueError:
+            return ConnectorResult.failure("starts_at and ends_at must be ISO datetimes")
         with workspace_connection(self.ctx) as conn:
             result = conn.execute(
-                text(
-                    "UPDATE calendar_events SET starts_at = CAST(:s AS TIMESTAMPTZ), "
-                    "ends_at = CAST(:e AS TIMESTAMPTZ), updated_at = NOW() WHERE id = :i"
-                ),
-                {"s": starts_at, "e": ends_at, "i": event_id},
+                text("UPDATE calendar_events SET starts_at = :s, ends_at = :e, updated_at = NOW() WHERE id = :i"),
+                {"s": start, "e": end, "i": event_id},
             )
             if result.rowcount == 0:
                 return ConnectorResult.failure(f"No event {event_id!r}")
-        return ConnectorResult(ok=True, data={"event_id": event_id}, summary=f"event moved to {starts_at}")
+        return ConnectorResult(
+            ok=True,
+            data={"event_id": event_id, "starts_at": start.astimezone(self._zone()).isoformat()},
+            summary=f"event moved to {_shown(start, self._zone())}",
+        )
 
     def cancel_event(self, event_id: str) -> ConnectorResult:
         with workspace_connection(self.ctx) as conn:
@@ -168,6 +206,11 @@ class WorkspaceCalendarConnector(Connector):
                 ).scalar()
                 or 0
             )
+
+
+def _shown(moment: datetime, zone: tzinfo) -> str:
+    """A time as the user reads it, e.g. "Thu 22 Oct 15:00 (Asia/Kolkata)"."""
+    return f"{moment.astimezone(zone).strftime('%a %d %b %H:%M')} ({zone})"
 
 
 class GoogleCalendarConnector(Connector):
