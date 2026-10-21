@@ -836,6 +836,10 @@ def _visible(action: Action, scope: RunScope) -> bool:
     return not area or scope.ctx.can_see_area(area)
 
 
+_MATCH_PAGE = 200
+_MATCH_LISTED = 8
+
+
 def _resolve(
     scope: RunScope, args: dict[str, Any], statuses: Optional[list[ActionStatus]] = None
 ) -> tuple[Optional[Action], Optional[str]]:
@@ -854,16 +858,25 @@ def _resolve(
             f"No action {ref!r} that you can see." if ref
             else "Say which action — give its id, or call approvals_list to find it."
         )
-    candidates = [
-        a for a in actions.list_actions(statuses=statuses, limit=200, ctx=scope.ctx)
-        if _visible(a, scope)
-        and (phrase in a.title.casefold() or phrase in (a.description or "").casefold())
-    ]
+    # Every action in these statuses, not only the newest page: a phrase that also matches an older request
+    # is ambiguous. Stop once there are more matches than the refusal lists.
+    candidates: list[Action] = []
+    offset = 0
+    while len(candidates) <= _MATCH_LISTED:
+        page = actions.list_actions(statuses=statuses, limit=_MATCH_PAGE, offset=offset, ctx=scope.ctx)
+        candidates += [
+            a for a in page
+            if _visible(a, scope)
+            and (phrase in a.title.casefold() or phrase in (a.description or "").casefold())
+        ]
+        if len(page) < _MATCH_PAGE:
+            break
+        offset += _MATCH_PAGE
     if len(candidates) == 1:
         return actions.get_action(candidates[0].id, include_events=True, ctx=scope.ctx), None
     if not candidates:
         return None, f"No action matching {phrase!r} that you can see."
-    listed = "; ".join(f"{a.id} — {a.title} ({a.status})" for a in candidates[:8])
+    listed = "; ".join(f"{a.id} — {a.title} ({a.status})" for a in candidates[:_MATCH_LISTED])
     return None, f"More than one action matches {phrase!r}; ask the user which one: {listed}"
 
 
