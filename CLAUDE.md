@@ -4,8 +4,12 @@
 - Every tool call goes through the guard hook. No tool may bypass it.
 - The reply to the user is built from tool results only. Never report an action as done unless
   its tool returned success in this run.
+- The existing policy check (bizos/tools/base.py guarded_call → bizos/policy/engine.py) is the only
+  permission and gating system. New checks may only add strictness; no tool, for any role, may become
+  less strict than today.
 - Tool descriptions follow docs/agent/TOOL_DESCRIPTIONS.md. Any new or changed tool needs:
-  description, bundle, risk tier, id_fields, and at least 3 eval cases in evals/cases.yaml.
+  routing domain, description, id_fields, requires_prior, a ToolSpec in bizos/rbac/registry.py,
+  and at least 3 eval cases in evals/cases.yaml whose expected gates come from the policy check.
 - Never merge a destructive tool (delete, send, deactivate, reset, sign-off) with another tool.
 - Guard, risk tiers, registry metadata and the reply composer are plain Python modules.
   Agno code only wires them together.
