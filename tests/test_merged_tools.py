@@ -59,6 +59,7 @@ def test_approvals_decide_maps_each_decision_to_its_old_tool(decision, tool):
     ({"action_id": "act_1", "decision": "maybe"}, "decision must be"),
     ({"action_id": "act_1", "decision": "request_changes"}, "needs a comment"),
     ({"decision": "approve"}, "action_id"),
+    ({"match": "Meena expense", "decision": "approve"}, "title can match the wrong request"),
 ])
 def test_approvals_decide_rejects_unmappable_arguments(args, needle):
     with pytest.raises(MergeArgumentError, match=needle):

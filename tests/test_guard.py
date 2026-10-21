@@ -323,3 +323,16 @@ def _effect(result) -> PolicyEffect:
     if result.status == "pending":
         return PolicyEffect.REQUIRE_APPROVAL if result.pending_kind == "approval" else PolicyEffect.DRAFT_ONLY
     return PolicyEffect.ALLOW
+
+
+def test_v2_approval_actions_need_the_request_id_not_title_words(client_scratch, ctx_factory, stubs):
+    approver = ctx_factory(client_scratch, "approver")
+    guard, _, _ = _guard(client_scratch, approver)
+    guard.known.add_user_message("cancel my Meena expense request")
+    cancel = guard.pre_check("approvals_cancel", {"match": "Meena expense"})
+    assert cancel.stage == "schema" and "action_id is required" in cancel.text
+    decide = guard.pre_check("approvals_decide", {"match": "Meena expense", "decision": "approve"})
+    assert decide.stage == "schema" and "action_id is required" in decide.text
+    with tenant_scope(approver):
+        refused = guard.execute("approvals_decide", {"match": "Meena expense", "decision": "approve"})
+    assert refused.stage == "schema" and "approvals_list" in refused.text and stubs == []

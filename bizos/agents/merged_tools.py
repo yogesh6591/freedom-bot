@@ -99,9 +99,12 @@ def _plan_decide(scope_for, args):
         raise MergeArgumentError("decision must be one of approve, reject, request_changes.")
     if decision == "request_changes" and not str(args.get("comment") or "").strip():
         raise MergeArgumentError("request_changes needs a comment saying what must change.")
-    if not (args.get("action_id") or args.get("match")):
-        raise MergeArgumentError("Give action_id from approvals_list, or match with words from its title.")
-    passed = {k: args[k] for k in ("action_id", "match", "comment") if args.get(k) not in (None, "")}
+    if not args.get("action_id"):
+        raise MergeArgumentError(
+            "Give the request's action_id from approvals_list or approvals_get. Words from its title can match "
+            "the wrong request, so they are not accepted for a decision."
+        )
+    passed = {k: args[k] for k in ("action_id", "comment") if args.get(k) not in (None, "")}
     return [Call(_DECISIONS[decision], passed)]
 
 
@@ -111,12 +114,11 @@ APPROVALS_DECIDE = MergedTool(
     wraps=tuple(_DECISIONS.values()),
     schema=_schema(
         {
-            "action_id": _s("Action id from approvals_list or approvals_get, e.g. act_…"),
-            "match": _s("Words from the request's title, when the id is not known"),
+            "action_id": _s("The request's action_id from approvals_list or approvals_get, e.g. act_…"),
             "decision": {"type": "string", "enum": list(_DECISIONS), "description": "What the approver decided"},
             "comment": _s("Why; required for request_changes, which the requester sees"),
         },
-        ["decision"],
+        ["action_id", "decision"],
     ),
     plan=_plan_decide,
     narrow=_narrow_enum("decision", _DECISIONS),

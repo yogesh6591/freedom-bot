@@ -35,6 +35,20 @@ from bizos.agents.tool_result import ToolResult, from_outcome
 from bizos.rbac.registry import get_spec
 from bizos.tools.base import RunScope, ToolOutcome, guarded_call
 
+#: v2's model-facing schema where it is stricter than the shared one. approvals_cancel acts on one
+#: request, so v2 requires its action_id; title words (``match``) could pick the wrong request.
+V2_SCHEMAS: dict[str, dict[str, Any]] = {
+    "approvals_cancel": {
+        "type": "object",
+        "properties": {
+            "action_id": {"type": "string", "description": "The request's action_id from approvals_list"},
+            "comment": {"type": "string", "description": "Optional reason"},
+        },
+        "required": ["action_id"],
+        "additionalProperties": False,
+    },
+}
+
 _EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
 #: Result keys whose values are structured identifiers or addresses.
@@ -135,7 +149,7 @@ class Guard:
             return self.schemas[tool]
         if tool in merged_tools.MERGED:
             return merged_tools.MERGED[tool].schema
-        return schema_for_tool(tool)
+        return V2_SCHEMAS.get(tool) or schema_for_tool(tool)
 
     def check_schema(self, tool: str, args: dict[str, Any]) -> Optional[str]:
         errors = sorted(Draft7Validator(self.schema(tool)).iter_errors(args), key=lambda e: list(e.path))
