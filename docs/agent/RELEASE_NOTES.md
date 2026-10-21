@@ -21,8 +21,18 @@ Nothing is changed when any of these is returned.
   admin cannot leave zero admins. You will see 409 when two admin changes race, for example two
   admins demoting each other at the same moment. Exactly one of them succeeds.
 - **Telling the 409s apart:** `409 Conflict` is also returned when a browser tab is signed in to a
-  different workspace or user than it expects. Tell them apart by the `detail` text, not by the status
-  code alone.
+  different workspace or user than it expects. That response's `detail` is exactly
+  `"workspace_changed"`, so check for that value; any other 409 from these endpoints is the last-admin
+  refusal.
+- **No machine-readable error codes:** the platform REST API has no error-code convention. Errors are
+  `{"detail": "<message for a person>"}`, and `"workspace_changed"` is the only fixed value. So these
+  refusals carry no `code` field (such as `last_admin`, `self_demotion` or `self_suspension`), and we
+  have not invented one for this release. Until a convention exists:
+  - 409 with any `detail` other than `"workspace_changed"` is the last-admin refusal;
+  - 403 is shared with other refusals on the same endpoints (the caller is not an admin, or their
+    account is not active). The two self-rules can only be told apart from those by the `detail` text.
+    `/roles` returns the self-demotion message and `/status` returns the self-suspension message. (The acquisition assessment API's `{"ok", "error", "code"}`
+  shape belongs to that separate public service.)
 - **Unchanged:** demoting or suspending *another* admin still works, as long as at least one active
   admin remains. Changes to non-admin users are not affected.
 

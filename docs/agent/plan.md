@@ -108,7 +108,13 @@ STOP.
 ## Phase 6: Guard integration
 - Agno tool hook: pre-checks in order (schema, ID provenance, prerequisites), then the existing
   policy check, then run / existing approval card / existing draft card / deny.
-- known_ids collected per session from tool results and user messages.
+- known_ids collected per session from the user's messages and from structured fields of tool
+  results only (CRM records, the user list, email sender/recipient headers, IDs tools return); never
+  from free text such as email bodies, notes, comments or documents.
+- Hard prerequisites (requires_prior) enforced: admin_launch_sign_off ← admin_launch_checklist;
+  admin_apply_setup, admin_update_settings ← admin_get_setup; admin_set_tool_permission,
+  admin_set_tool_mode ← admin_tool_permissions; finance_propose_adjustment ← finance_lookup_policy.
+  suggested_prior stays playbook guidance and is never enforced.
 - Idempotency keys for every write.
 - Strictness parity test: for every tool × role, the gate under AGENT_PIPELINE_V2 is equal to or
   stricter than the current path.

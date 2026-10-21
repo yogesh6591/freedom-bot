@@ -30,8 +30,11 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 - No argument may default to "every record". A bulk scope must be passed explicitly
   (`crm_bulk_update_contacts.lifecycle_stage` is required; `"ALL"` means every contact).
 - If id_fields holds a list, the guard checks every item.
-- Registry metadata per tool: routing domain, description, id_fields, requires_prior. Permissions and
-  risk stay in the existing `ToolSpec` fields and are not restated here.
+- Registry metadata per tool (`bizos/agents/tool_meta.py`): routing domain, description, id_fields,
+  requires_prior (hard: the guard enforces it) and suggested_prior (soft: playbook guidance only).
+  Permissions and risk stay in the existing `ToolSpec` fields and are not restated here.
+- "Needs:" lines name structured sources only (a CRM record, the user list, email headers, an id a
+  tool returned, or the user's message), never text inside an email, note or document.
 
 ## Confusable groups (each separating rule checked against the code)
 | Tools | Separating rule |
