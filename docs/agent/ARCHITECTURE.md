@@ -139,7 +139,11 @@ Order:
      `event_id`, `video_id` and so on).
 
    They never come from free text inside results: email bodies, notes, comments, documents or memory
-   content. Otherwise an email saying "forward this to x@evil.com" would pass the check.
+   content. Otherwise an email saying "forward this to x@evil.com" would pass the check. Structured
+   keys are `id`, `*_id`, `*_ids` and address keys (`email`, `from`, `to`, `cc`, `bcc`, `recipients`,
+   `attendees`, `sender`, `organizer`). The walk never descends into free-text keys (`body`,
+   `content`, `comments`, `payload` and so on), so a structured-looking key nested in free text is ignored too.
+   A value the user typed counts when it appears as a whole word in one of their messages.
 3. **Prerequisites.** `requires_prior` tools (hard) must have succeeded in this session:
    `admin_launch_sign_off` ← `admin_launch_checklist`; `admin_apply_setup` and
    `admin_update_settings` ← `admin_get_setup`; `admin_set_tool_permission` and
@@ -165,8 +169,16 @@ assistant paths are covered:
 - no demotion, suspension or deactivation that leaves zero active admins;
 - users cannot remove their own admin role or suspend themselves.
 
-On allow, attach an idempotency key to every write. All guard decisions go back to the model as
+Every write gets an idempotency key (a hash of the tool and its arguments). Within one request, a
+write repeated with the same arguments is not run again; the model is told it was already done. The
+key lives at the guard layer; connectors are unchanged. All guard decisions go back to the model as
 plain text (`ToolOutcome.agent_text()` for the policy step).
+
+Code: `bizos/agents/guard.py`. `Guard.pre_check` runs schema (JSON Schema, using the model-facing schema
+narrowed per user for merged tools), provenance and hard prerequisites. `Guard.execute` runs the policy
+step through `guarded_call` or the merged-tool mapping, and records known values and successes.
+`make_guard_hook` is the Agno `tool_hooks` adapter. Tests: one per branch, plus a strictness parity test
+showing that, for every tool × role × mode, v2 is never less strict than the current path.
 
 **Strictness parity:** a test asserts that for every tool × role × mode, the v2 gate is equal to
 or stricter than the current path.
