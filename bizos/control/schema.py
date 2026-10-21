@@ -134,6 +134,9 @@ CONTROL_DDL: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS support_tickets_client_idx ON support_tickets (client_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS support_tickets_assignee_idx ON support_tickets (assignee, status)",
+    # Workspace timezone: existing workspaces get the default once; a value an admin set is kept.
+    "UPDATE clients SET settings = jsonb_set(settings, '{timezone}', '\"Asia/Kolkata\"') "
+    "WHERE NOT (settings ? 'timezone')",
 )
 
 #: Seeded on every control-plane migration so the roles table always matches the

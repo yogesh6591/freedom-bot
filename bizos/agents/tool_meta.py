@@ -543,9 +543,10 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: setup changes for the whole workspace. {gate}
     """), requires_prior=("admin_get_setup",)),
     "admin_update_settings": M("admin_setup", d("""
-        Change workspace settings: default execution mode, data-processing permissions, and the
-        approval, risk, memory and retention policies.
-        Use when: "switch the workspace to wait-for-approval mode", "require approval for anything high risk".
+        Change workspace settings: default execution mode, data-processing permissions, the
+        approval, risk, memory and retention policies, and the workspace timezone (IANA name).
+        Use when: "switch the workspace to wait-for-approval mode", "require approval for anything high risk",
+        "our office is in Dubai, set the timezone to Asia/Dubai".
         Don't use: who may use one tool -> admin_set_tool_permission; one pack -> admin_toggle_domain;
         goals and SOPs -> admin_apply_setup.
         Effect: applies to every user. {gate}

@@ -22,7 +22,7 @@ from bizos.control import store as control
 from bizos.control.models import ClientSettings
 from bizos.tenancy.context import TenantContext, tenant_scope
 from bizos.types import AuditEventType, Role, ToolPermission
-from bizos.util.timeutil import utcnow
+from bizos.util.timeutil import is_timezone, utcnow
 
 
 class AdminError(Exception):
@@ -69,6 +69,7 @@ SETTINGS_FIELDS = frozenset(
         "risk_policy",
         "onboarding",
         "tool_modes",
+        "timezone",
     }
 )
 
@@ -266,6 +267,10 @@ def update_settings(ctx: TenantContext, settings: ClientSettings, changes: dict[
         changes["default_execution_mode"] = mode.value
     if "tool_modes" in changes:
         changes["tool_modes"] = _validated_tool_modes(settings, changes["tool_modes"])
+    if "timezone" in changes and not is_timezone(changes["timezone"]):
+        raise AdminError(
+            f"Unknown timezone {changes['timezone']!r}. Use an IANA name such as Asia/Kolkata or America/New_York."
+        )
     _fold_legacy_dpa_flags(changes, settings)
     payload = settings.to_dict()
     for key, value in changes.items():

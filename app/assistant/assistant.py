@@ -1632,7 +1632,7 @@ def admin_reset_password(scope: RunScope, args: dict[str, Any]) -> ConnectorResu
 
 _POLICY_FIELDS = (
     "default_execution_mode", "order_dpa_allows", "llm_baa_covered", "approval_policy",
-    "risk_policy", "memory_policy", "retention_policy",
+    "risk_policy", "memory_policy", "retention_policy", "timezone",
 )
 
 

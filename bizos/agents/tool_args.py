@@ -543,6 +543,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "risk_policy": {"type": "object", "description": "Fields to change, e.g. max_records_per_action, max_emails_per_run, auto_allowed_max_risk"},
             "memory_policy": {"type": "object", "description": "Fields to change"},
             "retention_policy": {"type": "object", "description": "Fields to change, e.g. audit_days"},
+            "timezone": _s("Workspace timezone as an IANA name, e.g. Asia/Kolkata, America/New_York"),
         }
     ),
     "admin_toggle_domain": _obj(

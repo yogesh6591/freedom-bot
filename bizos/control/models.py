@@ -16,6 +16,7 @@ from typing import Any, Optional
 
 from bizos.domains.catalog import DEFAULT_ENABLED_DOMAINS, DOMAIN_NAMES
 from bizos.types import DeploymentType, ExecutionMode, RiskLevel, Role
+from bizos.util.timeutil import DEFAULT_TIMEZONE
 
 
 @dataclass
@@ -163,6 +164,9 @@ class ClientSettings:
     #: Per-tool execution mode (FB-038). Narrowing only: an entry can make one
     #: tool stricter than the workspace mode, never looser.
     tool_modes: dict = field(default_factory=dict)
+    #: IANA timezone of the workspace (e.g. ``Asia/Kolkata``). "Today" in the assistant's prompts and
+    #: times without an offset on the workspace calendar are read in it.
+    timezone: str = DEFAULT_TIMEZONE
 
     # -- serialization ------------------------------------------------------
 
