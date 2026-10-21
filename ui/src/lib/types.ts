@@ -238,6 +238,7 @@ export interface ChatContext {
     can_run: boolean
     tool_mode?: string | null
   }[]
+  sending_accounts?: string[]
   pending_approvals: number
   inefficiency_alerts?: {
     id: string
@@ -246,6 +247,37 @@ export interface ChatContext {
     directional_cost?: string
     status?: string
   }[]
+}
+
+export interface AssistantTraceCall {
+  tool: string
+  domain?: string
+  why?: string
+  args?: string
+  ok?: boolean
+  effect?: string
+  result?: string
+}
+
+export interface AssistantTrace {
+  engine?: string
+  tool?: string
+  explanation?: string
+  tool_log?: AssistantTraceCall[]
+  self_check?: string[]
+  guardrails?: string[]
+  campaign_id?: string
+  campaign_name?: string
+  campaign_schedule_timing?: string[]
+  email_address?: string
+  email_address_list?: string[]
+  email_from?: string
+  email_subject?: string
+  email_body?: string
+  email_draft?: string
+  reply_note?: string
+  campaigns_to_show?: { name: string; timing: string }[]
+  people_to_show?: { name: string; email: string }[]
 }
 
 export interface ChatResponse {
@@ -258,6 +290,8 @@ export interface ChatResponse {
   actions: ActionRecord[]
   awaiting_approval: ActionRecord[]
   drafts: ActionRecord[]
+  email_draft?: string
+  trace?: AssistantTrace
 }
 
 /** One of the caller's saved conversations (M01-11). */
@@ -278,6 +312,7 @@ export interface ChatSessionMessage {
     tool_activity?: { tool: string; ok: boolean }[]
     awaiting_approval?: Partial<ActionRecord>[]
     drafts?: Partial<ActionRecord>[]
+    json?: AssistantTrace
   }
   created_at: string | null
 }

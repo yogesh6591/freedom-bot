@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Import Prospects{% endblock %}
+{% block page_heading %}Import CSV / Excel{% endblock %}
+{% block page_lede %}
+<p class="page-lede">Optional Admin utility for migration or testing. Spreadsheet import is not required for the acquisition engine.</p>
+{% endblock %}
+
+{% block top_actions %}
+<a class="btn btn-ghost" href="/prospects?tab=inbox">Back</a>
+{% endblock %}
+
+{% block content %}
+<section class="panel form-panel">
+  {% if errors %}
+    <div class="form-errors">
+      <strong>Could not import:</strong>
+      <ul>
+        {% for error in errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/prospects/import" enctype="multipart/form-data" class="prospect-form">
+    <label class="field field-full">
+      <span>CSV or Excel file</span>
+      <input type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required>
+    </label>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Import prospects</button>
+      <a class="btn btn-ghost" href="/prospects?tab=inbox">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

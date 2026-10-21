@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Prospects{% endblock %}
+{% block page_heading %}Prospects{% endblock %}
+
+{% block page_lede %}{% endblock %}
+
+{% block top_actions %}{% endblock %}
+
+{% block flash %}
+  {% if flash == 'created' %}
+    <div class="flash">Prospect created.</div>
+  {% elif flash == 'updated' %}
+    <div class="flash">Prospect updated.</div>
+  {% elif flash == 'deleted' %}
+    <div class="flash">Prospect deleted.</div>
+  {% elif flash == 'not_found' %}
+    <div class="flash flash-error">Prospect not found.</div>
+  {% elif flash == 'bulk_approved' %}
+    <div class="flash">Approved {{ flash_count or 0 }} prospect{% if flash_count != '1' %}s{% endif %}.</div>
+  {% elif flash == 'bulk_unapproved' %}
+    <div class="flash">Moved {{ flash_count or 0 }} prospect{% if flash_count != '1' %}s{% endif %} back to Prospects.</div>
+  {% elif flash == 'bulk_deleted' %}
+    <div class="flash">Deleted {{ flash_count or 0 }} prospect{% if flash_count != '1' %}s{% endif %}.</div>
+  {% elif flash == 'imported' %}
+    <div class="flash">Imported {{ flash_count or 0 }} prospect{% if flash_count != '1' %}s{% endif %}{% if request.query_params.get('errors') %} ({{ request.query_params.get('errors') }} row{{ 's' if request.query_params.get('errors') != '1' else '' }} skipped){% endif %}.</div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="page-toolbar">
+  <div class="page-toolbar-actions">
+    <a class="btn btn-primary" href="/prospects/new">Add Prospect</a>
+    <button type="button" class="btn btn-secondary" data-open-modal="modal-prospect-import">Import CSV / Excel</button>
+    <a class="btn btn-secondary" href="/prospects/export/linkedin">Export for LinkedIn</a>
+    <a class="btn btn-secondary" href="/prospects/export/structured">Export structured</a>
+  </div>
+</div>
+
+<section class="panel toolbar-panel">
+  <form class="filters" method="get" action="/prospects" hx-get="/prospects" hx-target="body" hx-push-url="true" hx-indicator="#list-loading">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <label class="field grow">
+      <span>Search</span>
+      <input type="search" name="search" value="{{ search }}" placeholder="Company, executive, email, source">
+    </label>
+    <label class="field">
+      <span>Source</span>
+      <input list="source-options" type="text" name="source" value="{{ source }}" placeholder="Any source">
+      <datalist id="source-options">
+        {% for item in sources %}
+          <option value="{{ item }}"></option>
+        {% endfor %}
+      </datalist>
+    </label>
+    <div class="filter-actions">
+      <button class="btn btn-secondary" type="submit">
+        Apply
+        <span id="list-loading" class="htmx-indicator muted small">…</span>
+      </button>
+      <a class="btn btn-secondary" href="/prospects?tab={{ tab }}">Reset</a>
+    </div>
+  </form>
+</section>
+
+<nav class="prospect-tabs" role="tablist" aria-label="Prospect lists">
+  <a class="prospect-tab{% if tab == 'inbox' %} is-active{% endif %}" href="/prospects?tab=inbox{% if search %}&search={{ search }}{% endif %}{% if source %}&source={{ source }}{% endif %}" role="tab" aria-selected="{{ 'true' if tab == 'inbox' else 'false' }}">
+    <span class="prospect-tab-label">Prospects</span>
+    <span class="prospect-tab-count">{{ counts.inbox }}</span>
+  </a>
+  <a class="prospect-tab{% if tab == 'approved' %} is-active{% endif %}" href="/prospects?tab=approved{% if search %}&search={{ search }}{% endif %}{% if source %}&source={{ source }}{% endif %}" role="tab" aria-selected="{{ 'true' if tab == 'approved' else 'false' }}">
+    <span class="prospect-tab-label">Approved Prospects</span>
+    <span class="prospect-tab-count">{{ counts.approved }}</span>
+  </a>
+</nav>
+
+{% if total == 0 %}
+  <div class="state state-empty">
+    {% if tab == 'approved' %}
+      <h2>No approved prospects yet</h2>
+      <p>Select prospects in the Prospects tab and click Approve to move them here.</p>
+      <a class="btn btn-primary" href="/prospects?tab=inbox">Go to Prospects</a>
+    {% else %}
+      <h2>No prospects yet</h2>
+      <p>Use Add lead for a single record, or Import as an optional Admin utility. Spreadsheet import is not required for acquisition.</p>
+    {% endif %}
+  </div>
+{% else %}
+  <form id="prospects-bulk-form" method="post" action="{% if tab == 'approved' %}/prospects/bulk-unapprove{% else %}/prospects/bulk-approve{% endif %}">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <div class="bulk-bar" data-bulk-bar hidden>
+      <div class="bulk-bar-copy">
+        <strong data-bulk-count>0</strong> selected
+      </div>
+      <div class="bulk-bar-actions">
+        {% if tab == 'approved' %}
+        <button class="btn btn-primary btn-small" type="submit">Unapprove</button>
+        {% else %}
+        <button class="btn btn-primary btn-small" type="submit">Approve</button>
+        {% endif %}
+        <button type="button" class="btn btn-secondary btn-small" data-bulk-cancel>Cancel</button>
+        <button
+          class="btn btn-danger btn-small"
+          type="submit"
+          formaction="/prospects/bulk-delete"
+          formmethod="post"
+          data-bulk-delete
+          onclick="return confirm('Delete the selected prospects? This cannot be undone.');"
+        >Delete</button>
+      </div>
+    </div>
+
+    <section class="panel table-panel">
+      <div class="table-meta">
+        <span>{{ total }} {% if tab == 'approved' %}approved {% endif %}prospect{% if total != 1 %}s{% endif %}</span>
+        <span class="small">{% if tab == 'inbox' %}Select rows to approve for campaigns{% else %}Select rows to move back to Prospects{% endif %}</span>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table prospects-table">
+          <thead>
+            <tr>
+              <th class="col-check">
+                <label class="table-check" title="Select all">
+                  <input type="checkbox" data-select-all-header aria-label="Select all prospects">
+                </label>
+              </th>
+              <th>Company</th>
+              <th>Executive</th>
+              <th>Email</th>
+              <th>Revenue (est.)</th>
+              <th>Staff</th>
+              <th>Source</th>
+              <th class="col-actions"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for prospect in prospects %}
+            <tr>
+              <td class="col-check">
+                <label class="table-check">
+                  <input type="checkbox" name="prospect_ids" value="{{ prospect.id }}" data-row-check aria-label="Select {{ prospect.executive_name }}">
+                </label>
+              </td>
+              <td>
+                <div>{{ prospect.company }}</div>
+                {% if prospect.website %}
+                  <a class="cell-muted" href="{{ prospect.website }}" target="_blank" rel="noopener">{{ prospect.website }}</a>
+                {% endif %}
+              </td>
+              <td>
+                {% if prospect.executive_name and prospect.executive_name != 'Unknown decision-maker' %}{{ prospect.executive_name }}{% else %}<span class="email-missing">Not found yet</span>{% endif %}
+                {% if prospect.executive_title %}<span class="cell-muted">{{ prospect.executive_title }}</span>{% endif %}
+              </td>
+              <td>{% if prospect.email is placeholder_email %}<span class="email-missing">No email yet</span>{% else %}<a href="mailto:{{ prospect.email }}">{{ prospect.email }}</a>{% endif %}</td>
+              <td title="{{ prospect.revenue_band or '' }}">{{ prospect.revenue_band|short_band }}</td>
+              <td title="{{ prospect.headcount_band or '' }}">{{ prospect.headcount_band|short_band }}</td>
+              <td><span class="source-tag src-{{ prospect.discovery_source or prospect.source }}"><i></i>{{ (prospect.discovery_source or prospect.source)|source_label }}</span></td>
+              <td class="actions">
+                <a class="btn btn-icon" href="/prospects/{{ prospect.id }}" title="Edit" aria-label="Edit {{ prospect.executive_name }}">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                </a>
+                <button class="btn btn-icon btn-icon-danger" type="submit" formaction="/prospects/{{ prospect.id }}/delete" formmethod="post" title="Delete" aria-label="Delete {{ prospect.executive_name }}" onclick="return confirm('Delete this prospect?');">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                </button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if total_pages > 1 %}
+      <div class="pagination">
+        {% if page > 1 %}
+          <a class="btn btn-ghost" href="/prospects?page={{ page - 1 }}&tab={{ tab }}&search={{ search }}&source={{ source }}">Previous</a>
+        {% else %}
+          <span></span>
+        {% endif %}
+        <span>Page {{ page }} of {{ total_pages }}</span>
+        {% if page < total_pages %}
+          <a class="btn btn-ghost" href="/prospects?page={{ page + 1 }}&tab={{ tab }}&search={{ search }}&source={{ source }}">Next</a>
+        {% else %}
+          <span></span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </section>
+  </form>
+{% endif %}
+
+<dialog class="integration-modal prospect-import-modal" id="modal-prospect-import" aria-labelledby="modal-prospect-import-title">
+  <form method="dialog" class="integration-modal-chrome">
+    <header class="integration-modal-head prospect-import-modal-head">
+      <div class="prospect-import-icon" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
+      </div>
+      <div>
+        <h2 id="modal-prospect-import-title" class="integration-name">Import CSV / Excel</h2>
+        <p class="muted small">Optional Admin utility for migration or testing. Autonomously discovered prospects do not require a CSV.</p>
+      </div>
+      <button type="submit" class="integration-modal-close" aria-label="Close">×</button>
+    </header>
+  </form>
+
+  {% if import_errors %}
+  <div class="form-errors">
+    <strong>Could not import:</strong>
+    <ul>
+      {% for error in import_errors %}
+      <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/prospects/import" enctype="multipart/form-data" class="prospect-import-form" data-import-form>
+    <label class="prospect-import-drop" data-import-drop>
+      <input type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required data-import-file>
+      <span class="prospect-import-drop-title">Choose a file or drop it here</span>
+      <span class="prospect-import-drop-meta muted small">.csv or .xlsx</span>
+      <span class="prospect-import-file-name muted small" data-import-file-name></span>
+    </label>
+    <div class="prospect-import-actions">
+      <button type="button" class="btn btn-secondary" data-close-modal="modal-prospect-import">Cancel</button>
+      <button class="btn btn-primary" type="submit">Import prospects</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  document.querySelectorAll("[data-open-modal]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var dialog = document.getElementById(btn.getAttribute("data-open-modal"));
+      if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+    });
+  });
+  document.querySelectorAll(".prospect-import-modal, .integration-modal").forEach(function (dialog) {
+    dialog.addEventListener("click", function (event) {
+      if (event.target === dialog) dialog.close();
+    });
+  });
+  document.querySelectorAll("[data-close-modal]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var dialog = document.getElementById(btn.getAttribute("data-close-modal"));
+      if (dialog) dialog.close();
+    });
+  });
+
+  var fileInput = document.querySelector("[data-import-file]");
+  var fileName = document.querySelector("[data-import-file-name]");
+  var drop = document.querySelector("[data-import-drop]");
+  if (fileInput && fileName) {
+    fileInput.addEventListener("change", function () {
+      fileName.textContent = fileInput.files && fileInput.files[0] ? fileInput.files[0].name : "";
+      if (drop) drop.classList.toggle("has-file", !!(fileInput.files && fileInput.files[0]));
+    });
+  }
+
+  {% if open_import_modal %}
+  var importModal = document.getElementById("modal-prospect-import");
+  if (importModal && typeof importModal.showModal === "function") importModal.showModal();
+  {% endif %}
+})();
+</script>
+{% if total > 0 %}
+<script>
+(function () {
+  var form = document.getElementById("prospects-bulk-form");
+  if (!form) return;
+  var bar = form.querySelector("[data-bulk-bar]");
+  var countEl = form.querySelector("[data-bulk-count]");
+  var header = form.querySelector("[data-select-all-header]");
+  var cancelBtn = form.querySelector("[data-bulk-cancel]");
+
+  function boxes() {
+    return Array.prototype.slice.call(form.querySelectorAll("[data-row-check]"));
+  }
+
+  function sync() {
+    var selected = boxes().filter(function (el) { return el.checked; });
+    var all = boxes();
+    if (countEl) countEl.textContent = String(selected.length);
+    if (bar) bar.hidden = selected.length === 0;
+    if (header) {
+      header.checked = all.length > 0 && selected.length === all.length;
+      header.indeterminate = selected.length > 0 && selected.length < all.length;
+    }
+  }
+
+  function setAll(on) {
+    boxes().forEach(function (el) { el.checked = on; });
+    sync();
+  }
+
+  form.addEventListener("change", function (event) {
+    if (event.target && event.target.matches("[data-row-check], [data-select-all-header]")) {
+      if (event.target.matches("[data-select-all-header]")) setAll(event.target.checked);
+      else sync();
+    }
+  });
+  if (cancelBtn) cancelBtn.addEventListener("click", function () { setAll(false); });
+  sync();
+})();
+</script>
+{% endif %}
+{% endblock %}

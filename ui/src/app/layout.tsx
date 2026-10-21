@@ -17,9 +17,9 @@ export const metadata: Metadata = {
     'One company AI — ask in chat. Routing, memory, and approvals stay behind the scenes.'
 }
 
-/** Apply saved theme before paint to avoid a light/dark flash. Default: light. */
+/** Apply saved theme before paint. Night is the default, matching Acquisition. */
 const THEME_BOOT =
-  "(function(){try{var t=localStorage.getItem('freedombot-theme');var d=t==='dark';var r=document.documentElement;r.classList.toggle('dark',d);r.style.colorScheme=d?'dark':'light';}catch(e){}})();"
+  "(function(){try{var t=localStorage.getItem('freedombot-theme')||localStorage.getItem('fb-theme');var d=t!=='light';var r=document.documentElement;r.classList.toggle('dark',d);r.style.colorScheme=d?'dark':'light';}catch(e){}})();"
 
 export default function RootLayout({
   children
@@ -33,7 +33,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         {/* eslint-disable-next-line @next/next/no-page-custom-font -- Docker builds cannot fetch next/font at build time */}
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Sora:wght@500;600;700&display=swap"
           rel="stylesheet"
         />
       </head>

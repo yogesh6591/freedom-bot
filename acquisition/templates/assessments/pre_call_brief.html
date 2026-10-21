@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Pre-Call Brief · {{ header.name or 'Prospect' }}{% endblock %}
+
+{% set NO_CONCERNS = "No major concerns were captured during the assessment." %}
+{% set NO_QUESTIONS = "No specific prospect questions were captured yet." %}
+{% set NO_GAPS = "No critical information gaps were identified from the completed assessment." %}
+{% set NO_FINANCIAL = "No supportable financial-impact estimate was established during the assessment." %}
+
+{% macro is_sentinel(items, sentinel) -%}
+{%- if items|length == 1 and items[0] == sentinel -%}1{%- else -%}0{%- endif -%}
+{%- endmacro %}
+
+{% macro human_band(value) -%}
+{{- format_admin_value(value)|replace('-', '–') -}}
+{%- endmacro %}
+
+{% block topbar %}
+<header class="pcb-topbar">
+  <a class="pcb-back" href="/assessments/{{ link.id }}">← Assessment</a>
+</header>
+{% endblock %}
+
+{% block flash %}
+  {% if flash == 'brief_ready' %}
+    <div class="flash">Pre-call brief ready.</div>
+  {% elif flash == 'brief_regenerated' %}
+    <div class="flash">Pre-call brief regenerated.</div>
+  {% elif flash == 'brief_failed' %}
+    <div class="flash flash-error">Could not generate the pre-call brief{% if brief_error %}: {{ brief_error }}{% endif %}.</div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<article class="pcb">
+  <header class="pcb-hero">
+    <div class="pcb-hero-main">
+      <p class="pcb-kicker">Internal · Jeanne</p>
+      <h1 class="pcb-name">{{ header.name or 'Prospect' }}</h1>
+      {% if header.company %}<p class="pcb-company">{{ header.company }}</p>{% endif %}
+      <p class="pcb-chips">
+        {% if header.title %}<span>{{ human_band(header.title) }}</span>{% endif %}
+        {% if header.title and (header.revenue or header.headcount) %}<span class="pcb-chip-sep" aria-hidden="true">·</span>{% endif %}
+        {% if header.revenue %}<span>{{ human_band(header.revenue) }} revenue</span>{% endif %}
+        {% if header.revenue and header.headcount %}<span class="pcb-chip-sep" aria-hidden="true">·</span>{% endif %}
+        {% if header.headcount %}<span>{{ human_band(header.headcount) }} employees</span>{% endif %}
+      </p>
+    </div>
+    <div class="pcb-hero-side">
+      {% if header.meeting_start %}
+      <div class="pcb-meeting">
+        <span class="pcb-meeting-label">Meeting</span>
+        <span class="pcb-meeting-when">{{ format_datetime(header.meeting_start)|replace(' at ', ' · ') }}</span>
+      </div>
+      {% endif %}
+      {% if brief %}
+      <form method="post" action="/assessments/{{ link.id }}/pre-call-brief/regenerate" class="pcb-regen no-print">
+        <button class="btn btn-secondary btn-small" type="submit">Regenerate Brief</button>
+      </form>
+      {% else %}
+      <form method="post" action="/assessments/{{ link.id }}/pre-call-brief/generate" class="pcb-regen no-print">
+        <button class="btn btn-primary btn-small" type="submit">Generate Pre-Call Brief</button>
+      </form>
+      {% endif %}
+    </div>
+  </header>
+
+  {% if not brief %}
+  <section class="pcb-empty">
+    <h2 class="pcb-h">Brief unavailable</h2>
+    <p class="pcb-muted">Generation did not complete. Booking is still confirmed. Try Generate again.</p>
+  </section>
+  {% else %}
+
+  <div class="pcb-grid">
+    <div class="pcb-col pcb-col--main">
+      <section class="pcb-block">
+        <h2 class="pcb-h">Business Snapshot</h2>
+        <p class="pcb-body">{{ brief.business_snapshot }}</p>
+      </section>
+
+      <section class="pcb-block pcb-block--emphasis">
+        <h2 class="pcb-h">Possible Inefficiencies</h2>
+        <ul class="pcb-list pcb-list--strong">
+          {% for item in brief.possible_inefficiencies %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="pcb-block">
+        <h2 class="pcb-h">FreedomBot Opportunity</h2>
+        <ul class="pcb-list">
+          {% for item in brief.freedombot_opportunity %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="pcb-block">
+        <h2 class="pcb-h">Missing Information</h2>
+        {% if is_sentinel(brief.missing_information, NO_GAPS) == '1' %}
+        <p class="pcb-soft-empty">{{ NO_GAPS }}</p>
+        {% else %}
+        <ul class="pcb-list">
+          {% for item in brief.missing_information %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="pcb-col pcb-col--side">
+      <section class="pcb-block">
+        <h2 class="pcb-h">Key Numbers</h2>
+        <div class="pcb-metrics">
+          {% if header.revenue %}
+          <div class="pcb-metric">
+            <strong class="pcb-metric-value">{{ human_band(header.revenue) }}</strong>
+            <span class="pcb-metric-label">Revenue</span>
+          </div>
+          {% endif %}
+          {% if header.headcount %}
+          <div class="pcb-metric">
+            <strong class="pcb-metric-value">{{ human_band(header.headcount) }}</strong>
+            <span class="pcb-metric-label">Employees</span>
+          </div>
+          {% endif %}
+          {% for item in brief.key_numbers %}
+            {% set low = item|lower %}
+            {% if '$' not in item and 'revenue' not in low and 'employee' not in low and 'headcount' not in low %}
+            <div class="pcb-metric pcb-metric--wide">
+              <strong class="pcb-metric-value pcb-metric-value--sm">{{ item }}</strong>
+            </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <p class="pcb-financial">
+          <span class="pcb-financial-label">Financial impact</span>
+          <span class="pcb-financial-text {% if brief.financial_impact == NO_FINANCIAL %}is-empty{% endif %}">{{ brief.financial_impact }}</span>
+        </p>
+      </section>
+
+      <section class="pcb-block">
+        <h2 class="pcb-h">Likely Fit</h2>
+        <p class="pcb-body">{{ brief.likely_fit }}</p>
+      </section>
+
+      <section class="pcb-block">
+        <h2 class="pcb-h">Concerns</h2>
+        {% if is_sentinel(brief.concerns, NO_CONCERNS) == '1' %}
+        <p class="pcb-soft-ok">{{ NO_CONCERNS }}</p>
+        {% else %}
+        <ul class="pcb-list">
+          {% for item in brief.concerns %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </section>
+
+      <section class="pcb-block">
+        <h2 class="pcb-h">Prospect Questions</h2>
+        {% if is_sentinel(brief.prospect_questions, NO_QUESTIONS) == '1' %}
+        <p class="pcb-soft-empty">{{ NO_QUESTIONS }}</p>
+        {% else %}
+        <ul class="pcb-list">
+          {% for item in brief.prospect_questions %}
+          <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </section>
+    </aside>
+  </div>
+
+  {% if brief.discussion_points %}
+  <section class="pcb-discuss">
+    <h2 class="pcb-h pcb-h--discuss">Suggested Discussion Points</h2>
+    <p class="pcb-discuss-lede">Here is what to ask next.</p>
+    <ol class="pcb-discuss-list">
+      {% for item in brief.discussion_points %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endif %}
+
+  <footer class="pcb-foot">
+    <span>Generated {{ format_datetime(generated_at) if generated_at else '—' }}</span>
+  </footer>
+  {% endif %}
+</article>
+{% endblock %}

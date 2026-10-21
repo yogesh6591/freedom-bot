@@ -1,0 +1,693 @@
+{% extends "base.html" %}
+
+{% block title %}Live Trace{% endblock %}
+{% block kicker %}<div class="topbar-kicker">Acquisition engine</div>{% endblock %}
+{% block page_heading %}Live Trace{% endblock %}
+{% block page_lede %}<p class="page-lede">What discovery planned, asked each source, filtered, and why AI selected the final prospects — with full technical logs under details.</p>{% endblock %}
+
+{% block top_actions %}
+<div class="row" style="gap: 0.5rem; flex-wrap: wrap;">
+  <form method="post" action="/acquisition/live/preview" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ request.session.get('csrf_token', '') }}">
+    <button class="btn btn-secondary" type="submit" data-live-run-btn {% if nav_live_running %}disabled title="A run is already in progress"{% endif %}>
+      Run discovery preview
+    </button>
+  </form>
+<form method="post" action="/acquisition/live/run" class="inline-form">
+    <input type="hidden" name="csrf_token" value="{{ request.session.get('csrf_token', '') }}">
+    <button class="btn btn-primary" type="submit" data-live-run-btn {% if nav_live_running %}disabled title="A run is already in progress"{% endif %}>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 4 14 8-14 8Z"/></svg>
+      <span data-live-run-label data-idle="Run discovery now">{% if nav_live_running %}Run in progress…{% else %}Run discovery now{% endif %}</span>
+  </button>
+</form>
+</div>
+{% endblock %}
+
+{% block flash %}
+  {% if flash == 'started' %}<div class="flash">Discovery run started — the story below updates as each stage finishes.</div>
+  {% elif flash == 'preview_started' %}<div class="flash">Discovery Preview started — harvest + candidate selection only; nothing is saved or researched.</div>
+  {% elif flash == 'already_running' %}<div class="flash flash-error">A run is already in progress. Showing it now.</div>
+  {% elif flash == 'replay_done' %}<div class="flash">AI selection replay finished — same stored pool, new global comparison only (no providers / prospects).</div>
+  {% elif flash == 'replay_pool_unavailable' %}<div class="flash flash-error">Exact previous candidate pool cannot be reconstructed from this run’s stored data. Replay was not started (no providers called).</div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="lt-layout">
+  <aside class="panel lt-runs" aria-label="Runs">
+    <div class="lt-runs-head">
+      <strong>Runs</strong>
+      <span class="muted small">{{ runs|length }} recent</span>
+    </div>
+    {% for r in runs %}
+    <a class="lt-run {% if run and r.id == run.id %}is-active{% endif %}" href="/acquisition/live/{{ r.id }}">
+      <div class="lt-run-top">
+        <span class="lt-run-when">{{ r.started_at }}</span>
+        <span class="status-badge status-{{ r.status }}" {% if run and r.id == run.id %}data-run-list-status{% endif %}>{{ r.status }}</span>
+      </div>
+      <div class="lt-run-meta">
+        {% if r.cycle_type == 'discovery_preview' %}Discovery Preview{% else %}{{ r.cycle_type|title }}{% endif %}
+        {% if r.cycle_type == 'discovery' and r.new is not none %} · <strong>{{ r.new }}</strong> new{% endif %}
+        {% if r.cycle_type == 'activation' %} · {{ r.activated or 0 }} activated{% endif %}
+        · {{ r.event_count }} steps
+      </div>
+    </a>
+    {% else %}
+    <div class="lt-empty small">No runs yet.<br>Start one with “Run discovery now”.</div>
+    {% endfor %}
+  </aside>
+
+  <div class="lt-main">
+    {% if run %}
+    <section class="panel" style="padding: 1rem 1.2rem;">
+      <div class="row" style="justify-content: space-between; gap: 0.75rem; flex-wrap: wrap;">
+        <div>
+          <div class="row" style="gap: 0.5rem; align-items: center;">
+            <h2 class="section-title" style="margin:0" data-story-title>
+              {% if run.cycle_type == 'discovery_preview' %}Discovery Preview{% elif run.cycle_type == 'discovery_selection_replay' %}AI selection replay{% else %}{{ run.cycle_type|title }} run{% endif %}
+            </h2>
+            <span class="lt-live {% if run.status != 'running' %}is-done{% endif %}" data-live-badge>{% if run.status == 'running' %}Live{% else %}{{ run.status }}{% endif %}</span>
+          </div>
+          <p class="muted small" style="margin: 0.3rem 0 0;" data-run-meta>
+            {% if run.duration_s is not none %}Took {{ run.duration_s }}s · {% endif %}
+            {% if run.stop_reason %}{{ run.stop_reason }}{% endif %}
+            {% if run.error %}<span style="color: var(--bad)">{{ run.error }}</span>{% endif %}
+          </p>
+        </div>
+        {% if run.cycle_type in ('discovery', 'discovery_preview') and run.status == 'completed' %}
+        <form method="post" action="/acquisition/live/{{ run.id }}/replay-selection" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ request.session.get('csrf_token', '') }}">
+          <button class="btn btn-secondary" type="submit" {% if nav_live_running %}disabled title="A run is already in progress"{% endif %}>
+            Re-run AI selection
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="lt-story-summary" data-story-summary></div>
+    </section>
+
+    <div class="lt-story" data-story aria-live="polite">
+      <div class="lt-empty" data-story-empty>Waiting for the first step…</div>
+    </div>
+
+    <details class="panel disclosure lt-tech" data-tech-details>
+      <summary>Technical details — full event timeline</summary>
+      <div class="lt-toolbar" style="padding: 0.75rem 1rem 0;">
+        <strong style="margin-right: 0.25rem;">Timeline</strong>
+        <div class="row" style="gap: 0.35rem;" data-stage-filters>
+          {% for key, st in stages.items() %}
+          <button type="button" class="lt-chip stage-{{ key }}" data-stage="{{ key }}" title="{{ st.explain }}"><i></i>{{ st.label }}</button>
+          {% endfor %}
+        </div>
+        <span class="spacer"></span>
+        <input type="search" placeholder="Filter by company or text…" data-text-filter style="max-width: 240px; min-height: 32px;">
+        <label class="checkbox-inline small"><input type="checkbox" data-hide-muted> Hide skipped/rejected</label>
+      </div>
+      <div class="lt-timeline" data-timeline style="padding: 0.5rem 1rem 1rem;">
+        <div class="lt-empty" data-empty>Waiting for the first step…</div>
+      </div>
+    </details>
+    {% else %}
+    <div class="state state-empty">
+      <h2>No runs to show yet</h2>
+      <p>Start a discovery run or a preview (stops after candidate selection) and the story will stream in here.</p>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{% if run %}
+<script>
+(function () {
+  const RUN_ID = {{ run.id|tojson }};
+  const STAGES = {{ stages|tojson }};
+  const storyEl = document.querySelector("[data-story]");
+  const storyEmpty = document.querySelector("[data-story-empty]");
+  const storySummary = document.querySelector("[data-story-summary]");
+  const storyTitle = document.querySelector("[data-story-title]");
+  const timeline = document.querySelector("[data-timeline]");
+  const empty = document.querySelector("[data-empty]");
+  const badge = document.querySelector("[data-live-badge]");
+  const listStatus = document.querySelector("[data-run-list-status]");
+  const textFilter = document.querySelector("[data-text-filter]");
+  const hideMuted = document.querySelector("[data-hide-muted]");
+  const chips = Array.from(document.querySelectorAll("[data-stage]"));
+  const hiddenStages = new Set(["progress"]);
+  let lastSeq = 0;
+  let running = {{ 'true' if run.status == 'running' else 'false' }};
+  const seenStage = new Set();
+  let stickToBottom = false;
+
+  chips.forEach((c) => { if (hiddenStages.has(c.dataset.stage)) c.classList.add("is-off"); });
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+  }
+  function fmtT(t) { return t < 60 ? "+" + t.toFixed(1) + "s" : "+" + Math.floor(t / 60) + "m" + String(Math.round(t % 60)).padStart(2, "0"); }
+  function statusBadge(st) {
+    const map = { done: "ok", complete: "ok", completed: "ok", active: "warn", harvested: "warn", requesting: "warn", planned: "pending", pending: "pending", error: "error", failed: "error" };
+    const cls = map[st] || "pending";
+    const label = st === "done" ? "done" : (st || "pending");
+    return '<span class="status-badge status-' + cls + '">' + esc(label) + "</span>";
+  }
+  function kv(obj) {
+    if (!obj || typeof obj !== "object") return "";
+    return Object.keys(obj).map((k) => '<div class="lt-kv"><span>' + esc(k) + '</span><code>' + esc(typeof obj[k] === "object" ? JSON.stringify(obj[k]) : obj[k]) + '</code></div>').join("");
+  }
+
+  function renderSummary(story) {
+    if (!storySummary || !story) return;
+    const s = story.summary || {};
+    if (story.mode === "agentic" || s.mode === "agentic") {
+      const costUnavailable = s.cost_complete === false || s.cost_message;
+      const cost = costUnavailable
+        ? "unavailable"
+        : ((s.actual_cost_usd != null) ? ("$" + Number(s.actual_cost_usd).toFixed(4)) : "—");
+      const duration = (s.duration_s != null) ? (s.duration_s + "s") : "—";
+      storySummary.innerHTML =
+        '<div class="lt-summary">' +
+          '<div class="stat is-brand"><div class="stat-label">Requested</div><div class="stat-value">' + esc(s.requested != null ? s.requested : "—") + '</div></div>' +
+          '<div class="stat is-ok"><div class="stat-label">Ready</div><div class="stat-value">' + esc(s.ready != null ? s.ready : "—") + '</div></div>' +
+          '<div class="stat is-ok"><div class="stat-label">Saved</div><div class="stat-value">' + esc(s.saved != null ? s.saved : "—") + '</div></div>' +
+          '<div class="stat"><div class="stat-label">Duration</div><div class="stat-value" style="font-size:18px">' + esc(duration) + '</div></div>' +
+          '<div class="stat"><div class="stat-label">API calls</div><div class="stat-value">' + esc(s.api_requests != null ? s.api_requests : "—") + '</div></div>' +
+          '<div class="stat"><div class="stat-label">Web searches</div><div class="stat-value">' + esc(s.web_search_calls != null ? s.web_search_calls : "—") + '</div></div>' +
+          '<div class="stat is-warn"><div class="stat-label">Actual cost</div><div class="stat-value" style="font-size:18px">' + esc(cost) + '</div></div>' +
+        '</div>' +
+        (costUnavailable
+          ? '<p class="lt-err" style="margin:0.6rem 0 0;">' +
+            esc(s.cost_message || "Actual cost unavailable — long-context pricing is not configured.") +
+            '</p>'
+          : "") +
+        ((s.shortfall_count || s.shortfall_reason)
+          ? '<p class="muted small" style="margin:0.6rem 0 0;">Shortfall: <strong>' + esc(s.shortfall_count != null ? s.shortfall_count : "—") +
+            '</strong>' + (s.shortfall_reason ? ' — ' + esc(s.shortfall_reason) : "") + '</p>'
+          : "") +
+        (s.stop_reason ? '<p class="muted small" style="margin:0.35rem 0 0;">Run reason: <strong>' + esc(s.stop_reason) + '</strong></p>' : "") +
+        (s.cost_per_ready_usd != null
+          ? '<p class="muted small" style="margin:0.35rem 0 0;">Cost per ready prospect: <strong>$' +
+            esc(Number(s.cost_per_ready_usd).toFixed(4)) + '</strong></p>'
+          : "");
+      return;
+    }
+    const filt = story.filtering || {};
+    const triage = story.triage || {};
+    const selectedCount = (triage.selected && triage.selected.length)
+      ? triage.selected.length
+      : (s.selected != null ? s.selected : "—");
+    const sourceCount = (story.sources_ordered || []).length;
+    storySummary.innerHTML =
+      '<div class="lt-summary">' +
+        '<div class="stat"><div class="stat-label">Status</div><div class="stat-value" style="font-size:16px">' + esc(s.status || story.status || "—") + '</div></div>' +
+        '<div class="stat is-brand"><div class="stat-label">Requested</div><div class="stat-value">' + esc(s.requested != null ? s.requested : "—") + '</div></div>' +
+        '<div class="stat"><div class="stat-label">Discovered</div><div class="stat-value">' + esc(s.discovered != null ? s.discovered : "—") + '</div></div>' +
+        '<div class="stat is-warn"><div class="stat-label">Filtered</div><div class="stat-value">' + esc(s.filtered != null ? s.filtered : "—") + '</div></div>' +
+        '<div class="stat is-ok"><div class="stat-label">Selected</div><div class="stat-value">' + esc(s.selected != null ? s.selected : "—") + '</div></div>' +
+        '<div class="stat"><div class="stat-label">Duration</div><div class="stat-value" style="font-size:18px">' + esc(s.duration_s != null ? (s.duration_s + "s") : "—") + '</div></div>' +
+      '</div>' +
+      '<div class="flow lt-story-flow" aria-label="Discovery story stages">' +
+        '<div class="flow-step stage-plan"><span>Plan</span><b>' + esc(s.requested != null ? s.requested : "—") + '</b><small>requested</small></div>' +
+        '<div class="flow-step stage-harvest"><span>Sources</span><b>' + esc(sourceCount || "—") + '</b><small>queried</small></div>' +
+        '<div class="flow-step stage-filter"><span>Filter</span><b>' + esc(filt.remaining != null ? filt.remaining : "—") + '</b><small>surviving</small></div>' +
+        '<div class="flow-step stage-triage"><span>AI select</span><b>' + esc(
+          triage.considered_count != null ? triage.considered_count
+            : (triage.sent_to_ai != null ? triage.sent_to_ai : (filt.remaining != null ? filt.remaining : "—"))
+        ) + '</b><small>compared</small></div>' +
+        '<div class="flow-step stage-decision"><span>Result</span><b>' + esc(selectedCount) + '</b><small>selected</small></div>' +
+      '</div>';
+  }
+
+  function renderSourceCards(story, mode) {
+    const sources = story.sources_ordered || [];
+    if (!sources.length) return '<p class="muted small">Waiting for source activity…</p>';
+    return sources.map((src) => {
+      const slice = (src.slices && src.slices[0]) ? src.slices[0].summary : "—";
+      const req = (src.requests && src.requests[0]) ? src.requests[0] : null;
+      let reqHtml = "";
+      if (req) {
+        if (src.key === "openai_web") {
+          const prompt = req.prompt || "";
+          const short = prompt.length > 280 ? prompt.slice(0, 280) + "…" : prompt;
+          reqHtml = '<div class="lt-kv"><span>Prompt sent</span><code>' + esc(short || "—") + '</code></div>' +
+            (prompt.length > 280 ? '<details class="lt-mini"><summary>View full prompt</summary><pre class="lt-detail" style="display:block">' + esc(prompt) + '</pre></details>' : "") +
+            '<div class="lt-kv"><span>Requested companies</span><code>' + esc(src.fetch_limit != null ? src.fetch_limit : "—") + '</code></div>' +
+            (req.model ? '<div class="lt-kv"><span>Model</span><code>' + esc(req.model) + '</code></div>' : "");
+        } else {
+          reqHtml = '<pre class="lt-detail" style="display:block">' + esc(JSON.stringify(req, null, 2)) + '</pre>';
+        }
+      } else {
+        reqHtml = '<p class="muted small">Request not recorded yet.</p>';
+      }
+      const err = (src.errors && src.errors.length) ? '<p class="lt-err">' + esc(src.errors[0]) + '</p>' : "";
+      if (mode === "request") {
+        return '<div class="lt-card src-' + esc(src.key) + '">' +
+          '<div class="lt-card-head"><strong>' + esc(src.label) + '</strong>' + statusBadge(src.status) + '</div>' +
+          '<div class="lt-kv"><span>Slice</span><code>' + esc(slice) + '</code></div>' +
+          reqHtml + err +
+          '</div>';
+      }
+      // results mode — show API returns (not post-filter survivors)
+      const returned = (src.returned_companies && src.returned_companies.length)
+        ? src.returned_companies
+        : (src.accepted_companies || []);
+      const candRows = returned.slice(0, 40).map((c) =>
+        '<tr><td>' + esc(c.company || "—") + '</td><td class="mono small">' + esc(c.domain || "—") + '</td><td>' + esc([c.city, c.state].filter(Boolean).join(", ") || "—") + '</td><td>' + esc(c.source || src.key) + '</td></tr>'
+      ).join("");
+      return '<div class="lt-card src-' + esc(src.key) + '">' +
+        '<div class="lt-card-head"><strong>' + esc(src.label) + '</strong>' + statusBadge(src.status) + '</div>' +
+        '<div class="lt-funnel">' +
+          '<span>Raw received <b>' + esc(src.raw_received || 0) + '</b></span>' +
+          '<span>From API <b>' + esc(src.candidates_produced || returned.length || 0) + '</b></span>' +
+        '</div>' + err +
+        (candRows ? '<details class="lt-mini"><summary>View returned candidates (' + esc(returned.length) + ')</summary>' +
+          '<table class="lt-mini-table"><thead><tr><th>Company</th><th>Domain</th><th>Location</th><th>Source</th></tr></thead><tbody>' + candRows + '</tbody></table></details>' : "") +
+        '</div>';
+    }).join("");
+  }
+
+  function renderAgenticStory(story) {
+    const a = story.agentic || {};
+    const plan = a.plan || {};
+    const research = a.research || {};
+    const results = a.results || {};
+    const enrichment = a.enrichment || {};
+    const database = a.database || {};
+    const scoring = a.scoring || {};
+    const result = a.result || {};
+    const s = story.summary || {};
+    const cats = (plan.categories || []).map((c) => "<li>" + esc(c) + "</li>").join("");
+    const attemptRows = (results.attempts || []).map((at) =>
+      '<li>Attempt ' + esc(at.attempt) + ' returned <strong>' + esc(at.returned != null ? at.returned : "—") +
+      '</strong>' + (at.accepted != null ? ' · accepted ' + esc(at.accepted) : "") +
+      (at.remaining_after != null ? ' · still need ' + esc(at.remaining_after) : "") + '</li>'
+    ).join("");
+    const enrichRows = (enrichment.companies || []).slice(0, 40).map((c) =>
+      '<li><strong>' + esc(c.company || "—") + '</strong>' +
+      (c.decision_maker ? ' · DM: ' + esc(c.decision_maker) : ' · DM unknown') +
+      (c.acquisition_status ? ' · ' + esc(c.acquisition_status) : "") + '</li>'
+    ).join("");
+    const scoreRows = (scoring.scores || []).slice(0, 25).map((c) =>
+      '<tr><td>' + esc(c.company || "—") + '</td><td>' + esc(c.fit != null ? c.fit : "—") + '</td><td>' +
+      esc(c.timing != null ? c.timing : "—") + '</td><td>' + esc(c.reachability != null ? c.reachability : "—") +
+      '</td><td>' + esc(c.priority != null ? c.priority : "—") + '</td><td>' + esc(c.status || "—") + '</td></tr>'
+    ).join("");
+    const shortfallHtml = (results.shortfall_count || s.shortfall_count)
+      ? '<div class="lt-kv"><span>Shortfall</span><code>' + esc(results.shortfall_count || s.shortfall_count) +
+        (results.shortfall_reason || s.shortfall_reason ? ' — ' + esc(results.shortfall_reason || s.shortfall_reason) : "") +
+        '</code></div>'
+      : "";
+
+    storyEl.innerHTML =
+      '<section class="panel lt-section lt-sec-plan">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-plan"></span>1. Plan</h3>' + statusBadge(plan.status) + '</div>' +
+        '<div class="lt-kv"><span>Requested prospects</span><code>' + esc(plan.requested != null ? plan.requested : "—") + '</code></div>' +
+        '<div class="lt-kv"><span>Geography</span><code>' + esc(plan.geography || "—") + '</code></div>' +
+        '<div class="lt-kv"><span>ICP loaded</span><code>' + esc(plan.icp_loaded ? "yes" : "—") + '</code></div>' +
+        '<div class="lt-kv"><span>Previous discovery context</span><code>' + esc(plan.context_loaded ? "loaded" : "—") + '</code></div>' +
+        (cats ? '<p class="small"><strong>Target categories</strong></p><ul class="lt-plain">' + cats + '</ul>' : "") +
+      '</section>' +
+
+      '<section class="panel lt-section lt-sec-harvest">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-harvest"></span>2. Master Discovery</h3>' + statusBadge(results.status) + '</div>' +
+        '<div class="lt-kv"><span>Model</span><code>' + esc(research.model || "—") + '</code></div>' +
+        '<div class="lt-funnel">' +
+          '<span>Requested strong seeds <b>' + esc(plan.requested != null ? plan.requested : "—") + '</b></span>' +
+          '<span>Strong seeds returned <b>' + esc(results.strong_seeds_returned || results.returned || 0) + '</b></span>' +
+          (results.companies_considered != null
+            ? '<span>Companies considered <b>' + esc(results.companies_considered) + '</b></span>'
+            : "") +
+          (results.rejected_before_selection != null
+            ? '<span>Rejected before selection <b>' + esc(results.rejected_before_selection) + '</b></span>'
+            : "") +
+          '<span>Search attempts <b>' + esc(results.search_attempts || (results.attempts || []).length || "—") + '</b></span>' +
+        '</div>' +
+        (Object.keys(results.rejection_reason_counts || {}).length
+          ? '<p class="small"><strong>Reasons rejected</strong></p><ul class="lt-plain">' +
+            Object.keys(results.rejection_reason_counts).map((k) =>
+              '<li>' + esc(k) + ': <b>' + esc(results.rejection_reason_counts[k]) + '</b></li>'
+            ).join("") + '</ul>'
+          : "") +
+        shortfallHtml +
+        (attemptRows ? '<ul class="lt-plain">' + attemptRows + '</ul>' : "") +
+      '</section>' +
+
+      '<section class="panel lt-section lt-sec-triage">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-triage"></span>3. Outreach Verification Slots</h3>' + statusBadge(enrichment.status) + '</div>' +
+        '<div class="lt-funnel">' +
+          '<span>Enriched <b>' + esc(enrichment.enriched || 0) + '</b></span>' +
+          '<span>DM found <b>' + esc(enrichment.dm_found || 0) + '</b></span>' +
+          '<span>DM unknown <b>' + esc(enrichment.dm_unknown || 0) + '</b></span>' +
+          '<span>Contact paths <b>' + esc(enrichment.contact_found || 0) + '</b></span>' +
+        '</div>' +
+        '<div class="lt-funnel">' +
+          '<span>Revenue supported <b>' + esc(enrichment.revenue_supported || 0) + '</b></span>' +
+          '<span>Headcount supported <b>' + esc(enrichment.headcount_supported || 0) + '</b></span>' +
+          '<span>Sources consulted <b>' + esc(enrichment.sources_consulted || 0) + '</b></span>' +
+        '</div>' +
+        (enrichRows ? '<ul class="lt-plain">' + enrichRows + '</ul>' : '<p class="muted small">Enrichment details appear as each company finishes.</p>') +
+      '</section>' +
+
+      '<section class="panel lt-section lt-sec-filter">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-filter"></span>4. Database Check</h3>' + statusBadge(database.status) + '</div>' +
+        '<div class="lt-funnel">' +
+          '<span>New <b>' + esc(database.new || 0) + '</b></span>' +
+          '<span>Updated <b>' + esc(database.updated || 0) + '</b></span>' +
+          '<span>Duplicates <b>' + esc(database.duplicates || 0) + '</b></span>' +
+          '<span>Excluded <b>' + esc(database.excluded || 0) + '</b></span>' +
+        '</div>' +
+      '</section>' +
+
+      '<section class="panel lt-section lt-sec-decision">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-decision"></span>5. Scoring &amp; Result</h3>' + statusBadge(result.status || scoring.status) + '</div>' +
+        '<div class="lt-funnel">' +
+          '<span>Ready <b>' + esc(scoring.ready || enrichment.ready || 0) + '</b></span>' +
+          '<span>Needs research <b>' + esc(scoring.needs_more_research || enrichment.needs_research || 0) + '</b></span>' +
+          '<span>Created <b>' + esc(result.created || 0) + '</b></span>' +
+          '<span>Usable <b>' + esc(result.usable != null ? result.usable : "—") + '</b></span>' +
+        '</div>' +
+        '<p class="muted small">Run reason: <strong>' + esc(result.stop_reason || story.stop_reason || "—") + '</strong></p>' +
+        (enrichment.system_error
+          ? '<div class="lt-kv"><span>Slot system error</span><code>' + esc(enrichment.system_error_fingerprint || "error") +
+            ' — ' + esc(String(enrichment.system_error).slice(0, 240)) + '</code></div>'
+          : "") +
+        (scoreRows
+          ? '<details class="lt-mini"><summary>View scores (' + esc((scoring.scores || []).length) + ')</summary>' +
+            '<table class="lt-mini-table"><thead><tr><th>Company</th><th>Fit</th><th>Timing</th><th>Reach</th><th>Priority</th><th>Status</th></tr></thead><tbody>' +
+            scoreRows + '</tbody></table></details>'
+          : "") +
+      '</section>' +
+      (function () {
+        const u = a.ai_usage || s.ai_usage || {};
+        const calls = u.per_call || [];
+        if (!u.api_requests && !calls.length) return "";
+        const byType = u.by_call_type || {};
+        const typeRows = Object.keys(byType).map((k) =>
+          '<li>' + esc(k) + ': <strong>$' + esc(Number(byType[k].total_cost_usd || 0).toFixed(4)) +
+          '</strong> (' + esc(byType[k].calls || 0) + ' calls)</li>'
+        ).join("");
+        const callRows = calls.slice(0, 40).map((c) =>
+          '<li>' + esc(c.call_type || "call") +
+          (c.slot_id ? ' ' + esc(c.slot_id) : "") +
+          (c.company ? ' · ' + esc(c.company) : "") +
+          ': <strong>$' + esc(Number(c.total_cost_usd || 0).toFixed(4)) + '</strong>' +
+          (c.status === "error" ? ' <span class="lt-err">(failed — still billed)</span>' : "") +
+          '</li>'
+        ).join("");
+        return '<section class="panel lt-section">' +
+          '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-decision"></span>6. Actual cost</h3>' +
+          statusBadge(result.status || "done") + '</div>' +
+          '<div class="lt-funnel">' +
+            '<span>API requests <b>' + esc(u.api_requests != null ? u.api_requests : "—") + '</b></span>' +
+            '<span>Web searches <b>' + esc(u.web_search_calls != null ? u.web_search_calls : "—") + '</b></span>' +
+            '<span>Token cost <b>$' + esc(Number((u.input_cost_usd || 0) + (u.output_cost_usd || 0)).toFixed(4)) + '</b></span>' +
+            '<span>Search cost <b>$' + esc(Number(u.web_search_cost_usd || 0).toFixed(4)) + '</b></span>' +
+            '<span>Total <b>$' + esc(Number(u.total_cost_usd || 0).toFixed(4)) + '</b></span>' +
+          '</div>' +
+          (typeRows ? '<p class="small"><strong>By call type</strong></p><ul class="lt-plain">' + typeRows + '</ul>' : "") +
+          (callRows ? '<details class="lt-mini"><summary>Per-call usage (' + esc(calls.length) + ')</summary><ul class="lt-plain">' + callRows + '</ul></details>' : "") +
+        '</section>';
+      })();
+  }
+
+  function renderStory(story) {
+    if (!storyEl || !story) return;
+    if (storyTitle && story.title) storyTitle.textContent = story.title;
+    renderSummary(story);
+    if (storyEmpty) storyEmpty.remove();
+    if (story.mode === "agentic") {
+      renderAgenticStory(story);
+      return;
+    }
+
+    const plan = story.plan || {};
+    const triage = story.triage || {};
+    const result = story.result || {};
+    const down = story.downstream || {};
+
+    const cats = (plan.categories || []).map((c) => "<li>" + esc(c) + "</li>").join("");
+    const slices = (plan.slices || []).slice(0, 12).map((s) =>
+      "<li><strong>" + esc(s.label) + "</strong> → " + esc(s.summary) + "</li>"
+    ).join("");
+    const limits = Object.keys(plan.fetch_limits || {}).map((k) =>
+      "<li>" + esc(k) + ": <strong>" + esc(plan.fetch_limits[k]) + "</strong></li>"
+    ).join("");
+
+    const selected = (triage.selected || []).map((c) =>
+      '<div class="lt-pick is-selected">' +
+        '<div class="lt-pick-top"><strong>' + esc(c.company) + '</strong>' +
+        '<span class="status-badge status-ok">SELECTED</span></div>' +
+        '<div class="muted small">Selection score: <strong>' + esc(c.score != null ? c.score : "—") +
+        '</strong> · Source: ' + esc(c.source || "—") +
+        (c.state ? ' · ' + esc(c.state) : "") +
+        (c.category ? ' · ' + esc(c.category) : "") + '</div>' +
+        (c.reason ? '<p class="lt-why"><strong>Why selected:</strong> ' + esc(c.reason) + '</p>' : "") +
+        ((c.evidence || c.positive_signals || []).length
+          ? '<p class="muted small"><strong>Evidence:</strong> ' + esc((c.evidence || c.positive_signals || []).join("; ")) + '</p>'
+          : "") +
+        ((c.uncertainties || []).length ? '<p class="muted small"><strong>Uncertainty:</strong> ' + esc((c.uncertainties || []).join("; ")) + '</p>' : "") +
+      '</div>'
+    ).join("");
+    const notSelected = (triage.not_selected || []).map((c) =>
+      '<div class="lt-pick">' +
+        '<div class="lt-pick-top"><strong>' + esc(c.company) + '</strong>' +
+        '<span class="status-badge status-pending">NOT SELECTED</span></div>' +
+        '<div class="muted small">Source: ' + esc(c.source || "—") +
+        (c.state ? ' · ' + esc(c.state) : "") + '</div>' +
+      '</div>'
+    ).join("");
+
+    let resultBody = "";
+    if (story.is_preview || result.preview_stopped) {
+      resultBody =
+        '<p><strong>Discovery Preview Complete</strong></p>' +
+        '<ul class="lt-plain">' +
+          '<li>Candidates discovered: <strong>' + esc(result.discovered || 0) + '</strong></li>' +
+          '<li>Candidates after filtering: <strong>' + esc(result.filtered || 0) + '</strong></li>' +
+          '<li>Sent to global AI comparison: <strong>' + esc(
+            triage.considered_count != null ? triage.considered_count : (result.compared || 0)
+          ) + '</strong></li>' +
+          '<li>Selected for research: <strong>' + esc(result.selected || (triage.selected || []).length) + '</strong></li>' +
+        '</ul>' +
+        ((result.selected_names || []).length
+          ? '<ol class="lt-plain">' + (result.selected_names || []).map((n) => "<li>" + esc(n) + "</li>").join("") + '</ol>'
+          : "") +
+        '<div class="lt-stop">' +
+          '<p><strong>Preview stopped here.</strong></p>' +
+          '<ul class="lt-plain">' +
+            '<li>No prospect records created.</li>' +
+            '<li>No deep research performed.</li>' +
+            '<li>No Fit/Timing/Reachability scoring performed.</li>' +
+            '<li>No outreach triggered.</li>' +
+          '</ul></div>';
+    } else {
+      resultBody =
+        '<ul class="lt-plain">' +
+          '<li>Selected for research: <strong>' + esc(result.selected || (triage.selected || []).length) + '</strong></li>' +
+          '<li>Saved: <strong>' + esc(down.save || 0) + '</strong></li>' +
+          '<li>Research events: <strong>' + esc(down.research || 0) + '</strong></li>' +
+          '<li>Score events: <strong>' + esc(down.score || 0) + '</strong></li>' +
+          '<li>Decision events: <strong>' + esc(down.decision || 0) + '</strong></li>' +
+          '<li>Usable (run summary): <strong>' + esc(result.usable != null ? result.usable : "—") + '</strong></li>' +
+        '</ul>';
+    }
+
+    storyEl.innerHTML =
+      '<section class="panel lt-section lt-sec-plan">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-plan"></span>1. Plan</h3>' + statusBadge(plan.status) + '</div>' +
+        '<div class="lt-kv"><span>Requested final prospects</span><code>' + esc(plan.requested != null ? plan.requested : "—") + '</code></div>' +
+        '<div class="lt-kv"><span>Geography</span><code>' + esc(plan.geography || "—") + '</code></div>' +
+        (cats ? '<p class="small"><strong>Target categories</strong></p><ul class="lt-plain">' + cats + '</ul>' : "") +
+        (slices ? '<p class="small"><strong>Selected discovery slices</strong></p><ul class="lt-plain">' + slices + '</ul>' : "") +
+        (limits ? '<p class="small"><strong>Source limits</strong></p><ul class="lt-plain">' + limits + '</ul>' : "") +
+      '</section>' +
+
+      '<section class="panel lt-section lt-sec-harvest">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-harvest"></span>2. Source requests</h3></div>' +
+        '<div class="lt-card-grid">' + renderSourceCards(story, "request") + '</div>' +
+      '</section>' +
+
+      '<section class="panel lt-section lt-sec-harvest">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-harvest"></span>3. Source results</h3></div>' +
+        '<div class="lt-card-grid">' + renderSourceCards(story, "results") + '</div>' +
+      '</section>' +
+
+      '<section class="panel lt-section lt-section-triage lt-sec-triage">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-triage"></span>4. AI candidate selection</h3>' + statusBadge(triage.status) + '</div>' +
+        '<div class="lt-funnel">' +
+          '<span>Model <b>' + esc(triage.model || (triage.fallback ? "deterministic fallback" : "—")) + '</b></span>' +
+          '<span>Candidates considered <b>' + esc(
+            triage.considered_count != null ? triage.considered_count
+              : (triage.compared || triage.sent_to_ai || 0)
+          ) + '</b></span>' +
+          '<span>Selected <b>' + esc((triage.selected || []).length || (triage.requested != null ? triage.requested : "—")) + '</b></span>' +
+        '</div>' +
+        (triage.fallback ? '<p class="lt-err">AI triage unavailable → deterministic fallback used</p>' : "") +
+        (triage.selection_summary ? '<p class="muted small">' + esc(triage.selection_summary) + '</p>' : "") +
+        (selected || '<p class="muted small">No selections yet.</p>') +
+        ((triage.not_selected || []).length
+          ? '<details class="lt-mini"><summary>Not selected (' + esc(triage.not_selected.length) + ')</summary>' + notSelected + '</details>'
+          : "") +
+      '</section>' +
+
+      '<section class="panel lt-section lt-sec-decision">' +
+        '<div class="lt-section-head"><h3><span class="lt-sec-dot stage-decision"></span>5. Result</h3>' + statusBadge(result.status) + '</div>' +
+        resultBody +
+      '</section>' +
+
+      ((down.save || down.research || down.score || down.decision) && !story.is_preview
+        ? '<section class="panel lt-section">' +
+            '<div class="lt-section-head"><h3>Downstream</h3>' + statusBadge("done") + '</div>' +
+            '<p class="muted small">Production research / scoring / decision events occurred after selection. See Technical details for each company step.</p>' +
+            '<div class="lt-funnel">' +
+              '<span>Save <b>' + esc(down.save) + '</b></span>' +
+              '<span>Research <b>' + esc(down.research) + '</b></span>' +
+              '<span>Score <b>' + esc(down.score) + '</b></span>' +
+              '<span>Decision <b>' + esc(down.decision) + '</b></span>' +
+            '</div></section>'
+        : "");
+  }
+
+  function renderEvent(ev) {
+    const st = STAGES[ev.stage] || { label: ev.stage, explain: "" };
+    const row = document.createElement("div");
+    row.className = "lt-event stage-" + ev.stage + " lvl-" + ev.level + (ev.level === "muted" ? " is-muted" : "");
+    row.dataset.stage = ev.stage;
+    row.dataset.level = ev.level;
+    row.dataset.text = ((ev.title || "") + " " + (ev.company || "")).toLowerCase();
+    const first = !seenStage.has(ev.stage);
+    seenStage.add(ev.stage);
+    const detail = ev.detail || {};
+    const hasDetail = detail && Object.keys(detail).length;
+    // Never dump full surviving_pool into the timeline DOM.
+    let detailView = detail;
+    if (detail && detail.surviving_pool) {
+      detailView = Object.assign({}, detail, {
+        surviving_pool: detail.surviving_pool.omitted
+          ? detail.surviving_pool
+          : { omitted: true, count: Array.isArray(detail.surviving_pool) ? detail.surviving_pool.length : 0 },
+      });
+    }
+    const link = ev.prospect_id ? ' <a class="small" href="/acquisition/database/' + esc(ev.prospect_id) + '">open record →</a>' : "";
+    row.innerHTML =
+      '<div class="lt-time" title="' + esc(ev.clock) + '">' + fmtT(ev.t || 0) + "</div>" +
+      '<div class="lt-node"></div>' +
+      '<div class="lt-stage" title="' + esc(st.label) + (st.explain ? ' — ' + esc(st.explain) : '') + '">' + esc(st.label) + "</div>" +
+      '<div class="lt-body"><div class="lt-title">' + esc(ev.title) + link +
+      (hasDetail ? '<button type="button" class="lt-detail-toggle">details</button>' : "") + "</div>" +
+      (first && st.explain ? '<div class="lt-explain">' + esc(st.explain) + "</div>" : "") +
+      (hasDetail ? '<pre class="lt-detail" hidden>' + esc(JSON.stringify(detailView, null, 2)) + "</pre>" : "") +
+      "</div>";
+    const btn = row.querySelector(".lt-detail-toggle");
+    if (btn) btn.addEventListener("click", () => {
+      const pre = row.querySelector(".lt-detail");
+      pre.hidden = !pre.hidden;
+      btn.textContent = pre.hidden ? "details" : "hide";
+    });
+    applyFilter(row);
+    return row;
+  }
+
+  function applyFilter(row) {
+    const q = (textFilter.value || "").trim().toLowerCase();
+    let show = !hiddenStages.has(row.dataset.stage);
+    if (show && q) show = row.dataset.text.includes(q);
+    if (show && hideMuted.checked && row.dataset.level === "muted") show = false;
+    row.hidden = !show;
+  }
+  function refilter() { timeline.querySelectorAll(".lt-event").forEach(applyFilter); }
+
+  chips.forEach((c) => c.addEventListener("click", () => {
+    const k = c.dataset.stage;
+    if (hiddenStages.has(k)) { hiddenStages.delete(k); c.classList.remove("is-off"); }
+    else { hiddenStages.add(k); c.classList.add("is-off"); }
+    refilter();
+  }));
+  textFilter.addEventListener("input", refilter);
+  hideMuted.addEventListener("change", refilter);
+
+  function updateChrome(run, story) {
+    if (!run) return;
+    const st = (run && run.status) || (story && (story.summary && story.summary.status || story.status)) || "";
+    const terminal = st && st !== "running";
+    const meta = document.querySelector("[data-run-meta]");
+    if (meta && story) {
+      const reason = (story.summary && story.summary.stop_reason) || story.stop_reason || run.stop_reason;
+      const parts = [];
+      if (run.duration_s != null) parts.push("Took " + run.duration_s + "s");
+      if (reason) parts.push(reason);
+      if (run.error) parts.push(run.error);
+      meta.textContent = parts.join(" · ");
+    }
+    if (badge) {
+      if (terminal) {
+        badge.textContent = st;
+      badge.classList.add("is-done");
+      } else {
+        badge.textContent = "Live";
+        badge.classList.remove("is-done");
+      }
+    }
+    if (listStatus) {
+      listStatus.textContent = st || "running";
+      listStatus.className = "status-badge status-" + (st || "running");
+    }
+    document.querySelectorAll("[data-live-run-btn]").forEach((btn) => {
+      if (terminal) {
+        btn.disabled = false;
+        btn.removeAttribute("title");
+        const label = btn.querySelector("[data-live-run-label]");
+        if (label) label.textContent = label.dataset.idle || "Run discovery now";
+      } else {
+        btn.disabled = true;
+        btn.title = "A run is already in progress";
+        const label = btn.querySelector("[data-live-run-label]");
+        if (label) label.textContent = "Run in progress…";
+      }
+    });
+    document.querySelectorAll("[data-live-nav-dot]").forEach((dot) => {
+      dot.hidden = !!terminal;
+    });
+    return !terminal;
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(
+        "/acquisition/live/" + RUN_ID + "/events.json?after=" + lastSeq + "&_=" + Date.now(),
+        {
+          headers: { Accept: "application/json", "Cache-Control": "no-cache" },
+          credentials: "same-origin",
+          cache: "no-store",
+        }
+      );
+      if (!res.ok) throw new Error("http " + res.status);
+      const data = await res.json();
+      // Chrome first so a story render error cannot leave status stuck on running.
+      const stillRunning = updateChrome(data.run, data.story);
+      if (data.story) renderStory(data.story);
+      if (data.events.length && empty) empty.remove();
+      const frag = document.createDocumentFragment();
+      data.events.forEach((ev) => {
+        frag.appendChild(renderEvent(ev));
+        lastSeq = Math.max(lastSeq, ev.seq);
+      });
+      timeline.appendChild(frag);
+      const wasRunning = running;
+      running = stillRunning;
+      if (!lastSeq && !running && empty) {
+        empty.textContent = "This run recorded no steps (runs from before Live Trace existed have no timeline).";
+      }
+      // Keep polling until the run row is terminal (and one confirm tick after).
+      if (running || wasRunning) setTimeout(poll, running ? 1200 : 0);
+    } catch (e) {
+      setTimeout(poll, 3000);
+    }
+  }
+  poll();
+})();
+</script>
+{% endif %}
+{% endblock %}

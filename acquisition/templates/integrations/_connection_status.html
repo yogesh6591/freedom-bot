@@ -1,0 +1,18 @@
+{% if checked %}
+  {% if connected %}
+    <div class="status-row status-connected">
+      <span class="status-badge status-approved">Connected</span>
+      {% if message %}<p>{{ message }}</p>{% endif %}
+    </div>
+  {% elif category == 'auth_error' or category == 'config_error' %}
+    <div class="status-row status-disconnected">
+      <span class="status-badge status-pending">Not connected</span>
+      {% if message %}<p>{{ message }}</p>{% endif %}
+    </div>
+  {% else %}
+    <div class="status-row status-error">
+      <span class="status-badge status-rejected">Error</span>
+      {% if message %}<p>{{ message }}</p>{% endif %}
+    </div>
+  {% endif %}
+{% endif %}

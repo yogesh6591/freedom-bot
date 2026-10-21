@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}{{ prospect.company }} · Prospect Database{% endblock %}
+{% block page_heading %}{{ prospect.company }}{% endblock %}
+{% block page_lede %}
+<p class="page-lede"><a href="/acquisition/database">← Prospect database</a> · permanent record
+  <span class="status-badge status-{{ prospect.acquisition_status }}" style="margin-left:0.4rem">{{ prospect.acquisition_status|humanize }}</span></p>
+{% endblock %}
+{% block content %}
+<div class="detail-page db-detail">
+  <section class="panel">
+    <h2 class="section-title">Company & contact</h2>
+    <dl class="detail-kv">
+      <div><dt>Website</dt><dd>{% if prospect.website %}<a href="{{ prospect.website }}" target="_blank" rel="noopener">{{ prospect.website }}</a>{% else %}—{% endif %}</dd></div>
+      <div><dt>Location</dt><dd>{{ [prospect.city, prospect.state, prospect.region]|reject('none')|join(', ') or '—' }}</dd></div>
+      <div><dt>Industry</dt><dd>{{ prospect.industry or '—' }}</dd></div>
+      <div><dt>Business type</dt><dd>{{ prospect.business_type or '—' }}</dd></div>
+      <div><dt>Decision-maker</dt><dd>{% if prospect.decision_maker and prospect.decision_maker != 'Unknown decision-maker' %}{{ prospect.decision_maker }}{% if prospect.title %} · {{ prospect.title }}{% endif %}{% else %}<span class="email-missing">Not found yet</span>{% endif %}</dd></div>
+      <div><dt>Email</dt><dd>{% if prospect.email is placeholder_email %}<span class="email-missing">No email found yet</span>{% else %}{{ prospect.email }} <span class="muted small">({{ prospect.email_confidence or 'n/a' }})</span>{% endif %}</dd></div>
+      <div><dt>Phone</dt><dd>{{ prospect.company_phone or '—' }}</dd></div>
+      <div><dt>LinkedIn</dt><dd>{% if prospect.linkedin_url %}<a href="{{ prospect.linkedin_url }}" target="_blank" rel="noopener">Profile</a>{% else %}—{% endif %}</dd></div>
+      <div><dt>Revenue / headcount</dt><dd>{{ prospect.revenue_band or '—' }} / {{ prospect.headcount_band or '—' }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">Scores</h2>
+    <div class="score-strip">
+      <div class="score-chip"><span>Fit</span><strong>{{ '%.0f'|format(prospect.fit_score) if prospect.fit_score is not none else '—' }}</strong></div>
+      <div class="score-chip"><span>Timing</span><strong>{{ '%.0f'|format(prospect.timing_score) if prospect.timing_score is not none else '—' }}</strong></div>
+      <div class="score-chip"><span>Reach</span><strong>{{ '%.0f'|format(prospect.reachability_score) if prospect.reachability_score is not none else '—' }}</strong></div>
+      <div class="score-chip score-chip--emphasis"><span>Priority</span><strong>{% set pr = prospect.effective_priority_score if prospect.effective_priority_score is not none else prospect.priority_score %}{{ '%.0f'|format(pr) if pr is not none else '—' }}</strong></div>
+    </div>
+    <dl class="detail-kv" style="margin-top:1rem;">
+      <div><dt>Base Priority</dt><dd>{{ prospect.priority_score if prospect.priority_score is not none else '—' }}</dd></div>
+      <div><dt>AI Adjustment</dt><dd>{% if prospect.learning_adjustment is not none %}{{ '%+.1f'|format(prospect.learning_adjustment) }}{% else %}—{% endif %}</dd></div>
+      <div><dt>Effective Priority</dt><dd>{{ prospect.effective_priority_score if prospect.effective_priority_score is not none else (prospect.priority_score if prospect.priority_score is not none else '—') }}</dd></div>
+      {% if prospect.learning_model %}
+      <div><dt>Learning model</dt><dd>{{ prospect.learning_model }}{% if prospect.learning_prompt_version %} · {{ prospect.learning_prompt_version }}{% endif %}</dd></div>
+      {% endif %}
+      {% if prospect.learning_historical_sample_size is not none %}
+      <div><dt>Historical sample</dt><dd>{{ prospect.learning_historical_sample_size }}</dd></div>
+      {% endif %}
+      {% if prospect.learning_confidence is not none %}
+      <div><dt>Confidence</dt><dd>{{ '%.0f'|format((prospect.learning_confidence or 0) * 100) }}%</dd></div>
+      {% endif %}
+    </dl>
+    {% if prospect.learning_adjustment_reasons %}
+    <p class="db-prose" style="margin-top:0.85rem;"><strong>Reason</strong><br>{{ prospect.learning_adjustment_reasons[0] }}</p>
+    {% if prospect.learning_adjustment_reasons|length > 1 %}
+    <p class="muted small">{{ prospect.learning_adjustment_reasons[1:] | join(' · ') }}</p>
+    {% endif %}
+    {% endif %}
+    {% if prospect.learning_matched_patterns %}
+    <p class="muted small" style="margin-top:0.5rem;">Matched patterns:
+      {% for pat in prospect.learning_matched_patterns %}
+        {{ pat.dimension or 'pattern' }}{% if pat.value %}: {{ pat.value }}{% endif %}{% if not loop.last %} · {% endif %}
+      {% endfor %}
+    </p>
+    {% endif %}
+    {% if prospect.priority_reasons %}
+    <p class="muted small">Priority: {{ prospect.priority_reasons | join(' · ') }}</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">Research & signals</h2>
+    <p class="db-prose">{{ prospect.research_notes or '—' }}</p>
+    {% if prospect.priority_reasons and prospect.priority_reasons|length > 1 %}
+    <p class="muted small"><strong>Readiness:</strong> {{ prospect.priority_reasons[1] }}</p>
+    {% endif %}
+    {% if prospect.agentic_research %}
+    <dl class="detail-kv" style="margin-top:0.75rem;">
+      <div><dt>Decision-maker search</dt><dd>{% if prospect.agentic_research.decision_maker_search_attempted %}Attempted · conf {{ prospect.agentic_research.decision_maker_confidence or 'unknown' }}{% else %}—{% endif %}</dd></div>
+      <div><dt>Research sources consulted</dt><dd>{{ prospect.agentic_research.source_url_count or (prospect.research_sources|length if prospect.research_sources else 0) }}</dd></div>
+      {% if prospect.agentic_research.research_completeness %}
+      <div><dt>Completeness</dt><dd class="small">
+        identity={{ prospect.agentic_research.research_completeness.company_identity or '—' }} ·
+        website={{ prospect.agentic_research.research_completeness.website or '—' }} ·
+        DM={{ prospect.agentic_research.research_completeness.decision_maker or '—' }} ·
+        contact={{ prospect.agentic_research.research_completeness.contact or '—' }} ·
+        revenue={{ prospect.agentic_research.research_completeness.revenue or '—' }} ·
+        headcount={{ prospect.agentic_research.research_completeness.headcount or '—' }}
+      </dd></div>
+      {% endif %}
+    </dl>
+    {% endif %}
+    {% if prospect.public_signals %}
+    <p class="muted small">Signals: {{ prospect.public_signals | join(' · ') if prospect.public_signals is iterable and prospect.public_signals is not mapping else prospect.public_signals }}</p>
+    {% endif %}
+    {% if prospect.research_sources %}
+    <p class="small" style="margin-top:0.75rem;"><strong>Research sources ({{ prospect.research_sources|length }})</strong></p>
+    <ul class="source-list">
+      {% for s in prospect.research_sources %}
+      <li>
+        <strong>{{ (s.category or s.type or 'source')|humanize }}</strong>
+        {% if s.url %} · <a href="{{ s.url }}" target="_blank" rel="noopener">{{ s.url }}</a>{% endif %}
+        {% if s.confidence is not none %} · conf {{ s.confidence }}{% endif %}
+        {% if s.note %}<div class="muted small">{{ s.note }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">Funnel status</h2>
+    <dl class="detail-kv">
+      <div><dt>Acquisition</dt><dd>{{ prospect.acquisition_status|humanize }}</dd></div>
+      <div><dt>Outreach</dt><dd>{{ prospect.outreach_status|humanize }}</dd></div>
+      <div><dt>Reply</dt><dd>{{ prospect.reply_status|humanize }}</dd></div>
+      <div><dt>Assessment</dt><dd>{{ prospect.assessment_status|humanize }}</dd></div>
+      <div><dt>Qualification</dt><dd>{{ prospect.qualification_status|humanize }}</dd></div>
+      <div><dt>Meeting</dt><dd>{{ prospect.meeting_status|humanize }}</dd></div>
+      <div><dt>Purchase</dt><dd>{{ prospect.purchase_status|humanize }}{% if prospect.revenue_amount is not none %} · {{ prospect.revenue_amount }}{% endif %}</dd></div>
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2 class="section-title">Discovery provenance</h2>
+    <dl class="detail-kv">
+      <div><dt>Discovery provider</dt><dd><span class="source-tag src-{{ prospect.discovery_engine_source or prospect.discovery_source }}"><i></i>{{ (prospect.discovery_provider_label or prospect.discovery_engine_source or prospect.discovery_source)|source_label }}</span></dd></div>
+      <div><dt>Slice</dt><dd class="mono small">{{ prospect.discovery_slice_key or '—' }}</dd></div>
+      <div><dt>NPI</dt><dd>{% if prospect.npi %}<a href="https://npiregistry.cms.hhs.gov/provider-view/{{ prospect.npi }}" target="_blank" rel="noopener">{{ prospect.npi }}</a>{% else %}—{% endif %}</dd></div>
+      <div><dt>Website check</dt><dd>{% if prospect.website_verified %}<span class="status-badge status-ok">Verified live</span>{% else %}—{% endif %}</dd></div>
+      <div><dt>First seen</dt><dd>{{ format_datetime(prospect.discovered_at_dt) if prospect.discovered_at_dt else '—' }}</dd></div>
+      <div><dt>Last researched</dt><dd>{{ format_datetime(prospect.last_researched_at_dt) if prospect.last_researched_at_dt else '—' }}</dd></div>
+      <div><dt>Times seen by engine</dt><dd>{{ prospect.times_seen or 0 }}</dd></div>
+    </dl>
+  </section>
+
+  {% if prospect.campaign_history %}
+  <section class="panel">
+    <h2 class="section-title">Campaign history</h2>
+    <ul class="source-list">
+      {% for h in prospect.campaign_history %}
+      <li class="muted small">
+        {{ h.campaign }} · outreach={{ h.outreach_status }} · assessment={{ h.assessment_status }}
+        · booking={{ h.booking_status }} · purchase={{ h.purchase_outcome }}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

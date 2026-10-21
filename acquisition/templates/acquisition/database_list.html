@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Prospect Database{% endblock %}
+{% block page_heading %}Prospect Database{% endblock %}
+{% block page_lede %}
+<p class="page-lede">Live permanent prospect intelligence from FreedomBot (not Instantly). Read-only{% if is_owner %} owner{% endif %} access with CSV/XLSX export.</p>
+{% endblock %}
+{% block flash %}
+  {% if flash == 'not_found' %}<div class="flash flash-error">Prospect not found.</div>{% endif %}
+{% endblock %}
+{% block content %}
+<section class="panel toolbar-panel db-filters">
+  <form method="get" action="/acquisition/database" class="db-filter-grid">
+    <label class="field grow">
+      <span>Search</span>
+      <input type="search" name="q" value="{{ filters.q or '' }}" placeholder="Company, email, industry">
+    </label>
+    <label class="field">
+      <span>Acquisition</span>
+      <input type="text" name="acquisition_status" value="{{ filters.acquisition_status or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Industry</span>
+      <input type="text" name="industry" value="{{ filters.industry or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>State</span>
+      <input type="text" name="state" value="{{ filters.state or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Region</span>
+      <input type="text" name="region" value="{{ filters.region or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Outreach</span>
+      <input type="text" name="outreach_status" value="{{ filters.outreach_status or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Assessment</span>
+      <input type="text" name="assessment_status" value="{{ filters.assessment_status or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Qualification</span>
+      <input type="text" name="qualification_status" value="{{ filters.qualification_status or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Meeting</span>
+      <input type="text" name="meeting_status" value="{{ filters.meeting_status or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Purchase</span>
+      <input type="text" name="purchase_status" value="{{ filters.purchase_status or '' }}" placeholder="Any">
+    </label>
+    <label class="field">
+      <span>Min priority</span>
+      <input type="number" step="0.1" name="min_priority" value="{{ filters.min_priority if filters.min_priority is not none else '' }}">
+    </label>
+    <label class="field">
+      <span>Max priority</span>
+      <input type="number" step="0.1" name="max_priority" value="{{ filters.max_priority if filters.max_priority is not none else '' }}">
+    </label>
+    <div class="filter-actions db-filter-actions">
+      <button class="btn btn-primary" type="submit">Filter</button>
+      <a class="btn btn-secondary" href="/acquisition/database">Reset</a>
+      <a class="btn btn-ghost" href="/acquisition/database/export.csv?{{ request.query_params }}">Export CSV</a>
+      <a class="btn btn-ghost" href="/acquisition/database/export.xlsx?{{ request.query_params }}">Export XLSX</a>
+    </div>
+  </form>
+</section>
+
+<section class="panel table-panel">
+  <div class="table-meta">
+    <span>{{ total }} prospect{% if total != 1 %}s{% endif %}</span>
+    <span class="small">Page {{ page }} / {{ pages }}</span>
+  </div>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Decision-maker</th>
+          <th>Source</th>
+          <th>Industry</th>
+          <th>Location</th>
+          <th>Priority</th>
+          <th>Status</th>
+          <th>Purchase</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in prospects %}
+        <tr>
+          <td><a href="/acquisition/database/{{ p.id }}">{{ p.company }}</a>{% if p.website %}<span class="cell-muted">{{ p.website|replace('https://','')|replace('http://','') }}</span>{% endif %}</td>
+          <td>
+            {% if p.decision_maker and p.decision_maker != 'Unknown decision-maker' %}{{ p.decision_maker }}{% else %}<span class="email-missing">Not found yet</span>{% endif %}
+            {% if p.title %}<span class="cell-muted">{{ p.title }}</span>{% endif %}
+          </td>
+          <td>
+            {% set src = p.discovery_engine_source or p.discovery_source %}
+            {% if src %}
+            <span class="source-tag src-{{ src }}"><i></i>{{ src|source_label }}</span>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+          <td>{{ p.industry or '—' }}</td>
+          <td>{{ [p.city, p.state, p.region]|reject('none')|join(', ') or '—' }}</td>
+          <td>
+            {% if p.effective_priority_score is not none %}<span class="score {{ p.effective_priority_score|score_class }}">{{ '%.0f'|format(p.effective_priority_score) }}</span>{% else %}—{% endif %}
+            {% if p.learning_adjustment %}
+            <span class="muted small">(base {{ '%.0f'|format(p.priority_score or 0) }} {{ '%+.0f'|format(p.learning_adjustment) }})</span>
+            {% endif %}
+          </td>
+          <td><span class="status-badge status-{{ p.acquisition_status }}">{{ p.acquisition_status|humanize }}</span></td>
+          <td>{{ p.purchase_status|humanize if p.purchase_status and p.purchase_status != 'unknown' else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8">
+            <div class="state state-empty" style="border:0;background:transparent;padding:2rem 1rem;">
+              <h2>No matching prospects</h2>
+              <p>Adjust filters or run discovery from AI Settings.</p>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

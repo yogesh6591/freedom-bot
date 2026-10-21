@@ -22,6 +22,7 @@ import {
   inputClass
 } from '@/components/common/primitives'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { cn } from '@/lib/utils'
 
 const CAPABILITIES = [
   {
@@ -78,71 +79,68 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background lg:flex-row">
-      <section className="relative flex min-h-[250px] flex-col justify-between overflow-hidden bg-[#152d32] px-6 pb-8 pt-7 text-white sm:px-10 lg:min-h-dvh lg:w-[50%] lg:px-[clamp(40px,6vw,110px)] lg:pb-12 lg:pt-11 xl:w-[52%]">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-32 bottom-[-220px] h-[630px] w-[630px] rounded-full border border-[#47716e]/25"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-16 bottom-[-155px] h-[500px] w-[500px] rounded-full border border-[#47716e]/25"
-        />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-0 bottom-[-92px] h-[370px] w-[370px] rounded-full border border-[#47716e]/25"
-        />
-        <div className="relative z-10 flex items-center gap-3">
-          <BrandMark inverse className="h-11 w-11" />
-          <div>
-            <p className="text-[19px] font-semibold tracking-[-0.04em]">
-              FreedomBot
-            </p>
-            <p className="text-[10px] font-medium uppercase tracking-[0.18em] text-[#8fb1b1]">
-              Business intelligence workspace
-            </p>
-          </div>
-        </div>
+    <div className="grid min-h-dvh bg-background lg:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+      <section className="relative hidden min-h-dvh flex-col justify-between overflow-hidden border-r border-border px-10 py-11 lg:flex xl:px-14">
+        <div aria-hidden className="fb-auth-hero-glow pointer-events-none absolute inset-[-20%]" />
+        <div aria-hidden className="fb-auth-hero-glow-b pointer-events-none absolute left-[-10%] top-[35%] h-[55%] w-[70%]" />
+        <div aria-hidden className="fb-auth-mesh pointer-events-none absolute inset-0" />
 
-        <div className="relative z-10 mb-2 mt-11 max-w-[610px] lg:my-auto lg:py-16">
-          <p className="mb-6 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.19em] text-[#9fd9ca]">
-            <span
-              className="h-1.5 w-1.5 rounded-full bg-[#7ad0b8]"
-              aria-hidden
-            />
+        <div className="relative z-10">
+          <div className="mb-6 flex items-center gap-3">
+            <BrandMark className="h-11 w-11" />
+            <div>
+              <p className="font-[family-name:var(--font-display)] text-[19px] font-semibold tracking-[-0.04em] text-primary">
+                FreedomBot
+              </p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7dd3fc]">
+                Business intelligence workspace
+              </p>
+            </div>
+          </div>
+          <p className="mb-4 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.19em] text-[#7dd3fc]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#38bdf8]" aria-hidden />
             Intelligence, with accountability
           </p>
-          <h1 className="max-w-[570px] text-[37px] font-semibold leading-[1.14] tracking-[-0.055em] sm:text-[46px] lg:text-[clamp(42px,4.2vw,65px)]">
+          <h1 className="max-w-[16ch] font-[family-name:var(--font-display)] text-[clamp(32px,3vw,44px)] font-semibold leading-[1.2] tracking-[-0.03em] text-primary">
             Good decisions start with the full picture.
           </h1>
-          <p className="mt-6 max-w-[460px] text-[14px] leading-[1.9] text-[#b9cfd0] sm:text-[15px]">
+          <p className="mt-4 max-w-[40ch] text-[15px] leading-relaxed text-secondary">
             Bring company knowledge, everyday questions, and decisions into one
             carefully governed workspace.
           </p>
-
-          <div className="mt-11 hidden space-y-5 border-t border-white/15 pt-8 lg:block">
-            {CAPABILITIES.map(({ icon: Icon, title, description }, index) => (
-              <div key={title} className="flex items-start gap-4">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/[0.065] text-[#a3e3d5]">
-                  <Icon size={19} strokeWidth={1.7} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-[#f4fbfa]">
-                    {title}
-                  </p>
-                  <p className="mt-1 text-[12px] leading-5 text-[#9fb8bb]">
-                    {description}
-                  </p>
-                </div>
-                <span className="ml-auto hidden text-[10px] font-medium text-[#648b90] xl:block">
-                  0{index + 1}
-                </span>
-              </div>
-            ))}
-          </div>
         </div>
 
-        <div className="relative z-10 hidden items-center gap-2 text-[11px] text-[#96b3b5] lg:flex">
+        <div className="relative z-10 my-8 grid min-h-[220px] flex-1 place-items-center">
+          <div aria-hidden className="fb-auth-ring absolute aspect-square w-[min(78%,340px)] rounded-full border border-[#7dd3fc]/20 shadow-[inset_0_0_40px_rgba(56,189,248,0.06)]">
+            <span className="absolute left-1/2 top-[8%] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#38bdf8] shadow-[0_0_16px_rgba(56,189,248,0.85)]" />
+          </div>
+          <div aria-hidden className="fb-auth-ring-b absolute aspect-square w-[min(58%,250px)] rounded-full border border-[#818cf8]/20">
+            <span className="absolute bottom-[10%] left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#818cf8] shadow-[0_0_16px_rgba(129,140,248,0.8)]" />
+          </div>
+          <div className="relative z-10 grid h-[78px] w-[78px] place-items-center rounded-[22px] bg-gradient-to-br from-[#0ea5e9] to-[#4f46e5] text-2xl font-bold text-white shadow-[0_18px_50px_rgba(14,165,233,0.35)]">
+            <span className="fb-auth-pulse absolute -inset-2.5 rounded-[28px] border border-[#38bdf8]/45" />
+            F
+          </div>
+          {CAPABILITIES.map(({ title, description }, index) => (
+            <div
+              key={title}
+              className={cn(
+                'fb-auth-float absolute z-10 max-w-[170px] rounded-xl border border-white/10 bg-[#080c16]/55 px-3 py-2 backdrop-blur',
+                index === 0 && 'left-0 top-[8%]',
+                index === 1 && 'right-0 top-[42%]',
+                index === 2 && 'bottom-[6%] left-[12%]'
+              )}
+              style={{ animationDelay: `${index * 0.4}s` }}
+            >
+              <p className="text-[12px] font-semibold uppercase tracking-wide text-[#e2e8f0]">
+                {title}
+              </p>
+              <p className="mt-0.5 text-[12px] leading-snug text-secondary">{description}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="relative z-10 flex items-center gap-2 text-[11px] uppercase tracking-[0.06em] text-muted">
           <ShieldCheck size={15} aria-hidden /> Workspace-scoped access and
           human approval controls
         </div>

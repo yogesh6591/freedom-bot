@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proof · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body">
+<div class="assessment-shell assessment-shell--journey">
+    {% from "assessment/_public_brand.html" import lockup %}
+    <header class="assessment-header">
+      {{ lockup() }}
+      <h1 class="assessment-title">Proof</h1>
+      <p class="assessment-lede">Examples of the kind of operational clarity FreedomBot supports.</p>
+    </header>
+    <main class="assessment-result">
+      <ol class="assessment-steps" aria-label="Journey progress">
+        <li class="is-done">Result</li>
+        <li class="is-current">Proof</li>
+        <li>Demo</li>
+        <li>Value</li>
+        <li>Calendar</li>
+      </ol>
+
+      {% if payload.case_studies %}
+        {% for study in payload.case_studies %}
+        <article class="proof-study">
+          <header class="proof-study-header">
+            <h2 class="proof-study-title">{{ study.title }}</h2>
+            {% if study.client_display_name %}
+            <p class="proof-study-attribution">{{ study.client_display_name }}</p>
+            {% elif study.is_illustrative %}
+            <p class="proof-study-attribution">Illustrative example — not a named client engagement.</p>
+            {% endif %}
+          </header>
+
+          {% if study.problem %}
+          <section class="proof-study-section">
+            <h3>Problem</h3>
+            <p>{{ study.problem }}</p>
+          </section>
+          {% endif %}
+
+          {% if study.change %}
+          <section class="proof-study-section">
+            <h3>What changed</h3>
+            <p>{{ study.change }}</p>
+          </section>
+          {% endif %}
+
+          {% set items = study.result_items if study.result_items is defined else none %}
+          {% if items and items|length > 1 %}
+          <section class="proof-study-section proof-study-section--result">
+            <h3>Result</h3>
+            <ul class="proof-study-results">
+              {% for item in items %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+          </section>
+          {% elif study.measurable_result %}
+          <section class="proof-study-section proof-study-section--result">
+            <h3>Result</h3>
+            <p>{{ study.measurable_result }}</p>
+          </section>
+          {% endif %}
+        </article>
+        {% endfor %}
+      {% else %}
+        <section class="assessment-result-block">
+          <h2>Proof content being prepared</h2>
+          <p>Approved case studies are not published yet. You can continue to the demo when ready.</p>
+        </section>
+      {% endif %}
+
+      <div class="assessment-cta">
+        <a class="btn btn-secondary" href="/a/{{ token }}/result">← Back to Result</a>
+        <form method="post" action="/a/{{ token }}/proof/complete">
+          <button type="submit" class="btn btn-primary">Continue to Demo →</button>
+        </form>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

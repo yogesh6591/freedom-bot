@@ -1,0 +1,674 @@
+{% extends "base.html" %}
+{% block title %}Acquisition journey{% endblock %}
+{% block kicker %}<div class="topbar-kicker">Settings</div>{% endblock %}
+{% block page_heading %}Buyer Journey{% endblock %}
+{% block page_lede %}<p class="muted small" style="margin:0.25rem 0 0;">Proof, Demo, Value, and Calendar for prospects.</p>{% endblock %}
+{% block top_actions %}
+<form method="post" action="/settings/journey/publish" class="journey-publish-form">
+  <button type="submit" class="btn btn-primary">Publish</button>
+</form>
+{% endblock %}
+{% block flash %}
+  {% if flash == 'saved' %}<div class="flash">Journey settings saved.</div>{% endif %}
+  {% if flash == 'published' %}<div class="flash">Journey published. Proof, Demo, Value, and Calendar are live.</div>{% endif %}
+  {% if flash == 'publish_error' %}<div class="flash flash-error">Could not publish. Add a Demo video and at least one Proof, then try again.</div>{% endif %}
+  {% if flash == 'case_created' %}<div class="flash">Case study added.</div>{% endif %}
+  {% if flash == 'case_updated' %}<div class="flash">Case study updated.</div>{% endif %}
+  {% if flash == 'case_deleted' %}<div class="flash">Case study deleted.</div>{% endif %}
+  {% if flash == 'case_error' %}<div class="flash flash-error">Case study title is required.</div>{% endif %}
+  {% if flash == 'not_found' %}<div class="flash flash-error">Case study not found.</div>{% endif %}
+  {% if flash == 'demo_upload_error' %}<div class="flash flash-error">Demo video upload failed. Use MP4, WebM, or MOV under 250 MB.</div>{% endif %}
+  {% if flash == 'calendar_event_error' %}<div class="flash flash-error">Could not save booking event. Check Cal.com connection in Integrations.</div>{% endif %}
+  {% if flash == 'yt_saved' %}<div class="flash">YouTube link saved.</div>{% endif %}
+  {% if flash == 'yt_deleted' %}<div class="flash">YouTube link deleted.</div>{% endif %}
+  {% if flash == 'yt_error' %}<div class="flash flash-error">Title and YouTube URL are required.</div>{% endif %}
+{% endblock %}
+{% block content %}
+{% set active_tab = request.query_params.get('tab') or 'proof' %}
+{% if active_tab not in ['proof', 'demo', 'value', 'calendar', 'after_booking'] %}
+  {% set active_tab = 'proof' %}
+{% endif %}
+
+<div class="journey-settings" data-journey-tabs data-active-tab="{{ active_tab }}">
+  <nav class="journey-subnav" role="tablist" aria-label="Journey sections">
+    <button type="button" class="journey-tab{% if active_tab == 'proof' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if active_tab == 'proof' else 'false' }}" data-tab="proof">Proof</button>
+    <button type="button" class="journey-tab{% if active_tab == 'demo' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if active_tab == 'demo' else 'false' }}" data-tab="demo">Demo</button>
+    <button type="button" class="journey-tab{% if active_tab == 'value' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if active_tab == 'value' else 'false' }}" data-tab="value">Value</button>
+    <button type="button" class="journey-tab{% if active_tab == 'calendar' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if active_tab == 'calendar' else 'false' }}" data-tab="calendar">Calendar</button>
+    <button type="button" class="journey-tab{% if active_tab == 'after_booking' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if active_tab == 'after_booking' else 'false' }}" data-tab="after_booking">After Booking</button>
+  </nav>
+
+  {# ——— Proof ——— #}
+  {% set editing = editing_study %}
+  {% set show_new = show_new_proof %}
+  <section class="ai-editor journey-tab-panel{% if active_tab == 'proof' %} is-active{% endif %}" id="proof" data-tab-panel="proof" role="tabpanel" {% if active_tab != 'proof' %}hidden{% endif %}>
+    <header class="ai-editor-head">
+      <div class="ai-editor-title-block">
+        <h2 class="section-title">Proof</h2>
+        <p class="ai-editor-hint">Case studies on the prospect Proof step. New items start as drafts.</p>
+      </div>
+      {% if not show_new and not editing %}
+      <a class="btn btn-secondary" href="/settings/journey?tab=proof&amp;new=1">+ Add proof</a>
+      {% endif %}
+    </header>
+    <div class="ai-editor-body">
+      {% if show_new or editing %}
+      <div class="journey-section proof-editor">
+        <div class="proof-editor-head">
+          <strong>{% if editing %}Edit proof{% else %}New proof{% endif %}</strong>
+          <a class="btn btn-small btn-ghost" href="/settings/journey?tab=proof">Cancel</a>
+        </div>
+        <form
+          method="post"
+          action="{% if editing %}/settings/journey/case-studies/{{ editing.id }}{% else %}/settings/journey/case-studies{% endif %}"
+          class="journey-form"
+        >
+          <input type="hidden" name="return_tab" value="proof">
+          <div class="form-grid">
+            <label class="field field-full"><span>Title</span><input name="title" required placeholder="How the team behind FreedomBot…" value="{{ editing.title if editing else '' }}"></label>
+            <label class="field"><span>Attribution</span><input name="client_display_name" placeholder="Team behind FreedomBot" value="{{ editing.client_display_name if editing and editing.client_display_name else '' }}"></label>
+            <label class="field field-order"><span>Order</span><input type="number" name="display_order" value="{{ editing.display_order if editing else 0 }}"></label>
+            <label class="field field-full"><span>Problem</span><textarea name="problem" rows="2" placeholder="What was broken or slow">{{ editing.problem if editing else '' }}</textarea></label>
+            <label class="field field-full"><span>What changed</span><textarea name="change" rows="2" placeholder="What you put in place">{{ editing.change if editing else '' }}</textarea></label>
+            <label class="field field-full"><span>Result <span class="muted">(one line per bullet)</span></span><textarea name="measurable_result" rows="3" placeholder="Faster access to business answers">{{ editing.measurable_result if editing else '' }}</textarea></label>
+          </div>
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">{% if editing %}Save changes{% else %}Add proof{% endif %}</button>
+            <a class="btn btn-ghost" href="/settings/journey?tab=proof">Cancel</a>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+
+      {% if case_studies and not show_new and not editing %}
+      <ul class="proof-card-list">
+        {% for s in case_studies %}
+        <li class="proof-card{% if s.enabled %} is-live{% else %} is-draft{% endif %}">
+          <div class="proof-card-copy">
+            <strong class="proof-card-title">{{ s.title }}</strong>
+            <span class="proof-card-meta">{{ s.client_display_name or 'No attribution' }} · order {{ s.display_order }}</span>
+            {% if s.problem or s.measurable_result %}
+            <p class="proof-card-snippet">
+              {% if s.problem %}{{ s.problem|truncate(120) }}{% endif %}
+              {% if s.problem and s.measurable_result %} · {% endif %}
+              {% if s.measurable_result %}{{ s.measurable_result|truncate(80) }}{% endif %}
+            </p>
+            {% endif %}
+          </div>
+          <div class="proof-card-actions">
+            <form method="post" action="/settings/journey/case-studies/{{ s.id }}/toggle" class="proof-status-form">
+              <input type="hidden" name="return_tab" value="proof">
+              <label class="proof-status{% if s.enabled %} is-live{% else %} is-draft{% endif %}" title="{% if s.enabled %}Switch to Draft{% else %}Switch to Live{% endif %}">
+                <span class="proof-status-label">{% if s.enabled %}Live{% else %}Draft{% endif %}</span>
+                <span class="toggle">
+                  <input type="checkbox" {% if s.enabled %}checked{% endif %} onchange="this.form.submit()" aria-label="{% if s.enabled %}Switch to Draft{% else %}Switch to Live{% endif %}">
+                  <span class="toggle-track" aria-hidden="true"></span>
+                </span>
+              </label>
+            </form>
+            <a class="proof-icon-btn" href="/settings/journey?tab=proof&amp;edit={{ s.id }}" title="Edit" aria-label="Edit proof">
+              <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            </a>
+            <form method="post" action="/settings/journey/case-studies/{{ s.id }}/delete" class="proof-delete-form" onsubmit="return confirm('Delete this proof?');">
+              <input type="hidden" name="return_tab" value="proof">
+              <button type="submit" class="proof-icon-btn proof-icon-btn--danger" title="Delete" aria-label="Delete proof">
+                <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+              </button>
+            </form>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% elif not show_new and not editing %}
+      <div class="proof-empty">
+        <p class="muted">No proofs yet. Add a case study for the prospect Proof step.</p>
+        <a class="btn btn-secondary" href="/settings/journey?tab=proof&amp;new=1">+ Add proof</a>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <form method="post" action="/settings/journey" class="journey-settings-form" id="journey-main-form" enctype="multipart/form-data">
+    <input type="hidden" name="return_tab" id="journey-return-tab" value="{{ active_tab if active_tab in ['demo', 'value', 'calendar'] else 'demo' }}">
+
+    {# ——— Demo ——— #}
+    <section class="ai-editor journey-tab-panel{% if active_tab == 'demo' %} is-active{% endif %}" id="demo" data-tab-panel="demo" role="tabpanel" {% if active_tab != 'demo' %}hidden{% endif %}>
+      <header class="ai-editor-head">
+        <div class="ai-editor-title-block">
+          <h2 class="section-title">Demo</h2>
+          <p class="ai-editor-hint">Walkthrough video shown after Proof.</p>
+        </div>
+      </header>
+      <div class="ai-editor-body journey-sections">
+        <div class="journey-section">
+          <h3 class="journey-section-title">Demo page</h3>
+          <div class="form-grid">
+            <div class="journey-option field-full">
+              <div class="journey-option-copy">
+                <strong>Enabled</strong>
+                <span>Show the Demo step in the journey</span>
+              </div>
+              <label class="ai-switch" for="demo_enabled">
+                <span class="toggle">
+                  <input type="checkbox" id="demo_enabled" name="demo_enabled" value="true" {% if settings.demo_enabled %}checked{% endif %}>
+                  <span class="toggle-track" aria-hidden="true"></span>
+                </span>
+              </label>
+            </div>
+            <label class="field field-full"><span>Title</span><input name="demo_title" value="{{ settings.demo_title or '' }}"></label>
+            <label class="field field-full"><span>Description</span><textarea name="demo_description" rows="2">{{ settings.demo_description or '' }}</textarea></label>
+          </div>
+        </div>
+
+        <div class="journey-section">
+          <h3 class="journey-section-title">Video</h3>
+          {% set demo_url = settings.demo_video_url or '' %}
+          {% set demo_is_file = demo_url and not (demo_url.endswith('.html') or demo_url.endswith('.htm') or 'placeholder' in demo_url) %}
+          {% set demo_filename = demo_url.rsplit('/', 1)[-1] if demo_is_file else '' %}
+          <div class="form-grid">
+            <div class="field field-full demo-upload-field">
+              <span>Demo video</span>
+              {% if demo_url %}
+              <p class="field-help">Current URL: <a href="{{ demo_url }}" target="_blank" rel="noopener">{{ demo_url }}</a></p>
+              {% endif %}
+              {% if demo_is_file %}
+              <video class="demo-upload-preview" controls preload="metadata" src="{{ demo_url }}"></video>
+              {% endif %}
+              <div class="demo-file-picker" data-demo-file-picker>
+                <input
+                  type="file"
+                  id="demo_video"
+                  name="demo_video"
+                  class="demo-file-input"
+                  accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v"
+                >
+                <label for="demo_video" class="demo-file-btn">
+                  {% if demo_is_file %}Replace video{% else %}Choose video{% endif %}
+                </label>
+                <span class="demo-file-name" data-demo-file-name{% if demo_is_file %} data-has-file="1"{% endif %}>
+                  {% if demo_is_file %}{{ demo_filename }}{% else %}MP4, WebM, or MOV · max 250 MB{% endif %}
+                </span>
+              </div>
+            </div>
+            <div class="journey-option field-full">
+              <div class="journey-option-copy">
+                <strong>Require full watch</strong>
+                <span>Continue stays locked until the video ends</span>
+              </div>
+              <label class="ai-switch" for="demo_require_watch">
+                <span class="toggle">
+                  <input type="checkbox" id="demo_require_watch" name="demo_require_watch" value="true" {% if settings.demo_require_watch %}checked{% endif %}>
+                  <span class="toggle-track" aria-hidden="true"></span>
+                </span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="journey-tab-actions">
+          <button type="submit" class="btn btn-primary" data-set-return-tab="demo">Save Demo Settings</button>
+        </div>
+      </div>
+    </section>
+
+    {# ——— Value ——— #}
+    <section class="ai-editor journey-tab-panel{% if active_tab == 'value' %} is-active{% endif %}" id="value" data-tab-panel="value" role="tabpanel" {% if active_tab != 'value' %}hidden{% endif %}>
+      <header class="ai-editor-head">
+        <div class="ai-editor-title-block">
+          <h2 class="section-title">Value</h2>
+          <p class="ai-editor-hint">Investment and readiness wording shown after the AI personalized value section.</p>
+        </div>
+      </header>
+      <div class="ai-editor-body journey-sections">
+        <div class="journey-section journey-section--note">
+          <p class="journey-note">
+            <strong>Your value opportunity</strong> is generated automatically for each prospect from their assessment.
+            It is not editable here.
+          </p>
+        </div>
+
+        <div class="journey-section">
+          <h3 class="journey-section-title">Value page</h3>
+          <div class="form-grid">
+            <div class="journey-option field-full">
+              <div class="journey-option-copy">
+                <strong>Enabled</strong>
+                <span>Show the Value step in the journey</span>
+              </div>
+              <label class="ai-switch" for="value_enabled">
+                <span class="toggle">
+                  <input type="checkbox" id="value_enabled" name="value_enabled" value="true" {% if settings.value_enabled %}checked{% endif %}>
+                  <span class="toggle-track" aria-hidden="true"></span>
+                </span>
+              </label>
+            </div>
+            <label class="field field-full">
+              <span>Page heading</span>
+              <input name="value_heading" value="{{ settings.value_heading or '' }}" placeholder="What this could mean for your business">
+            </label>
+          </div>
+        </div>
+
+        <div class="journey-section">
+          <h3 class="journey-section-title">Investment / price context</h3>
+          <div class="form-grid">
+            <label class="field field-full">
+              <span>Investment context text</span>
+              <textarea name="value_investment_text" rows="4" placeholder="Commercial wording about investment and pricing context">{{ settings.value_investment_text or '' }}</textarea>
+              <span class="field-help">This is the commercial wording shown after the AI-generated personalized value section.</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="journey-section">
+          <h3 class="journey-section-title">Readiness</h3>
+          <div class="form-grid">
+            <label class="field field-full">
+              <span>Question</span>
+              <textarea name="budget_question" rows="2">{{ settings.budget_question or '' }}</textarea>
+            </label>
+            <label class="field field-full">
+              <span>Ready</span>
+              <input name="budget_label_ready" value="{{ settings.budget_label_ready or '' }}" placeholder="Yes, I’m ready to discuss next steps">
+            </label>
+            <label class="field field-full">
+              <span>Need more context</span>
+              <input name="budget_label_unclear" value="{{ settings.budget_label_unclear or '' }}" placeholder="I’m interested, but I need more context">
+            </label>
+            <label class="field field-full">
+              <span>Not ready</span>
+              <input name="budget_label_not_ready" value="{{ settings.budget_label_not_ready or '' }}" placeholder="Not right now">
+            </label>
+            <label class="field field-full">
+              <span>Continue button</span>
+              <input name="value_continue_button_text" value="{{ settings.value_continue_button_text or '' }}" placeholder="Continue">
+            </label>
+          </div>
+        </div>
+
+        <div class="journey-tab-actions">
+          <button type="submit" class="btn btn-primary" data-set-return-tab="value">Save Value Settings</button>
+        </div>
+      </div>
+    </section>
+
+    {# ——— Calendar ——— #}
+    <section class="ai-editor journey-tab-panel{% if active_tab == 'calendar' %} is-active{% endif %}" id="calendar" data-tab-panel="calendar" role="tabpanel" {% if active_tab != 'calendar' %}hidden{% endif %}>
+      <header class="ai-editor-head">
+        <div class="ai-editor-title-block">
+          <h2 class="section-title">Calendar</h2>
+          <p class="ai-editor-hint">Booking event shown after Value when the prospect is eligible.</p>
+        </div>
+      </header>
+      <div class="ai-editor-body journey-sections">
+        <div class="journey-section">
+          <h3 class="journey-section-title">Connection</h3>
+          <div class="journey-status-row">
+            {% if calcom_key_configured and calcom_account %}
+            <span class="status-badge status-approved">Connected</span>
+            <span class="muted small">
+              {% if calcom_account.username %}@{{ calcom_account.username }}{% elif calcom_account.email %}{{ calcom_account.email }}{% else %}Cal.com{% endif %}
+              · manage credentials in <a href="/integrations">Integrations</a>
+            </span>
+            {% elif calcom_key_configured %}
+            <span class="status-badge status-pending">Key saved</span>
+            <span class="muted small">
+              {% if calcom_error %}{{ calcom_error }}{% else %}Could not load account.{% endif %}
+              <a href="/integrations">Open Integrations</a>
+            </span>
+            {% else %}
+            <span class="status-badge status-pending">Not connected</span>
+            <span class="muted small">Connect Cal.com under <a href="/integrations">Integrations</a> first.</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="journey-section">
+          <h3 class="journey-section-title">Booking event</h3>
+          {% if calcom_event_types %}
+          {% set cal_user = settings.calcom_username or (calcom_account.username if calcom_account else '') %}
+          <div class="form-grid">
+            <label class="field field-full">
+              <span>Selected event</span>
+              <select name="event_type_id" id="calendar-event-type" data-calendar-event-select>
+                {% for et in calcom_event_types %}
+                <option
+                  value="{{ et.id }}"
+                  data-booking-url="{% if et.bookingUrl %}{{ et.bookingUrl }}{% elif cal_user and et.slug %}https://cal.com/{{ cal_user }}/{{ et.slug }}{% endif %}"
+                  {% if settings.calcom_event_type_id and settings.calcom_event_type_id == et.id|string %}selected{% endif %}
+                >
+                  {{ et.title }} — {{ et.slug }} ({{ et.lengthInMinutes }}m)
+                </option>
+                {% endfor %}
+              </select>
+              <span class="field-help">Cal.com event embedded after Value when the prospect is eligible.</span>
+            </label>
+          </div>
+          {% elif calcom_key_configured %}
+          <p class="muted">No event types found on the connected Cal.com account.</p>
+          {% else %}
+          <p class="muted">Connect Cal.com in Integrations to choose a booking event.</p>
+          {% endif %}
+        </div>
+
+        {% set saved_booking_url = settings.calcom_booking_url or settings.calendar_url or '' %}
+        <div class="journey-section">
+          <h3 class="journey-section-title">Booking URL</h3>
+          <div class="form-grid">
+            <label class="field field-full">
+              <span>Public link</span>
+              <div class="booking-url-module">
+                <input
+                  type="url"
+                  name="booking_url"
+                  id="calendar-booking-url"
+                  data-calendar-booking-url-input
+                  value="{{ saved_booking_url }}"
+                  placeholder="https://cal.com/…"
+                  autocomplete="off"
+                  maxlength="1024"
+                  {% if not calcom_event_types and not saved_booking_url %}disabled{% endif %}
+                >
+                <div class="booking-url-actions">
+                  <a
+                    class="btn btn-secondary booking-url-open{% if not saved_booking_url %} is-disabled{% endif %}"
+                    href="{{ saved_booking_url or '#' }}"
+                    target="_blank"
+                    rel="noopener"
+                    data-calendar-booking-url-open
+                    {% if not saved_booking_url %}aria-disabled="true" tabindex="-1"{% endif %}
+                  >Open</a>
+                  <button
+                    type="button"
+                    class="btn btn-ghost"
+                    data-calendar-booking-url-copy
+                    {% if not saved_booking_url %}disabled{% endif %}
+                  >Copy</button>
+                </div>
+              </div>
+              <span class="field-help" data-calendar-booking-url-help>
+                Fills from the selected booking event. Edit only if you need a custom public link.
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <div class="journey-tab-actions">
+          <button type="submit" class="btn btn-primary" data-set-return-tab="calendar">Save Calendar Settings</button>
+        </div>
+      </div>
+    </section>
+  </form>
+
+    {# ——— After Booking ——— #}
+    <section class="ai-editor journey-tab-panel{% if active_tab == 'after_booking' %} is-active{% endif %}" id="after_booking" data-tab-panel="after_booking" role="tabpanel" {% if active_tab != 'after_booking' %}hidden{% endif %}>
+      <header class="ai-editor-head">
+        <div class="ai-editor-title-block">
+          <h2 class="section-title">After Booking</h2>
+          <p class="ai-editor-hint">What prospects see after a confirmed Cal.com booking.</p>
+        </div>
+      </header>
+      <div class="ai-editor-body journey-sections">
+        <form method="post" action="/settings/journey" class="journey-settings-form" enctype="multipart/form-data">
+          <input type="hidden" name="return_tab" value="after_booking">
+          <div class="journey-section">
+            <h3 class="journey-section-title">Welcome / prep video</h3>
+            <div class="form-grid">
+              <div class="journey-option field-full">
+                <div class="journey-option-copy">
+                  <strong>Enabled</strong>
+                  <span>Show the welcome video on the After Booking page</span>
+                </div>
+                <label class="ai-switch" for="after_booking_video_enabled">
+                  <span class="toggle">
+                    <input type="checkbox" id="after_booking_video_enabled" name="after_booking_video_enabled" value="true" {% if settings.after_booking_video_enabled %}checked{% endif %}>
+                    <span class="toggle-track" aria-hidden="true"></span>
+                  </span>
+                </label>
+              </div>
+              <label class="field field-full"><span>Heading</span><input name="after_booking_video_heading" value="{{ settings.after_booking_video_heading or '' }}"></label>
+              <label class="field field-full"><span>Short intro</span><textarea name="after_booking_video_intro" rows="2">{{ settings.after_booking_video_intro or '' }}</textarea></label>
+              <div class="field field-full demo-upload-field">
+                <span>Welcome video</span>
+                {% if settings.after_booking_video_is_test %}<p class="field-help"><span class="status-badge status-pending">TEST content</span> — replace with Jeanne’s final video before production.</p>{% endif %}
+                {% if settings.after_booking_video_url %}
+                <p class="field-help">Current: <a href="{{ settings.after_booking_video_url }}" target="_blank" rel="noopener">{{ settings.after_booking_video_url }}</a></p>
+                <video class="demo-upload-preview" controls preload="metadata" src="{{ settings.after_booking_video_url }}"></video>
+                {% endif %}
+                <div class="demo-file-picker" data-demo-file-picker>
+                  <input type="file" id="after_booking_video" name="after_booking_video" class="demo-file-input" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov,.m4v">
+                  <label for="after_booking_video" class="demo-file-btn">{% if settings.after_booking_video_url %}Replace video{% else %}Choose video{% endif %}</label>
+                  <span class="demo-file-name" data-demo-file-name>MP4, WebM, or MOV · max 250 MB</span>
+                </div>
+              </div>
+              <div class="field field-full demo-upload-field">
+                <span>Video poster / thumbnail (optional)</span>
+                <p class="field-help">Shown before play. If empty, prospects see a branded “Welcome from Jeanne” fallback.</p>
+                {% if settings.after_booking_video_poster_url %}
+                <p class="field-help">Current: <a href="{{ settings.after_booking_video_poster_url }}" target="_blank" rel="noopener">{{ settings.after_booking_video_poster_url }}</a></p>
+                <img src="{{ settings.after_booking_video_poster_url }}" alt="" style="max-width:220px;border-radius:10px;border:1px solid rgba(12,27,42,0.08);">
+                {% endif %}
+                <div class="demo-file-picker" data-demo-file-picker>
+                  <input type="file" id="after_booking_video_poster" name="after_booking_video_poster" class="demo-file-input" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp">
+                  <label for="after_booking_video_poster" class="demo-file-btn">{% if settings.after_booking_video_poster_url %}Replace poster{% else %}Choose poster{% endif %}</label>
+                  <span class="demo-file-name" data-demo-file-name>JPG, PNG, or WebP · max 5 MB</span>
+                </div>
+              </div>
+              <label class="field field-full">
+                <span>Recommended video script</span>
+                <p class="field-help">For Jeanne to review, personalize, approve, and record. Admin only — never shown to prospects. Prospects only see the uploaded welcome video after booking.</p>
+                <textarea name="after_booking_video_script" rows="18">{{ settings.after_booking_video_script or '' }}</textarea>
+              </label>
+            </div>
+          </div>
+
+          <div class="journey-section">
+            <h3 class="journey-section-title">Meeting instructions</h3>
+            <div class="form-grid">
+              <label class="field field-full"><span>Heading</span><input name="after_booking_prep_heading" value="{{ settings.after_booking_prep_heading or '' }}"></label>
+              <label class="field field-full"><span>Preparation instructions</span><textarea name="after_booking_prep_body" rows="4">{{ settings.after_booking_prep_body or '' }}</textarea></label>
+              <label class="field field-full"><span>Optional note</span><textarea name="after_booking_prep_note" rows="2">{{ settings.after_booking_prep_note or '' }}</textarea></label>
+            </div>
+          </div>
+
+          <div class="journey-tab-actions">
+            <button type="submit" class="btn btn-primary">Save After Booking Settings</button>
+          </div>
+        </form>
+
+        <div class="journey-section journey-section--youtube">
+          <div class="proof-editor-head">
+            <h3 class="journey-section-title" style="margin:0;">Get to know Jeanne</h3>
+            {% if not show_new_youtube and not editing_youtube %}
+            <a class="journey-add-btn" href="/settings/journey?tab=after_booking&amp;yt_new=1" title="Add YouTube link" aria-label="Add YouTube link"><span aria-hidden="true">+</span></a>
+            {% endif %}
+          </div>
+          <p class="muted small">Optional YouTube links. Empty / disabled links are hidden from prospects.</p>
+          {% set editing_yt = editing_youtube %}
+          {% set youtube_links = youtube_links or [] %}
+          {% if show_new_youtube or editing_yt %}
+          <form method="post" action="{% if editing_yt %}/settings/journey/youtube/{{ editing_yt.id }}{% else %}/settings/journey/youtube{% endif %}" class="journey-form journey-form--youtube">
+            <div class="form-grid">
+              <label class="field field-full"><span>Title</span><input name="title" required value="{{ editing_yt.title if editing_yt else '' }}"></label>
+              <label class="field field-full"><span>YouTube URL</span><input name="youtube_url" required value="{{ editing_yt.youtube_url if editing_yt else '' }}" placeholder="https://www.youtube.com/watch?v=…"></label>
+              <label class="field field-order"><span>Display order</span><input type="number" name="display_order" value="{{ editing_yt.display_order if editing_yt else 0 }}" min="0" step="1"></label>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">{% if editing_yt %}Save link{% else %}Add link{% endif %}</button>
+              <a class="btn btn-ghost" href="/settings/journey?tab=after_booking">Cancel</a>
+            </div>
+          </form>
+          {% elif not youtube_links %}
+          <p class="muted">No YouTube links yet. Use + to add one.</p>
+          {% endif %}
+          {% if youtube_links %}
+          <ul class="proof-card-list">
+            {% for y in youtube_links %}
+            <li class="proof-card{% if y.enabled %} is-live{% endif %}">
+              <div class="proof-card-main">
+                <strong>{{ y.title }}</strong>
+                <span class="muted small">{{ y.youtube_url }}</span>
+                <span class="status-badge status-{{ 'approved' if y.content_status == 'approved' else 'pending' }}">{{ y.content_status }}</span>
+              </div>
+              <div class="proof-card-actions">
+                <a class="btn btn-small btn-ghost" href="/settings/journey?tab=after_booking&amp;yt_edit={{ y.id }}">Edit</a>
+                <form method="post" action="/settings/journey/youtube/{{ y.id }}/toggle"><button type="submit" class="btn btn-small btn-secondary">{% if y.enabled %}Disable{% else %}Enable{% endif %}</button></form>
+                <form method="post" action="/settings/journey/youtube/{{ y.id }}/delete" onsubmit="return confirm('Delete this link?');"><button type="submit" class="btn btn-small btn-ghost">Delete</button></form>
+              </div>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+</div>
+
+<script>
+(function () {
+  var root = document.querySelector("[data-journey-tabs]");
+  if (!root) return;
+  var tabs = Array.prototype.slice.call(root.querySelectorAll("[data-tab]"));
+  var panels = Array.prototype.slice.call(root.querySelectorAll("[data-tab-panel]"));
+  var returnInput = document.getElementById("journey-return-tab");
+  var allowed = { proof: 1, demo: 1, value: 1, calendar: 1, after_booking: 1 };
+
+  function activate(name) {
+    if (!allowed[name]) name = "proof";
+    tabs.forEach(function (btn) {
+      var on = btn.getAttribute("data-tab") === name;
+      btn.classList.toggle("is-active", on);
+      btn.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    panels.forEach(function (panel) {
+      var on = panel.getAttribute("data-tab-panel") === name;
+      panel.classList.toggle("is-active", on);
+      if (on) panel.removeAttribute("hidden");
+      else panel.setAttribute("hidden", "");
+    });
+    root.setAttribute("data-active-tab", name);
+    if (returnInput && (name === "demo" || name === "value" || name === "calendar" || name === "after_booking")) {
+      returnInput.value = name;
+    }
+    try {
+      var url = new URL(window.location.href);
+      url.searchParams.set("tab", name);
+      window.history.replaceState({}, "", url.pathname + "?" + url.searchParams.toString());
+    } catch (e) {}
+  }
+
+  tabs.forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      activate(btn.getAttribute("data-tab"));
+    });
+  });
+
+  root.querySelectorAll("[data-set-return-tab]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      if (returnInput) returnInput.value = btn.getAttribute("data-set-return-tab") || "demo";
+    });
+  });
+
+  var fromHash = (window.location.hash || "").replace(/^#/, "");
+  if (fromHash && allowed[fromHash]) activate(fromHash);
+
+  document.querySelectorAll("[data-demo-file-picker]").forEach(function (picker) {
+    var input = picker.querySelector('input[type="file"]');
+    var nameEl = picker.querySelector("[data-demo-file-name]");
+    var btn = picker.querySelector(".demo-file-btn");
+    if (!input || !nameEl) return;
+    var initial = (nameEl.textContent || "").trim();
+    if (initial && initial.indexOf("MP4") === -1) {
+      nameEl.setAttribute("data-has-file", "1");
+    }
+    input.addEventListener("change", function () {
+      var file = input.files && input.files[0];
+      if (file) {
+        nameEl.textContent = file.name;
+        nameEl.setAttribute("data-has-file", "1");
+        if (btn) btn.textContent = "Replace video";
+      } else if (initial && initial.indexOf("MP4") === -1) {
+        nameEl.textContent = initial;
+        nameEl.setAttribute("data-has-file", "1");
+      } else {
+        nameEl.textContent = "MP4, WebM, or MOV · max 250 MB";
+        nameEl.removeAttribute("data-has-file");
+      }
+    });
+  });
+
+  (function wireCalendarBookingUrl() {
+    var select = root.querySelector("[data-calendar-event-select]");
+    var input = root.querySelector("[data-calendar-booking-url-input]");
+    var openBtn = root.querySelector("[data-calendar-booking-url-open]");
+    var copyBtn = root.querySelector("[data-calendar-booking-url-copy]");
+    var help = root.querySelector("[data-calendar-booking-url-help]");
+    if (!input) return;
+
+    function currentUrl() {
+      return (input.value || "").trim();
+    }
+
+    function setActions(url) {
+      var has = !!url;
+      if (openBtn) {
+        openBtn.href = has ? url : "#";
+        openBtn.classList.toggle("is-disabled", !has);
+        if (has) {
+          openBtn.removeAttribute("aria-disabled");
+          openBtn.removeAttribute("tabindex");
+        } else {
+          openBtn.setAttribute("aria-disabled", "true");
+          openBtn.setAttribute("tabindex", "-1");
+        }
+      }
+      if (copyBtn) copyBtn.disabled = !has;
+    }
+
+    function syncFromEvent() {
+      if (!select) return;
+      var opt = select.options[select.selectedIndex];
+      var url = (opt && opt.getAttribute("data-booking-url")) || "";
+      input.value = url;
+      input.disabled = false;
+      setActions(url);
+      if (help) {
+        help.textContent = url
+          ? "Filled from the selected booking event. Edit only if you need a custom public link."
+          : "No booking URL on this event yet.";
+      }
+    }
+
+    if (select) {
+      select.addEventListener("change", syncFromEvent);
+      if (!currentUrl()) syncFromEvent();
+      else setActions(currentUrl());
+    } else {
+      setActions(currentUrl());
+    }
+
+    input.addEventListener("input", function () {
+      setActions(currentUrl());
+    });
+
+    if (copyBtn) {
+      copyBtn.addEventListener("click", function () {
+        var url = currentUrl();
+        if (!url || !navigator.clipboard) return;
+        navigator.clipboard.writeText(url).then(function () {
+          var prev = copyBtn.textContent;
+          copyBtn.textContent = "Copied";
+          setTimeout(function () { copyBtn.textContent = prev || "Copy"; }, 1200);
+        }).catch(function () {});
+      });
+    }
+
+    if (openBtn) {
+      openBtn.addEventListener("click", function (e) {
+        if (!currentUrl()) e.preventDefault();
+      });
+    }
+  })();
+})();
+</script>
+{% endblock %}

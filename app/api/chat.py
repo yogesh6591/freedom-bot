@@ -12,6 +12,7 @@ without dumping raw traces at ordinary users (§17).
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Any, Optional
 
@@ -95,9 +96,21 @@ def chat_context(
                 }
                 for s in viewable
             ],
+            "sending_accounts": _sending_accounts(ctx),
             "pending_approvals": len(actions.pending_approvals(ctx=ctx)),
             "inefficiency_alerts": _open_alerts(settings, ctx),
         }
+
+
+def _sending_accounts(ctx: TenantContext) -> list[str]:
+    if not ctx.is_admin:
+        return []
+    try:
+        from app.assistant.assistant import sending_account_emails
+
+        return sending_account_emails()
+    except Exception:
+        return []
 
 
 def _open_alerts(settings: ClientSettings, ctx: TenantContext) -> list[dict[str, Any]]:
@@ -110,6 +123,43 @@ def _open_alerts(settings: ClientSettings, ctx: TenantContext) -> list[dict[str,
         return []
 
 
+class EmailDraftUpdate(BaseModel):
+    session_id: str = Field(min_length=1, max_length=80)
+    email_draft: str = Field(min_length=1, max_length=20000)
+    email_subject: str = Field(default="", max_length=500)
+    email_body: str = Field(default="", max_length=20000)
+    email_from: str = Field(default="", max_length=200)
+    email_address: str = Field(default="", max_length=500)
+
+
+@router.post("/email-draft")
+def update_email_draft(
+    body: EmailDraftUpdate, ctx: TenantContext = Depends(current_context)
+) -> dict[str, str]:
+    """Save an email the user edited in the chat. The next turn sends this version."""
+    with bound(ctx):
+        try:
+            chat_history.set_latest_email_draft(
+                ctx,
+                body.session_id,
+                body.email_draft.strip(),
+                {
+                    "email_subject": body.email_subject.strip(),
+                    "email_body": body.email_body.strip(),
+                    "email_from": body.email_from.strip(),
+                    "email_address": body.email_address.strip(),
+                },
+            )
+        except chat_history.SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
+    return {"email_draft": body.email_draft.strip()}
+
+
+def _engine() -> str:
+    """``legacy`` restores the previous per-domain agent. Anything else uses the unified Agno assistant."""
+    return os.environ.get("ASSISTANT_ENGINE", "unified").strip().lower()
+
+
 @router.post("")
 def chat(
     body: ChatRequest,
@@ -117,6 +167,19 @@ def chat(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """One chat turn."""
+    if _engine() != "legacy":
+        from app.assistant.assistant import reply
+
+        with bound(ctx):
+            return reply(body, ctx, settings)
+    return _legacy_chat(body, ctx, settings)
+
+
+def _legacy_chat(
+    body: ChatRequest,
+    ctx: TenantContext,
+    settings: ClientSettings,
+) -> dict[str, Any]:
     session_id = body.session_id or new_id("ses")
     if body.session_id:
         try:
@@ -443,6 +506,25 @@ def list_sessions(
     """The caller's own conversations in this workspace, newest first."""
     with bound(ctx):
         return {"items": chat_history.list_sessions(ctx, limit=limit)}
+
+
+@router.delete("/sessions")
+def delete_all_sessions(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """Remove every conversation belonging to the caller."""
+    with bound(ctx):
+        deleted = chat_history.delete_all_sessions(ctx)
+    return {"ok": True, "deleted": deleted}
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: str, ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """Remove one of the caller's conversations."""
+    with bound(ctx):
+        try:
+            chat_history.delete_session(ctx, session_id)
+        except chat_history.SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
+    return {"ok": True}
 
 
 @router.get("/sessions/{session_id}")

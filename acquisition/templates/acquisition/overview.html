@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+
+{% block title %}Overview{% endblock %}
+{% block kicker %}<div class="topbar-kicker">Acquisition</div>{% endblock %}
+{% block page_heading %}Overview{% endblock %}
+{% block page_lede %}<p class="page-lede">Prospects you import or create, and where they stand in outreach.</p>{% endblock %}
+
+{% block top_actions %}
+<a class="btn btn-secondary" href="/prospects">Prospects</a>
+<a class="btn btn-primary" href="/prospects/import">Import CSV</a>
+{% endblock %}
+
+{% block content %}
+{% set week_delta = data.new_7d - (data.prev_7d or 0) %}
+<div class="stat-grid">
+  <div class="stat is-brand">
+    <div class="stat-label">New last 7 days</div>
+    <div class="stat-value">{{ data.new_7d }}</div>
+    <div class="stat-sub">
+      {% if week_delta > 0 %}↑ {{ week_delta }} vs prior week
+      {% elif week_delta < 0 %}↓ {{ -week_delta }} vs prior week
+      {% else %}same as prior week{% endif %}
+    </div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">In database</div>
+    <div class="stat-value">{{ data.total }}</div>
+    <div class="stat-sub">total prospect records</div>
+  </div>
+  <div class="stat is-ok">
+    <div class="stat-label">Ready for outreach</div>
+    <div class="stat-value">{{ data.ready }}</div>
+    <div class="stat-sub">approved and ready to attach</div>
+  </div>
+  <div class="stat is-warn">
+    <div class="stat-label">Needs research</div>
+    <div class="stat-value">{{ data.needs_research }}</div>
+    <div class="stat-sub">identity or contact incomplete</div>
+  </div>
+  <div class="stat">
+    <div class="stat-label">Revenue</div>
+    <div class="stat-value">${{ '{:,.0f}'.format(data.revenue) }}</div>
+    <div class="stat-sub">from acquisition funnel</div>
+  </div>
+</div>
+
+<div class="ov-grid">
+  <div class="stack">
+    <section class="panel ov-chart-panel">
+      <div class="panel-head ov-chart-head">
+        <div>
+          <h2 class="section-title">New prospects</h2>
+          <p class="section-lede" style="margin:0">Last 14 days · imported or created</p>
+        </div>
+        <div class="ov-chart-legend">
+          <span><i class="ov-swatch"></i> Daily adds</span>
+        </div>
+      </div>
+      <div class="ov-area-wrap">
+        <svg class="ov-area-chart" viewBox="0 0 560 180" role="img" aria-label="New prospects per day, last 14 days" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="ovAreaFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="rgba(139, 92, 246, 0.42)"/>
+              <stop offset="100%" stop-color="rgba(139, 92, 246, 0)"/>
+            </linearGradient>
+            <linearGradient id="ovAreaStroke" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#8b5cf6"/>
+              <stop offset="100%" stop-color="#3b82f6"/>
+            </linearGradient>
+          </defs>
+          <line class="ov-gridline" x1="12" x2="548" y1="51.5" y2="51.5"/>
+          <line class="ov-gridline" x1="12" x2="548" y1="85" y2="85"/>
+          <line class="ov-gridline" x1="12" x2="548" y1="118.5" y2="118.5"/>
+          <line class="ov-gridline" x1="12" x2="548" y1="152" y2="152"/>
+          <polygon class="ov-area-fill" points="{{ data.area_poly }}" fill="url(#ovAreaFill)"/>
+          <polyline class="ov-area-line" points="{{ data.area_line }}" fill="none" stroke="url(#ovAreaStroke)"/>
+          {% for d in data.days %}
+          <circle class="ov-area-dot" cx="{{ d.x }}" cy="{{ d.y }}" r="3.2">
+            <title>{{ d.label }}: {{ d.count }}</title>
+          </circle>
+          {% endfor %}
+        </svg>
+        <div class="ov-area-x">
+          {% for d in data.days %}
+          <span{% if loop.index0 % 2 == 1 %} class="is-dim"{% endif %}>{{ d.short }}</span>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h2 class="section-title">Sources</h2>
+          <p class="section-lede" style="margin:0">Where current prospects came from</p>
+        </div>
+      </div>
+      {% if data.by_source %}
+      <div class="ov-source-bars">
+        {% for s in data.by_source %}
+        <div class="ov-source-row" title="{{ s.label }}: {{ s.count }} ({{ s.share }}%) · {{ s.ready }} ready">
+          <span class="ov-source-label"><span class="source-tag src-{{ s.source }}"><i></i>{{ s.label }}</span></span>
+          <div class="ov-source-track"><i style="width: {{ [s.pct, 3]|max }}%"></i></div>
+          <b>{{ s.count }}</b>
+          <em>{{ s.share }}%</em>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="muted" style="margin:0.75rem 0 0">No prospects yet.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <h2 class="section-title">Health</h2>
+      <p class="section-lede">Anything that needs attention shows up here.</p>
+      <ul class="health-list">
+        {% for h in data.health %}
+        <li class="{{ h.level }}">{{ h.text }}</li>
+        {% else %}
+        <li class="ok">Pipeline looks clear.</li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">Pipeline</h2>
+      <p class="section-lede">From database to revenue.</p>
+      <div class="funnel ov-funnel">
+        {% for f in data.funnel %}
+        <div class="funnel-row">
+          <span>{{ f.label }}</span>
+          <div class="funnel-track"><i style="width: {{ f.pct }}%"></i></div>
+          <b>{{ f.count }}</b>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

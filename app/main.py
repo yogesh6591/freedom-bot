@@ -174,6 +174,11 @@ agent_os = AgentOS(
 
 app = agent_os.get_app()
 
+# Acquisition (prospects, campaigns, assessments, outreach) runs in this process.
+from acquisition.main import app as acquisition_app  # noqa: E402
+
+app.mount("/acquire", acquisition_app)
+
 
 @app.exception_handler(Exception)
 async def unhandled(request: Any, exc: Exception) -> JSONResponse:

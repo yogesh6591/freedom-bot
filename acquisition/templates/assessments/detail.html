@@ -1,0 +1,985 @@
+{% extends "base.html" %}
+{% block title %}{{ prospect.executive_name if prospect else 'Assessment' }}{% endblock %}
+
+{% macro field_value(key) -%}
+  {%- set f = fields_by_key.get(key) -%}
+  {%- if f and f.value is not none -%}{{ format_admin_value(f.value) }}{%- else %}—{%- endif -%}
+{%- endmacro %}
+
+{% macro sbi_chips(value) -%}
+  {%- if value is sequence and value is not string and value is not mapping -%}
+    <ul class="ad-sbi-chips">
+      {%- for item in value -%}
+        {%- set label = format_admin_value(item) -%}
+        {%- if label and label != '—' -%}
+        <li>{{ label }}</li>
+        {%- endif -%}
+      {%- endfor -%}
+    </ul>
+  {%- else -%}
+    {%- set text = format_admin_value(value) -%}
+    {%- if text and ' · ' in text -%}
+      <ul class="ad-sbi-chips">
+        {%- for part in text.split(' · ') -%}
+        <li>{{ part }}</li>
+        {%- endfor -%}
+      </ul>
+    {%- else -%}
+      <span class="ad-sbi-text">{{ text }}</span>
+    {%- endif -%}
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro sbi_field(key, mode='text') -%}
+  {%- set f = fields_by_key.get(key) -%}
+  {%- if f -%}
+  <div class="ad-sbi-field ad-sbi-field--{{ mode }}{% if f.value is none %} is-empty{% endif %}">
+    <dt>{{ f.label }}</dt>
+    <dd>
+      {%- if f.value is none -%}—{%- elif mode == 'chips' -%}{{ sbi_chips(f.value) }}{%- else -%}{{ format_admin_value(f.value) }}{%- endif -%}
+    </dd>
+  </div>
+  {%- endif -%}
+{%- endmacro %}
+
+{% set acq = acquisition %}
+{% set qt = qualification_transparency %}
+{% set impact_text = none %}
+{% if result %}
+  {% set impact_text = result.observed_impact if result.observed_impact is defined and result.observed_impact else result.directional_impact %}
+{% endif %}
+{% set impact_label = 'Observed impact' %}
+{% if result and result.impact_label is defined and result.impact_label %}
+  {% set impact_label = result.impact_label %}
+{% endif %}
+{% set opportunity_areas = result.opportunity_areas if result and result.opportunity_areas is defined else none %}
+{% set assess_done = link.assessment_status.value == 'completed' %}
+{% set qual_ok = qualification_status == 'qualified' %}
+{% set demo_ok = acq.demo_state == 'completed' %}
+{% set value_ok = acq.value_state == 'completed' %}
+{% set cal_ok = acq.calendar_eligible %}
+{% set book_ok = booked %}
+{% set email_delivery = email_delivery if email_delivery is defined else {'status': 'not_sent', 'label': 'Not sent', 'done': false, 'sent_at': none} %}
+{% set email_sent = email_delivery.status == 'sent' %}
+{% set email_queued = email_delivery.status == 'queued' %}
+{% set qual_locked = book_ok %}
+{% set budget_label = format_admin_value(acq.budget_readiness) %}
+{% set total_messages = messages|length %}
+{% set has_ai_insights = (result and result.inefficiencies_summary) or impact_text or (profile and profile.personalized_value_text) or opportunity_areas or (result and result.opportunity_map) %}
+{% set initial_tab = initial_tab if initial_tab is defined else 'overview' %}
+{% block topbar %}
+<header class="ad-hero">
+  <div class="ad-hero-main">
+    <a class="ad-back" href="/assessments"><span class="ad-back-arrow" aria-hidden="true">←</span>Assessments</a>
+    <div class="ad-hero-identity">
+      <h1 class="ad-hero-name">{{ prospect.executive_name if prospect else 'Unknown prospect' }}</h1>
+      <p class="ad-hero-company">{{ prospect.company if prospect else '—' }}</p>
+      {% if prospect and prospect.email %}
+      <a class="ad-hero-email" href="mailto:{{ prospect.email }}">{{ prospect.email }}</a>
+      {% endif %}
+    </div>
+    <div class="ad-hero-chips">
+      {% if qual_ok %}
+      <span class="ad-chip ad-chip--ok">Qualified</span>
+      {% elif qualification_status == 'unqualified' %}
+      <span class="ad-chip ad-chip--bad">Unqualified</span>
+      {% else %}
+      <span class="ad-chip">Pending</span>
+      {% endif %}
+      {% if book_ok %}
+      <span class="ad-chip ad-chip--ok">Booked</span>
+      {% endif %}
+      {% if acq.budget_readiness and acq.budget_readiness|string|lower == 'ready' %}
+      <span class="ad-chip ad-chip--ok">Budget Ready</span>
+      {% elif acq.budget_readiness and acq.budget_readiness|string|lower == 'not_assessed' %}
+      <span class="ad-chip">Budget not assessed</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="ad-hero-actions">
+    {% if booked %}
+      {% if brief_ready %}
+      <a class="ad-capsule-btn ad-capsule-btn--primary" href="/assessments/{{ link.id }}/pre-call-brief">
+        <span class="ad-capsule-ring" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <path d="M14 2v6h6"/>
+            <path d="M8 13h8"/>
+            <path d="M8 17h5"/>
+          </svg>
+        </span>
+        <span class="ad-capsule-copy">
+          <strong>View Pre-Call Brief</strong>
+          <small>Ready for the call</small>
+        </span>
+      </a>
+      {% elif brief_status == 'failed' %}
+      <div class="ad-brief-fail">
+        <span class="ad-brief-fail-msg">Brief generation failed</span>
+        <form method="post" action="/assessments/{{ link.id }}/pre-call-brief/generate" class="inline-form">
+          <button class="ad-capsule-btn ad-capsule-btn--primary" type="submit">
+            <span class="ad-capsule-ring" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 3-6.7"/>
+                <path d="M3 4v5h5"/>
+              </svg>
+            </span>
+            <span class="ad-capsule-copy">
+              <strong>Try Again</strong>
+              <small>Generate brief</small>
+            </span>
+          </button>
+        </form>
+      </div>
+      {% else %}
+      <form method="post" action="/assessments/{{ link.id }}/pre-call-brief/generate" class="inline-form">
+        <button class="ad-capsule-btn ad-capsule-btn--primary" type="submit">
+          <span class="ad-capsule-ring" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14"/>
+              <path d="M5 12h14"/>
+            </svg>
+          </span>
+          <span class="ad-capsule-copy">
+            <strong>Generate Pre-Call Brief</strong>
+            <small>For this booking</small>
+          </span>
+        </button>
+      </form>
+      {% endif %}
+    {% endif %}
+    {% if public_url %}
+    <a class="ad-capsule-btn" href="{{ public_url }}" target="_blank" rel="noopener">
+      <span class="ad-capsule-ring" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+          <path d="M15 3h6v6"/>
+          <path d="M10 14 21 3"/>
+        </svg>
+      </span>
+      <span class="ad-capsule-copy">
+        <strong>Open Public Link</strong>
+        <small>Assessment URL</small>
+      </span>
+    </a>
+    {% endif %}
+    <form
+      method="post"
+      action="/assessments/{{ link.id }}/reset-journey"
+      class="ad-rewind-form"
+      onsubmit="return confirm('Rewind this journey like a time machine?\n\nClears assessment chat, results, qualification, proof/demo/value progress, and local email reply threads.\nCancels the Cal.com booking (when still cancellable) and clears local booking fields.\nKeeps the prospect, campaign link, Instantly lead, assessment URL, and Instantly send history (so old emails are not auto-answered again).');"
+    >
+      <button type="submit" class="ad-capsule-btn" title="Rewind assessment and booking to the start">
+        <span class="ad-capsule-ring" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12a9 9 0 1 0 3-6.7"/>
+            <path d="M3 4v5h5"/>
+          </svg>
+        </span>
+        <span class="ad-capsule-copy">
+          <strong>Reset journey</strong>
+          <small>Time machine · cancels Cal booking</small>
+        </span>
+      </button>
+    </form>
+  </div>
+</header>
+{% endblock %}
+
+{% block flash %}
+  {% if flash == 'brief_not_booked' %}
+  <div class="flash flash-error">Pre-Call Brief is available only after a confirmed booking.</div>
+  {% elif flash == 'qual_updated' %}
+  <div class="flash">Qualification status updated.</div>
+  {% elif flash == 'qual_invalid' %}
+  <div class="flash flash-error">Choose Qualified, Unqualified, or Pending.</div>
+  {% elif flash == 'qual_no_profile' %}
+  <div class="flash flash-error">No assessment profile yet — wait until the assessment has run.</div>
+  {% elif flash == 'journey_reset' %}
+  <div class="flash">Journey reset — assessment, booking, and progress cleared. Cal.com booking cancelled when possible. Ready to run again.</div>
+  {% elif flash == 'qual_locked' %}
+  <div class="flash flash-error">Qualification is locked after a confirmed booking. Use Reset journey to rewind first.</div>
+  {% elif flash == 'show_saved' %}
+  <div class="flash">Consultation attendance saved.</div>
+  {% elif flash == 'show_requires_booking' %}
+  <div class="flash flash-error">Record show/no-show only after a confirmed booking.</div>
+  {% elif flash == 'show_invalid' %}
+  <div class="flash flash-error">Choose a valid consultation attendance value.</div>
+  {% elif flash == 'purchase_saved' %}
+  <div class="flash">Purchase is recorded automatically from Stripe — manual edits are disabled.</div>
+  {% elif flash == 'purchase_manual_disabled' %}
+  <div class="flash flash-error">Manual purchase edits are disabled. Payment is recorded only via Stripe checkout.</div>
+  {% elif flash == 'purchase_invalid' %}
+  <div class="flash flash-error">Check purchase outcome and revenue amounts.</div>
+  {% elif flash == 'stripe_test_paid' %}
+  <div class="flash">Stripe TEST payment verified — purchase outcome updated from Checkout Session.</div>
+  {% elif flash == 'stripe_test_already' %}
+  <div class="flash">Stripe TEST payment already applied for this Checkout Session (idempotent).</div>
+  {% elif flash == 'stripe_test_cancelled' %}
+  <div class="flash">Stripe test checkout cancelled / not completed. Purchase outcome left unchanged.</div>
+  {% elif flash == 'stripe_test_disabled' %}
+  <div class="flash flash-error">Stripe test checkout is disabled (STRIPE_ENABLED / environment / secret key).</div>
+  {% elif flash == 'stripe_test_booking_required' %}
+  <div class="flash flash-error">Stripe test checkout requires a confirmed booking.</div>
+  {% elif flash == 'stripe_test_error' %}
+  <div class="flash flash-error">Could not start Stripe test checkout. Check server logs and Stripe TEST config.</div>
+  {% elif flash == 'checkout_offered' %}
+  <div class="flash">Checkout offered — copy the link from the popup.</div>
+  {% elif flash == 'checkout_offer_invalid' %}
+  <div class="flash flash-error">Enter a valid customized investment amount to offer checkout.</div>
+  {% elif flash == 'checkout_offer_already_purchased' %}
+  <div class="flash flash-error">This prospect already purchased via checkout. Reset purchase outcome only if that was a mistake.</div>
+  {% elif flash == 'checkout_offer_booking_required' %}
+  <div class="flash flash-error">Checkout can only be offered after a confirmed booking.</div>
+  {% elif flash == 'checkout_offer_error' %}
+  <div class="flash flash-error">Could not offer checkout. Confirm booking and Stripe test config.</div>
+  {% elif flash == 'handoff_saved' %}
+  <div class="flash">Cepoch handoff status updated.</div>
+  {% elif flash == 'handoff_invalid' %}
+  <div class="flash flash-error">Choose a valid handoff status.</div>
+  {% elif flash == 'qual_rerun' %}
+  <div class="flash">Qualification re-run complete — output updated below.</div>
+  {% elif flash == 'qual_rerun_error' %}
+  <div class="flash flash-error">Qualification re-run failed. Check OpenAI under Integrations and try again.</div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="ad-page">
+  {# Single home for journey stages + timestamps #}
+  <section class="ad-status-strip" aria-label="Journey status">
+    <div class="ad-status-item {% if email_sent %}is-done{% elif email_queued %}is-active{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if email_sent %}✓{% elif email_queued %}…{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Email</span>
+      <span class="ad-status-value">{{ email_delivery.label }}</span>
+      {% if email_delivery.sent_at %}
+      <time class="ad-status-date">{{ format_datetime(email_delivery.sent_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if assess_done %}is-done{% elif link.assessment_started_at %}is-active{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if assess_done %}✓{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Assessment</span>
+      <span class="ad-status-value">{% if assess_done %}Completed{% elif link.assessment_started_at %}Started{% else %}{{ link.assessment_status.value|replace('_',' ')|title }}{% endif %}</span>
+      {% if link.assessment_completed_at %}
+      <time class="ad-status-date">{{ format_datetime(link.assessment_completed_at) }}</time>
+      {% elif link.assessment_started_at %}
+      <time class="ad-status-date">{{ format_datetime(link.assessment_started_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if qual_ok %}is-done{% elif qualification_status == 'unqualified' %}is-bad{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if qual_ok %}✓{% elif qualification_status == 'unqualified' %}!{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Qualification</span>
+      <span class="ad-status-value">{% if qual_ok %}Qualified{% elif qualification_status == 'unqualified' %}Unqualified{% else %}Pending{% endif %}</span>
+      {% if assess_done and link.assessment_completed_at %}
+      <time class="ad-status-date">{{ format_datetime(link.assessment_completed_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if link.proof_viewed_at %}is-done{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if link.proof_viewed_at %}✓{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Proof</span>
+      <span class="ad-status-value">{% if link.proof_viewed_at %}Viewed{% else %}Not viewed{% endif %}</span>
+      {% if link.proof_viewed_at %}
+      <time class="ad-status-date">{{ format_datetime(link.proof_viewed_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if demo_ok %}is-done{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if demo_ok %}✓{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Demo</span>
+      <span class="ad-status-value">{% if demo_ok %}Completed{% elif link.demo_started_at %}Started{% else %}{{ acq.demo_state|replace('_',' ')|title }}{% endif %}</span>
+      {% if link.demo_completed_at %}
+      <time class="ad-status-date">{{ format_datetime(link.demo_completed_at) }}</time>
+      {% elif link.demo_started_at %}
+      <time class="ad-status-date">{{ format_datetime(link.demo_started_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if value_ok %}is-done{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if value_ok %}✓{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Value</span>
+      <span class="ad-status-value">{% if value_ok %}Completed{% else %}{{ acq.value_state|replace('_',' ')|title }}{% endif %}</span>
+      {% if link.value_context_completed_at %}
+      <time class="ad-status-date">{{ format_datetime(link.value_context_completed_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if link.calendar_unlocked_at or cal_ok %}is-done{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if link.calendar_unlocked_at or cal_ok %}✓{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Calendar</span>
+      <span class="ad-status-value">{% if link.calendar_unlocked_at or cal_ok %}Unlocked{% else %}Locked{% endif %}</span>
+      {% if link.calendar_unlocked_at %}
+      <time class="ad-status-date">{{ format_datetime(link.calendar_unlocked_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if book_ok %}is-done{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if book_ok %}✓{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Booking</span>
+      <span class="ad-status-value">{% if book_ok %}Confirmed{% elif acq.booking_status == 'cancelled' %}Cancelled{% else %}Not booked{% endif %}</span>
+      {% if link.booked_at %}
+      <time class="ad-status-date">{{ format_datetime(link.booked_at) }}</time>
+      {% endif %}
+    </div>
+  </section>
+
+  <nav class="ad-tabs" role="tablist" aria-label="Assessment sections">
+    <button type="button" class="ad-tab{% if initial_tab == 'overview' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if initial_tab == 'overview' else 'false' }}" data-ad-tab="overview">Overview</button>
+    <button type="button" class="ad-tab{% if initial_tab == 'assessment' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if initial_tab == 'assessment' else 'false' }}" data-ad-tab="assessment">Assessment</button>
+    <button type="button" class="ad-tab{% if initial_tab == 'booking' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if initial_tab == 'booking' else 'false' }}" data-ad-tab="booking">Booking</button>
+    <button type="button" class="ad-tab{% if initial_tab == 'payment' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if initial_tab == 'payment' else 'false' }}" data-ad-tab="payment">Payment</button>
+    <button type="button" class="ad-tab{% if initial_tab == 'qualification' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if initial_tab == 'qualification' else 'false' }}" data-ad-tab="qualification">Qualification</button>
+    <button type="button" class="ad-tab{% if initial_tab == 'replies' %} is-active{% endif %}" role="tab" aria-selected="{{ 'true' if initial_tab == 'replies' else 'false' }}" data-ad-tab="replies">
+      Email replies{% if reply_conversation %} <span class="ad-tab-count">{{ reply_conversation.messages|length }}</span>{% endif %}
+    </button>
+  </nav>
+
+  {# ——— OVERVIEW: executive scan only (no duplicate detail blocks) ——— #}
+  <section class="ad-panel{% if initial_tab == 'overview' %} is-active{% endif %}" id="ad-panel-overview" role="tabpanel" data-ad-panel="overview"{% if initial_tab != 'overview' %} hidden{% endif %}>
+    <div class="ad-overview">
+      <div class="ad-overview-main">
+        <article class="ad-card">
+          <h2 class="ad-card-title">Business Snapshot</h2>
+          <dl class="ad-kv-grid">
+            <div><dt>Company</dt><dd>{{ field_value('company') if fields_by_key.get('company') and fields_by_key.get('company').value is not none else (prospect.company if prospect else '—') }}</dd></div>
+            <div><dt>Goal</dt><dd>{{ field_value('goals') }}</dd></div>
+            <div><dt>Revenue</dt><dd>{{ field_value('revenue_range') }}</dd></div>
+            <div><dt>Headcount</dt><dd>{{ field_value('headcount') }}</dd></div>
+            <div><dt>Functions</dt><dd>{{ field_value('functions') }}</dd></div>
+            <div><dt>Systems</dt><dd>{{ field_value('tools') }}</dd></div>
+          </dl>
+        </article>
+
+        <article class="ad-card {% if has_ai_insights %}ad-card--ai{% endif %}">
+          <div class="ad-card-head">
+            <h2 class="ad-card-title">Insights</h2>
+            {% if has_ai_insights %}<span class="ad-synth-dot" title="Synthesized from assessment evidence" aria-hidden="true"></span>{% endif %}
+          </div>
+          {% if has_ai_insights %}
+          <div class="ad-ai-stack">
+            {% if result and result.inefficiencies_summary %}
+            <div class="ad-ai-module">
+              <h3 class="ad-group-title">Possible inefficiencies</h3>
+              <p class="ad-body">{{ result.inefficiencies_summary }}</p>
+            </div>
+            {% endif %}
+            {% if impact_text %}
+            <div class="ad-ai-module">
+              <h3 class="ad-group-title">{{ impact_label }}</h3>
+              <p class="ad-body">{{ impact_text }}</p>
+            </div>
+            {% endif %}
+            {% if profile and profile.personalized_value_text %}
+            <div class="ad-ai-module">
+              <h3 class="ad-group-title">FreedomBot opportunity</h3>
+              <p class="ad-body">{{ profile.personalized_value_text }}</p>
+            </div>
+            {% elif opportunity_areas %}
+            <div class="ad-ai-module">
+              <h3 class="ad-group-title">FreedomBot opportunity</h3>
+              <ul class="ad-bullets">
+                {% for area in opportunity_areas %}
+                <li>{{ area.label if area.label is defined else area }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% elif result and result.opportunity_map %}
+            <div class="ad-ai-module">
+              <h3 class="ad-group-title">FreedomBot opportunity</h3>
+              <p class="ad-body">{{ result.opportunity_map }}</p>
+            </div>
+            {% endif %}
+          </div>
+          {% else %}
+          <p class="muted">Insights appear after the assessment result is generated.</p>
+          {% endif %}
+        </article>
+      </div>
+
+      <aside class="ad-overview-side">
+        <article class="ad-card ad-card--meeting">
+          <div class="ad-card-head">
+            <h2 class="ad-card-title">Next action</h2>
+            <button type="button" class="ad-linkish" data-ad-goto="booking">Details →</button>
+          </div>
+          {% if book_ok %}
+          <p class="ad-meeting-state ad-meeting-state--ok">BOOKED</p>
+          {% if link.meeting_start %}
+          <p class="ad-meeting-when">{{ format_datetime(link.meeting_start) }}</p>
+          {% if link.meeting_timezone %}
+          <p class="ad-meeting-end muted">{{ link.meeting_timezone }}{% if acq.calcom_event_title %} · {{ acq.calcom_event_title }}{% endif %}</p>
+          {% endif %}
+          {% endif %}
+          <div class="ad-card-actions">
+            {% if brief_ready %}
+            <a class="btn btn-primary btn-small" href="/assessments/{{ link.id }}/pre-call-brief">View Pre-Call Brief</a>
+            {% elif booked %}
+            <form method="post" action="/assessments/{{ link.id }}/pre-call-brief/generate" class="inline-form">
+              <button class="btn btn-primary btn-small" type="submit">Generate Pre-Call Brief</button>
+            </form>
+            {% endif %}
+            {% set meeting_href = link.meeting_join_url or (link.meeting_location if link.meeting_location and (link.meeting_location.startswith('http://') or link.meeting_location.startswith('https://')) else none) %}
+            {% if meeting_href %}
+            <a class="btn btn-secondary btn-small" href="{{ meeting_href }}" target="_blank" rel="noopener">Open Meeting</a>
+            {% endif %}
+          </div>
+          {% else %}
+          <p class="ad-meeting-state">Not booked</p>
+          <p class="muted">Calendar {% if cal_ok %}is eligible{% else %}is locked{% endif %}. Full booking fields are on the Booking tab.</p>
+          {% endif %}
+        </article>
+
+        <article class="ad-card">
+          <div class="ad-card-head">
+            <h2 class="ad-card-title">Qualification</h2>
+            <button type="button" class="ad-linkish" data-ad-goto="qualification">Full details →</button>
+          </div>
+          <p class="ad-qual-headline">
+            <span class="status-badge status-{{ qualification_status }}">{{ qualification_status_label }}</span>
+          </p>
+          <p class="ad-body muted">Open the Qualification tab for the full signal report.</p>
+        </article>
+      </aside>
+    </div>
+  </section>
+
+  {# ——— ASSESSMENT: structured evidence + conversation (canonical field home) ——— #}
+  <section class="ad-panel{% if initial_tab == 'assessment' %} is-active{% endif %}" id="ad-panel-assessment" role="tabpanel" data-ad-panel="assessment"{% if initial_tab != 'assessment' %} hidden{% endif %}>
+    {% set company_field = fields_by_key.get('company') %}
+    <article class="ad-card ad-card--sbi">
+      <header class="ad-sbi-head">
+        <div>
+          <h2 class="ad-card-title">Business profile</h2>
+          <p class="ad-sbi-lede muted">Structured answers from the assessment conversation</p>
+        </div>
+      </header>
+
+      <div class="ad-sbi">
+        <section class="ad-sbi-group">
+          <div class="ad-sbi-company">
+            <span class="ad-sbi-kicker">Company</span>
+            <p class="ad-sbi-company-name">
+              {% if company_field and company_field.value is not none %}
+                {{ format_admin_value(company_field.value) }}
+              {% elif prospect %}
+                {{ prospect.company }}
+              {% else %}
+                —
+              {% endif %}
+            </p>
+          </div>
+          <dl class="ad-sbi-metrics">
+            {{ sbi_field('revenue_range', 'metric') }}
+            {{ sbi_field('headcount', 'metric') }}
+            {{ sbi_field('authority', 'metric') }}
+          </dl>
+          <dl class="ad-sbi-stack">
+            {{ sbi_field('goals', 'prose') }}
+          </dl>
+        </section>
+
+        <section class="ad-sbi-group">
+          <h3 class="ad-sbi-heading">Operations</h3>
+          <dl class="ad-sbi-stack">
+            {{ sbi_field('functions', 'chips') }}
+            {{ sbi_field('tools', 'chips') }}
+            {{ sbi_field('workflows', 'chips') }}
+            {{ sbi_field('knowledge_locations', 'chips') }}
+          </dl>
+        </section>
+
+        <section class="ad-sbi-group">
+          <h3 class="ad-sbi-heading">Business friction</h3>
+          <dl class="ad-sbi-stack">
+            {{ sbi_field('pain_points', 'prose') }}
+            {{ sbi_field('bottlenecks', 'chips') }}
+            {{ sbi_field('time_cost_impact', 'prose') }}
+          </dl>
+        </section>
+
+        <section class="ad-sbi-group">
+          <h3 class="ad-sbi-heading">Readiness</h3>
+          <dl class="ad-sbi-readiness">
+            {{ sbi_field('change_readiness', 'prose') }}
+            {{ sbi_field('ai_readiness', 'prose') }}
+          </dl>
+        </section>
+      </div>
+
+      <div class="ad-advanced">
+        {% if total_messages == 0 %}
+        <p class="muted">No assessment messages yet.</p>
+        {% else %}
+        <details class="ad-conversation-full ad-questionnaire">
+          <summary>View questionnaire</summary>
+          <div class="ad-thread ad-thread--full">
+            {% for message in messages %}
+            <article class="ad-bubble ad-bubble--{% if message.role.value == 'user' %}prospect{% else %}jeanne{% endif %}">
+              <header class="ad-bubble-head">
+                <span>{% if message.role.value == 'user' %}Prospect{% else %}JeanneCAIO{% endif %}</span>
+                <time class="muted small">{{ format_datetime(message.created_at) }}</time>
+              </header>
+              <div class="ad-bubble-body">{{ message.content }}</div>
+            </article>
+            {% endfor %}
+          </div>
+        </details>
+        {% endif %}
+      </div>
+    </article>
+  </section>
+
+  {# ——— BOOKING: meeting fields only (journey dates stay on the top stepper) ——— #}
+  <section class="ad-panel{% if initial_tab == 'booking' %} is-active{% endif %}" id="ad-panel-booking" role="tabpanel" data-ad-panel="booking"{% if initial_tab != 'booking' %} hidden{% endif %}>
+    <article class="ad-card">
+      <h2 class="ad-card-title">Booking Information</h2>
+      <dl class="ad-kv-grid">
+        <div><dt>Status</dt><dd>{% if book_ok %}Confirmed{% elif acq.booking_status == 'cancelled' %}Cancelled{% else %}Not booked{% endif %}</dd></div>
+        <div><dt>Date / time</dt><dd>{% if link.meeting_start %}{{ format_datetime(link.meeting_start) }}{% else %}—{% endif %}</dd></div>
+        <div><dt>Ends</dt><dd>{% if link.meeting_end %}{{ format_datetime(link.meeting_end) }}{% else %}—{% endif %}</dd></div>
+        <div><dt>Timezone</dt><dd>{{ link.meeting_timezone or '—' }}</dd></div>
+        <div><dt>Meeting type</dt><dd>{{ acq.calcom_event_title or '—' }}</dd></div>
+        <div><dt>Booked at</dt><dd>{% if link.booked_at %}{{ format_datetime(link.booked_at) }}{% else %}—{% endif %}</dd></div>
+        {% set meeting_href = link.meeting_join_url or (link.meeting_location if link.meeting_location and (link.meeting_location.startswith('http://') or link.meeting_location.startswith('https://')) else none) %}
+        {% if meeting_href %}
+        <div class="ad-kv-span"><dt>Meeting link</dt><dd><a href="{{ meeting_href }}" target="_blank" rel="noopener">{{ meeting_href }}</a></dd></div>
+        {% elif link.meeting_location %}
+        <div><dt>Meeting</dt><dd>{{ link.meeting_location }}</dd></div>
+        {% endif %}
+      </dl>
+    </article>
+
+    {% if book_ok %}
+    <article class="ad-card">
+      <h2 class="ad-card-title">Consultation attendance</h2>
+      <p class="muted small">
+        Showed / no-show for KPI tracking.
+        {% if link.consultation_show_recorded_at %}
+        <span class="pay-meta-line">Last recorded {{ format_datetime(link.consultation_show_recorded_at) }}</span>
+        {% endif %}
+      </p>
+      <form method="post" action="/assessments/{{ link.id }}/consultation-show" class="journey-settings-form">
+        <div class="form-grid">
+          <label class="field">
+            <span>Outcome</span>
+            <select name="consultation_show_status">
+              <option value="not_recorded" {% if link.consultation_show_status.value == 'not_recorded' %}selected{% endif %}>Not recorded</option>
+              <option value="showed" {% if link.consultation_show_status.value == 'showed' %}selected{% endif %}>Showed</option>
+              <option value="no_show" {% if link.consultation_show_status.value == 'no_show' %}selected{% endif %}>No-show</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-actions" style="margin-top:0.75rem;">
+          <button type="submit" class="btn btn-primary btn-small">Save attendance</button>
+        </div>
+      </form>
+    </article>
+    {% else %}
+    <article class="ad-card">
+      <p class="muted">Payment and checkout appear on the <button type="button" class="ad-linkish" data-ad-goto="payment">Payment</button> tab after booking is confirmed.</p>
+    </article>
+    {% endif %}
+
+  </section>
+
+  {# ——— PAYMENT: Stripe-only offer + clear receipt ——— #}
+  {% set paid = link.purchase_outcome.value == 'purchased' %}
+  {% set offered = link.checkout_offered_at is not none and link.checkout_offer_amount is not none %}
+  <section class="ad-panel{% if initial_tab == 'payment' %} is-active{% endif %}" id="ad-panel-payment" role="tabpanel" data-ad-panel="payment"{% if initial_tab != 'payment' %} hidden{% endif %}>
+    {% if not book_ok %}
+    <article class="ad-card">
+      <h2 class="ad-card-title">Payment</h2>
+      <p class="muted">Checkout opens after a confirmed booking. Confirm the meeting on the Booking tab first.</p>
+    </article>
+    {% else %}
+
+    <article class="ad-card pay-summary {% if paid %}pay-summary--paid{% elif offered %}pay-summary--awaiting{% endif %}">
+      <header class="pay-summary-head">
+        <div>
+          <h2 class="ad-card-title">Payment</h2>
+          <p class="muted small">Stripe is the source of truth. Amounts below are not edited by hand.</p>
+        </div>
+        {% if paid %}
+        <span class="pay-badge pay-badge--paid">Paid</span>
+        {% elif offered %}
+        <span class="pay-badge pay-badge--awaiting">Awaiting payment</span>
+        {% else %}
+        <span class="pay-badge">Not offered</span>
+        {% endif %}
+      </header>
+
+      <div class="pay-split">
+        <section class="pay-box {% if paid %}pay-box--charged{% endif %}" aria-labelledby="pay-one-time-title">
+          <h3 id="pay-one-time-title" class="pay-box-title">
+            {% if paid %}Charged on Stripe{% else %}Due on Stripe{% endif %}
+          </h3>
+          <p class="pay-box-amount">
+            {% if paid and link.revenue_amount is not none %}
+            {{ format_money(link.revenue_amount, link.revenue_currency) }}
+            {% elif offered and link.checkout_offer_amount is not none %}
+            {{ format_money(link.checkout_offer_amount, link.checkout_offer_currency) }}
+            {% else %}
+            —
+            {% endif %}
+          </p>
+          <p class="pay-box-meta">
+            {% if paid and link.purchased_at %}
+            One-time investment · paid {{ format_datetime(link.purchased_at) }}
+            {% elif offered %}
+            One-time investment · waiting for prospect to pay
+            {% else %}
+            One-time investment · set an offer below
+            {% endif %}
+          </p>
+        </section>
+
+        <section class="pay-box pay-box--planned" aria-labelledby="pay-planned-title">
+          <h3 id="pay-planned-title" class="pay-box-title">Planned monthly</h3>
+          <p class="pay-box-amount pay-box-amount--muted">
+            {% if paid and link.recurring_revenue_amount is not none %}
+            {{ format_money(link.recurring_revenue_amount, link.revenue_currency) }}
+            {% elif offered and link.checkout_offer_recurring_amount is not none %}
+            {{ format_money(link.checkout_offer_recurring_amount, link.checkout_offer_currency) }}
+            {% else %}
+            —
+            {% endif %}
+            {% if (paid and link.recurring_revenue_amount is not none) or (offered and link.checkout_offer_recurring_amount is not none) %}
+            <span class="pay-per">/ month</span>
+            {% endif %}
+          </p>
+          <p class="pay-box-meta">
+            Tracking only — Stripe does not charge this monthly yet.
+          </p>
+        </section>
+      </div>
+
+      <div class="pay-handoff-row">
+        <div class="pay-handoff-copy">
+          <h3 class="pay-box-title">Cepoch handoff</h3>
+          <p class="muted small">
+            Becomes ready after Stripe payment. Mark handed off when delivery takes the client.
+            {% if link.handoff_at %}
+            <span class="pay-meta-line">Last updated {{ format_datetime(link.handoff_at) }}</span>
+            {% endif %}
+          </p>
+        </div>
+        <form method="post" action="/assessments/{{ link.id }}/handoff-status" class="pay-handoff-form">
+          <label class="field pay-handoff-field">
+            <span class="sr-only">Handoff status</span>
+            <select name="handoff_status" aria-label="Handoff status">
+              <option value="not_started" {% if (link.handoff_status or 'not_started') == 'not_started' %}selected{% endif %}>Not started</option>
+              <option value="ready" {% if link.handoff_status == 'ready' %}selected{% endif %}>Ready for Cepoch</option>
+              <option value="handed_off" {% if link.handoff_status == 'handed_off' %}selected{% endif %}>Handed off</option>
+            </select>
+          </label>
+          <button type="submit" class="btn btn-primary btn-small">Save handoff</button>
+        </form>
+      </div>
+    </article>
+
+    {% if not paid %}
+    <article class="ad-card">
+      <h2 class="ad-card-title">Offer checkout</h2>
+      <p class="muted small">
+        After the consult, set amounts and send the prospect their private Stripe link. Only the one-time amount is charged now.
+        {% if offered %}
+        <span class="pay-meta-line">Offer last set {{ format_datetime(link.checkout_offered_at) }}</span>
+        {% endif %}
+      </p>
+      <form method="post" action="/assessments/{{ link.id }}/checkout-offer" class="journey-settings-form">
+        <div class="form-grid">
+          <label class="field">
+            <span>One-time investment (charged now)</span>
+            <input name="checkout_offer_amount" type="number" step="0.01" min="0" required
+              value="{{ link.checkout_offer_amount if link.checkout_offer_amount is not none else '' }}"
+              placeholder="25000.00">
+          </label>
+          <label class="field">
+            <span>Monthly ongoing (optional, not charged yet)</span>
+            <input name="checkout_offer_recurring_amount" type="number" step="0.01" min="0"
+              value="{{ link.checkout_offer_recurring_amount if link.checkout_offer_recurring_amount is not none else '' }}"
+              placeholder="3000.00">
+          </label>
+          <label class="field">
+            <span>Currency</span>
+            <input name="checkout_offer_currency" maxlength="3" value="{{ link.checkout_offer_currency or 'USD' }}">
+          </label>
+        </div>
+        <div class="form-actions pay-offer-actions">
+          <button type="submit" class="btn btn-primary btn-small">
+            {% if offered %}Update offer &amp; get link{% else %}Offer checkout &amp; get link{% endif %}
+          </button>
+        </div>
+      </form>
+    </article>
+    {% endif %}
+
+    {% if checkout_url %}
+    <dialog class="integration-modal" id="modal-checkout-link" aria-labelledby="modal-checkout-link-title"
+      {% if flash == 'checkout_offered' %}data-auto-open="1"{% endif %}>
+      <form method="dialog" class="integration-modal-chrome">
+        <header class="integration-modal-head">
+          <div>
+            <h2 id="modal-checkout-link-title" class="integration-name">Checkout link</h2>
+          </div>
+          <button type="submit" class="integration-modal-close" aria-label="Close">×</button>
+        </header>
+        <p class="muted small">Share this private link with the prospect to complete Stripe payment.</p>
+        <label class="field" style="display:block; margin:1rem 0 0.5rem;">
+          <span>URL</span>
+          <input id="checkout-link-input" type="text" readonly value="{{ checkout_url }}"
+            style="width:100%; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:0.85rem;">
+        </label>
+        <div class="form-actions" style="margin:1rem 0 1.25rem; gap:0.5rem; flex-wrap:wrap;">
+          <button type="button" class="btn btn-primary btn-small" id="checkout-link-copy">Copy link</button>
+          <a class="btn btn-secondary btn-small" href="{{ checkout_url }}" target="_blank" rel="noopener">Open</a>
+          <button type="submit" class="btn btn-secondary btn-small">Close</button>
+        </div>
+        <p class="muted small" id="checkout-link-copy-status" hidden>Copied.</p>
+      </form>
+    </dialog>
+    {% endif %}
+    {% endif %}
+  </section>
+
+  {# ——— QUALIFICATION: primary report deck ——— #}
+  <section class="ad-panel{% if initial_tab == 'qualification' %} is-active{% endif %}" id="ad-panel-qualification" role="tabpanel" data-ad-panel="qualification"{% if initial_tab != 'qualification' %} hidden{% endif %}>
+    <section class="ad-qual-deck ad-qual-deck--{{ qualification_status }}" id="internal-qualification" aria-labelledby="ad-qual-deck-title">
+      <header class="ad-qual-deck-head">
+        <div class="ad-qual-deck-top">
+          <div class="ad-qual-deck-intro">
+            <p class="ad-qual-deck-result">{{ qualification_status_label }}</p>
+            <h2 class="ad-qual-deck-title" id="ad-qual-deck-title">Internal qualification</h2>
+            {% if qt.explanation %}
+            <p class="ad-qual-summary">{{ qt.explanation }}</p>
+            {% set _expl = (qt.explanation or '')|lower %}
+            {% if qualification_status == 'qualified' and 'unqualified' in _expl %}
+            <p class="ad-qual-conflict">Status is Qualified, but the write-up still reads as unqualified — usually a manual override. Use Rerun or set Unqualified if the signals should win.</p>
+            {% elif qualification_status == 'unqualified' and ('assessment qualified' in _expl or 'qualified on' in _expl) and 'unqualified' not in _expl %}
+            <p class="ad-qual-conflict">Status is Unqualified, but the write-up still reads as qualified — check override vs signals.</p>
+            {% endif %}
+            {% endif %}
+            {% if qual_locked %}
+            <p class="ad-qual-locked-note muted small">Locked after a confirmed booking. Reset journey to change status.</p>
+            {% endif %}
+          </div>
+          <div class="ad-qual-deck-actions">
+            {% if profile %}
+            <form class="ad-qual-override" method="post" action="/assessments/{{ link.id }}/qualification" aria-label="Set qualification status">
+              <div class="ad-qual-seg ad-qual-seg--lg ad-qual-seg--on-tint{% if qual_locked %} ad-qual-seg--locked{% endif %}" role="group">
+                <button
+                  type="submit"
+                  name="qualification_status"
+                  value="qualified"
+                  class="ad-qual-seg-btn {% if qualification_status == 'qualified' %}is-on is-qualified{% endif %}"
+                  {% if qual_locked or qualification_status == 'qualified' %}aria-pressed="{{ 'true' if qualification_status == 'qualified' else 'false' }}" disabled{% else %}aria-pressed="false"{% endif %}
+                >Qualified</button>
+                <button
+                  type="submit"
+                  name="qualification_status"
+                  value="pending"
+                  class="ad-qual-seg-btn {% if qualification_status == 'pending' %}is-on is-pending{% endif %}"
+                  {% if qual_locked or qualification_status == 'pending' %}aria-pressed="{{ 'true' if qualification_status == 'pending' else 'false' }}" disabled{% else %}aria-pressed="false"{% endif %}
+                >Pending</button>
+                <button
+                  type="submit"
+                  name="qualification_status"
+                  value="unqualified"
+                  class="ad-qual-seg-btn {% if qualification_status == 'unqualified' %}is-on is-unqualified{% endif %}"
+                  {% if qual_locked or qualification_status == 'unqualified' %}aria-pressed="{{ 'true' if qualification_status == 'unqualified' else 'false' }}" disabled{% else %}aria-pressed="false"{% endif %}
+                >Unqualified</button>
+              </div>
+            </form>
+            {% if not qual_locked %}
+            <form method="post" action="/assessments/{{ link.id }}/qualification/rerun" class="ad-qual-rerun">
+              <button type="submit" class="btn btn-secondary btn-small">Rerun</button>
+            </form>
+            {% endif %}
+            {% else %}
+            <span class="status-badge status-{{ qualification_status }}">{{ qualification_status_label }}</span>
+            {% endif %}
+          </div>
+        </div>
+      </header>
+
+      <div class="ad-qual-body">
+        <h3 class="ad-group-title">Structured breakdown</h3>
+        <div class="ad-qual-signal-list" role="list">
+          {% for row in qt.breakdown %}
+          <article class="ad-qual-signal ad-qual-signal--{{ row.tone or 'neutral' }}" role="listitem">
+            <header class="ad-qual-signal-head">
+              <span class="ad-qual-signal-label">{{ row.label }}</span>
+              <span class="ad-qual-signal-value">{{ format_admin_value(row.value) }}</span>
+            </header>
+            {% if row.reason %}
+            <p class="ad-qual-signal-reason">{{ row.reason }}</p>
+            {% endif %}
+            {% if row.evidence_quote %}
+            <blockquote class="ad-qual-signal-quote">“{{ row.evidence_quote }}”</blockquote>
+            {% endif %}
+          </article>
+          {% else %}
+          <p class="ad-qual-empty muted">No dimension breakdown yet. Complete the assessment to generate ICP signals.</p>
+          {% endfor %}
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <section class="ad-panel{% if initial_tab == 'replies' %} is-active{% endif %}" id="ad-panel-replies" role="tabpanel" data-ad-panel="replies"{% if initial_tab != 'replies' %} hidden{% endif %}>
+    <article class="ad-card reply-thread">
+      <div class="ad-card-head">
+        <h2 class="ad-card-title">Email replies</h2>
+        {% if reply_conversation %}
+        <span class="status-badge status-{{ reply_conversation.status.value }}">{{ reply_conversation.status.value|replace('_', ' ')|title }}</span>
+        {% endif %}
+      </div>
+      <p class="muted small">Instantly email thread for this prospect. AI inbound reply behavior is configured under Engine &amp; AI.</p>
+      {% if reply_conversation and reply_conversation.messages %}
+      <div class="reply-thread-messages">
+        {% for message in reply_conversation.messages %}
+        <article class="reply-bubble reply-bubble--{{ message.direction.value }}">
+          <header class="reply-bubble-head">
+            <span class="reply-bubble-role">
+              {% if message.direction.value == 'inbound' %}Prospect{% else %}FreedomBot{% endif %}
+            </span>
+            <span class="muted small">{{ format_datetime(message.created_at) }}</span>
+          </header>
+          {% if message.subject %}<p class="reply-bubble-subject">{{ message.subject }}</p>{% endif %}
+          <div class="reply-bubble-body">{{ message.body }}</div>
+        </article>
+        {% endfor %}
+      </div>
+      {% elif reply_conversation %}
+      <p class="muted">Reply conversation exists, but no messages are stored yet.</p>
+      {% else %}
+      <p class="muted">No email replies yet for this prospect.</p>
+      {% endif %}
+    </article>
+  </section>
+</div>
+
+<script>
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll("[data-ad-tab]"));
+  var panels = Array.prototype.slice.call(document.querySelectorAll("[data-ad-panel]"));
+  if (!tabs.length || !panels.length) return;
+  var allowed = ["overview", "assessment", "booking", "payment", "qualification", "replies"];
+
+  function activate(id) {
+    if (allowed.indexOf(id) < 0) id = "overview";
+    tabs.forEach(function (tab) {
+      var on = tab.getAttribute("data-ad-tab") === id;
+      tab.classList.toggle("is-active", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    panels.forEach(function (panel) {
+      var on = panel.getAttribute("data-ad-panel") === id;
+      panel.classList.toggle("is-active", on);
+      if (on) panel.removeAttribute("hidden");
+      else panel.setAttribute("hidden", "");
+    });
+    try {
+      if (history.replaceState) {
+        var url = new URL(window.location.href);
+        if (id === "overview") {
+          url.searchParams.delete("tab");
+          url.hash = "";
+        } else {
+          url.searchParams.set("tab", id);
+          url.hash = id;
+        }
+        history.replaceState({}, "", url.pathname + url.search + url.hash);
+      }
+    } catch (err) {}
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      activate(tab.getAttribute("data-ad-tab"));
+    });
+  });
+
+  document.querySelectorAll("[data-ad-goto]").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var target = el.getAttribute("data-ad-goto");
+      if (target) activate(target);
+    });
+  });
+
+  var initial = {{ (initial_tab or 'overview')|tojson }};
+  var fromHash = (window.location.hash || "").replace(/^#/, "");
+  if (fromHash === "journey") fromHash = "booking";
+  if (fromHash === "internal-qualification") fromHash = "qualification";
+  if (allowed.indexOf(fromHash) >= 0) initial = fromHash;
+  activate(initial);
+})();
+
+(function () {
+  var dialog = document.getElementById("modal-checkout-link");
+  if (!dialog || typeof dialog.showModal !== "function") return;
+
+  function openCheckoutModal() {
+    dialog.showModal();
+    var input = document.getElementById("checkout-link-input");
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  }
+
+  document.querySelectorAll("[data-open-checkout-link-modal]").forEach(function (btn) {
+    btn.addEventListener("click", function (event) {
+      event.preventDefault();
+      openCheckoutModal();
+    });
+  });
+
+  dialog.addEventListener("click", function (event) {
+    if (event.target === dialog) dialog.close();
+  });
+
+  var copyBtn = document.getElementById("checkout-link-copy");
+  var statusEl = document.getElementById("checkout-link-copy-status");
+  var input = document.getElementById("checkout-link-input");
+  if (copyBtn && input) {
+    copyBtn.addEventListener("click", function () {
+      var text = input.value || "";
+      function done() {
+        if (statusEl) {
+          statusEl.hidden = false;
+          window.setTimeout(function () { statusEl.hidden = true; }, 2000);
+        }
+        copyBtn.textContent = "Copied";
+        window.setTimeout(function () { copyBtn.textContent = "Copy link"; }, 1600);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () {
+          input.select();
+          try { document.execCommand("copy"); done(); } catch (err) {}
+        });
+      } else {
+        input.select();
+        try { document.execCommand("copy"); done(); } catch (err) {}
+      }
+    });
+  }
+
+  if (dialog.getAttribute("data-auto-open") === "1") {
+    openCheckoutModal();
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Booking Confirmed · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body assessment-body--booked">
+{% from "assessment/_public_brand.html" import lockup %}
+<div class="assessment-shell booked-shell">
+    <div class="booked-brand">{{ lockup() }}</div>
+    {% if payload.confirming %}
+    <section class="booked-summary booked-summary--pending">
+      <p class="booked-eyebrow">Almost there</p>
+      <h1 class="booked-title">Confirming your booking…</h1>
+      <p class="booked-lede">Hang tight — we’re confirming your meeting with Jeanne. This page will update automatically.</p>
+    </section>
+    <script>
+      (function () {
+        var tries = 0;
+        function tick() {
+          tries += 1;
+          fetch("/api/assessment/{{ token }}/booking")
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data && data.confirmed) {
+                window.location.reload();
+                return;
+              }
+              if (tries < 40) window.setTimeout(tick, 1500);
+            })
+            .catch(function () {
+              if (tries < 40) window.setTimeout(tick, 2000);
+            });
+        }
+        window.setTimeout(tick, 1200);
+      })();
+    </script>
+    {% else %}
+    <section class="booked-summary" aria-label="Booking confirmation">
+      <p class="booked-eyebrow booked-eyebrow--success">✓ Booking confirmed</p>
+      <h1 class="booked-title">You’re booked with Jeanne</h1>
+      <p class="booked-lede">Jeanne will have your assessment context before the meeting.</p>
+
+      {% if payload.meeting_date_label or payload.meeting_time_label %}
+      <dl class="booked-summary-meta">
+        {% if payload.meeting_date_label %}
+        <div class="booked-summary-meta__row">
+          <dt class="visually-hidden">Date</dt>
+          <dd>{{ payload.meeting_date_label }}</dd>
+        </div>
+        {% endif %}
+        {% if payload.meeting_time_label %}
+        <div class="booked-summary-meta__row">
+          <dt class="visually-hidden">Time</dt>
+          <dd>{{ payload.meeting_time_label }}</dd>
+        </div>
+        {% endif %}
+        <div class="booked-summary-meta__row">
+          <dt class="visually-hidden">Meeting type</dt>
+          <dd>{{ payload.meeting_type_label or 'Video meeting' }}</dd>
+        </div>
+      </dl>
+      {% endif %}
+
+      {% if payload.meeting_join_url %}
+      <div class="booked-summary-actions">
+        <a class="btn btn-primary booked-join-btn" href="{{ payload.meeting_join_url }}" target="_blank" rel="noopener">Join Meeting</a>
+      </div>
+      {% endif %}
+    </section>
+
+    <div class="booked-main{% if not (payload.welcome_enabled and payload.welcome_video_url) %} booked-main--prep-only{% endif %}">
+      {% if payload.welcome_enabled and payload.welcome_video_url %}
+      <section class="booked-card booked-card--welcome" aria-labelledby="booked-welcome-heading">
+        <h2 id="booked-welcome-heading" class="booked-card__title">{{ payload.welcome_heading }}</h2>
+        {% if payload.welcome_intro %}
+        <p class="booked-card__copy">{{ payload.welcome_intro }}</p>
+        {% endif %}
+        <div class="booked-video{% if payload.welcome_poster_url %} has-poster{% endif %}" data-booked-video>
+          {% if payload.welcome_embed_kind == 'iframe' %}
+          <iframe class="booked-video__frame" title="Welcome from Jeanne" src="{{ payload.welcome_video_url }}" allowfullscreen loading="lazy"></iframe>
+          {% else %}
+          <video
+            class="booked-video__player"
+            controls
+            playsinline
+            preload="metadata"
+            {% if payload.welcome_poster_url %}poster="{{ payload.welcome_poster_url }}"{% endif %}
+            src="{{ payload.welcome_video_url }}"
+            data-booked-video-el
+          >
+            Your browser does not support embedded video.
+          </video>
+          <button type="button" class="booked-video__idle" data-booked-video-play aria-label="Play welcome video">
+            {% if payload.welcome_poster_url %}
+            <img class="booked-video__poster" src="{{ payload.welcome_poster_url }}" alt="">
+            {% endif %}
+            <span class="booked-video__idle-shade" aria-hidden="true"></span>
+            <span class="booked-video__idle-copy">
+              <span class="booked-video__play" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="28" height="28" focusable="false"><path fill="currentColor" d="M8 5.5v13l11-6.5L8 5.5z"/></svg>
+              </span>
+              <span class="booked-video__idle-label">Welcome from Jeanne</span>
+            </span>
+          </button>
+          {% endif %}
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="booked-card booked-card--prep" aria-labelledby="booked-prep-heading">
+        <h2 id="booked-prep-heading" class="booked-card__title">{{ payload.prep_heading }}</h2>
+        {% if payload.prep_blocks %}
+        <div class="booked-prep-body">
+          {% for block in payload.prep_blocks %}
+            {% if block.type == 'bullets' %}
+            <ul class="booked-prep-list">
+              {% for item in block['items'] %}
+              <li>{{ item }}</li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p>{{ block.text }}</p>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% elif payload.prep_body %}
+        <p class="booked-card__copy">{{ payload.prep_body }}</p>
+        {% endif %}
+        {% if payload.prep_note and payload.show_youtube %}
+        <p class="booked-card__note">{{ payload.prep_note }}</p>
+        {% endif %}
+      </section>
+    </div>
+
+    {% if payload.show_youtube and payload.youtube_links %}
+    <section class="booked-card booked-card--youtube" aria-labelledby="booked-youtube-heading">
+      <h2 id="booked-youtube-heading" class="booked-card__title">Get to know Jeanne</h2>
+      <p class="booked-card__copy">Optional — a few selected videos before your conversation.</p>
+      <ul class="booked-youtube-grid">
+        {% for item in payload.youtube_links %}
+        <li class="booked-youtube-card">
+          <div class="booked-youtube-card__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="18" height="18" focusable="false"><path fill="currentColor" d="M23.5 6.2a3 3 0 0 0-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 0 0 .5 6.2 31.5 31.5 0 0 0 0 12a31.5 31.5 0 0 0 .5 5.8 3 3 0 0 0 2.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 0 0 2.1-2.1A31.5 31.5 0 0 0 24 12a31.5 31.5 0 0 0-.5-5.8zM9.8 15.5v-7l6.2 3.5-6.2 3.5z"/></svg>
+          </div>
+          <div class="booked-youtube-card__body">
+            <strong class="booked-youtube-card__title">{{ item.title }}</strong>
+            <a class="booked-youtube-card__link" href="{{ item.youtube_url }}" target="_blank" rel="noopener">Open video →</a>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+    <script>
+      (function () {
+        document.querySelectorAll("[data-booked-video]").forEach(function (wrap) {
+          var video = wrap.querySelector("[data-booked-video-el]");
+          var playBtn = wrap.querySelector("[data-booked-video-play]");
+          if (!video || !playBtn) return;
+          function hideIdle() { wrap.classList.add("is-playing"); }
+          function showIdle() {
+            if (video.paused && video.currentTime < 0.2) wrap.classList.remove("is-playing");
+          }
+          playBtn.addEventListener("click", function () {
+            hideIdle();
+            var p = video.play();
+            if (p && typeof p.catch === "function") p.catch(function () { wrap.classList.remove("is-playing"); });
+          });
+          video.addEventListener("play", hideIdle);
+          video.addEventListener("pause", showIdle);
+          video.addEventListener("ended", function () {
+            wrap.classList.remove("is-playing");
+            try { video.currentTime = 0; } catch (e) {}
+          });
+        });
+      })();
+    </script>
+    {% endif %}
+  </div>
+</body>
+</html>

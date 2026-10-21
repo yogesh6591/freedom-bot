@@ -1,0 +1,987 @@
+{% extends "base.html" %}
+{% block title %}Engine & AI{% endblock %}
+{% block kicker %}<div class="topbar-kicker">Settings</div>{% endblock %}
+{% block page_heading %}Engine &amp; AI{% endblock %}
+{% block page_lede %}
+<p class="page-lede">Discovery sources and automation, who to target, how the AI writes and qualifies, and how the engine learns.</p>
+{% endblock %}
+{% block flash %}
+  {% if flash == 'saved' %}<div class="flash">AI settings saved.</div>{% endif %}
+  {% if flash == 'icp_saved' %}<div class="flash">Targeting rules saved.</div>{% endif %}
+  {% if flash == 'icp_validation_error' %}<div class="flash flash-error">Please check the targeting values. Revenue ranges must be valid and scoring weights must total 100%.</div>{% endif %}
+  {% if flash == 'icp_json_error' %}<div class="flash flash-error">The saved targeting configuration could not be read. Please review the values and try again.</div>{% endif %}
+  {% if flash == 'discovery_ran' %}<div class="flash">Discovery run finished{% if discovery_summary %}: {{ discovery_summary }}{% endif %}.</div>{% endif %}
+  {% if flash == 'discovery_disabled' %}<div class="flash flash-error">Prospect discovery is not available until its production provider is configured.</div>{% endif %}
+  {% if flash == 'activation_saved' %}<div class="flash">Outreach settings saved.</div>{% endif %}
+  {% if flash == 'activation_ran' %}<div class="flash">Outreach run finished{% if activation_summary %}: {{ activation_summary }}{% endif %}.</div>{% endif %}
+  {% if flash == 'activation_preview' %}<div class="flash">Outreach preview ready. No messages were sent.</div>{% endif %}
+  {% if flash == 'activation_error' %}<div class="flash flash-error">Outreach could not run{% if activation_summary %}: {{ activation_summary }}{% endif %}</div>{% endif %}
+  {% if flash == 'automation_saved' %}<div class="flash">Discovery and outreach automation settings saved.</div>{% endif %}
+  {% if flash == 'automation_campaign_required' %}<div class="flash flash-error">Select a ready outbound campaign before enabling outreach.</div>{% endif %}
+  {% if flash == 'automation_campaign_not_ready' %}<div class="flash flash-error">The selected outbound campaign must be Ready and synced to Instantly before outreach can be enabled.</div>{% endif %}
+  {% if flash == 'automation_discovery' %}<div class="flash">Discovery run finished{% if discovery_summary %}: {{ discovery_summary }}{% endif %}.</div>{% endif %}
+  {% if flash == 'automation_activation' %}<div class="flash">Outreach operation finished{% if activation_summary %}: {{ activation_summary }}{% endif %}.</div>{% endif %}
+  {% if flash == 'learning_saved' %}<div class="flash">Learning settings saved.</div>{% endif %}
+  {% if flash == 'sources_saved' %}<div class="flash">Discovery sources saved.</div>{% endif %}
+  {% if flash == 'learning_recomputed' %}<div class="flash">Learning metrics recalculated{% if activation_summary %}: {{ activation_summary }}{% endif %}.</div>{% endif %}
+
+{% endblock %}
+{% block content %}
+{% set assessment_unconfigured = settings.assessment_system_prompt == 'Assessment system prompt has not been configured.' %}
+
+
+{% set geo = icp.geography or {} %}
+{% set revenue = icp.revenue or {} %}
+{% set weights = icp.score_weights or {} %}
+{% set ops = automation_ops or {} %}
+{% set cap = ops.capacity or {} %}
+{% set last_d = ops.last_discovery or {} %}
+{% set last_a = ops.last_activation or {} %}
+{% set provider = ops.provider or {} %}
+
+<nav class="tabbar settings-tabs" role="tablist" aria-label="Settings sections" data-settings-tabs hidden>
+  <button type="button" role="tab" data-pane="engine" hidden>Discovery engine</button>
+  <button type="button" role="tab" data-pane="targeting" hidden>Targeting (ICP)</button>
+  <button type="button" role="tab" data-pane="learning" hidden>Learning</button>
+</nav>
+<div class="settings-pane" data-pane-body="engine" id="pane-engine" hidden>
+<section class="ai-editor acq-overview">
+  <header class="ai-editor-head acq-section-head">
+    <div class="ai-editor-title-block">
+      <span class="acq-eyebrow">Autonomous acquisition</span>
+      <h2 class="section-title">Acquisition overview</h2>
+      <p class="ai-editor-hint">FreedomBot discovers and researches prospects independently from outbound outreach. Use the controls below to manage targeting, schedules, outreach capacity, and learning.</p>
+    </div>
+  </header>
+  <div class="ai-editor-body acq-overview-body">
+    <div class="acq-status-grid">
+      <div class="acq-status-card">
+        <span class="acq-status-label">Prospect discovery</span>
+        <div class="acq-status-value">
+          <span class="acq-dot {% if icp.discovery_enabled %}is-on{% endif %}"></span>
+          {{ 'Running' if icp.discovery_enabled else 'Paused' }}
+        </div>
+        <span class="acq-status-meta">{{ icp.discovery_cycle_limit or 5 }} prospects per run</span>
+      </div>
+      <div class="acq-status-card">
+        <span class="acq-status-label">Outbound outreach</span>
+        <div class="acq-status-value">
+          <span class="acq-dot {% if icp.autonomous_outreach_enabled %}is-on{% endif %}"></span>
+          {{ 'Running' if icp.autonomous_outreach_enabled else 'Paused' }}
+        </div>
+        <span class="acq-status-meta">{{ icp.activation_batch_limit or 5 }} prospects per run</span>
+      </div>
+      <div class="acq-status-card">
+        <span class="acq-status-label">Capacity</span>
+        <div class="acq-status-value">{{ (cap.state or 'normal')|replace('_', ' ')|title }}</div>
+        <span class="acq-status-meta">{{ cap.upcoming_meetings if cap.upcoming_meetings is defined else 0 }} upcoming meetings</span>
+      </div>
+      <div class="acq-status-card">
+        <span class="acq-status-label">Discovery service</span>
+        <div class="acq-status-value">
+          <span class="acq-dot {% if provider.configured and ops.provider_safe_for_production %}is-on{% endif %}"></span>
+          {% if provider.configured and ops.provider_safe_for_production %}Ready{% else %}Needs setup{% endif %}
+        </div>
+        <span class="acq-status-meta">Public-source discovery</span>
+      </div>
+    </div>
+
+    <div class="acq-run-history">
+      <div><span>Last discovery</span><strong id="acq-last-discovery">{{ last_d.completed_at or last_d.started_at or 'Not run yet' }}</strong></div>
+      <div><span>Last outreach</span><strong>{{ last_a.completed_at or last_a.started_at or 'Not run yet' }}</strong></div>
+    </div>
+
+    {% if not provider.configured or not ops.provider_safe_for_production %}
+    <div class="acq-notice acq-notice--warning">
+      <strong>Discovery is not ready for production.</strong>
+      Configure a permitted live public-search provider before enabling scheduled discovery.
+    </div>
+    {% endif %}
+
+    <details class="acq-technical-details">
+      <summary>Technical status</summary>
+      <div class="acq-technical-grid">
+        <div><span>Discovery provider</span><strong>{{ provider.provider_name or 'Not configured' }}</strong></div>
+        <div><span>Provider status</span><strong>{% if provider.configured %}Connected{% else %}Not configured{% endif %}</strong></div>
+        <div><span>Capacity mode</span><strong>{{ (cap.mode or 'auto')|title }}</strong></div>
+      </div>
+    </details>
+  </div>
+</section>
+<section class="ai-editor" id="discovery-sources">
+  <header class="ai-editor-head">
+    <div class="ai-editor-title-block">
+      <span class="acq-eyebrow">Where companies come from</span>
+      <h2 class="section-title">Discovery sources</h2>
+      <p class="ai-editor-hint">OpenAI agentic web search loads your full Admin ICP, researches the public web iteratively, and returns evidence-backed prospects. Exa and NPPES stay in the codebase but are disabled.</p>
+    </div>
+    <a class="btn btn-secondary btn-small" href="/acquisition/live">Watch Live Trace</a>
+  </header>
+  {% if discovery_sources %}
+  <form method="post" action="/settings/ai/discovery-sources">
+    <div class="source-grid">
+      {% for s in discovery_sources %}
+      <div class="source-card {% if s.enabled and s.configured %}is-on{% endif %}">
+        <div class="source-card-head">
+          <span class="source-card-name"><span class="source-tag src-{{ s.name }}"><i></i></span>{{ s.label }}</span>
+          {% if s.name == 'openai_agentic' %}
+          <span class="status-badge status-connected">Primary</span>
+          {% else %}
+          <label class="toggle" title="Enable {{ s.label }}">
+            <input type="checkbox" name="{{ s.name }}_enabled" value="true" {% if s.enabled %}checked{% endif %}>
+            <span class="toggle-track"></span>
+          </label>
+          {% endif %}
+        </div>
+        {% if s.name == 'openai_agentic' %}
+        <p>Responses API + agentic web search using your Admin targeting, scoring, and previous discovery coverage. Prospects per run is set under Automation.</p>
+        {% else %}
+        <p>Legacy source — not used in the active discovery path.</p>
+        <div class="source-fetch">
+          <label class="field" style="flex-direction: row; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <span>Fetch limit per run</span>
+            <input type="number"
+              min="1"
+              max="20"
+              name="{{ s.name }}_fetch_limit"
+              value="{{ s.fetch_limit }}">
+          </label>
+        </div>
+        {% endif %}
+        {% if s.configured %}<span class="status-badge status-connected">Ready</span>{% else %}<span class="status-badge status-pending" title="{{ s.message }}">Needs setup</span>{% endif %}
+        {% if not s.configured %}<p class="small" style="color: var(--warn)">{{ s.message }}</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="acq-save-row"><button class="btn btn-primary" type="submit">Save sources</button></div>
+  </form>
+  {% else %}
+  <div class="notice notice-warn">Discovery provider is <code>{{ discovery_provider_name }}</code>. Set <code>DISCOVERY_PROVIDER=openai_agentic</code> (or <code>multi</code>) for agentic OpenAI discovery.</div>
+  {% endif %}
+</section>
+<section class="ai-editor ai-editor--automation">
+  <header class="ai-editor-head acq-section-head">
+    <div class="ai-editor-title-block">
+      <span class="acq-eyebrow">Always-on operations</span>
+      <h2 class="section-title">Discovery &amp; outreach automation</h2>
+      <p class="ai-editor-hint">Discovery and outreach are independent. Pausing outreach does not stop FreedomBot from continuing to discover, research, score, and store prospects.</p>
+    </div>
+  </header>
+  <form method="post" action="/settings/ai/automation-config" class="ai-settings">
+    <div class="ai-editor-body acq-form-stack">
+      <div class="acq-automation-grid">
+        <div class="acq-setting-group acq-setting-group--automation">
+          <div class="acq-automation-title">
+            <div>
+              <span class="acq-step-kicker">1</span>
+              <h3>Prospect discovery</h3>
+              <p>Find, research, score, and save new prospects automatically.</p>
+            </div>
+            <label class="ai-switch" for="automation_discovery_enabled">
+              <span class="ai-switch-label">Enabled</span>
+              <span class="toggle">
+                <input type="checkbox" id="automation_discovery_enabled" name="discovery_enabled" value="true" {% if icp.discovery_enabled %}checked{% endif %}>
+                <span class="toggle-track" aria-hidden="true"></span>
+              </span>
+            </label>
+          </div>
+          <div class="acq-field-grid acq-field-grid--2">
+            <label class="acq-field">
+              <span class="acq-field-label">Prospects per run</span>
+              <input type="number" name="discovery_cycle_limit" min="1" max="25" value="{{ icp.discovery_cycle_limit or 5 }}" required>
+              <small>Target number of usable researched and scored prospects per discovery run. Excluded or invalid candidates do not count toward this limit.</small>
+            </label>
+            <label class="acq-field">
+              <span class="acq-field-label">Run discovery</span>
+              {% set d_interval = icp.discovery_interval_minutes or 1440 %}
+              <select name="discovery_interval_minutes">
+                <option value="60" {% if d_interval == 60 %}selected{% endif %}>Every hour</option>
+                <option value="360" {% if d_interval == 360 %}selected{% endif %}>Every 6 hours</option>
+                <option value="720" {% if d_interval == 720 %}selected{% endif %}>Every 12 hours</option>
+                <option value="1440" {% if d_interval == 1440 %}selected{% endif %}>Every day</option>
+                <option value="2880" {% if d_interval == 2880 %}selected{% endif %}>Every 2 days</option>
+                <option value="10080" {% if d_interval == 10080 %}selected{% endif %}>Every week</option>
+                {% if d_interval not in [60, 360, 720, 1440, 2880, 10080] %}<option value="{{ d_interval }}" selected>Custom — every {{ d_interval }} minutes</option>{% endif %}
+              </select>
+              <small>Daily is the recommended production default.</small>
+            </label>
+          </div>
+        </div>
+
+        <div class="acq-setting-group acq-setting-group--automation">
+          <div class="acq-automation-title">
+            <div>
+              <span class="acq-step-kicker">2</span>
+              <h3>Outbound outreach</h3>
+              <p>Send eligible prioritized prospects into the approved outbound email campaign.</p>
+            </div>
+            <label class="ai-switch" for="autonomous_outreach_enabled">
+              <span class="ai-switch-label">Enabled</span>
+              <span class="toggle">
+                <input type="checkbox" id="autonomous_outreach_enabled" name="autonomous_outreach_enabled" value="true" {% if icp.autonomous_outreach_enabled %}checked{% endif %}>
+                <span class="toggle-track" aria-hidden="true"></span>
+              </span>
+            </label>
+          </div>
+          <div class="acq-field-grid acq-field-grid--2">
+            <label class="acq-field acq-field--full">
+              <span class="acq-field-label">Outbound campaign</span>
+              <select name="autonomous_campaign_id">
+                <option value="">Select a campaign</option>
+                {% for c in campaigns or [] %}
+                {% set campaign_ready = c.status.value == 'ready' and c.instantly_campaign_id and c.instantly_sync_status and c.instantly_sync_status.value == 'synced' %}
+                <option value="{{ c.id }}" {% if icp.autonomous_campaign_id == c.id|string %}selected{% endif %} {% if not campaign_ready %}disabled{% endif %}>
+                  {{ c.name }}{% if campaign_ready %} — Ready{% else %} — Not ready for outreach{% endif %}
+                </option>
+                {% endfor %}
+              </select>
+              <small>Only prospects that pass readiness, duplicate, opt-out, conversation, and capacity checks are eligible.</small>
+            </label>
+            <label class="acq-field">
+              <span class="acq-field-label">Prospects per outreach run</span>
+              <input type="number" name="activation_batch_limit" min="1" max="25" value="{{ icp.activation_batch_limit or 5 }}" required>
+            </label>
+            <label class="acq-field">
+              <span class="acq-field-label">Run outreach</span>
+              {% set a_interval = icp.activation_interval_minutes or 1440 %}
+              <select name="activation_interval_minutes">
+                <option value="60" {% if a_interval == 60 %}selected{% endif %}>Every hour</option>
+                <option value="360" {% if a_interval == 360 %}selected{% endif %}>Every 6 hours</option>
+                <option value="720" {% if a_interval == 720 %}selected{% endif %}>Every 12 hours</option>
+                <option value="1440" {% if a_interval == 1440 %}selected{% endif %}>Every day</option>
+                <option value="2880" {% if a_interval == 2880 %}selected{% endif %}>Every 2 days</option>
+                <option value="10080" {% if a_interval == 10080 %}selected{% endif %}>Every week</option>
+                {% if a_interval not in [60, 360, 720, 1440, 2880, 10080] %}<option value="{{ a_interval }}" selected>Custom — every {{ a_interval }} minutes</option>{% endif %}
+              </select>
+            </label>
+          </div>
+          {% if icp.autonomous_outreach_enabled and not icp.autonomous_campaign_id %}
+          <div class="acq-notice acq-notice--warning"><strong>Outreach needs a campaign.</strong> Select an approved campaign before relying on scheduled outreach.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="acq-setting-group">
+        <div class="acq-setting-group-head">
+          <div>
+            <h3>Capacity protection</h3>
+            <p>When the meeting pipeline gets busy, FreedomBot can reduce or pause new outreach while discovery keeps running.</p>
+          </div>
+        </div>
+        <div class="acq-field-grid acq-field-grid--4">
+          <label class="acq-field">
+            <span class="acq-field-label">Capacity mode</span>
+            <select name="capacity_mode">
+              <option value="auto" {% if (icp.capacity_mode or 'auto') == 'auto' %}selected{% endif %}>Automatic</option>
+              <option value="normal" {% if icp.capacity_mode == 'normal' %}selected{% endif %}>Normal</option>
+              <option value="reduced" {% if icp.capacity_mode == 'reduced' %}selected{% endif %}>Reduced</option>
+              <option value="paused" {% if icp.capacity_mode == 'paused' %}selected{% endif %}>Paused</option>
+            </select>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Reduce outreach at</span>
+            <div class="acq-input-suffix"><input type="number" name="capacity_upcoming_meetings_reduced_at" min="0" value="{{ icp.capacity_upcoming_meetings_reduced_at or 5 }}" required><span>meetings</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Pause outreach at</span>
+            <div class="acq-input-suffix"><input type="number" name="capacity_upcoming_meetings_paused_at" min="0" value="{{ icp.capacity_upcoming_meetings_paused_at or 10 }}" required><span>meetings</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Reduced outreach limit</span>
+            <div class="acq-input-suffix"><input type="number" name="capacity_reduced_activation_limit" min="0" max="25" value="{{ icp.capacity_reduced_activation_limit or 2 }}" required><span>prospects</span></div>
+          </label>
+        </div>
+      </div>
+
+      <div class="form-actions acq-save-row">
+        <button class="btn btn-primary" type="submit">Save automation settings</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="ai-editor-body acq-operations-wrap">
+    <div class="acq-setting-group" id="acq-discovery-cost">
+      <div class="acq-setting-group-head">
+        <div>
+          <h3>Discovery Cost &amp; Usage</h3>
+          <p>Validate the next run locally (zero OpenAI calls), then review estimated and actual spend. Pricing last updated: {{ discovery_pricing_updated or '—' }}.</p>
+        </div>
+      </div>
+      <div class="acq-ops-grid" style="display:grid;gap:0.5rem;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));margin-bottom:0.75rem;">
+        <div class="lt-kv"><span>Model</span><code>{{ discovery_model or '—' }}</code></div>
+        <div class="lt-kv"><span>Reasoning</span><code>{{ discovery_reasoning or '—' }}</code></div>
+        <div class="lt-kv"><span>Requested / run</span><code>{{ icp.discovery_cycle_limit or 5 }}</code></div>
+        <div class="lt-kv"><span>Input $/1M</span><code>{{ discovery_price_input or '—' }}</code></div>
+        <div class="lt-kv"><span>Output $/1M</span><code>{{ discovery_price_output or '—' }}</code></div>
+        <div class="lt-kv"><span>Web search / call</span><code>{{ discovery_price_web or '—' }}</code></div>
+      </div>
+      <p class="muted small">Use <strong>Validate &amp; Estimate Run</strong> before spending. Actual usage is recorded after each Responses API call (including failed paid calls).</p>
+    </div>
+    <details class="acq-technical-details acq-operations">
+      <summary>Manual operations</summary>
+      <p>These controls are not required for normal operation. Use them only when an administrator intentionally wants to run a cycle immediately.</p>
+      <div class="acq-operation-actions">
+        <button class="btn btn-secondary" type="button" id="acq-discovery-preflight-btn">Validate &amp; Estimate Run</button>
+        <form method="post" action="/settings/ai/automation/discovery-now" id="acq-discovery-now-form">
+          <button class="btn btn-secondary" type="submit" id="acq-discovery-now-btn">Run discovery now</button>
+        </form>
+        <form method="post" action="/settings/ai/automation/activation-dry-run">
+          <button class="btn btn-secondary" type="submit">Preview next outreach batch</button>
+        </form>
+        <form method="post" action="/settings/ai/automation/activation-now" onsubmit="return confirm('Send the next eligible prospects into the live outbound campaign now?');">
+          <button class="btn btn-secondary" type="submit">Run outreach now</button>
+        </form>
+      </div>
+      <div id="acq-discovery-preflight" class="acq-discovery-result" hidden></div>
+      <div
+        id="acq-discovery-progress"
+        class="acq-discovery-progress"
+        hidden
+        aria-live="polite"
+        data-baseline-id="{{ last_d.id or '' }}"
+      >
+        <div class="acq-discovery-progress-inner">
+          <span class="acq-discovery-spinner" aria-hidden="true"></span>
+          <div class="acq-discovery-progress-copy">
+            <strong id="acq-discovery-progress-title">Finding prospects…</strong>
+            <span id="acq-discovery-progress-detail" class="muted small">This usually takes a minute or two. Stay on this page.</span>
+          </div>
+        </div>
+      </div>
+      <div id="acq-discovery-result" class="acq-discovery-result" hidden></div>
+    </details>
+  </div>
+</section>
+</div>
+<div class="settings-pane" data-pane-body="targeting" id="pane-targeting" hidden>
+<section class="ai-editor ai-editor--icp">
+  <header class="ai-editor-head acq-section-head">
+    <div class="ai-editor-title-block">
+      <span class="acq-eyebrow">Who FreedomBot should find</span>
+      <h2 class="section-title">Ideal customer profile</h2>
+      <p class="ai-editor-hint">These rules control which companies FreedomBot discovers and how prospects are scored. Changes apply without a code deployment.</p>
+    </div>
+  </header>
+  <form method="post" action="/settings/ai/icp" class="ai-settings" id="icp-settings-form">
+    <div class="ai-editor-body acq-form-stack">
+      <div class="acq-setting-group">
+        <div class="acq-setting-group-head">
+          <div>
+            <h3>Geography</h3>
+            <p>V1 discovery is intentionally United States nationwide. Optional state priorities can add search focus without restricting the nationwide engine.</p>
+          </div>
+        </div>
+        <input type="hidden" name="geography_country" value="United States">
+        <input type="hidden" name="geography_nationwide" value="true">
+        <div class="acq-geography-summary">
+          <div>
+            <span class="acq-status-label">Active market</span>
+            <strong>United States · Nationwide</strong>
+          </div>
+          <span class="status-badge status-approved">V1</span>
+        </div>
+        <label class="acq-field acq-field--geo-priority">
+          <span class="acq-field-label">Priority states <small>Optional</small></span>
+          <textarea name="geography_states" rows="4" placeholder="Example: Texas&#10;California&#10;New York">{{ (geo.states or []) | join('\n') }}</textarea>
+          <small>These states receive extra search attention. FreedomBot still discovers prospects across the United States.</small>
+        </label>
+      </div>
+
+      <div class="acq-setting-group">
+        <div class="acq-setting-group-head">
+          <div>
+            <h3>Company size</h3>
+            <p>Revenue values are in millions of USD.</p>
+          </div>
+        </div>
+        <div class="acq-field-grid acq-field-grid--4">
+          <label class="acq-field">
+            <span class="acq-field-label">Minimum revenue</span>
+            <div class="acq-input-prefix"><span>$</span><input type="number" name="revenue_primary_min" min="0" step="0.5" value="{{ revenue.primary_min_millions or 5 }}" required><span>M</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Maximum revenue</span>
+            <div class="acq-input-prefix"><span>$</span><input type="number" name="revenue_primary_max" min="0" step="0.5" value="{{ revenue.primary_max_millions or 50 }}" required><span>M</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Sweet spot from</span>
+            <div class="acq-input-prefix"><span>$</span><input type="number" name="revenue_sweet_min" min="0" step="0.5" value="{{ revenue.sweet_spot_min_millions or 7 }}" required><span>M</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Sweet spot to</span>
+            <div class="acq-input-prefix"><span>$</span><input type="number" name="revenue_sweet_max" min="0" step="0.5" value="{{ revenue.sweet_spot_max_millions or 30 }}" required><span>M</span></div>
+          </label>
+        </div>
+        <label class="acq-check-row">
+          <input type="checkbox" name="revenue_allow_strong_fit" value="true" {% if revenue.allow_strong_fit_outside_band is not defined or revenue.allow_strong_fit_outside_band %}checked{% endif %}>
+          <span><strong>Allow exceptional fits outside the revenue band</strong><small>A strong match can still proceed when public revenue estimates are incomplete or slightly outside the target range.</small></span>
+        </label>
+      </div>
+
+      <div class="acq-setting-group">
+        <div class="acq-setting-group-head">
+          <div>
+            <h3>Targeting rules</h3>
+            <p>Enter one item per line. These are business rules, not developer settings.</p>
+          </div>
+        </div>
+        <div class="acq-field-grid acq-field-grid--2">
+          <label class="acq-field">
+            <span class="acq-field-label">Decision-maker titles</span>
+            <textarea name="buyer_titles" rows="7" required>{{ icp.buyer_titles | join('\n') }}</textarea>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Fit signals</span>
+            <textarea name="fit_themes" rows="7" required>{{ icp.fit_themes | join('\n') }}</textarea>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Priority business types</span>
+            <textarea name="priority_categories" rows="7" required>{{ icp.priority_categories | join('\n') }}</textarea>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Excluded business types</span>
+            <textarea name="excluded_categories" rows="7" required>{{ icp.excluded_categories | join('\n') }}</textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="acq-setting-group">
+        <div class="acq-setting-group-head">
+          <div>
+            <h3>Scoring</h3>
+            <p>Weights must total 100%. Thresholds control when a prospect can become ready for outreach.</p>
+          </div>
+        </div>
+        <div class="acq-field-grid acq-field-grid--3">
+          <label class="acq-field">
+            <span class="acq-field-label">Fit weight</span>
+            <div class="acq-input-prefix"><input type="number" name="score_fit_percent" min="0" max="100" step="1" value="{{ ((weights.fit or 0.45) * 100) | round | int }}" required><span>%</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Timing / need weight</span>
+            <div class="acq-input-prefix"><input type="number" name="score_timing_percent" min="0" max="100" step="1" value="{{ ((weights.timing or 0.25) * 100) | round | int }}" required><span>%</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Reachability weight</span>
+            <div class="acq-input-prefix"><input type="number" name="score_reachability_percent" min="0" max="100" step="1" value="{{ ((weights.reachability or 0.30) * 100) | round | int }}" required><span>%</span></div>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Minimum priority for outreach</span>
+            <input type="number" name="ready_priority_min" min="0" max="100" step="1" value="{{ weights.ready_for_outreach_min_priority or 55 }}" required>
+          </label>
+          <label class="acq-field">
+            <span class="acq-field-label">Minimum reachability</span>
+            <input type="number" name="ready_reachability_min" min="0" max="100" step="1" value="{{ weights.ready_for_outreach_min_reachability or 40 }}" required>
+          </label>
+        </div>
+      </div>
+
+      <label class="acq-field">
+        <span class="acq-field-label">Internal notes <small>Optional</small></span>
+        <textarea name="notes" rows="3" placeholder="Add context for future administrators">{{ icp.notes or '' }}</textarea>
+      </label>
+
+      <div class="form-actions acq-save-row">
+        <button class="btn btn-primary" type="submit">Save targeting rules</button>
+      </div>
+    </div>
+  </form>
+</section>
+</div>
+<div class="settings-pane" data-pane-body="prompts" id="pane-prompts">
+<form method="post" action="/settings/ai" class="ai-settings" id="ai-settings-form">
+  {% if not provider_configured %}
+  <div class="flash flash-error ai-settings-alert">OpenAI is not connected. Add your API key under Integrations → OpenAI. AI inbound replies stay off; replies go to needs review.</div>
+  {% endif %}
+
+  <section class="ai-editor ai-editor--outreach">
+    <header class="ai-editor-head">
+      <div class="ai-editor-title-block">
+        <h2 class="section-title">Inbound email reply (AI)</h2>
+        <p class="ai-editor-hint">When a prospect replies to your Instantly email, the AI uses this prompt to draft and send a response. Not used for first outbound outreach (that’s Instantly campaigns). Placeholders: {first_name}, {name}, {company}, {assessment_url}, {sender_name}.</p>
+      </div>
+      <label class="ai-switch" for="auto_reply_enabled" title="Allow AI to answer inbound Instantly email replies">
+        <span class="ai-switch-label">AI reply</span>
+        <span class="toggle">
+          <input
+            type="checkbox"
+            id="auto_reply_enabled"
+            name="auto_reply_enabled"
+            value="true"
+            {% if settings.auto_reply_enabled %}checked{% endif %}
+          >
+          <span class="toggle-track" aria-hidden="true"></span>
+        </span>
+      </label>
+    </header>
+    <div class="ai-editor-body">
+      <textarea
+        id="system_prompt"
+        name="system_prompt"
+        class="ai-prompt"
+        rows="8"
+        required
+        spellcheck="true"
+        data-count-target="outreach-count"
+        aria-label="Inbound email reply prompt"
+      >{{ settings.system_prompt }}</textarea>
+      <div class="ai-editor-foot">
+        <span class="ai-char-count"><span id="outreach-count">0</span> characters</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="ai-editor ai-editor--assessment">
+    <header class="ai-editor-head">
+      <div class="ai-editor-title-block">
+        <h2 class="section-title">Assessment System Prompt</h2>
+        <p class="ai-editor-hint">Loaded on every assessment AI turn. Changes apply to future turns without redeploying.</p>
+      </div>
+      {% if assessment_unconfigured %}
+      <span class="status-badge status-pending">Not configured</span>
+      {% else %}
+      <span class="status-badge status-approved">Ready</span>
+      {% endif %}
+    </header>
+    <div class="ai-editor-body">
+      <textarea
+        id="assessment_system_prompt"
+        name="assessment_system_prompt"
+        class="ai-prompt ai-prompt--assessment"
+        rows="12"
+        required
+        spellcheck="true"
+        data-count-target="assessment-count"
+        aria-label="Assessment System Prompt"
+        {% if assessment_unconfigured %}placeholder="Paste the approved assessment system prompt here…"{% endif %}
+      >{{ settings.assessment_system_prompt }}</textarea>
+      <div class="ai-editor-foot">
+        <span class="ai-char-count"><span id="assessment-count">0</span> characters</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="ai-editor ai-editor--qualification">
+    <header class="ai-editor-head">
+      <div class="ai-editor-title-block">
+        <h2 class="section-title">Qualification System Prompt</h2>
+        <p class="ai-editor-hint">Used when assessment completes and when you Rerun qualification on an assessment. Same model as assessment chat (gpt-5.6-luna).</p>
+      </div>
+      <span class="status-badge status-approved">Ready</span>
+    </header>
+    <div class="ai-editor-body">
+      <textarea
+        id="qualification_system_prompt"
+        name="qualification_system_prompt"
+        class="ai-prompt ai-prompt--qualification"
+        rows="14"
+        required
+        spellcheck="true"
+        data-count-target="qualification-count"
+        aria-label="Qualification System Prompt"
+      >{{ settings.qualification_system_prompt }}</textarea>
+      <div class="ai-editor-foot">
+        <span class="ai-char-count"><span id="qualification-count">0</span> characters</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions ai-settings-actions">
+    <button class="btn btn-primary" type="submit">Save AI Settings</button>
+  </div>
+</form>
+</div>
+<div class="settings-pane" data-pane-body="learning" id="pane-learning">
+<section class="ai-editor ai-editor--learning">
+  <header class="ai-editor-head acq-section-head">
+    <div class="ai-editor-title-block">
+      <span class="acq-eyebrow">Learning</span>
+      <h2 class="section-title">AI Outcome Learning</h2>
+      <p class="ai-editor-hint">Uses real qualification, meeting, purchase, and revenue outcomes from comparable contacted prospects. Fit, Timing, Reachability, and Base Priority stay unchanged.</p>
+    </div>
+  </header>
+  <div class="ai-editor-body acq-form-stack">
+    {% set ls = learning_summary or {} %}
+    {% set totals = ls.totals or {} %}
+    {% set min_n = icp.learning_min_sample_size or 25 %}
+    {% set contacted_n = totals.contacted or 0 %}
+    <div class="acq-metric-grid">
+      <div><span>Contacted</span><strong>{{ contacted_n }}</strong></div>
+      <div><span>Qualified</span><strong>{{ totals.qualified or 0 }}</strong></div>
+      <div><span>Booked</span><strong>{{ totals.booked or 0 }}</strong></div>
+      <div><span>Purchased</span><strong>{{ totals.purchased or 0 }}</strong></div>
+      <div><span>Revenue</span><strong>${{ '%.0f'|format(totals.revenue or 0) }}</strong></div>
+    </div>
+
+    <form method="post" action="/settings/ai/learning-config" class="ai-settings acq-learning-form">
+      <label class="acq-switch-row" for="learning_enabled">
+        <div>
+          <strong>AI-assisted outcome prioritization</strong>
+          <span>Recommend a small, bounded adjustment to effective priority after enough outcomes exist. Opens and clicks are ignored.</span>
+        </div>
+        <span class="toggle">
+          <input type="checkbox" id="learning_enabled" name="learning_enabled" value="true" {% if icp.learning_enabled %}checked{% endif %}>
+          <span class="toggle-track" aria-hidden="true"></span>
+        </span>
+      </label>
+      <div class="acq-field-grid acq-field-grid--2">
+        <label class="acq-field">
+          <span class="acq-field-label">Start learning after</span>
+          <div class="acq-input-suffix"><input type="number" name="learning_min_sample_size" min="1" max="500" value="{{ min_n }}" required><span>prospects</span></div>
+          <small>Contacted prospects required before adjustments begin.</small>
+        </label>
+        <label class="acq-field">
+          <span class="acq-field-label">Maximum AI adjustment</span>
+          <div class="acq-input-prefix"><span>±</span><input type="number" name="learning_max_adjustment" min="0" max="25" step="0.5" value="{{ icp.learning_max_adjustment or 8 }}" required><span>pts</span></div>
+          <small>Hard cap on how far AI may move effective priority.</small>
+        </label>
+      </div>
+      <label class="acq-field">
+        <span class="acq-field-label">Outcome prioritization model</span>
+        <select name="learning_model">
+          {% set selected_model = icp.learning_model or ls.learning_model or 'gpt-4o-mini' %}
+          <option value="gpt-4o-mini" {% if selected_model == 'gpt-4o-mini' %}selected{% endif %}>gpt-4o-mini</option>
+          <option value="gpt-4o" {% if selected_model == 'gpt-4o' %}selected{% endif %}>gpt-4o</option>
+          <option value="gpt-4.1-mini" {% if selected_model == 'gpt-4.1-mini' %}selected{% endif %}>gpt-4.1-mini</option>
+          <option value="gpt-4.1" {% if selected_model == 'gpt-4.1' %}selected{% endif %}>gpt-4.1</option>
+        </select>
+        <small>Used only for outcome-based priority adjustments.</small>
+      </label>
+      {% if ls.status_message %}
+      <div class="acq-notice"><strong>{{ ls.status_message }}</strong></div>
+      {% elif (contacted_n|int) < (min_n|int) %}
+      <div class="acq-notice"><strong>Collecting outcome data — {{ contacted_n }} of {{ min_n }} contacted prospects available.</strong></div>
+      {% endif %}
+      <div class="form-actions acq-save-row">
+        <button class="btn btn-primary" type="submit">Save learning settings</button>
+      </div>
+    </form>
+
+    <details class="acq-technical-details">
+      <summary>Learning maintenance</summary>
+      <p>Recalculate deterministic outcome metrics and refresh a bounded batch of AI adjustments. This does not call OpenAI from ordinary page views.</p>
+      {% if ls.learning_profile_version is defined %}
+      <p class="muted small">Learning profile version: {{ ls.learning_profile_version }}</p>
+      {% endif %}
+      <form method="post" action="/settings/ai/learning-recompute">
+        <button class="btn btn-secondary" type="submit">Recalculate learning</button>
+      </form>
+    </details>
+  </div>
+</section>
+</div>
+<script>
+(function () {
+  document.querySelectorAll(".ai-prompt[data-count-target]").forEach((el) => {
+    const target = document.getElementById(el.getAttribute("data-count-target"));
+    const update = () => {
+      if (target) target.textContent = String(el.value.length);
+    };
+    el.addEventListener("input", update);
+    update();
+  });
+
+  const form = document.getElementById("acq-discovery-now-form");
+  const btn = document.getElementById("acq-discovery-now-btn");
+  const preflightBtn = document.getElementById("acq-discovery-preflight-btn");
+  const preflightEl = document.getElementById("acq-discovery-preflight");
+  const progress = document.getElementById("acq-discovery-progress");
+  const progressTitle = document.getElementById("acq-discovery-progress-title");
+  const progressDetail = document.getElementById("acq-discovery-progress-detail");
+  const resultEl = document.getElementById("acq-discovery-result");
+  const lastDiscoveryEl = document.getElementById("acq-last-discovery");
+  const opsDetails = progress && progress.closest("details");
+  if (!form || !btn || !progress || !progressTitle || !progressDetail || !resultEl) return;
+
+  if (preflightBtn && preflightEl) {
+    preflightBtn.addEventListener("click", async () => {
+      preflightBtn.disabled = true;
+      preflightEl.hidden = false;
+      preflightEl.textContent = "Validating locally (no OpenAI calls)…";
+      try {
+        const resp = await fetch("/settings/ai/automation/discovery-preflight", {
+          headers: { Accept: "application/json" },
+        });
+        const data = await resp.json();
+        const checks = (data.checks || []).map((c) =>
+          (c.ok ? "✓ " : "✗ ") + c.name + (c.detail ? " — " + c.detail : "")
+        ).join("\n");
+        const est = data.estimate || {};
+        const tok = data.tokens || {};
+        const plan = data.plan || {};
+        preflightEl.innerHTML =
+          "<pre class=\"small\" style=\"white-space:pre-wrap\">" +
+          "PRE-FLIGHT\n" + checks + "\n\n" +
+          "Safe to run: " + (data.safe_to_run ? "YES" : "NO") + "\n" +
+          ((data.problems || []).length
+            ? "\nBLOCKED / PROBLEMS\n" + (data.problems || []).map((p) => "- " + p).join("\n") + "\n"
+            : "") +
+          "\nDiscovery Cost Estimate\n" +
+          "Model: " + (data.model || "—") + "\n" +
+          "Reasoning: " + (data.reasoning_effort || "—") + "\n" +
+          "Requested final outreach-ready: " + (data.requested_count || "—") + "\n" +
+          "Base API requests: " + (plan.base_calls || "—") +
+          " (1 Stage A + " + (plan.slot_base || "—") + " slots)\n" +
+          "Configured maximum requests: " + (plan.configured_max_calls || "—") + "\n" +
+          "  (budget may stop earlier than this theoretical max)\n" +
+          "Stage A prompt tokens: " + (tok.stage_a_prompt_tokens || "—") +
+          " (" + (tok.stage_a_encoding || "") + ", conf=" + (tok.stage_a_confidence || "") + ")\n" +
+          "One slot prompt tokens: " + (tok.slot_prompt_tokens || "—") + "\n" +
+          "Base prompt tokens total: " + (tok.base_prompt_tokens_total || "—") + "\n" +
+          (tok.tiktoken_note ? "Tokenizer note: " + tok.tiktoken_note + "\n" : "") +
+          "Estimated token cost: $" + (est.token_cost_usd != null ? Number(est.token_cost_usd).toFixed(4) : "unavailable") + "\n" +
+          "Estimated web-search cost: $" + (est.web_search_cost_usd != null ? Number(est.web_search_cost_usd).toFixed(4) : "unavailable") + "\n" +
+          "Estimated base run: $" + (est.base_run_usd != null ? Number(est.base_run_usd).toFixed(4) : "unavailable") + "\n" +
+          "Possible higher-cost run: $" + (est.base_run_usd != null ? Number(est.base_run_usd).toFixed(4) : "—") +
+          " – $" + (est.possible_high_usd != null ? Number(est.possible_high_usd).toFixed(4) : "—") + "\n" +
+          "Configured estimated-cost budget: $" +
+            (((data.budgets || {}).max_estimated_run_cost_usd != null)
+              ? Number(data.budgets.max_estimated_run_cost_usd).toFixed(2)
+              : "none") + "\n" +
+          "Configured actual-cost budget: $" +
+            (((data.budgets || {}).max_actual_run_cost_usd != null)
+              ? Number(data.budgets.max_actual_run_cost_usd).toFixed(2)
+              : "none") + "\n" +
+          "Pricing updated: " + (est.pricing_last_updated || "—") + "\n" +
+          (est.message ? est.message + "\n" : "") +
+          "This is an estimate. Actual usage is recorded after the run." +
+          "</pre>";
+        btn.disabled = !data.safe_to_run;
+      } catch (err) {
+        preflightEl.textContent = "Preflight failed: " + (err && err.message ? err.message : String(err));
+      } finally {
+        preflightBtn.disabled = false;
+      }
+    });
+  }
+
+  const MESSAGES = [
+    "Finding matching companies…",
+    "Checking public signals…",
+    "Researching likely fits…",
+    "Scoring reachability…",
+    "Looking for decision-makers…",
+    "Saving strong prospects…",
+  ];
+  const TERMINAL = new Set(["completed", "failed", "skipped"]);
+  let messageTimer = null;
+  let pollTimer = null;
+  let messageIndex = 0;
+  let baselineId = progress.getAttribute("data-baseline-id") || "";
+  let activeRunId = "";
+  let waitingSince = 0;
+
+  function csrfToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.content) return meta.content;
+    const input = form.querySelector('input[name="csrf_token"]');
+    return input ? input.value : "";
+  }
+
+  function setBusy(busy) {
+    btn.disabled = busy;
+    btn.textContent = busy ? "Discovery running…" : "Run discovery now";
+    progress.hidden = !busy;
+    if (busy) {
+      resultEl.hidden = true;
+      resultEl.textContent = "";
+      resultEl.classList.remove("is-error", "is-success");
+      if (opsDetails) opsDetails.open = true;
+    }
+  }
+
+  function rotateMessage() {
+    progressTitle.textContent = MESSAGES[messageIndex % MESSAGES.length];
+    messageIndex += 1;
+  }
+
+  function startMessageRotation() {
+    messageIndex = 0;
+    rotateMessage();
+    progressDetail.textContent = "This usually takes a minute or two. Stay on this page.";
+    if (messageTimer) clearInterval(messageTimer);
+    messageTimer = setInterval(rotateMessage, 3200);
+  }
+
+  function stopMessageRotation() {
+    if (messageTimer) {
+      clearInterval(messageTimer);
+      messageTimer = null;
+    }
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function summarizeRun(run) {
+    if (!run) return "Discovery finished.";
+    const status = run.status || "unknown";
+    if (status === "completed") {
+      const found = Number(run.discovered_count || 0);
+      const scored = Number(run.scored_count || 0);
+      if (found > 0) {
+        return `Found ${found} prospect${found === 1 ? "" : "s"}` +
+          (scored ? ` · ${scored} scored` : "") + ".";
+      }
+      return "Discovery finished — no new prospects this run.";
+    }
+    if (status === "skipped") {
+      const reason = (run.error_summary || "skipped").replace(/_/g, " ");
+      return `Discovery skipped (${reason}).`;
+    }
+    if (status === "failed") {
+      return `Discovery failed${run.error_summary ? ": " + run.error_summary : "."}`;
+    }
+    return `Discovery status: ${status}.`;
+  }
+
+  function showResult(run, ok) {
+    stopMessageRotation();
+    setBusy(false);
+    activeRunId = "";
+    resultEl.hidden = false;
+    resultEl.classList.toggle("is-error", !ok);
+    resultEl.classList.toggle("is-success", ok);
+    resultEl.textContent = summarizeRun(run);
+    if (lastDiscoveryEl && run) {
+      lastDiscoveryEl.textContent = run.completed_at || run.started_at || lastDiscoveryEl.textContent;
+    }
+    if (run && run.id) {
+      progress.setAttribute("data-baseline-id", run.id);
+      baselineId = run.id;
+    }
+  }
+
+  function runIsFinished(run) {
+    if (!run || !TERMINAL.has(run.status)) return false;
+    if (activeRunId && run.id === activeRunId) return true;
+    if (run.id && run.id !== baselineId) return true;
+    return false;
+  }
+
+  async function pollStatus() {
+    try {
+      const res = await fetch("/settings/ai/automation/discovery-status", {
+        headers: { Accept: "application/json" },
+        credentials: "same-origin",
+      });
+      if (!res.ok) throw new Error("status " + res.status);
+      const data = await res.json();
+      const run = data.last_discovery || null;
+      if (run && run.status === "running" && run.id) {
+        activeRunId = run.id;
+        progressDetail.textContent = "Discovery is in progress…";
+        pollTimer = setTimeout(pollStatus, 2000);
+        return;
+      }
+      if (runIsFinished(run)) {
+        showResult(run, run.status === "completed");
+        return;
+      }
+      if (Date.now() - waitingSince < 12 * 60 * 1000) {
+        pollTimer = setTimeout(pollStatus, 2000);
+        return;
+      }
+      showResult(
+        {
+          status: "failed",
+          error_summary: "Timed out waiting for discovery to finish. Refresh and check Last discovery.",
+        },
+        false
+      );
+    } catch (err) {
+      if (Date.now() - waitingSince < 12 * 60 * 1000) {
+        pollTimer = setTimeout(pollStatus, 3000);
+        return;
+      }
+      showResult({ status: "failed", error_summary: "Could not check discovery status." }, false);
+    }
+  }
+
+  function beginTracking(nextBaselineId, alreadyRunningId) {
+    baselineId = nextBaselineId || "";
+    activeRunId = alreadyRunningId || "";
+    waitingSince = Date.now();
+    setBusy(true);
+    startMessageRotation();
+    pollStatus();
+  }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (btn.disabled) return;
+    const token = csrfToken();
+    const body = new URLSearchParams();
+    if (token) body.set("csrf_token", token);
+    beginTracking(progress.getAttribute("data-baseline-id") || "");
+    try {
+      const res = await fetch(form.action, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        credentials: "same-origin",
+        body: body.toString(),
+      });
+      if (!res.ok) throw new Error("start failed");
+      const data = await res.json();
+      if (!data.ok && !data.started) throw new Error("start rejected");
+    } catch (err) {
+      stopMessageRotation();
+      setBusy(false);
+      resultEl.hidden = false;
+      resultEl.classList.add("is-error");
+      resultEl.classList.remove("is-success");
+      resultEl.textContent = "Could not start discovery. Try again.";
+    }
+  });
+
+  const params = new URLSearchParams(window.location.search);
+  const serverStatus = "{{ last_d.status or '' }}";
+  const serverId = "{{ last_d.id or '' }}";
+  const flashStarted = params.get("flash") === "automation_discovery_started";
+  const baselineFromQuery = params.get("baseline") || "";
+  if (flashStarted || serverStatus === "running") {
+    const resumeBaseline =
+      baselineFromQuery ||
+      (serverStatus === "running" ? serverId : progress.getAttribute("data-baseline-id") || "");
+    const resumeActive = serverStatus === "running" ? serverId : "";
+    beginTracking(resumeBaseline, resumeActive);
+    if (flashStarted && window.history && window.history.replaceState) {
+      params.delete("flash");
+      params.delete("baseline");
+      const next = params.toString();
+      window.history.replaceState({}, "", window.location.pathname + (next ? "?" + next : ""));
+    }
+  }
+})();
+</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var nav = document.querySelector("[data-settings-tabs]");
+  if (!nav) return;
+  var btns = Array.from(nav.querySelectorAll("[data-pane]"));
+  var panes = Array.from(document.querySelectorAll("[data-pane-body]"));
+  var flash = {{ (flash or '')|tojson }};
+  var byFlash = {
+    icp_saved: "targeting", icp_validation_error: "targeting", icp_json_error: "targeting",
+    saved: "prompts", learning_saved: "learning", learning_recomputed: "learning"
+  };
+  function show(name, push) {
+    if (!panes.some(function (p) { return p.dataset.paneBody === name; })) name = "prompts";
+    btns.forEach(function (b) { var on = b.dataset.pane === name; b.classList.toggle("is-active", on); b.setAttribute("aria-selected", on ? "true" : "false"); });
+    panes.forEach(function (p) { p.classList.toggle("is-active", p.dataset.paneBody === name); });
+    if (push) history.replaceState(null, "", "#" + name);
+  }
+  btns.forEach(function (b) { b.addEventListener("click", function () { show(b.dataset.pane, true); }); });
+  var hash = (location.hash || "").replace("#", "");
+  if (hash === "engine" || hash === "targeting") hash = "prompts";
+  show(byFlash[flash] || hash || "prompts", false);
+})();
+</script>
+{% endblock %}

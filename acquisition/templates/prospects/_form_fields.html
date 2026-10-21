@@ -1,0 +1,43 @@
+<div class="form-grid">
+  <label class="field">
+    <span>Company <em>*</em></span>
+    <input required name="company" value="{{ form_data.company }}" maxlength="255">
+  </label>
+  <label class="field">
+    <span>Website</span>
+    <input type="url" name="website" value="{{ form_data.website }}" placeholder="https://example.com" maxlength="512">
+  </label>
+  <label class="field">
+    <span>LinkedIn URL</span>
+    <input type="url" name="linkedin_url" value="{{ form_data.linkedin_url }}" placeholder="https://linkedin.com/in/..." maxlength="512">
+  </label>
+  <label class="field">
+    <span>Executive Name <em>*</em></span>
+    <input required name="executive_name" value="{{ form_data.executive_name }}" maxlength="255">
+  </label>
+  <label class="field">
+    <span>Executive Title</span>
+    <input name="executive_title" value="{{ form_data.executive_title }}" maxlength="255">
+  </label>
+  <label class="field">
+    <span>Email <em>*</em></span>
+    <input required type="email" name="email" value="{{ form_data.email }}" maxlength="255">
+  </label>
+  <label class="field">
+    <span>Revenue Band</span>
+    <input name="revenue_band" value="{{ form_data.revenue_band }}" placeholder="e.g. $10–25M ($3–5M / $5–10M / $10–25M / $25–50M / $50M+)" maxlength="100">
+  </label>
+  <label class="field">
+    <span>Headcount Band</span>
+    <input name="headcount_band" value="{{ form_data.headcount_band }}" placeholder="e.g. 50–200" maxlength="100">
+  </label>
+  <label class="field">
+    <span>Source</span>
+    <input name="source" value="{{ form_data.source }}" placeholder="e.g. manual, referral, partner" maxlength="100">
+  </label>
+  <input type="hidden" name="approval_status" value="{{ form_data.approval_status if mode == 'edit' else 'pending' }}">
+  <label class="field full">
+    <span>Fit Note</span>
+    <textarea name="fit_note" rows="4" placeholder="Why this prospect is a fit">{{ form_data.fit_note }}</textarea>
+  </label>
+</div>

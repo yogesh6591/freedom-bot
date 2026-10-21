@@ -20,7 +20,7 @@ from bizos.rbac.registry import TOOL_SPECS, assert_no_generic_tools
 
 def load_all_tools() -> None:
     """Import every tool module so the effect registry is fully populated."""
-    from bizos.tools import admin, approvals, calendar, crm, domains, email, memory, support, youtube  # noqa: F401
+    from app.assistant import assistant  # noqa: F401  (all company tools register themselves on import)
 
 
 def verify_registry() -> dict[str, list[str]]:

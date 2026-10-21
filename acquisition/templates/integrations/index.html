@@ -1,0 +1,618 @@
+{% extends "base.html" %}
+
+{% block title %}Integrations{% endblock %}
+{% block page_heading %}Integrations{% endblock %}
+
+{% block page_lede %}
+<p class="page-lede">Connect Instantly, OpenAI, Cal.com, and Stripe.</p>
+{% endblock %}
+
+{% block flash %}
+  {% if flash == 'connected' %}<div class="flash">Instantly connection saved.</div>
+  {% elif flash == 'updated' %}<div class="flash">Instantly settings updated.</div>
+  {% elif flash == 'save_error' %}<div class="flash flash-error">Could not save Instantly settings. Provide a valid API key.</div>
+  {% elif flash == 'instantly_deleted' %}<div class="flash">Instantly credentials revoked.</div>
+  {% elif flash == 'openai_connected' %}<div class="flash">OpenAI API key saved.</div>
+  {% elif flash == 'openai_updated' %}<div class="flash">OpenAI settings updated.</div>
+  {% elif flash == 'openai_save_error' %}<div class="flash flash-error">Could not save OpenAI settings. Provide a valid API key.</div>
+  {% elif flash == 'openai_deleted' %}<div class="flash">OpenAI credentials revoked.</div>
+  {% elif flash == 'calcom_connected' %}<div class="flash">Cal.com API key saved.</div>
+  {% elif flash == 'calcom_updated' %}<div class="flash">Cal.com settings saved.</div>
+  {% elif flash == 'calcom_save_error' %}<div class="flash flash-error">Could not save Cal.com API key. Use a key that starts with cal_.</div>
+  {% elif flash == 'calcom_deleted' %}<div class="flash">Cal.com credentials revoked.</div>
+  {% elif flash == 'calcom_error' %}<div class="flash flash-error">Cal.com request failed. Check the API key and try again.</div>
+  {% elif flash == 'stripe_connected' %}<div class="flash">Stripe connection saved.</div>
+  {% elif flash == 'stripe_updated' %}<div class="flash">Stripe settings updated.</div>
+  {% elif flash == 'stripe_save_error' %}<div class="flash flash-error">Could not save Stripe settings. Use a secret key that starts with sk_test_ or sk_live_.</div>
+  {% elif flash == 'stripe_deleted' %}<div class="flash">Stripe credentials revoked. Server env key (if set) still applies.</div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+{% if errors %}
+  <div class="form-errors">
+    <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+<section class="integrations-grid-boxes" aria-label="Available integrations">
+  <article class="integration-card">
+    <div class="integration-box">
+      <img class="integration-mark" src="/static/img/integrations/instantly.svg" alt="" width="36" height="36">
+      <div class="integration-box-body">
+        <div class="integration-box-top">
+          <span class="integration-name">Instantly</span>
+          {% if config and config.api_key_configured %}
+            <span class="status-badge status-approved">Connected</span>
+          {% else %}
+            <span class="status-badge status-draft">Not connected</span>
+          {% endif %}
+        </div>
+        <p class="integration-box-desc">Email campaigns &amp; leads</p>
+      </div>
+    </div>
+    <div class="integration-card-actions">
+      <button type="button" class="integration-card-icon" data-open-modal="modal-instantly" aria-label="Instantly settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      {% if config and config.api_key_configured %}
+      <button
+        type="button"
+        class="integration-card-icon integration-card-icon--danger"
+        data-confirm-revoke
+        data-confirm-title="Revoke Instantly?"
+        data-confirm-body="This removes the saved Instantly API key from this workspace."
+        data-confirm-form="instantly-revoke-form"
+        aria-label="Revoke Instantly credentials"
+        title="Revoke"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
+      {% endif %}
+    </div>
+  </article>
+
+  <article class="integration-card">
+    <div class="integration-box">
+      <img class="integration-mark" src="/static/img/integrations/openai.svg" alt="" width="36" height="36">
+      <div class="integration-box-body">
+        <div class="integration-box-top">
+          <span class="integration-name">OpenAI</span>
+          {% if openai.configured or openai.api_key_set %}
+            <span class="status-badge status-approved">Connected</span>
+          {% else %}
+            <span class="status-badge status-draft">Not connected</span>
+          {% endif %}
+        </div>
+        <p class="integration-box-desc">AI replies &amp; assessments</p>
+      </div>
+    </div>
+    <div class="integration-card-actions">
+      <button type="button" class="integration-card-icon" data-open-modal="modal-openai" aria-label="OpenAI settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      {% if openai.source == 'database' %}
+      <button
+        type="button"
+        class="integration-card-icon integration-card-icon--danger"
+        data-confirm-revoke
+        data-confirm-title="Revoke OpenAI?"
+        data-confirm-body="This removes the saved OpenAI API key from this workspace."
+        data-confirm-form="openai-revoke-form"
+        aria-label="Revoke OpenAI credentials"
+        title="Revoke"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
+      {% endif %}
+    </div>
+  </article>
+
+  <article class="integration-card">
+    <div class="integration-box">
+      <img class="integration-mark" src="/static/img/integrations/calcom.svg" alt="" width="36" height="36">
+      <div class="integration-box-body">
+        <div class="integration-box-top">
+          <span class="integration-name">Cal.com</span>
+          {% if calcom.configured and not calcom_error %}
+            <span class="status-badge status-approved">Connected</span>
+          {% elif calcom.configured %}
+            <span class="status-badge status-pending">Error</span>
+          {% else %}
+            <span class="status-badge status-draft">Not connected</span>
+          {% endif %}
+        </div>
+        <p class="integration-box-desc">Booking calendar</p>
+      </div>
+    </div>
+    <div class="integration-card-actions">
+      <button type="button" class="integration-card-icon" data-open-modal="modal-calcom" aria-label="Cal.com settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      {% if calcom.source == 'database' %}
+      <button
+        type="button"
+        class="integration-card-icon integration-card-icon--danger"
+        data-confirm-revoke
+        data-confirm-title="Revoke Cal.com?"
+        data-confirm-body="This removes the saved Cal.com API key and clears the selected booking event."
+        data-confirm-form="calcom-revoke-form"
+        aria-label="Revoke Cal.com credentials"
+        title="Revoke"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
+      {% endif %}
+    </div>
+  </article>
+
+  <article class="integration-card">
+    <div class="integration-box">
+      <img class="integration-mark" src="/static/img/integrations/stripe.svg" alt="" width="36" height="36">
+      <div class="integration-box-body">
+        <div class="integration-box-top">
+          <span class="integration-name">Stripe</span>
+          {% if stripe.configured and stripe.enabled %}
+            <span class="status-badge status-approved">{% if stripe.source == 'environment' %}Server key{% else %}Connected{% endif %}</span>
+          {% elif stripe.configured %}
+            <span class="status-badge status-pending">Disabled</span>
+          {% else %}
+            <span class="status-badge status-draft">Not connected</span>
+          {% endif %}
+        </div>
+        <p class="integration-box-desc">Checkout payments</p>
+      </div>
+    </div>
+    <div class="integration-card-actions">
+      <button type="button" class="integration-card-icon" data-open-modal="modal-stripe" aria-label="Stripe settings" title="Settings">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      {% if stripe.source == 'database' %}
+      <button
+        type="button"
+        class="integration-card-icon integration-card-icon--danger"
+        data-confirm-revoke
+        data-confirm-title="Revoke Stripe?"
+        data-confirm-body="This removes the saved Stripe key. A server env key, if set, will still apply."
+        data-confirm-form="stripe-revoke-form"
+        aria-label="Revoke Stripe credentials"
+        title="Revoke"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+      </button>
+      {% endif %}
+    </div>
+  </article>
+</section>
+
+<dialog class="integration-confirm" id="integration-confirm" aria-labelledby="integration-confirm-title">
+  <div class="integration-confirm-panel">
+    <header class="integration-confirm-head">
+      <div class="integration-confirm-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+      </div>
+      <div>
+        <h2 id="integration-confirm-title" class="integration-confirm-title">Revoke credentials?</h2>
+        <p id="integration-confirm-body" class="integration-confirm-body">This cannot be undone from here.</p>
+      </div>
+    </header>
+    <div class="integration-confirm-actions">
+      <button type="button" class="btn btn-secondary" data-confirm-cancel>Cancel</button>
+      <button type="button" class="btn btn-danger" data-confirm-ok>Revoke</button>
+    </div>
+  </div>
+</dialog>
+
+{# ——— Instantly ——— #}
+<dialog class="integration-modal" id="modal-instantly" aria-labelledby="modal-instantly-title">
+  <form method="dialog" class="integration-modal-chrome">
+    <header class="integration-modal-head">
+      <img class="integration-mark" src="/static/img/integrations/instantly.svg" alt="" width="36" height="36">
+      <div>
+        <h2 id="modal-instantly-title" class="integration-name">Instantly</h2>
+      </div>
+      <button type="submit" class="integration-modal-close" aria-label="Close">×</button>
+    </header>
+  </form>
+
+  <div class="integration-modal-body">
+    {% if config and config.api_key_configured %}
+    <form id="instantly-revoke-form" method="post" action="/integrations/instantly/delete" hidden></form>
+    {% endif %}
+
+    <form method="post" action="/integrations/instantly" class="prospect-form integration-form" id="instantly-config-form">
+      <div class="form-grid">
+        <label class="field full">
+          <span>Connection name</span>
+          <input name="display_name" value="{{ config.display_name if config else 'Cepoch Development' }}" maxlength="255" required>
+        </label>
+        <div class="field full">
+          <span>API key</span>
+          <div class="credential-field">
+            <input
+              type="password"
+              name="api_key"
+              id="instantly-api-key"
+              value="{{ instantly_api_key }}"
+              autocomplete="off"
+              maxlength="512"
+              {% if not config %}required{% endif %}
+              placeholder="{% if config and config.api_key_configured %}Key saved{% else %}Paste API key{% endif %}"
+            >
+            <button type="button" class="credential-eye" data-secret-target="instantly-api-key" aria-label="Show API key" aria-pressed="false">
+              <svg class="credential-eye-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9.3 3.1-11 7.5C2.7 16.9 7 20 12 20s9.3-3.1 11-7.5C21.3 8.1 17 5 12 5zm0 12.5c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Save</button>
+        <button
+          class="btn btn-secondary"
+          type="button"
+          hx-post="/integrations/instantly/test"
+          hx-include="#instantly-config-form"
+          hx-target="#instantly-status"
+          hx-swap="innerHTML"
+          hx-indicator="#instantly-loading"
+        >Test</button>
+        <span id="instantly-loading" class="htmx-indicator">Checking…</span>
+        {% if config and config.api_key_configured %}
+        <button
+          type="button"
+          class="btn btn-ghost integration-revoke-link"
+          data-confirm-revoke
+          data-confirm-title="Revoke Instantly?"
+          data-confirm-body="This removes the saved Instantly API key from this workspace."
+          data-confirm-form="instantly-revoke-form"
+        >Revoke</button>
+        {% endif %}
+      </div>
+    </form>
+    <div id="instantly-status" class="integration-status-area">
+      {% include "integrations/_instantly_status.html" %}
+    </div>
+  </div>
+</dialog>
+
+{# ——— OpenAI ——— #}
+<dialog class="integration-modal" id="modal-openai" aria-labelledby="modal-openai-title">
+  <form method="dialog" class="integration-modal-chrome">
+    <header class="integration-modal-head">
+      <img class="integration-mark" src="/static/img/integrations/openai.svg" alt="" width="36" height="36">
+      <div>
+        <h2 id="modal-openai-title" class="integration-name">OpenAI</h2>
+      </div>
+      <button type="submit" class="integration-modal-close" aria-label="Close">×</button>
+    </header>
+  </form>
+
+  <div class="integration-modal-body">
+    {% if openai.source == 'database' %}
+    <form id="openai-revoke-form" method="post" action="/integrations/openai/delete" hidden></form>
+    {% endif %}
+
+    <form method="post" action="/integrations/openai" class="prospect-form integration-form" id="openai-config-form">
+      <div class="form-grid">
+        <label class="field full">
+          <span>Model</span>
+          <input name="model" value="{{ openai.model }}" maxlength="128" placeholder="gpt-4o-mini">
+        </label>
+        <div class="field full">
+          <span>API key</span>
+          <div class="credential-field">
+            <input
+              type="password"
+              name="api_key"
+              id="openai-api-key"
+              value="{{ openai.api_key if openai.reveal_secrets else '' }}"
+              autocomplete="off"
+              maxlength="512"
+              {% if not openai.api_key_set %}required{% endif %}
+              placeholder="{% if openai.api_key_set and not openai.reveal_secrets %}Key saved{% else %}sk-…{% endif %}"
+            >
+            {% if openai.reveal_secrets %}
+            <button type="button" class="credential-eye" data-secret-target="openai-api-key" aria-label="Show API key" aria-pressed="false">
+              <svg class="credential-eye-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9.3 3.1-11 7.5C2.7 16.9 7 20 12 20s9.3-3.1 11-7.5C21.3 8.1 17 5 12 5zm0 12.5c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg>
+            </button>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Save</button>
+        <button
+          class="btn btn-secondary"
+          type="button"
+          hx-post="/integrations/openai/test"
+          hx-include="#openai-config-form"
+          hx-target="#openai-status"
+          hx-swap="innerHTML"
+          hx-indicator="#openai-loading"
+        >Test</button>
+        <span id="openai-loading" class="htmx-indicator">Checking…</span>
+        {% if openai.source == 'database' %}
+        <button
+          type="button"
+          class="btn btn-ghost integration-revoke-link"
+          data-confirm-revoke
+          data-confirm-title="Revoke OpenAI?"
+          data-confirm-body="This removes the saved OpenAI API key from this workspace."
+          data-confirm-form="openai-revoke-form"
+        >Revoke</button>
+        {% endif %}
+      </div>
+    </form>
+    <div id="openai-status" class="integration-status-area">
+      {% with configured=openai.api_key_set, checked=False, connected=False, message=None, category='unknown' %}
+        {% include "integrations/_connection_status.html" %}
+      {% endwith %}
+    </div>
+  </div>
+</dialog>
+
+{# ——— Cal.com ——— #}
+<dialog class="integration-modal" id="modal-calcom" aria-labelledby="modal-calcom-title">
+  <form method="dialog" class="integration-modal-chrome">
+    <header class="integration-modal-head">
+      <img class="integration-mark" src="/static/img/integrations/calcom.svg" alt="" width="36" height="36">
+      <div>
+        <h2 id="modal-calcom-title" class="integration-name">Cal.com</h2>
+      </div>
+      <button type="submit" class="integration-modal-close" aria-label="Close">×</button>
+    </header>
+  </form>
+
+  <div class="integration-modal-body">
+    {% if calcom.source == 'database' %}
+    <form id="calcom-revoke-form" method="post" action="/integrations/calcom/delete" hidden></form>
+    {% endif %}
+
+    <form method="post" action="/integrations/calcom" class="prospect-form integration-form" id="calcom-config-form">
+      <div class="form-grid">
+        <div class="field full">
+          <span>API key</span>
+          <div class="credential-field">
+            <input
+              type="password"
+              name="api_key"
+              id="calcom-api-key"
+              value="{{ calcom_api_key }}"
+              autocomplete="off"
+              maxlength="512"
+              {% if not calcom.configured %}required{% endif %}
+              placeholder="{% if calcom.configured %}Key saved{% else %}cal_…{% endif %}"
+            >
+            <button type="button" class="credential-eye" data-secret-target="calcom-api-key" aria-label="Show API key" aria-pressed="false">
+              <svg class="credential-eye-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9.3 3.1-11 7.5C2.7 16.9 7 20 12 20s9.3-3.1 11-7.5C21.3 8.1 17 5 12 5zm0 12.5c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg>
+            </button>
+          </div>
+        </div>
+        {% if calcom_error %}
+        <div class="flash flash-error field full" style="margin:0;">{{ calcom_error }}</div>
+        {% endif %}
+      </div>
+
+      {% if calcom_account %}
+      <p class="calcom-connected-as">
+        {{ calcom_account.name or calcom_account.username }}{% if calcom_account.username %} · @{{ calcom_account.username }}{% endif %}
+      </p>
+      {% endif %}
+
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Save</button>
+        <button
+          class="btn btn-secondary"
+          type="button"
+          hx-post="/integrations/calcom/test"
+          hx-include="#calcom-config-form"
+          hx-target="#calcom-status"
+          hx-swap="innerHTML"
+          hx-indicator="#calcom-loading"
+        >Test</button>
+        <span id="calcom-loading" class="htmx-indicator">Checking…</span>
+        {% if calcom.source == 'database' %}
+        <button
+          type="button"
+          class="btn btn-ghost integration-revoke-link"
+          data-confirm-revoke
+          data-confirm-title="Revoke Cal.com?"
+          data-confirm-body="This removes the saved Cal.com API key and clears the selected booking event."
+          data-confirm-form="calcom-revoke-form"
+        >Revoke</button>
+        {% endif %}
+      </div>
+    </form>
+
+    <div id="calcom-status" class="integration-status-area">
+      {% with configured=calcom_api_key, checked=False, connected=False, message=None, category='unknown' %}
+        {% include "integrations/_connection_status.html" %}
+      {% endwith %}
+    </div>
+  </div>
+</dialog>
+
+{# ——— Stripe ——— #}
+<dialog class="integration-modal" id="modal-stripe" aria-labelledby="modal-stripe-title">
+  <form method="dialog" class="integration-modal-chrome">
+    <header class="integration-modal-head">
+      <img class="integration-mark" src="/static/img/integrations/stripe.svg" alt="" width="36" height="36">
+      <div>
+        <h2 id="modal-stripe-title" class="integration-name">Stripe</h2>
+      </div>
+      <button type="submit" class="integration-modal-close" aria-label="Close">×</button>
+    </header>
+  </form>
+
+  <div class="integration-modal-body">
+    {% if stripe.source == 'database' %}
+    <form id="stripe-revoke-form" method="post" action="/integrations/stripe/delete" hidden></form>
+    {% endif %}
+
+    {% if stripe.source == 'environment' %}
+    <p class="integration-modal-note">Using server key{% if stripe.key_hint %} ({{ stripe.key_hint }}){% endif %}. Paste a key below to override.</p>
+    {% endif %}
+
+    <form method="post" action="/integrations/stripe" class="prospect-form integration-form" id="stripe-config-form">
+      <div class="form-grid">
+        <div class="field full">
+          <span>Secret key</span>
+          <div class="credential-field">
+            <input
+              type="password"
+              name="secret_key"
+              id="stripe-secret-key"
+              value="{{ stripe.secret_key if stripe.reveal_secrets else '' }}"
+              autocomplete="off"
+              maxlength="512"
+              {% if not stripe.secret_key_set %}required{% endif %}
+              placeholder="{% if stripe.secret_key_set and not stripe.reveal_secrets %}Key saved{% else %}sk_test_… or sk_live_…{% endif %}"
+            >
+            {% if stripe.reveal_secrets %}
+            <button type="button" class="credential-eye" data-secret-target="stripe-secret-key" aria-label="Show secret key" aria-pressed="false">
+              <svg class="credential-eye-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 5c-5 0-9.3 3.1-11 7.5C2.7 16.9 7 20 12 20s9.3-3.1 11-7.5C21.3 8.1 17 5 12 5zm0 12.5c-2.8 0-5-2.2-5-5s2.2-5 5-5 5 2.2 5 5-2.2 5-5 5zm0-8a3 3 0 100 6 3 3 0 000-6z"/></svg>
+            </button>
+            {% endif %}
+          </div>
+        </div>
+        <div class="field full">
+          <span>Webhook secret</span>
+          <div class="credential-field">
+            <input
+              type="password"
+              name="webhook_secret"
+              id="stripe-webhook-secret"
+              value="{{ stripe.webhook_secret if stripe.reveal_secrets else '' }}"
+              autocomplete="off"
+              maxlength="512"
+              placeholder="{% if stripe.webhook_secret_set and not stripe.reveal_secrets %}Secret saved{% else %}whsec_…{% endif %}"
+            >
+          </div>
+        </div>
+        <div class="field full">
+          <span>Currency</span>
+          <div class="integration-inline-row">
+            <input
+              class="integration-currency-input"
+              name="currency"
+              value="{{ stripe.currency }}"
+              maxlength="8"
+              placeholder="usd"
+              aria-label="Currency"
+            >
+            <label class="checkbox-inline">
+              <input type="checkbox" name="enabled" value="true" {% if stripe.enabled %}checked{% endif %}>
+              Enable checkout
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Save</button>
+        <button
+          class="btn btn-secondary"
+          type="button"
+          hx-post="/integrations/stripe/test"
+          hx-include="#stripe-config-form"
+          hx-target="#stripe-status"
+          hx-swap="innerHTML"
+          hx-indicator="#stripe-loading"
+        >Test</button>
+        <span id="stripe-loading" class="htmx-indicator">Checking…</span>
+        {% if stripe.source == 'database' %}
+        <button
+          type="button"
+          class="btn btn-ghost integration-revoke-link"
+          data-confirm-revoke
+          data-confirm-title="Revoke Stripe?"
+          data-confirm-body="This removes the saved Stripe key. A server env key, if set, will still apply."
+          data-confirm-form="stripe-revoke-form"
+        >Revoke</button>
+        {% endif %}
+      </div>
+    </form>
+    <div id="stripe-status" class="integration-status-area">
+      {% with configured=stripe.configured, checked=False, connected=False, message=None, category='unknown' %}
+        {% include "integrations/_connection_status.html" %}
+      {% endwith %}
+    </div>
+  </div>
+</dialog>
+
+<script>
+  (function () {
+    function openDialog(id) {
+      const dialog = document.getElementById(id);
+      if (dialog && typeof dialog.showModal === 'function') dialog.showModal();
+    }
+
+    document.querySelectorAll('[data-open-modal]').forEach((btn) => {
+      btn.addEventListener('click', () => openDialog(btn.getAttribute('data-open-modal')));
+    });
+
+    document.querySelectorAll('.integration-modal, .integration-confirm').forEach((dialog) => {
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+    });
+
+    document.querySelectorAll('[data-secret-target]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = document.getElementById(btn.getAttribute('data-secret-target'));
+        if (!input) return;
+        const show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+        btn.setAttribute('aria-label', show ? 'Hide API key' : 'Show API key');
+        btn.classList.toggle('is-revealed', show);
+      });
+    });
+
+    const confirmDialog = document.getElementById('integration-confirm');
+    const confirmTitle = document.getElementById('integration-confirm-title');
+    const confirmBody = document.getElementById('integration-confirm-body');
+    let pendingFormId = '';
+
+    function openConfirm(btn) {
+      if (!confirmDialog) return;
+      pendingFormId = btn.getAttribute('data-confirm-form') || '';
+      if (confirmTitle) confirmTitle.textContent = btn.getAttribute('data-confirm-title') || 'Revoke credentials?';
+      if (confirmBody) confirmBody.textContent = btn.getAttribute('data-confirm-body') || 'This cannot be undone from here.';
+      // Close settings modal first so confirm sits on top cleanly
+      document.querySelectorAll('.integration-modal[open]').forEach((d) => d.close());
+      confirmDialog.showModal();
+    }
+
+    document.querySelectorAll('[data-confirm-revoke]').forEach((btn) => {
+      btn.addEventListener('click', () => openConfirm(btn));
+    });
+
+    confirmDialog?.querySelector('[data-confirm-cancel]')?.addEventListener('click', () => {
+      confirmDialog.close();
+      pendingFormId = '';
+    });
+
+    confirmDialog?.querySelector('[data-confirm-ok]')?.addEventListener('click', () => {
+      const form = pendingFormId ? document.getElementById(pendingFormId) : null;
+      confirmDialog.close();
+      if (form) form.submit();
+      pendingFormId = '';
+    });
+
+    const params = new URLSearchParams(window.location.search);
+    const flash = params.get('flash') || '';
+    if (flash === 'connected' || flash === 'updated' || flash === 'save_error') {
+      openDialog('modal-instantly');
+    }
+    if (flash.startsWith('openai_') && flash !== 'openai_deleted') {
+      openDialog('modal-openai');
+    }
+    if (flash.startsWith('calcom_') && flash !== 'calcom_deleted') {
+      openDialog('modal-calcom');
+    }
+    if (flash.startsWith('stripe_') && flash !== 'stripe_deleted') {
+      openDialog('modal-stripe');
+    }
+  })();
+</script>
+{% endblock %}

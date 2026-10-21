@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Payment confirmed · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=77">
+</head>
+<body class="assessment-body checkout-body checkout-body--success">
+{% from "assessment/_public_brand.html" import lockup %}
+
+{% if payload.success or payload.already_paid %}
+<div class="rcpt-stage">
+  <header class="rcpt-brand">{{ lockup() }}</header>
+
+  <div class="rcpt-burst" aria-hidden="true">
+    <span></span><span></span><span></span><span></span><span></span>
+    <span></span><span></span><span></span><span></span><span></span>
+  </div>
+
+  <main class="rcpt">
+    <div class="rcpt-hero">
+      <div class="rcpt-check" aria-hidden="true">
+        <svg viewBox="0 0 52 52" width="52" height="52">
+          <circle class="rcpt-check-ring" cx="26" cy="26" r="24" fill="none"/>
+          <path class="rcpt-check-mark" fill="none" d="M14.5 27.2l7.2 7.2 15.8-16.4"/>
+        </svg>
+      </div>
+      <p class="rcpt-kicker">Payment successful</p>
+      <h1 class="rcpt-title">You’re in</h1>
+      <p class="rcpt-sub">Welcome to FreedomBot. JeanneCAIO got your payment — Cepoch delivery is next.</p>
+      {% if payload.amount_label %}
+      <p class="rcpt-paid-pill">
+        <span>Paid</span>
+        <strong>{{ payload.amount_label }}</strong>
+      </p>
+      {% endif %}
+    </div>
+
+    <article class="rcpt-ticket" aria-label="Payment receipt">
+      <header class="rcpt-ticket-head">
+        <div>
+          <p class="rcpt-ticket-label">Digital receipt</p>
+          <p class="rcpt-ticket-merchant">JeanneCAIO · FreedomBot</p>
+        </div>
+        {% if payload.receipt_code %}
+        <p class="rcpt-ticket-id">#{{ payload.receipt_code }}</p>
+        {% endif %}
+      </header>
+
+      <dl class="rcpt-ticket-meta">
+        {% if payload.contact_name %}
+        <div><dt>Guest</dt><dd>{{ payload.contact_name }}</dd></div>
+        {% endif %}
+        {% if payload.company %}
+        <div><dt>Organization</dt><dd>{{ payload.company }}</dd></div>
+        {% endif %}
+        {% if payload.purchased_at %}
+        <div><dt>Paid on</dt><dd>{{ format_datetime(payload.purchased_at) }}</dd></div>
+        {% endif %}
+        <div><dt>Method</dt><dd>Stripe · Card</dd></div>
+      </dl>
+
+      <div class="rcpt-dash" aria-hidden="true"></div>
+
+      <div class="rcpt-items">
+        <div class="rcpt-item">
+          <div>
+            <strong>FreedomBot engagement</strong>
+            <span>One-time · due today</span>
+          </div>
+          <p>{{ payload.amount_label or '—' }}</p>
+        </div>
+        {% if payload.recurring_label %}
+        <div class="rcpt-item rcpt-item--mute">
+          <div>
+            <strong>Ongoing support</strong>
+            <span>Not charged on this payment</span>
+          </div>
+          <p>{{ payload.recurring_label }}<small>/mo</small></p>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="rcpt-dash" aria-hidden="true"></div>
+
+      <div class="rcpt-grand">
+        <span>Total paid</span>
+        <strong>{{ payload.amount_label or '—' }}</strong>
+      </div>
+
+      <p class="rcpt-thanks">Thanks for trusting JeanneCAIO with this engagement.</p>
+    </article>
+
+    <section class="rcpt-next" aria-labelledby="rcpt-next-title">
+      <h2 id="rcpt-next-title">What happens next</h2>
+      <ol>
+        <li>
+          <strong>Saved with JeanneCAIO</strong>
+          <span>Your consult scope and payment are on file.</span>
+        </li>
+        <li>
+          <strong>Cepoch starts onboarding</strong>
+          <span>Delivery provisions FreedomBot from the agreed scope.</span>
+        </li>
+        <li>
+          <strong>Delivery reaches out</strong>
+          <span>Routine setup goes to Cepoch. Jeanne stays for strategic issues.</span>
+        </li>
+      </ol>
+    </section>
+  </main>
+</div>
+
+{% else %}
+<div class="checkout-shell">
+  <header class="checkout-top">
+    <div class="checkout-top-brand">{{ lockup() }}</div>
+  </header>
+  <main class="checkout-card">
+    <p class="checkout-eyebrow">Payment</p>
+    <h1 class="checkout-title">We couldn’t confirm payment yet</h1>
+    <p class="checkout-lead">{{ payload.error_message or "Return to checkout to finish payment, or contact JeanneCAIO if you were charged." }}</p>
+    <a class="checkout-pay-btn" href="/a/{{ token }}/checkout">Back to checkout</a>
+  </main>
+</div>
+{% endif %}
+</body>
+</html>

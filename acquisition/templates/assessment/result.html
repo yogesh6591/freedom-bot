@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assessment Results · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body">
+<div class="assessment-shell assessment-shell--journey">
+    {% from "assessment/_public_brand.html" import lockup %}
+    <header class="assessment-header">
+      {{ lockup() }}
+      <h1 class="assessment-title">Your Assessment Snapshot</h1>
+      <p class="assessment-lede">A directional read based on what you shared — not a guaranteed ROI forecast.</p>
+    </header>
+
+    {% set branch = payload.branch if payload.branch is defined else none %}
+
+    {% if payload.result %}
+    {% set result = payload.result %}
+    {% set areas = result.opportunity_areas if result.opportunity_areas is defined else none %}
+    {% set impact_text = result.observed_impact if result.observed_impact is defined and result.observed_impact else result.directional_impact %}
+    {% set impact_label = result.impact_label if result.impact_label is defined and result.impact_label else 'Observed impact' %}
+
+    <main class="assessment-result">
+      {% if branch and branch.show_continue_to_proof %}
+      <ol class="assessment-steps" aria-label="Journey progress">
+        <li class="is-current">Result</li>
+        <li>Proof</li>
+        <li>Demo</li>
+        <li>Value</li>
+        <li>Calendar</li>
+      </ol>
+      {% endif %}
+
+      <article class="proof-study">
+        <section class="proof-study-section">
+          <h3>Possible inefficiencies</h3>
+          {% if result.inefficiencies is defined and result.inefficiencies %}
+          <ol class="proof-study-results">
+            {% for item in result.inefficiencies %}
+            <li>{{ item }}</li>
+            {% endfor %}
+          </ol>
+          {% else %}
+          <p>{{ result.inefficiencies_summary }}</p>
+          {% endif %}
+        </section>
+
+        <section class="proof-study-section">
+          <h3>Where FreedomBot may help</h3>
+          {% if areas %}
+          <ul class="proof-study-results">
+            {% for area in areas %}
+            <li>{{ area.label }}</li>
+            {% endfor %}
+          </ul>
+          {% elif result.opportunity_map %}
+          <p>{{ result.opportunity_map }}</p>
+          {% else %}
+          <p class="muted">We’ll refine opportunity areas as more operational detail is available.</p>
+          {% endif %}
+        </section>
+
+        {% if impact_text %}
+        <section class="proof-study-section proof-study-section--result">
+          <h3>{{ impact_label }}</h3>
+          <p>{{ impact_text }}</p>
+        </section>
+        {% endif %}
+      </article>
+
+      {% if branch and branch.show_continue_to_proof %}
+      <div class="assessment-cta">
+        <p class="assessment-cta-note">
+          {{ result.next_step_qualified if result.next_step_qualified is defined else 'See relevant examples of how similar operational problems can be addressed.' }}
+        </p>
+        <a class="btn btn-primary" href="/a/{{ token }}/proof">See Relevant Examples →</a>
+      </div>
+      {% elif branch and branch.exit_kind == 'unqualified_exit' %}
+      <div class="assessment-cta">
+        <p class="assessment-cta-note">
+          {{ result.next_step_unqualified if result.next_step_unqualified is defined else 'Thanks for completing the assessment. We’ve saved your snapshot.' }}
+        </p>
+      </div>
+      {% elif branch and branch.exit_kind == 'pending_review' %}
+      <div class="assessment-cta">
+        <p class="assessment-cta-note">Thanks for completing the assessment. We’ve saved your snapshot for review.</p>
+      </div>
+      {% else %}
+      <div class="assessment-cta">
+        <p class="assessment-cta-note">Thanks for completing the assessment. We’ve saved your snapshot.</p>
+      </div>
+      {% endif %}
+    </main>
+
+    {% elif payload.completed %}
+    <main class="assessment-result">
+      <p class="assessment-done muted">Results are being prepared. Refresh in a moment.</p>
+    </main>
+    {% else %}
+    <main class="assessment-result">
+      <div class="assessment-cta">
+        <p class="assessment-cta-note">Finish the assessment to see your snapshot.</p>
+        <a class="btn btn-primary" href="/a/{{ token }}">Back to assessment</a>
+      </div>
+    </main>
+    {% endif %}
+  </div>
+</body>
+</html>

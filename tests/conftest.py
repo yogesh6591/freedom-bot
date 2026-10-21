@@ -24,6 +24,16 @@ from bizos.util.dotenv import load_dotenv
 load_dotenv()
 # Tests must never be able to mint a token accepted by a real deployment.
 os.environ.setdefault("RUNTIME_ENV", "dev")
+# Tests wipe and rebuild acquisition data, so they ALWAYS use a throwaway database,
+# whatever DATABASE_URL says in .env or the shell. The real acquisition database is never touched.
+_DB = dict(
+    u=os.environ.get("DB_USER", "bizos"),
+    p=os.environ.get("DB_PASS", "bizos"),
+    h=os.environ.get("DB_HOST", "localhost"),
+    port=os.environ.get("DB_PORT", "5432"),
+)
+ACQUISITION_TEST_DB = "acquisition_test"
+os.environ["DATABASE_URL"] = "postgresql+psycopg://{u}:{p}@{h}:{port}/".format(**_DB) + ACQUISITION_TEST_DB
 os.environ["JWT_SECRET"] = "test-only-signing-key-please-do-not-reuse-anywhere-0001"
 
 from bizos.bootstrap import admin_context, ensure_dev_users, seed_business_data  # noqa: E402
@@ -72,6 +82,25 @@ def _destroy(client) -> None:
 @pytest.fixture(scope="session", autouse=True)
 def _control_plane() -> None:
     migrate_control_plane()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _acquisition_test_db() -> None:
+    """Create and migrate the throwaway acquisition database (once per run)."""
+    import psycopg
+    from alembic import command
+    from alembic.config import Config
+    from psycopg import sql
+
+    control = os.environ.get("CONTROL_DB_NAME", "bizos_control")
+    with psycopg.connect(
+        host=_DB["h"], port=_DB["port"], user=_DB["u"], password=_DB["p"], dbname=control, autocommit=True
+    ) as conn:
+        exists = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (ACQUISITION_TEST_DB,)).fetchone()
+        if exists is None:
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(ACQUISITION_TEST_DB)))
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    command.upgrade(Config(os.path.join(root, "acquisition_alembic.ini")), "head")
 
 
 @pytest.fixture(scope="session")

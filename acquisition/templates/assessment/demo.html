@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FreedomBot Demo · JeanneCAIO</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body">
+{% set require_watch = payload.demo_require_watch and payload.demo_embed_kind == 'video' %}
+  {% from "assessment/_public_brand.html" import lockup %}
+  <div class="assessment-shell assessment-shell--journey assessment-shell--demo">
+    <header class="assessment-header">
+      {{ lockup() }}
+      <h1 class="assessment-title">{{ payload.demo_title or 'FreedomBot Demo' }}</h1>
+      {% if payload.demo_description %}
+      <p class="assessment-lede">{{ payload.demo_description }}</p>
+      {% endif %}
+    </header>
+    <main class="assessment-result assessment-result--demo">
+      <ol class="assessment-steps" aria-label="Journey progress">
+        <li class="is-done">Result</li>
+        <li class="is-done">Proof</li>
+        <li class="is-current">Demo</li>
+        <li>Value</li>
+        <li>Calendar</li>
+      </ol>
+
+      {% if payload.demo_ready and payload.demo_video_url %}
+      <section class="assessment-result-block assessment-result-block--media">
+        <div class="assessment-video-stage">
+        {% if payload.demo_embed_kind == 'iframe' %}
+        <iframe
+          class="assessment-media assessment-media--iframe"
+          title="FreedomBot demo"
+          src="{{ payload.demo_video_url }}"
+        ></iframe>
+        {% else %}
+        <video
+          id="fb-demo-video"
+          class="assessment-media assessment-media--video"
+          controls
+          playsinline
+          preload="metadata"
+          src="{{ payload.demo_video_url }}"
+        >
+          Your browser does not support embedded video.
+        </video>
+        {% endif %}
+        </div>
+      </section>
+
+      {% if require_watch %}
+      <div class="assessment-cta" id="fb-demo-continue-wrap">
+        <a class="btn btn-secondary" href="/a/{{ token }}/proof">← Back to Proof</a>
+        <p class="assessment-cta-note" id="fb-demo-wait">Continue unlocks when the video finishes.</p>
+        <button
+          type="button"
+          class="btn btn-primary is-disabled"
+          id="fb-demo-continue-btn"
+          disabled
+          aria-disabled="true"
+        >Continue to Value →</button>
+        <form method="post" action="/a/{{ token }}/demo/complete" id="fb-demo-continue-form" hidden>
+          <input type="hidden" name="watched" value="1">
+        </form>
+      </div>
+      <script>
+        (function () {
+          var video = document.getElementById("fb-demo-video");
+          var btn = document.getElementById("fb-demo-continue-btn");
+          var form = document.getElementById("fb-demo-continue-form");
+          var wait = document.getElementById("fb-demo-wait");
+          var alreadyWatched = {{ 'true' if payload.demo_watch_completed_at else 'false' }};
+          var valueUrl = "/a/{{ token }}/value";
+          if (!video || !btn) return;
+
+          function enableContinue() {
+            btn.disabled = false;
+            btn.removeAttribute("aria-disabled");
+            btn.classList.remove("is-disabled");
+            if (wait) wait.hidden = true;
+          }
+
+          function unlock() {
+            if (alreadyWatched) {
+              enableContinue();
+              btn.onclick = function () { window.location.href = valueUrl; };
+              return;
+            }
+            fetch("/api/assessment/{{ token }}/demo/complete?watched=1", { method: "POST" })
+              .then(function (res) {
+                if (!res.ok) throw new Error("complete failed");
+                alreadyWatched = true;
+                enableContinue();
+                btn.onclick = function () {
+                  if (form) form.submit();
+                  else window.location.href = valueUrl;
+                };
+              })
+              .catch(function () {
+                // Keep button disabled if watch attestation fails.
+              });
+          }
+
+          video.addEventListener("ended", unlock);
+        })();
+      </script>
+      {% elif payload.can_continue_to_value %}
+      <div class="assessment-cta">
+        <a class="btn btn-secondary" href="/a/{{ token }}/proof">← Back to Proof</a>
+        <a class="btn btn-primary" href="/a/{{ token }}/value">Continue to Value →</a>
+      </div>
+      {% elif not payload.demo_require_watch %}
+      <div class="assessment-cta">
+        <a class="btn btn-secondary" href="/a/{{ token }}/proof">← Back to Proof</a>
+        <form method="post" action="/a/{{ token }}/demo/complete">
+          <button type="submit" class="btn btn-primary">Continue to Value →</button>
+        </form>
+      </div>
+      {% else %}
+      <p class="assessment-done muted">Full-watch mode needs a video file. Ask Admin to upload one or turn off require full watch.</p>
+      <div class="assessment-cta">
+        <a class="btn btn-secondary" href="/a/{{ token }}/proof">← Back to Proof</a>
+      </div>
+      {% endif %}
+
+      {% else %}
+      <section class="assessment-result-block">
+        <h2>Demo being prepared</h2>
+        <p>The FreedomBot demo is not configured yet.</p>
+      </section>
+      {% if not payload.demo_require_watch %}
+      <div class="assessment-cta">
+        <a class="btn btn-secondary" href="/a/{{ token }}/proof">← Back to Proof</a>
+        <form method="post" action="/a/{{ token }}/demo/complete">
+          <button type="submit" class="btn btn-primary">Continue to Value →</button>
+        </form>
+      </div>
+      {% else %}
+      <div class="assessment-cta">
+        <a class="btn btn-secondary" href="/a/{{ token }}/proof">← Back to Proof</a>
+      </div>
+      {% endif %}
+      {% endif %}
+    </main>
+  </div>
+</body>
+</html>

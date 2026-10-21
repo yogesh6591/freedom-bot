@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Book with Jeanne · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body">
+<div class="assessment-shell assessment-shell--journey">
+    {% from "assessment/_public_brand.html" import lockup %}
+    <header class="assessment-header">
+      {{ lockup() }}
+      <h1 class="assessment-title">Book with Jeanne</h1>
+      <p class="assessment-lede">{% if payload.event_title %}{{ payload.event_title }}{% else %}Pick a time that works for you.{% endif %}</p>
+    </header>
+    <main class="assessment-result assessment-result--calendar">
+      <ol class="assessment-steps" aria-label="Journey progress">
+        <li class="is-done">Result</li>
+        <li class="is-done">Proof</li>
+        <li class="is-done">Demo</li>
+        <li class="is-done">Value</li>
+        <li class="is-current">Calendar</li>
+      </ol>
+
+      {% if payload.calendar_url %}
+      <section
+        class="assessment-result-block assessment-result-block--calendar"
+        data-fb-booking-monitor
+        data-fb-booking-token="{{ token }}"
+        data-fb-booking-status-url="/api/assessment/{{ token }}/booking"
+        data-fb-booked-url="/a/{{ token }}/booked"
+      >
+        <iframe
+          class="assessment-calendar-embed"
+          title="Book with Jeanne"
+          src="{{ payload.calendar_url }}"
+          loading="lazy"
+          allow="camera; microphone; fullscreen"
+        ></iframe>
+        <div id="fb-booking-hold" class="assessment-calendar-hold" hidden aria-live="polite" aria-busy="true">
+          <div class="assessment-calendar-hold-card">
+            <span class="assessment-calendar-hold-spinner" aria-hidden="true"></span>
+            <p class="assessment-calendar-hold-title">Confirming your booking</p>
+            <p class="assessment-calendar-hold-copy">Please hold and do not close this page while we redirect…</p>
+          </div>
+        </div>
+      </section>
+      <script>
+      (function () {
+        var root = document.querySelector("[data-fb-booking-monitor]");
+        if (!root) return;
+
+        var statusUrl = root.getAttribute("data-fb-booking-status-url");
+        var bookedUrl = root.getAttribute("data-fb-booked-url");
+        if (!statusUrl || !bookedUrl) return;
+
+        var holdEl = document.getElementById("fb-booking-hold");
+
+        var pollMs = 1000;
+        var fastPollMs = 500;
+        var slowPollMs = 3000;
+        var fastUntilMs = 120000;
+        var startedAt = Date.now();
+        var timer = null;
+        var stopped = false;
+        var holdShown = false;
+        var awaitingConfirm = false;
+        var inFlight = false;
+        var currentInterval = pollMs;
+
+        function showHold() {
+          awaitingConfirm = true;
+          currentInterval = fastPollMs;
+          if (holdShown || !holdEl) return;
+          holdShown = true;
+          holdEl.hidden = false;
+          document.body.classList.add("is-booking-hold");
+        }
+
+        function stopPolling() {
+          stopped = true;
+          if (timer) {
+            window.clearTimeout(timer);
+            timer = null;
+          }
+        }
+
+        function redirectBooked() {
+          stopPolling();
+          window.location.replace(bookedUrl);
+        }
+
+        function looksLikeBookingEvent(raw) {
+          var text = "";
+          try {
+            if (typeof raw === "string") text = raw;
+            else if (raw && typeof raw === "object") {
+              text = JSON.stringify(raw);
+              if (raw.type) text += " " + String(raw.type);
+              if (raw.action) text += " " + String(raw.action);
+              if (raw.event) text += " " + String(raw.event);
+              if (raw.data && raw.data.type) text += " " + String(raw.data.type);
+            }
+          } catch (err) {
+            return false;
+          }
+          return /bookingSuccessful|booking_success|BOOKING_CREATED|booking.?confirm|__booking|meeting.?scheduled/i.test(
+            text
+          );
+        }
+
+        function checkOnce() {
+          if (inFlight) return Promise.resolve(false);
+          inFlight = true;
+          return fetch(statusUrl, {
+            credentials: "same-origin",
+            cache: "no-store",
+            headers: { Accept: "application/json" },
+          })
+            .then(function (response) {
+              if (!response.ok) return null;
+              return response.json();
+            })
+            .then(function (data) {
+              if (data && data.confirmed === true) {
+                showHold();
+                redirectBooked();
+                return true;
+              }
+              return false;
+            })
+            .catch(function () {
+              return false;
+            })
+            .then(function (done) {
+              inFlight = false;
+              return done;
+            });
+        }
+
+        function schedule(delayMs) {
+          if (stopped) return;
+          timer = window.setTimeout(tick, delayMs);
+        }
+
+        function tick() {
+          if (stopped) return;
+          checkOnce().then(function (done) {
+            if (done || stopped) return;
+            var elapsed = Date.now() - startedAt;
+            if (awaitingConfirm) {
+              currentInterval = elapsed < fastUntilMs ? fastPollMs : slowPollMs;
+            } else if (elapsed >= fastUntilMs) {
+              currentInterval = slowPollMs;
+            } else {
+              currentInterval = pollMs;
+            }
+            schedule(currentInterval);
+          });
+        }
+
+        // Soft UX only — never treat iframe events as booking proof.
+        window.addEventListener("message", function (event) {
+          if (!looksLikeBookingEvent(event && event.data)) return;
+          showHold();
+          checkOnce();
+        });
+
+        // After interacting with the iframe, re-check quickly.
+        document.addEventListener("visibilitychange", function () {
+          if (document.visibilityState === "visible") checkOnce();
+        });
+        window.addEventListener("focus", function () {
+          checkOnce();
+        });
+
+        // First check immediately, then keep polling.
+        checkOnce().then(function (done) {
+          if (!done) schedule(pollMs);
+        });
+      })();
+      </script>
+      {% else %}
+      <section class="assessment-result-block">
+        <h2>Calendar not ready</h2>
+        <p>You’re eligible, but the booking calendar is not configured yet.</p>
+      </section>
+      {% endif %}
+
+      <div class="assessment-cta">
+        <a class="btn btn-secondary" href="/a/{{ token }}/value">← Back to Value</a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

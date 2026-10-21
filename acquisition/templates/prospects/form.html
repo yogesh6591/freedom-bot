@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Add Prospect{% endblock %}
+{% block page_heading %}Add Prospect{% endblock %}
+
+{% block top_actions %}
+<a class="btn btn-ghost" href="/prospects">Back</a>
+{% endblock %}
+
+{% block content %}
+<section class="panel form-panel">
+  <h2 class="section-title">New prospect</h2>
+  {% if using_static_template %}
+    <p class="section-lede muted">Pre-filled with the development template — review every field before creating.</p>
+  {% else %}
+    <p class="section-lede muted">Capture an executive lead into the internal FreedomBot pipeline.</p>
+  {% endif %}
+
+  {% if errors %}
+    <div class="form-errors">
+      <strong>Please fix the following:</strong>
+      <ul>
+        {% for error in errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <form method="post" action="/prospects/new" class="prospect-form" novalidate>
+    {% include "prospects/_form_fields.html" %}
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Create Prospect</button>
+      <a class="btn btn-ghost" href="/prospects">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

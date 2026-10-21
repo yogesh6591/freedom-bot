@@ -1,0 +1,15 @@
+{# Public prospect-facing brand lockup (text-only; no logo asset). #}
+{% macro lockup(variant='journey') -%}
+{%- if variant == 'chat' -%}
+<div class="assess-brand" aria-label="JeanneCAIO / FreedomBot">
+  <span class="assess-brand-mark">FreedomBot</span>
+  <span class="assess-brand-sub">
+    <span class="assess-brand-sub-line">JeanneCAIO</span>
+    <span class="assess-brand-sub-dot" aria-hidden="true"></span>
+    <span>Business Assessment</span>
+  </span>
+</div>
+{%- else -%}
+<p class="assessment-brand" aria-label="JeanneCAIO / FreedomBot">JeanneCAIO / FreedomBot</p>
+{%- endif -%}
+{%- endmacro %}

@@ -18,6 +18,8 @@ appear without permissions and a risk classification.
 
 from __future__ import annotations
 
+import copy
+from dataclasses import replace
 from typing import Any, Callable, Optional
 
 from agno.tools import tool
@@ -25,6 +27,8 @@ from agno.tools import tool
 from bizos.agents.tool_args import normalize_tool_arguments, schema_for_tool
 from bizos.domains.packs import DomainPack, get_pack
 from bizos.policy.engine import evaluate
+from bizos.policy.modes import narrowest
+from bizos.util.redaction import redact
 from bizos.policy.models import PolicyRequest
 from bizos.rbac.registry import ToolSpec, get_spec
 from bizos.tools.base import RunScope, guarded_call
@@ -99,7 +103,80 @@ def build_tools(scope: RunScope, packs: Optional[list[DomainPack]] = None) -> li
     return tools
 
 
-def _make_tool(scope: RunScope, spec: ToolSpec) -> Callable:
+# --------------------------------------------------------------------------- one agent, every domain
+#
+# The single-assistant mode gives the model every enabled domain's tools at once
+# and lets it decide which to use (instead of a keyword router deciding for it).
+# Nothing about enforcement loosens: each tool is bound to the scope of the pack it
+# came from, so the policy engine still checks that tool's own domain, the pack's
+# mode ceiling still narrows only that pack's tools, and the same visibility rules
+# decide whether the model sees the tool at all.
+
+
+def pack_scope(scope: RunScope, pack: DomainPack) -> RunScope:
+    """The run scope for tools that belong to ``pack``."""
+    mode = scope.requested_mode
+    if pack.mode_ceiling is not None:
+        mode = narrowest(mode, pack.mode_ceiling)
+    return replace(scope, domain=pack.name, requested_mode=mode)
+
+
+def visible_specs_by_pack(
+    scope: RunScope, packs: list[DomainPack]
+) -> list[tuple[ToolSpec, RunScope, DomainPack]]:
+    """Every tool this run may expose across ``packs``, each with its own scope.
+
+    A tool listed by several packs appears once, under the first pack that lets
+    it through.
+    """
+    load_all_tools()
+    seen: dict[str, tuple[ToolSpec, RunScope, DomainPack]] = {}
+    for pack in packs:
+        bound_scope = pack_scope(scope, pack)
+        for spec in pack.tool_specs():
+            if spec.name in seen or not spec.implemented:
+                continue
+            if _visible(bound_scope, spec):
+                seen[spec.name] = (spec, bound_scope, pack)
+    return list(seen.values())
+
+
+def _with_why(schema: dict[str, Any]) -> dict[str, Any]:
+    """The tool's schema plus a required ``why`` the model must fill in for every call."""
+    out = copy.deepcopy(schema) if schema else {"type": "object", "properties": {}}
+    out.setdefault("type", "object")
+    props = out.setdefault("properties", {})
+    props["why"] = {
+        "type": "string",
+        "description": "1-2 specific sentences: what you understood and why this call is right now.",
+    }
+    required = list(out.get("required") or [])
+    if "why" not in required:
+        required.append("why")
+    out["required"] = required
+    return out
+
+
+def build_unified_tools(
+    scope: RunScope,
+    packs: list[DomainPack],
+    *,
+    on_call: Optional[Callable[[dict[str, Any]], None]] = None,
+) -> tuple[list[Callable], dict[str, str]]:
+    """Agno callables for every domain, plus a ``tool name -> domain`` map.
+
+    ``on_call`` receives one record per call (tool, domain, why, redacted
+    arguments, outcome) so the turn's trace can show what the model did and why.
+    """
+    tools: list[Callable] = []
+    domains: dict[str, str] = {}
+    for spec, bound_scope, pack in visible_specs_by_pack(scope, packs):
+        tools.append(_make_tool(bound_scope, spec, with_why=True, on_call=on_call))
+        domains[spec.name] = pack.name
+    return tools, domains
+
+
+def _make_tool(scope: RunScope, spec: ToolSpec, *, with_why: bool = False, on_call: Optional[Callable[[dict[str, Any]], None]] = None) -> Callable:
     """Wrap one spec as a callable bound to this run's scope.
 
     The entrypoint still accepts ``**kwargs`` so one factory covers every tool,
@@ -111,13 +188,40 @@ def _make_tool(scope: RunScope, spec: ToolSpec) -> Callable:
 
     @tool(name=spec.name, description=description)
     def _invoke(**kwargs: Any) -> str:
-        outcome = guarded_call(scope, spec.name, normalize_tool_arguments(kwargs))
+        why = ""
+        if with_why:
+            why = str(kwargs.pop("why", "") or "")
+        arguments = normalize_tool_arguments(kwargs)
+        outcome = guarded_call(scope, spec.name, arguments)
         if outcome.data is not None and outcome.ok:
-            return f"{outcome.agent_text()}\n\nResult: {outcome.data}"
-        return outcome.agent_text()
+            text = f"{outcome.agent_text()}\n\nResult: {outcome.data}"
+        else:
+            text = outcome.agent_text()
+        if on_call is not None:
+            try:
+                on_call(
+                    {
+                        "tool": spec.name,
+                        "domain": scope.domain,
+                        "why": why,
+                        "args": str(redact(arguments))[:600],
+                        "ok": bool(outcome.ok),
+                        "effect": str(outcome.effect),
+                        "result": outcome.message[:300],
+                    }
+                )
+            except Exception:  # noqa: BLE001 - tracing must never break a tool call
+                pass
+        return text
 
     # Replace Agno's **kwargs schema before the agent processes the tool.
-    _invoke.parameters = schema_for_tool(spec.name)
+    schema = schema_for_tool(spec.name)
+    _invoke.parameters = _with_why(schema) if with_why else schema
+    if with_why:
+        # Keep optional fields optional (Agno's strict mode would force every field to be required)
+        # and keep our schema (Agno would otherwise rebuild it from the **kwargs signature).
+        _invoke.strict = False
+        _invoke.skip_entrypoint_processing = True
     return _invoke
 
 

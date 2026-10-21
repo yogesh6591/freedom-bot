@@ -1,0 +1,610 @@
+{
+  "outcome": "qualified",
+  "captured_at": "2026-10-13T10:04:25.064145+00:00",
+  "source": "build_demo_static_fixtures.py",
+  "answers": [
+    "We are Fintech, a growing financial technology company serving mid-sized businesses. We want to grow without adding too much overhead, but our sales-to-delivery process is becoming harder to manage.",
+    "We have around 70 employees and our annual revenue is between $10M and $25M. Sales, operations and delivery teams are mainly involved in this process.",
+    "The main problem starts after sales closes a deal. Information is spread across HubSpot, Slack and email, and some important guidance is still with senior people, so affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework.",
+    "I can approve changes to this process, and our Head of Operations can lead the rollout with sales and delivery. The team is open to standardizing the process and using AI for guidance, as long as important client and pricing decisions still have human review."
+  ],
+  "questions": [
+    "Tell me about your business and what you're trying to accomplish right now.",
+    "Roughly how large is the company today, and which teams are mainly involved in this sales-to-delivery work?",
+    "Where does the friction show up after a deal closes — tools, handoffs, or senior guidance — and what delay or rework does that create?",
+    "Who can approve changes here, and how open is the team to standardizing the process or using AI with human review?"
+  ],
+  "turns": [
+    {
+      "index": 0,
+      "question_before": "Tell me about your business and what you're trying to accomplish right now.",
+      "answer": "We are Fintech, a growing financial technology company serving mid-sized businesses. We want to grow without adding too much overhead, but our sales-to-delivery process is becoming harder to manage.",
+      "answer_source": "scripted",
+      "structured_state_after": {
+        "company": {
+          "value": "Fintech",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "We are Fintech"
+        },
+        "goals": {
+          "value": "Grow without adding too much overhead",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "grow without adding too much overhead"
+        },
+        "revenue_range": {
+          "value": null,
+          "status": "missing"
+        },
+        "headcount": {
+          "value": null,
+          "status": "missing"
+        },
+        "functions": {
+          "value": null,
+          "status": "missing"
+        },
+        "tools": {
+          "value": null,
+          "status": "missing"
+        },
+        "workflows": {
+          "value": "Sales-to-delivery process",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "our sales-to-delivery process is becoming harder to manage"
+        },
+        "knowledge_locations": {
+          "value": null,
+          "status": "missing"
+        },
+        "pain_points": {
+          "value": "Sales-to-delivery process is becoming harder to manage",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "our sales-to-delivery process is becoming harder to manage"
+        },
+        "time_cost_impact": {
+          "value": null,
+          "status": "missing"
+        },
+        "bottlenecks": {
+          "value": null,
+          "status": "missing"
+        },
+        "change_readiness": {
+          "value": null,
+          "status": "missing"
+        },
+        "ai_readiness": {
+          "value": null,
+          "status": "missing"
+        },
+        "authority": {
+          "value": null,
+          "status": "missing"
+        }
+      },
+      "ready_before": false,
+      "ready_after": false,
+      "completed_after": false
+    },
+    {
+      "index": 1,
+      "question_before": "Roughly how large is the company today, and which teams are mainly involved in this sales-to-delivery work?",
+      "answer": "We have around 70 employees and our annual revenue is between $10M and $25M. Sales, operations and delivery teams are mainly involved in this process.",
+      "answer_source": "scripted",
+      "structured_state_after": {
+        "company": {
+          "value": "Fintech",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "We are Fintech"
+        },
+        "goals": {
+          "value": "Grow without adding too much overhead",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "grow without adding too much overhead"
+        },
+        "revenue_range": {
+          "value": "$10–25M",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "our annual revenue is between $10M and $25M"
+        },
+        "headcount": {
+          "value": 70,
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "We have around 70 employees"
+        },
+        "functions": {
+          "value": [
+            "Sales",
+            "Operations",
+            "Delivery"
+          ],
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "Sales, operations and delivery teams are mainly involved in this process"
+        },
+        "tools": {
+          "value": null,
+          "status": "missing"
+        },
+        "workflows": {
+          "value": "Sales-to-delivery process",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "our sales-to-delivery process is becoming harder to manage"
+        },
+        "knowledge_locations": {
+          "value": null,
+          "status": "missing"
+        },
+        "pain_points": {
+          "value": "Sales-to-delivery process is becoming harder to manage",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "our sales-to-delivery process is becoming harder to manage"
+        },
+        "time_cost_impact": {
+          "value": null,
+          "status": "missing"
+        },
+        "bottlenecks": {
+          "value": null,
+          "status": "missing"
+        },
+        "change_readiness": {
+          "value": null,
+          "status": "missing"
+        },
+        "ai_readiness": {
+          "value": null,
+          "status": "missing"
+        },
+        "authority": {
+          "value": null,
+          "status": "missing"
+        }
+      },
+      "ready_before": false,
+      "ready_after": false,
+      "completed_after": false
+    },
+    {
+      "index": 2,
+      "question_before": "Where does the friction show up after a deal closes — tools, handoffs, or senior guidance — and what delay or rework does that create?",
+      "answer": "The main problem starts after sales closes a deal. Information is spread across HubSpot, Slack and email, and some important guidance is still with senior people, so affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework.",
+      "answer_source": "scripted",
+      "structured_state_after": {
+        "company": {
+          "value": "Fintech",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "We are Fintech"
+        },
+        "goals": {
+          "value": "Grow without adding too much overhead",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "grow without adding too much overhead"
+        },
+        "revenue_range": {
+          "value": "$10–25M",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "our annual revenue is between $10M and $25M"
+        },
+        "headcount": {
+          "value": 70,
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "We have around 70 employees"
+        },
+        "functions": {
+          "value": [
+            "Sales",
+            "Operations",
+            "Delivery"
+          ],
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "Sales, operations and delivery teams are mainly involved in this process"
+        },
+        "tools": {
+          "value": [
+            "HubSpot",
+            "Slack",
+            "email"
+          ],
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "Information is spread across HubSpot, Slack and email"
+        },
+        "workflows": {
+          "value": "Post-sale handoff from sales to delivery",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "The main problem starts after sales closes a deal"
+        },
+        "knowledge_locations": {
+          "value": [
+            "HubSpot",
+            "Slack",
+            "email",
+            "senior people"
+          ],
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "Information is spread across HubSpot, Slack and email, and some important guidance is still with senior people"
+        },
+        "pain_points": {
+          "value": "Post-sale information is fragmented; important guidance remains with senior people",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "The main problem starts after sales closes a deal"
+        },
+        "time_cost_impact": {
+          "value": "Affected projects face around 2–3 days of delay and 10–15 hours of waiting or rework",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework"
+        },
+        "bottlenecks": {
+          "value": "Fragmented information and reliance on senior people for guidance after sales closes a deal",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "some important guidance is still with senior people"
+        },
+        "change_readiness": {
+          "value": null,
+          "status": "missing"
+        },
+        "ai_readiness": {
+          "value": null,
+          "status": "missing"
+        },
+        "authority": {
+          "value": null,
+          "status": "missing"
+        }
+      },
+      "ready_before": false,
+      "ready_after": false,
+      "completed_after": false
+    },
+    {
+      "index": 3,
+      "question_before": "Who can approve changes here, and how open is the team to standardizing the process or using AI with human review?",
+      "answer": "I can approve changes to this process, and our Head of Operations can lead the rollout with sales and delivery. The team is open to standardizing the process and using AI for guidance, as long as important client and pricing decisions still have human review.",
+      "answer_source": "scripted",
+      "structured_state_after": {
+        "company": {
+          "value": "Fintech",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "We are Fintech"
+        },
+        "goals": {
+          "value": "Grow without adding too much overhead",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "grow without adding too much overhead"
+        },
+        "revenue_range": {
+          "value": "$10–25M",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "our annual revenue is between $10M and $25M"
+        },
+        "headcount": {
+          "value": 70,
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "We have around 70 employees"
+        },
+        "functions": {
+          "value": [
+            "Sales",
+            "Operations",
+            "Delivery"
+          ],
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "Sales, operations and delivery teams are mainly involved in this process"
+        },
+        "tools": {
+          "value": [
+            "HubSpot",
+            "Slack",
+            "email"
+          ],
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "Information is spread across HubSpot, Slack and email"
+        },
+        "workflows": {
+          "value": "Post-sale handoff from sales to delivery",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "The main problem starts after sales closes a deal"
+        },
+        "knowledge_locations": {
+          "value": [
+            "HubSpot",
+            "Slack",
+            "email",
+            "senior people"
+          ],
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "Information is spread across HubSpot, Slack and email, and some important guidance is still with senior people"
+        },
+        "pain_points": {
+          "value": "Post-sale information is fragmented; important guidance remains with senior people",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "The main problem starts after sales closes a deal"
+        },
+        "time_cost_impact": {
+          "value": "Affected projects face around 2–3 days of delay and 10–15 hours of waiting or rework",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework"
+        },
+        "bottlenecks": {
+          "value": "Fragmented information and reliance on senior people for guidance after sales closes a deal",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "some important guidance is still with senior people"
+        },
+        "change_readiness": {
+          "value": "Open to standardizing the process, with human review for important client and pricing decisions",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "The team is open to standardizing the process and using AI for guidance, as long as important client and pricing decisions still have human review"
+        },
+        "ai_readiness": {
+          "value": "Open to using AI for guidance, with human review for important client and pricing decisions",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "using AI for guidance, as long as important client and pricing decisions still have human review"
+        },
+        "authority": {
+          "value": "decision_maker",
+          "status": "known",
+          "source": "assessment",
+          "evidence_quote": "I can approve changes to this process"
+        }
+      },
+      "ready_before": false,
+      "ready_after": true,
+      "completed_after": true
+    }
+  ],
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "Tell me about your business and what you're trying to accomplish right now."
+    },
+    {
+      "role": "user",
+      "content": "We are Fintech, a growing financial technology company serving mid-sized businesses. We want to grow without adding too much overhead, but our sales-to-delivery process is becoming harder to manage."
+    },
+    {
+      "role": "assistant",
+      "content": "Roughly how large is the company today, and which teams are mainly involved in this sales-to-delivery work?"
+    },
+    {
+      "role": "user",
+      "content": "We have around 70 employees and our annual revenue is between $10M and $25M. Sales, operations and delivery teams are mainly involved in this process."
+    },
+    {
+      "role": "assistant",
+      "content": "Where does the friction show up after a deal closes — tools, handoffs, or senior guidance — and what delay or rework does that create?"
+    },
+    {
+      "role": "user",
+      "content": "The main problem starts after sales closes a deal. Information is spread across HubSpot, Slack and email, and some important guidance is still with senior people, so affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework."
+    },
+    {
+      "role": "assistant",
+      "content": "Who can approve changes here, and how open is the team to standardizing the process or using AI with human review?"
+    },
+    {
+      "role": "user",
+      "content": "I can approve changes to this process, and our Head of Operations can lead the rollout with sales and delivery. The team is open to standardizing the process and using AI for guidance, as long as important client and pricing decisions still have human review."
+    },
+    {
+      "role": "assistant",
+      "content": "Thanks — I have enough to share a directional snapshot based on what you shared."
+    }
+  ],
+  "structured_state": {
+    "company": {
+      "value": "Fintech",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "We are Fintech"
+    },
+    "goals": {
+      "value": "Grow without adding too much overhead",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "grow without adding too much overhead"
+    },
+    "revenue_range": {
+      "value": "$10–25M",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "our annual revenue is between $10M and $25M"
+    },
+    "headcount": {
+      "value": 70,
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "We have around 70 employees"
+    },
+    "functions": {
+      "value": [
+        "Sales",
+        "Operations",
+        "Delivery"
+      ],
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "Sales, operations and delivery teams are mainly involved in this process"
+    },
+    "tools": {
+      "value": [
+        "HubSpot",
+        "Slack",
+        "email"
+      ],
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "Information is spread across HubSpot, Slack and email"
+    },
+    "workflows": {
+      "value": "Post-sale handoff from sales to delivery",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "The main problem starts after sales closes a deal"
+    },
+    "knowledge_locations": {
+      "value": [
+        "HubSpot",
+        "Slack",
+        "email",
+        "senior people"
+      ],
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "Information is spread across HubSpot, Slack and email, and some important guidance is still with senior people"
+    },
+    "pain_points": {
+      "value": "Post-sale information is fragmented; important guidance remains with senior people",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "The main problem starts after sales closes a deal"
+    },
+    "time_cost_impact": {
+      "value": "Affected projects face around 2–3 days of delay and 10–15 hours of waiting or rework",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework"
+    },
+    "bottlenecks": {
+      "value": "Fragmented information and reliance on senior people for guidance after sales closes a deal",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "some important guidance is still with senior people"
+    },
+    "change_readiness": {
+      "value": "Open to standardizing the process, with human review for important client and pricing decisions",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "The team is open to standardizing the process and using AI for guidance, as long as important client and pricing decisions still have human review"
+    },
+    "ai_readiness": {
+      "value": "Open to using AI for guidance, with human review for important client and pricing decisions",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "using AI for guidance, as long as important client and pricing decisions still have human review"
+    },
+    "authority": {
+      "value": "decision_maker",
+      "status": "known",
+      "source": "assessment",
+      "evidence_quote": "I can approve changes to this process"
+    }
+  },
+  "result_payload": {
+    "inefficiencies_summary": "Your sales-to-delivery handoff appears hardest after a deal closes, when information is spread across HubSpot, Slack, and email and important guidance still sits with senior people. That may be creating delay and rework while you try to grow without adding too much overhead.",
+    "observed_impact": "Affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework.",
+    "impact_kind": "observed",
+    "impact_label": "Observed impact",
+    "directional_impact": "Affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework.",
+    "opportunity_areas": [
+      {
+        "label": "More consistent sales-to-delivery handoffs",
+        "based_on_fields": [
+          "workflows",
+          "pain_points",
+          "bottlenecks"
+        ],
+        "evidence_quotes": [
+          "The main problem starts after sales closes a deal"
+        ]
+      },
+      {
+        "label": "Faster access to customer and delivery guidance",
+        "based_on_fields": [
+          "tools",
+          "knowledge_locations",
+          "pain_points"
+        ],
+        "evidence_quotes": [
+          "Information is spread across HubSpot, Slack and email"
+        ]
+      },
+      {
+        "label": "Less reliance on senior people for routine guidance",
+        "based_on_fields": [
+          "knowledge_locations",
+          "bottlenecks"
+        ],
+        "evidence_quotes": [
+          "some important guidance is still with senior people"
+        ]
+      },
+      {
+        "label": "Standardized guidance with human oversight",
+        "based_on_fields": [
+          "change_readiness",
+          "ai_readiness"
+        ],
+        "evidence_quotes": [
+          "The team is open to standardizing the process and using AI for guidance, as long as important client and pricing decisions still have human review"
+        ]
+      }
+    ],
+    "opportunity_map": "More consistent sales-to-delivery handoffs; Faster access to customer and delivery guidance; Less reliance on senior people for routine guidance; Standardized guidance with human oversight",
+    "next_step_qualified": "See relevant examples of how similar operational problems can be addressed.",
+    "next_step_unqualified": "Thanks for completing the assessment. We’ve saved your snapshot."
+  },
+  "qualification": {
+    "status": "qualified",
+    "assessment_status": "qualified",
+    "icp_fit": "strong",
+    "complexity": "high",
+    "real_money_problem": true,
+    "authority": "decision_maker",
+    "authority_role": "decision_maker",
+    "growth_change_readiness": "high",
+    "openness_to_ai": "high",
+    "economic_capacity": "likely",
+    "ability_to_pay": "likely",
+    "budget_readiness": "not_assessed",
+    "disqualifiers": [],
+    "signal_reasons": {
+      "icp_fit": "Fintech is a growing financial technology company serving mid-sized businesses, with around 70 employees and annual revenue between $10M and $25M.",
+      "complexity": "The post-sale handoff involves sales, operations and delivery, with information spread across HubSpot, Slack and email and important guidance still with senior people.",
+      "real_money_problem": "Affected projects can face around 2–3 days of delay and 10–15 hours of waiting or rework.",
+      "authority_role": "The prospect stated \"I can approve changes to this process,\" and noted the Head of Operations can lead rollout with sales and delivery.",
+      "growth_change_readiness": "The team is open to standardizing the process, while keeping human review for important client and pricing decisions.",
+      "openness_to_ai": "The team is open to using AI for guidance, as long as important client and pricing decisions still have human review.",
+      "economic_capacity": "Annual revenue between $10M and $25M with around 70 employees suggests likely economic capacity. This does not confirm budget approval.",
+      "budget_readiness": "Budget readiness was not assessed at this stage and remains not_assessed."
+    },
+    "explanation": "The prospect has strong company fit, a quantified post-sale operating problem, decision-maker authority, high change readiness, and openness to AI with human review. Economic capacity appears likely, while budget readiness remains not assessed.",
+    "notes": null
+  },
+  "qualification_status": "qualified",
+  "journey_stage": "qualified",
+  "assessment_status": "completed"
+}

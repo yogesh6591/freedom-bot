@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+{% block title %}Assessments{% endblock %}
+{% block page_heading %}Assessments{% endblock %}
+{% block page_lede %}
+<p class="page-lede">Acquisition funnel — buyers, bookings, and revenue (not email opens).</p>
+{% endblock %}
+{% block flash %}
+  {% if flash == 'not_found' %}<div class="flash flash-error">Assessment not found.</div>{% endif %}
+{% endblock %}
+{% block content %}
+{% set k = kpis.totals if kpis else none %}
+{% if k %}
+<section class="panel kpi-panel" aria-label="Acquisition KPIs">
+  <div class="kpi-primary" role="list">
+    <div class="kpi-primary-cell" role="listitem">
+      <span class="kpi-primary-n">{{ k.booked }}</span>
+      <span class="kpi-primary-l">Booked</span>
+    </div>
+    <div class="kpi-primary-cell" role="listitem">
+      <span class="kpi-primary-n">{{ k.qualified }}</span>
+      <span class="kpi-primary-l">Qualified</span>
+    </div>
+    <div class="kpi-primary-cell" role="listitem">
+      <span class="kpi-primary-n">{{ k.assessment_completed }}</span>
+      <span class="kpi-primary-l">Completed</span>
+    </div>
+    <div class="kpi-primary-cell" role="listitem">
+      <span class="kpi-primary-n">${{ '%.0f'|format(k.revenue) }}</span>
+      <span class="kpi-primary-l">Revenue</span>
+    </div>
+  </div>
+
+  <div class="kpi-pipeline" role="list" aria-label="Pipeline stages">
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.prospects_reached }}</span>
+      <span class="kpi-pipe-l">Reached</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.assessment_started }}</span>
+      <span class="kpi-pipe-l">Started</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.demo_started }}</span>
+      <span class="kpi-pipe-l">Demo</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.demo_completed }}</span>
+      <span class="kpi-pipe-l">Demo done</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.calendar_unlocked }}</span>
+      <span class="kpi-pipe-l">Calendar</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.unqualified }}</span>
+      <span class="kpi-pipe-l">Unqualified</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.showed }}</span>
+      <span class="kpi-pipe-l">Showed</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.no_show }}</span>
+      <span class="kpi-pipe-l">No-show</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.purchased }}</span>
+      <span class="kpi-pipe-l">Purchased</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">{{ k.did_not_purchase }}</span>
+      <span class="kpi-pipe-l">Did not buy</span>
+    </div>
+    <div class="kpi-pipe" role="listitem">
+      <span class="kpi-pipe-n">${{ '%.0f'|format(k.recurring_revenue) }}</span>
+      <span class="kpi-pipe-l">Recurring</span>
+    </div>
+  </div>
+
+  {% if kpis.by_source or kpis.by_campaign %}
+  <div class="kpi-split">
+    {% if kpis.by_source %}
+    <div class="kpi-split-col">
+      <h3 class="kpi-split-title">By source</h3>
+      <table class="kpi-mini-table">
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>Done</th>
+            <th>Qual</th>
+            <th>Booked</th>
+            <th>Bought</th>
+            <th>Rev</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in kpis.by_source %}
+          <tr>
+            <td>{{ row.source }}</td>
+            <td>{{ row.completed_assessments }}</td>
+            <td>{{ row.qualified }}</td>
+            <td>{{ row.booked }}</td>
+            <td>{{ row.purchased }}</td>
+            <td>${{ '%.0f'|format(row.revenue) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+    {% if kpis.by_campaign %}
+    <div class="kpi-split-col">
+      <h3 class="kpi-split-title">By campaign</h3>
+      <table class="kpi-mini-table">
+        <thead>
+          <tr>
+            <th>Campaign</th>
+            <th>Done</th>
+            <th>Qual</th>
+            <th>Booked</th>
+            <th>Bought</th>
+            <th>Rev</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in kpis.by_campaign %}
+          <tr>
+            <td>{{ row.name }}</td>
+            <td>{{ row.completed_assessments }}</td>
+            <td>{{ row.qualified }}</td>
+            <td>{{ row.booked }}</td>
+            <td>{{ row.purchased }}</td>
+            <td>${{ '%.0f'|format(row.revenue) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if total == 0 %}
+  <div class="state state-empty">
+    <h2>No assessments yet</h2>
+    <p>Sync leads to Instantly to mint assessment tokens, then prospects open their link.</p>
+  </div>
+{% else %}
+  <section class="panel table-panel">
+    <div class="table-meta">
+      <span>{{ total }} assessment{% if total != 1 %}s{% endif %}</span>
+    </div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Prospect</th>
+            <th>Company</th>
+            <th>Source</th>
+            <th>Campaign</th>
+            <th>Assessment</th>
+            <th>Qualification</th>
+            <th>Booked</th>
+            <th>Email</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td>{{ row.prospect.executive_name if row.prospect else '—' }}</td>
+            <td>{{ row.prospect.company if row.prospect else '—' }}</td>
+            <td>{{ row.prospect.source if row.prospect and row.prospect.source else '—' }}</td>
+            <td>{{ row.campaign.name if row.campaign else '—' }}</td>
+            <td><span class="status-badge status-{{ row.link.assessment_status.value }}">{{ row.link.assessment_status.value|replace('_', ' ')|title }}</span></td>
+            <td><span class="status-badge status-{{ row.qualification_status }}">{% if row.qualification_status == 'pending' %}Pending{% elif row.qualification_status == 'qualified' %}Assessment Qualified{% elif row.qualification_status == 'unqualified' %}Unqualified{% else %}{{ row.qualification_status|replace('_', ' ')|title }}{% endif %}</span></td>
+            <td>{% if row.link.booked_at %}Yes{% else %}—{% endif %}</td>
+            <td>
+              {% if row.has_reply %}
+              <a class="status-badge status-{{ row.reply_status or 'draft' }}" href="/assessments/{{ row.link.id }}?tab=replies" title="{{ row.reply_snippet or 'Open email replies' }}">{{ (row.reply_status or 'reply')|replace('_', ' ')|title }}</a>
+              {% else %}
+              <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td class="actions">
+              <a class="btn btn-small btn-secondary" href="/assessments/{{ row.link.id }}">View</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

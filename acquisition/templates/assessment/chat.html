@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Business Assessment · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=72">
+</head>
+<body class="assess">
+<div class="assess-bg" aria-hidden="true">
+  <span class="assess-bg-orb assess-bg-orb--a"></span>
+  <span class="assess-bg-orb assess-bg-orb--b"></span>
+  <span class="assess-bg-orb assess-bg-orb--c"></span>
+  <span class="assess-bg-grid"></span>
+</div>
+
+  <div class="assess-frame">
+    <header class="assess-top">
+      {% from "assessment/_public_brand.html" import lockup %}
+      {{ lockup('chat') }}
+      <div class="assess-progress" aria-live="polite">
+        <div class="assess-progress-meta">
+          <span class="assess-progress-pill" id="progress-pill">Live session</span>
+          <p class="assess-progress-label" id="progress-label">Getting started</p>
+        </div>
+        <div class="assess-progress-track">
+          <div class="assess-progress-fill" id="progress-fill" style="width: 8%"></div>
+        </div>
+      </div>
+    </header>
+
+    <main class="assess-stage">
+      <div class="assess-slider" id="assess-slider">
+        <section class="assess-panel is-active" id="assess-panel" data-state="ready">
+          <div class="assess-panel-accent" aria-hidden="true"></div>
+          <div class="assess-panel-body">
+            <p class="assess-lead" id="lead-text" hidden></p>
+            <p class="assess-step" id="step-label">Question</p>
+            <h1 class="assess-question" id="question-text">Preparing your first question…</h1>
+            <form id="assessment-form" class="assess-answer" autocomplete="off">
+              <label class="assess-answer-label" for="assessment-input">Your answer</label>
+              <div class="assess-answer-shell">
+                <textarea
+                  id="assessment-input"
+                  name="content"
+                  rows="5"
+                  required
+                  maxlength="8000"
+                  placeholder="Share a clear, specific answer…"
+                ></textarea>
+              </div>
+              <div class="assess-actions">
+                <p id="assessment-error" class="assess-error" hidden></p>
+                <button id="assessment-send" class="assess-continue" type="submit">
+                  <span class="assess-continue-label">Continue</span>
+                  <span class="assess-continue-arrow" aria-hidden="true">→</span>
+                  <span class="assess-loader" aria-hidden="true"></span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="assess-foot">
+      <p><span class="assess-foot-mark" aria-hidden="true"></span>One question at a time · Private assessment link · No account required</p>
+    </footer>
+  </div>
+
+  <button
+    type="button"
+    class="assess-mode-dot is-ai"
+    id="assess-mode-dot"
+    aria-label="Demo mode"
+    title="Live AI assessment"
+  ></button>
+
+  <script>
+  (function () {
+    const token = {{ token|tojson }};
+    const initialMessages = {{ session.messages|tojson }};
+    const demoAnswers = {{ demo_static_answers|tojson }};
+
+    const panel = document.getElementById("assess-panel");
+    const leadEl = document.getElementById("lead-text");
+    const questionEl = document.getElementById("question-text");
+    const stepLabel = document.getElementById("step-label");
+    const progressFill = document.getElementById("progress-fill");
+    const progressLabel = document.getElementById("progress-label");
+    const form = document.getElementById("assessment-form");
+    const input = document.getElementById("assessment-input");
+    const sendBtn = document.getElementById("assessment-send");
+    const errorEl = document.getElementById("assessment-error");
+    const modeDot = document.getElementById("assess-mode-dot");
+    const brandMark = document.querySelector(".assess-brand-mark");
+
+    let messages = Array.isArray(initialMessages) ? initialMessages.slice() : [];
+    let turn = 0;
+    // off → unqualified → qualified → off
+    const MODE_CYCLE = ["off", "unqualified", "qualified"];
+    let demoMode = "off";
+
+    function userCount(list) {
+      return (list || []).filter(function (m) {
+        return m && m.role === "user";
+      }).length;
+    }
+
+    function lastAssistant(list) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i] && list[i].role === "assistant" && (list[i].content || "").trim()) {
+          return list[i];
+        }
+      }
+      return null;
+    }
+
+    function assistantCount(list) {
+      return (list || []).filter(function (m) {
+        return m && m.role === "assistant";
+      }).length;
+    }
+
+    function syncProgress(list) {
+      const asked = assistantCount(list);
+      turn = Math.max(1, asked);
+      const pct = Math.min(92, 8 + asked * 10);
+      progressFill.style.width = pct + "%";
+      stepLabel.textContent = "Question " + turn;
+      progressLabel.textContent = asked <= 1 ? "Getting started" : "In progress · question " + turn;
+    }
+
+    function syncModeDot() {
+      modeDot.classList.remove("is-ai", "is-unqualified", "is-qualified");
+      if (demoMode === "unqualified") {
+        modeDot.classList.add("is-unqualified");
+        modeDot.title = "Static demo · unqualified";
+      } else if (demoMode === "qualified") {
+        modeDot.classList.add("is-qualified");
+        modeDot.title = "Static demo · qualified";
+      } else {
+        modeDot.classList.add("is-ai");
+        modeDot.title = "Live AI assessment";
+      }
+    }
+
+    function prefillForMode() {
+      if (demoMode === "off") return;
+      var bank = demoAnswers && demoAnswers[demoMode];
+      if (!Array.isArray(bank) || !bank.length) return;
+      var idx = userCount(messages);
+      if (idx >= bank.length) {
+        input.value = "";
+        return;
+      }
+      input.value = bank[idx];
+    }
+
+    function splitLeadAndQuestion(text) {
+      const raw = (text || "").trim() || "Tell me a bit about your business.";
+      const parts = raw.split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
+      if (parts.length >= 2) {
+        return {
+          lead: parts.slice(0, -1).join("\n\n"),
+          question: parts[parts.length - 1],
+        };
+      }
+      const sentences = raw.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [raw];
+      const cleaned = sentences.map(function (s) { return s.trim(); }).filter(Boolean);
+      if (cleaned.length >= 2 && /^(hi|hello|hey|welcome)\b/i.test(cleaned[0])) {
+        return {
+          lead: cleaned.slice(0, -1).join(" "),
+          question: cleaned[cleaned.length - 1],
+        };
+      }
+      return { lead: "", question: raw };
+    }
+
+    function renderPrompt(text) {
+      const parts = splitLeadAndQuestion(text);
+      if (parts.lead) {
+        leadEl.hidden = false;
+        leadEl.textContent = parts.lead;
+      } else {
+        leadEl.hidden = true;
+        leadEl.textContent = "";
+      }
+      questionEl.textContent = parts.question;
+    }
+
+    function showQuestion(text, { animate } = { animate: false }) {
+      const next = (text || "").trim() || "Tell me a bit about your business.";
+      if (!animate) {
+        renderPrompt(next);
+        panel.classList.remove("is-exit", "is-enter");
+        panel.classList.add("is-active");
+        prefillForMode();
+        return;
+      }
+      panel.classList.add("is-exit");
+      panel.classList.remove("is-active");
+      window.setTimeout(function () {
+        renderPrompt(next);
+        input.value = "";
+        panel.classList.remove("is-exit");
+        panel.classList.add("is-enter");
+        void panel.offsetWidth;
+        panel.classList.remove("is-enter");
+        panel.classList.add("is-active");
+        prefillForMode();
+        input.focus();
+      }, 300);
+    }
+
+    function setBusy(busy) {
+      sendBtn.disabled = busy;
+      input.disabled = busy;
+      panel.dataset.state = busy ? "busy" : "ready";
+      sendBtn.classList.toggle("is-loading", busy);
+      sendBtn.setAttribute("aria-busy", busy ? "true" : "false");
+    }
+
+    function showError(msg) {
+      errorEl.hidden = !msg;
+      errorEl.textContent = msg || "";
+    }
+
+    function applySession(data, { animate } = { animate: false }) {
+      messages = data.messages || messages;
+      syncProgress(messages);
+      if (data.completed) {
+        window.location.href = "/a/" + encodeURIComponent(token) + "/result";
+        return;
+      }
+      const assistant = lastAssistant(messages);
+      if (assistant) showQuestion(assistant.content, { animate: animate });
+    }
+
+    async function ensureGreeting() {
+      setBusy(true);
+      try {
+        const body = {};
+        if (demoMode === "unqualified" || demoMode === "qualified") {
+          body.demo_static = demoMode;
+        }
+        const res = await fetch("/api/assessment/" + encodeURIComponent(token) + "/greeting", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (res.ok) applySession(data, { animate: false });
+        else showError("Could not start the assessment. Please refresh.");
+      } catch (e) {
+        showError("Network error. Please refresh and try again.");
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function cycleDemoMode() {
+      if (userCount(messages) > 0) {
+        // Only allow mode switch before the first answer on a fresh assessment.
+        return;
+      }
+      var idx = MODE_CYCLE.indexOf(demoMode);
+      demoMode = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+      syncModeDot();
+      await ensureGreeting();
+      prefillForMode();
+    }
+
+    if (brandMark) {
+      brandMark.addEventListener("dblclick", function (event) {
+        event.preventDefault();
+        cycleDemoMode();
+      });
+    }
+    // Also allow double-click on the tiny mode dot itself.
+    modeDot.addEventListener("dblclick", function (event) {
+      event.preventDefault();
+      cycleDemoMode();
+    });
+
+    form.addEventListener("submit", async function (event) {
+      event.preventDefault();
+      const content = (input.value || "").trim();
+      if (!content) return;
+      showError("");
+      setBusy(true);
+      try {
+        const payload = { content: content };
+        if (demoMode === "unqualified" || demoMode === "qualified") {
+          payload.demo_static = demoMode;
+        }
+        const res = await fetch("/api/assessment/" + encodeURIComponent(token) + "/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          showError((data && (data.error || data.detail)) || "Could not continue. Please try again.");
+          setBusy(false);
+          return;
+        }
+        if (data.completed) {
+          setBusy(true);
+          window.location.href = "/a/" + encodeURIComponent(token) + "/result";
+          return;
+        }
+        applySession(data, { animate: true });
+      } catch (e) {
+        showError("Network error. Your answer may be saved — press Continue to retry.");
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    input.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+
+    syncModeDot();
+    if (lastAssistant(messages)) {
+      syncProgress(messages);
+      showQuestion(lastAssistant(messages).content, { animate: false });
+    } else {
+      ensureGreeting();
+    }
+  })();
+  </script>
+</body>
+</html>

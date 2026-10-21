@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{{ form_data.company or "Prospect" }}{% endblock %}
+{% block page_heading %}{{ form_data.company or "Prospect" }}{% endblock %}
+
+{% block top_actions %}
+<a class="btn btn-ghost" href="/prospects">Back</a>
+{% endblock %}
+
+{% block flash %}
+  {% if flash == 'created' %}
+    <div class="flash">Prospect created.</div>
+  {% elif flash == 'updated' %}
+    <div class="flash">Prospect updated.</div>
+  {% elif flash == 'researched' %}
+    <div class="flash">Public research + scoring completed. No Instantly activation.</div>
+  {% elif flash == 'research_failed' %}
+    <div class="flash flash-error">Research failed; existing prospect data was left unchanged.</div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="panel form-panel">
+  <div class="detail-summary">
+    <div class="summary-card">
+      <span>Company</span>
+      <strong>{{ form_data.company }}</strong>
+    </div>
+    <div class="summary-card">
+      <span>Executive</span>
+      <strong>{{ form_data.executive_name }}</strong>
+    </div>
+  </div>
+
+  {% if errors %}
+    <div class="form-errors">
+      <strong>Please fix the following:</strong>
+      <ul>
+        {% for error in errors %}
+          <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="form-meta">
+    <span class="muted small">Record ID {{ prospect.id }}</span>
+  </div>
+
+  <form method="post" action="/prospects/{{ prospect.id }}" class="prospect-form" novalidate>
+    {% include "prospects/_form_fields.html" %}
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Save Changes</button>
+      <a class="btn btn-ghost" href="/prospects">Cancel</a>
+    </div>
+  </form>
+
+  <form method="post" action="/prospects/{{ prospect.id }}/research" class="mt-6">
+    <button class="btn btn-secondary" type="submit">Research + score (public sources)</button>
+    <p class="muted small">Updates structured fields + evidence, then runs ProspectScoringService. Does not send to Instantly.</p>
+  </form>
+
+  <form method="post" action="/prospects/{{ prospect.id }}/delete" class="mt-6" onsubmit="return confirm('Delete this prospect permanently?');">
+    <button class="btn btn-danger" type="submit">Delete Prospect</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Need more context · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body">
+<div class="assessment-shell assessment-shell--journey">
+    {% from "assessment/_public_brand.html" import lockup %}
+    <header class="assessment-header">
+      {{ lockup() }}
+      <h1 class="assessment-title">Need a little more context?</h1>
+      <p class="assessment-lede">
+        FreedomBot scope is customized to each business. You can review the walkthrough and value summary again before deciding on a next conversation.
+      </p>
+    </header>
+    <main class="assessment-result">
+      <ol class="assessment-steps" aria-label="Journey progress">
+        <li class="is-done">Result</li>
+        <li class="is-done">Proof</li>
+        <li class="is-done">Demo</li>
+        <li class="is-current">Value</li>
+        <li>Calendar</li>
+      </ol>
+
+      <section class="assessment-result-block assessment-result-block--impact">
+        <h2>Take another look</h2>
+        <p>There’s no booking step here — just space to revisit what you already saw.</p>
+      </section>
+
+      <div class="assessment-cta assessment-cta--stack">
+        <a class="btn btn-primary" href="/a/{{ token }}/demo">Review FreedomBot Demo</a>
+        <a class="btn btn-secondary" href="/a/{{ token }}/value">Review Value Summary</a>
+      </div>
+    </main>
+  </div>
+</body>
+</html>

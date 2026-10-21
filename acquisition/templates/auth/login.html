@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login · FreedomBot</title>
+  <script>try{var t=localStorage.getItem("fb-theme");if(t)document.documentElement.setAttribute("data-theme",t);}catch(e){}</script>
+  <link rel="stylesheet" href="/static/css/ui.css?v=6">
+  <link rel="stylesheet" href="/static/css/ui-pages.css?v=6">
+</head>
+<body class="fb-auth">
+  <div class="fb-auth-stage">
+    <aside class="fb-auth-hero" aria-label="FreedomBot">
+      <div class="fb-auth-hero-mesh" aria-hidden="true"></div>
+      <div class="fb-auth-hero-glow" aria-hidden="true"></div>
+      <div class="fb-auth-hero-glow fb-auth-hero-glow-b" aria-hidden="true"></div>
+      <div class="fb-auth-hero-stack">
+        <div class="fb-auth-hero-inner">
+          <div class="fb-auth-brand"><span class="brand-symbol" aria-hidden="true">F</span> FreedomBot</div>
+          <p class="fb-auth-kicker">JeanneCAIO · Acquisition engine</p>
+          <h1 class="fb-auth-tagline">
+            <span class="fb-auth-tagline-line">Find the right companies.</span>
+            <span class="fb-auth-tagline-line">Start the right conversations.</span>
+          </h1>
+          <p class="fb-auth-sub">Autonomous discovery, research, scoring and outreach — one command center.</p>
+        </div>
+
+        <div class="fb-auth-signal" aria-hidden="true">
+          <div class="fb-auth-signal-ring"></div>
+          <div class="fb-auth-signal-ring fb-auth-signal-ring-2"></div>
+          <div class="fb-auth-signal-core">
+            <span class="fb-auth-signal-pulse"></span>
+            <span class="fb-auth-signal-mark">F</span>
+          </div>
+          <ul class="fb-auth-signal-path">
+            <li><strong>Discover</strong><span>ICP-matched companies</span></li>
+            <li><strong>Research</strong><span>Signals &amp; fit scores</span></li>
+            <li><strong>Reach</strong><span>Ready for outreach</span></li>
+          </ul>
+        </div>
+
+        <p class="fb-auth-hero-foot">Private command center · Admin access only</p>
+      </div>
+    </aside>
+
+    <main class="fb-auth-panel">
+      <div class="fb-auth-panel-inner">
+        <div class="fb-auth-stage-copy">
+          <h2 class="fb-auth-heading">Login</h2>
+          <p class="muted">Enter your username and password to continue.</p>
+        </div>
+
+        {% if error %}
+        <div class="fb-auth-error" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form id="admin-auth-form" method="post" action="/login" class="fb-auth-form" autocomplete="on">
+          <input type="hidden" name="next" value="{{ next }}">
+          <label class="fb-auth-field" for="username">
+            <span>Username</span>
+            <input
+              id="username"
+              type="text"
+              name="username"
+              autocomplete="username"
+              required
+              autofocus
+              maxlength="64"
+              placeholder="Username"
+              value="{{ username or '' }}"
+            >
+          </label>
+          <label class="fb-auth-field" for="password">
+            <span>Password</span>
+            <input
+              id="password"
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+              maxlength="128"
+              placeholder="Password"
+            >
+          </label>
+          <button class="btn btn-primary btn-lg fb-auth-submit" type="submit">Login</button>
+        </form>
+      </div>
+    </main>
+  </div>
+  <script>
+    (function () {
+      var form = document.getElementById("admin-auth-form");
+      if (!form) return;
+      var user = document.getElementById("username");
+      var pass = document.getElementById("password");
+      if (!user || !pass) return;
+
+      if (navigator.credentials && typeof navigator.credentials.get === "function") {
+        navigator.credentials
+          .get({ password: true, mediation: "optional" })
+          .then(function (cred) {
+            if (!cred || cred.type !== "password") return;
+            if (!user.value) user.value = cred.id || "";
+            if (cred.password) pass.value = cred.password;
+          })
+          .catch(function () {});
+      }
+
+      form.addEventListener("submit", function () {
+        var id = (user.value || "").trim();
+        var password = pass.value || "";
+        if (!id || !password) return;
+        if (!window.PasswordCredential || !navigator.credentials || !navigator.credentials.store) {
+          return;
+        }
+        try {
+          navigator.credentials.store(
+            new PasswordCredential({ id: id, password: password, name: id })
+          );
+        } catch (err) {}
+      });
+    })();
+  </script>
+</body>
+</html>

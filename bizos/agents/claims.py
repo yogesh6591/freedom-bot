@@ -69,6 +69,10 @@ def _wrote_something(activity: Iterable[dict[str, Any]], new_actions: list[Any])
     for call in activity:
         if not call.get("ok"):
             continue
+        if "wrote" in call:  # tools outside the registry (campaign flow) say it themselves
+            if call["wrote"]:
+                return True
+            continue
         spec = get_spec(call.get("tool") or "")
         if spec is not None and spec.write:
             return True

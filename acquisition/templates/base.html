@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}FreedomBot{% endblock %} · FreedomBot Acquisition</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("fb-theme") || localStorage.getItem("freedombot-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+        window.addEventListener("storage", function (ev) {
+          if ((ev.key === "fb-theme" || ev.key === "freedombot-theme") && (ev.newValue === "light" || ev.newValue === "dark")) {
+            document.documentElement.setAttribute("data-theme", ev.newValue);
+          }
+        });
+      } catch (e) {}
+      try {
+        if (window.top !== window.self) {
+          document.documentElement.classList.add("is-core-embed");
+          var path = location.pathname.replace(/^\/acquire/, "") || "/overview";
+          window.parent.postMessage({ type: "fb-acquire-nav", path: path + location.search }, location.origin);
+        }
+      } catch (e) {
+        document.documentElement.classList.add("is-core-embed");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/static/css/ui.css?v=12">
+  <link rel="stylesheet" href="/static/css/ui-pages.css?v=23">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  {% if request.session.get('admin_authenticated') %}
+  <meta name="csrf-token" content="{{ request.session.get('csrf_token', '') }}">
+  {% endif %}
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% set auth_role = request.session.get('auth_role') or 'admin' %}
+  {% set is_owner_nav = auth_role == 'acquisition_owner' %}
+  <div class="app-shell">
+        <aside class="sidebar" aria-label="Primary">
+      <div class="brand">
+        <div class="brand-lockup">
+          <span class="brand-symbol" aria-hidden="true">F</span>
+          <div class="brand-copy">
+            <span class="brand-mark">JeanneCAIO</span>
+            <strong class="brand-product">FreedomBot</strong>
+          </div>
+        </div>
+        <p class="brand-tag">{% if is_owner_nav %}Prospect intelligence{% else %}Acquisition engine · Admin{% endif %}</p>
+      </div>
+
+      <nav class="nav" aria-label="Main">
+        {% if is_owner_nav %}
+        <div class="nav-group-label" hidden>Acquisition</div>
+        <a class="nav-link {% if request.url.path.startswith('/acquisition/database') %}active{% endif %}" href="/acquisition/database" hidden>
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
+          Prospect Database
+        </a>
+        {% else %}
+        <a class="nav-link {% if request.url.path == '/overview' %}active{% endif %}" href="/overview">
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 13h8V3H3z"/><path d="M13 21h8V11h-8z"/><path d="M13 3h8v6h-8z"/><path d="M3 21h8v-6H3z"/></svg>
+          Overview
+        </a>
+
+        <div class="nav-group-label">Acquisition</div>
+        <a class="nav-link {% if request.url.path.startswith('/acquisition/database') %}active{% endif %}" href="/acquisition/database" hidden>
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>
+          Prospect Database
+        </a>
+        <a class="nav-link {% if request.url.path.startswith('/acquisition/live') %}active{% endif %}" href="/acquisition/live" hidden>
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          Live Trace{% if nav_live_running %}<span class="nav-live-dot" data-live-nav-dot title="A run is in progress"></span>{% else %}<span class="nav-live-dot" data-live-nav-dot hidden title="A run is in progress"></span>{% endif %}
+        </a>
+        <a class="nav-link {% if request.url.path.startswith('/prospects') %}active{% endif %}" href="/prospects">
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          Prospects
+        </a>
+
+        <div class="nav-group-label">Outreach</div>
+        <a class="nav-link {% if request.url.path.startswith('/campaigns') %}active{% endif %}" href="/campaigns">
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          Campaigns
+        </a>
+        <a class="nav-link {% if request.url.path.startswith('/assessments') %}active{% endif %}" href="/assessments">
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M8 10h8"/><path d="M8 14h5"/></svg>
+          Assessments
+        </a>
+
+        <div class="nav-group-label">Settings</div>
+        <a class="nav-link {% if request.url.path.startswith('/settings/ai') %}active{% endif %}" href="/settings/ai">
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>
+          Engine &amp; AI
+        </a>
+        <a class="nav-link {% if request.url.path.startswith('/settings/journey') %}active{% endif %}" href="/settings/journey">
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>
+          Buyer Journey
+        </a>
+        <a class="nav-link {% if request.url.path.startswith('/integrations') %}active{% endif %}" href="/integrations">
+          <svg class="nav-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></svg>
+          Integrations
+        </a>
+        {% endif %}
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="sidebar-account" data-account-menu>
+          <button
+            type="button"
+            class="sidebar-account-btn"
+            data-account-toggle
+            aria-expanded="false"
+            aria-haspopup="menu"
+            aria-controls="sidebar-account-menu"
+            title="Account"
+          >
+            <svg class="sidebar-account-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <circle cx="12" cy="8" r="4"/>
+              <path d="M4 20a8 8 0 0 1 16 0"/>
+            </svg>
+            <span class="sr-only">Account</span>
+          </button>
+          <div
+            id="sidebar-account-menu"
+            class="sidebar-account-menu"
+            role="menu"
+            hidden
+            data-account-panel
+          >
+            <form method="post" action="/logout" class="logout-form" role="none">
+              <input type="hidden" name="csrf_token" value="{{ request.session.get('csrf_token', '') }}">
+              <button type="submit" class="sidebar-account-logout" role="menuitem">Log out</button>
+            </form>
+          </div>
+        </div>
+        <button type="button" class="theme-toggle" data-theme-toggle title="Switch light / dark theme" aria-label="Switch theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg>
+        </button>
+        <div class="sidebar-env">{{ 'Owner view' if is_owner_nav else 'Admin' }}<br><span>by Cepoch</span></div>
+      </div>
+    </aside>
+
+    <div class="main">
+      {% block topbar %}
+      <header class="topbar">
+        <div class="topbar-copy">
+          {% block kicker %}{% endblock %}
+          <h1>{% block page_heading %}Prospects{% endblock %}</h1>
+          {% block page_lede %}{% endblock %}
+        </div>
+        <div class="topbar-actions">
+          {% block top_actions %}{% endblock %}
+        </div>
+      </header>
+      {% endblock %}
+
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <div id="toast-host" class="toast-host" aria-live="polite" aria-atomic="true">
+    {% block flash %}{% endblock %}
+  </div>
+
+  <script>
+  (function () {
+    const host = document.getElementById("toast-host");
+    if (!host) return;
+    const flashes = Array.from(host.querySelectorAll(".flash"));
+    if (!flashes.length) return;
+
+    function clearFlashFromUrl() {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("flash")) return;
+      url.searchParams.delete("flash");
+      window.history.replaceState({}, "", url);
+    }
+
+    function dismiss(el) {
+      el.classList.remove("is-in");
+      el.classList.add("is-out");
+      setTimeout(() => el.remove(), 280);
+      clearFlashFromUrl();
+    }
+
+    flashes.forEach((el, index) => {
+      el.classList.add("toast");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "flash-close";
+      btn.setAttribute("aria-label", "Dismiss");
+      btn.textContent = "×";
+      btn.addEventListener("click", () => dismiss(el));
+      el.appendChild(btn);
+
+      // Stagger entrance slightly if multiple
+      requestAnimationFrame(() => {
+        setTimeout(() => el.classList.add("is-in"), 30 + index * 60);
+      });
+
+      setTimeout(() => {
+        if (el.isConnected) dismiss(el);
+      }, 3800 + index * 400);
+    });
+
+    clearFlashFromUrl();
+  })();
+  </script>
+  <script>
+  (function () {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var token = meta ? meta.getAttribute("content") : "";
+    if (!token) return;
+    document.body.addEventListener("htmx:configRequest", function (event) {
+      event.detail.headers["X-CSRF-Token"] = token;
+    });
+    document.querySelectorAll("form").forEach(function (form) {
+      var method = (form.getAttribute("method") || "get").toLowerCase();
+      if (method !== "post" && method !== "put" && method !== "patch" && method !== "delete") return;
+      if (form.querySelector('input[name="csrf_token"]')) return;
+      var input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "csrf_token";
+      input.value = token;
+      form.appendChild(input);
+    });
+  })();
+  </script>
+  <script>
+  (function () {
+    var root = document.querySelector("[data-account-menu]");
+    if (!root) return;
+    var toggle = root.querySelector("[data-account-toggle]");
+    var panel = root.querySelector("[data-account-panel]");
+    if (!toggle || !panel) return;
+
+    function setOpen(open) {
+      panel.hidden = !open;
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+      root.classList.toggle("is-open", open);
+    }
+
+    toggle.addEventListener("click", function (event) {
+      event.stopPropagation();
+      setOpen(panel.hidden);
+    });
+
+    document.addEventListener("click", function (event) {
+      if (!root.contains(event.target)) setOpen(false);
+    });
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") setOpen(false);
+    });
+  })();
+  </script>
+  <script>
+  (function () {
+    var btn = document.querySelector("[data-theme-toggle]");
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var root = document.documentElement;
+      var next = root.getAttribute("data-theme") === "light" ? "dark" : "light";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("fb-theme", next); } catch (e) {}
+    });
+  })();
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -17,6 +17,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY bizos ./bizos
 COPY app ./app
+COPY acquisition ./acquisition
+COPY acquisition_alembic ./acquisition_alembic
+COPY acquisition_alembic.ini ./acquisition_alembic.ini
 COPY scripts ./scripts
 
 # Run as a non-root user: the process needs no privileges on the container.

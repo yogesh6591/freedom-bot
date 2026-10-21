@@ -16,12 +16,19 @@ import {
   Headset,
   LayoutGrid,
   LogOut,
+  Megaphone,
   Menu,
   MessageSquareText,
+  MessagesSquare,
   Plug,
+  Route,
   ScrollText,
+  Send,
+  Sparkles,
   Settings2,
   ShieldCheck,
+  Unplug,
+  Users,
   X,
   type LucideIcon
 } from 'lucide-react'
@@ -51,6 +58,28 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/memory', label: 'Memory', icon: BookOpenText },
       { href: '/approvals', label: 'Approvals', icon: CheckCircle2 },
       { href: '/integrations', label: 'Integrations', icon: Plug }
+    ]
+  },
+  {
+    label: 'Acquisition',
+    items: [
+      { href: '/acquisition/overview', label: 'Overview', icon: Send, roles: ['ADMIN'] },
+      { href: '/acquisition/prospects', label: 'Prospects', icon: Users, roles: ['ADMIN'] }
+    ]
+  },
+  {
+    label: 'Outreach',
+    items: [
+      { href: '/acquisition/campaigns', label: 'Campaigns', icon: Megaphone, roles: ['ADMIN'] },
+      { href: '/acquisition/assessments', label: 'Assessments', icon: MessagesSquare, roles: ['ADMIN'] }
+    ]
+  },
+  {
+    label: 'Settings',
+    items: [
+      { href: '/acquisition/settings/ai', label: 'Engine & AI', icon: Sparkles, roles: ['ADMIN'] },
+      { href: '/acquisition/settings/journey', label: 'Buyer Journey', icon: Route, roles: ['ADMIN'] },
+      { href: '/acquisition/integrations', label: 'Integrations', icon: Unplug, roles: ['ADMIN'] }
     ]
   },
   {
@@ -114,11 +143,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const sidebarRef = useRef<HTMLElement>(null)
   const mobileNavTriggerRef = useRef<HTMLButtonElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [acquirePath, setAcquirePath] = useState<string | null>(null)
+  const [locationQuery, setLocationQuery] = useState('')
 
   useEffect(() => {
     if (!loading && !me) router.replace('/login')
   }, [loading, me, router])
   useEffect(() => setNotice(takeNotice()), [])
+  useEffect(() => {
+    setAcquirePath(null)
+    setLocationQuery(window.location.search.replace(/^\?/, ''))
+  }, [pathname])
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return
+      const data = event.data as { type?: string; path?: string } | null
+      if (!data || data.type !== 'fb-acquire-nav' || typeof data.path !== 'string') return
+      const next = `/acquisition${data.path.startsWith('/') ? data.path : `/${data.path}`}`
+      setAcquirePath(next.split('?')[0])
+      if (window.location.pathname !== next.split('?')[0]) {
+        window.history.replaceState(null, '', next)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
   useEffect(() => setMobileNavOpen(false), [pathname])
   useEffect(() => {
     if (!mobileNavOpen) return
@@ -173,6 +222,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!me) return null
 
   const isChat = pathname === '/chat' || pathname.startsWith('/chat/')
+  const isAcquisition = pathname === '/acquisition' || pathname.startsWith('/acquisition/')
+  const navPath = isAcquisition && acquirePath ? acquirePath.split('?')[0] : pathname
+  const navQuery = isAcquisition && acquirePath?.includes('?')
+    ? acquirePath.slice(acquirePath.indexOf('?') + 1)
+    : locationQuery
   const accessibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
@@ -184,7 +238,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const activeItem = accessibleGroups
     .flatMap((group) => group.items)
     .find(
-      (item) => pathname === item.href || pathname.startsWith(`${item.href}/`)
+      (item) => {
+        const [itemPath, itemQuery] = item.href.split('?')
+        const pathMatch = navPath === itemPath || navPath.startsWith(`${itemPath}/`)
+        if (!itemQuery) return pathMatch && !item.href.includes('?')
+        return navPath === itemPath && new URLSearchParams(navQuery).get('tab') === new URLSearchParams(itemQuery).get('tab')
+      }
     )
   const activeLabel = activeItem?.label ?? 'Workspace'
   const userInitials = (me.user.display_name?.trim() || 'M')
@@ -199,7 +258,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {mobileNavOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-[#0c1a20]/65 lg:hidden"
+          className="fixed inset-0 z-40 bg-[#06070d]/70 lg:hidden"
           aria-label="Close navigation"
           onClick={() => setMobileNavOpen(false)}
         />
@@ -212,11 +271,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         aria-label={mobileNavOpen ? 'Workspace navigation' : undefined}
         id="workspace-navigation"
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-[268px] shrink-0 flex-col border-r border-white/10 bg-[#152a30] text-[#e8f0f0] transition-transform duration-200 lg:static lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-[268px] shrink-0 flex-col border-r border-border bg-background-secondary text-primary transition-transform duration-200 lg:static lg:translate-x-0',
           mobileNavOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
-        <div className="flex h-[88px] shrink-0 items-center justify-between border-b border-white/[0.09] px-5">
+        <div className="flex h-[88px] shrink-0 items-center justify-between border-b border-border px-5">
           <Link
             href="/chat"
             onClick={() => setMobileNavOpen(false)}
@@ -225,10 +284,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             <BrandMark inverse className="h-10 w-10" />
             <span className="min-w-0">
-              <span className="block text-[17px] font-semibold tracking-[-0.035em] text-white">
+              <span className="block text-[17px] font-semibold tracking-[-0.035em] text-primary">
                 FreedomBot
               </span>
-              <span className="block text-[10px] font-medium uppercase tracking-[0.17em] text-[#8da6aa]">
+              <span className="block text-[10px] font-medium uppercase tracking-[0.17em] text-muted">
                 Workspace
               </span>
             </span>
@@ -237,22 +296,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             type="button"
             onClick={() => setMobileNavOpen(false)}
             aria-label="Close menu"
-            className="flex h-10 w-10 items-center justify-center rounded-lg text-[#b4c9cb] hover:bg-white/10 lg:hidden"
+            className="flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-background-elevated lg:hidden"
           >
             <X size={19} />
           </button>
         </div>
 
         <div className="px-4 pb-3 pt-5">
-          <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.09] bg-white/[0.045] px-3 py-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#315157] text-sm font-bold text-[#d5ede9]">
+          <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-background-elevated px-3 py-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white">
               {me.client.company_name?.charAt(0)?.toUpperCase() || 'W'}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-semibold text-white">
+              <p className="truncate text-[13px] font-semibold text-primary">
                 {me.client.company_name}
               </p>
-              <p className="mt-0.5 text-[11px] text-[#9bb1b5]">
+              <p className="mt-0.5 text-[11px] text-muted">
                 Company workspace
               </p>
             </div>
@@ -265,14 +324,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         >
           {accessibleGroups.map((group) => (
             <div key={group.label} className="mb-6">
-              <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#7f9a9e]">
+              <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
                 {group.label}
               </p>
               <div className="space-y-1">
                 {group.items.map((item) => {
-                  const active =
-                    pathname === item.href ||
-                    pathname.startsWith(`${item.href}/`)
+                  const active = activeItem?.href === item.href
                   const Icon = item.icon
                   return (
                     <Link
@@ -283,14 +340,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       className={cn(
                         'group relative flex min-h-11 items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors focus-visible:outline-offset-[-3px]',
                         active
-                          ? 'bg-[#29484d] font-semibold text-white'
-                          : 'text-[#b3c7ca] hover:bg-white/[0.07] hover:text-white'
+                          ? 'bg-accent font-semibold text-primary'
+                          : 'text-secondary hover:bg-background-elevated hover:text-primary'
                       )}
                     >
                       {active && (
                         <span
                           aria-hidden
-                          className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r bg-[#84d5c5]"
+                          className="absolute bottom-2.5 left-0 top-2.5 w-[3px] rounded-r bg-brand"
                         />
                       )}
                       <Icon
@@ -302,7 +359,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       {active && (
                         <ChevronRight
                           size={15}
-                          className="text-[#9bc6c1]"
+                          className="text-brand"
                           aria-hidden
                         />
                       )}
@@ -314,13 +371,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        <div className="shrink-0 border-t border-white/[0.09] px-4 pb-4 pt-4">
+        <div className="shrink-0 border-t border-border px-4 pb-4 pt-4">
           {(!me.client.allow_phi || !me.client.allow_card_data) && (
-            <div className="mb-4 rounded-lg border border-white/[0.07] bg-white/[0.035] px-3 py-2.5">
-              <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-[#bfd4d3]">
+            <div className="mb-4 rounded-lg border border-border bg-background-elevated px-3 py-2.5">
+              <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-secondary">
                 <ShieldCheck size={14} /> Data restrictions
               </div>
-              <p className="text-[11px] leading-[1.6] text-[#98b0b2]">
+              <p className="text-[11px] leading-[1.6] text-muted">
                 {[
                   !me.client.allow_phi ? 'Health data blocked' : null,
                   !me.client.allow_card_data ? 'Card data blocked' : null
@@ -332,22 +389,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
           <div className="flex items-center gap-2.5">
             <div
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#36565c] text-xs font-semibold text-white"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white"
               aria-hidden
             >
               {userInitials}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-semibold text-white">
+              <p className="truncate text-[13px] font-semibold text-primary">
                 {me.user.display_name}
               </p>
-              <p className="truncate text-[11px] text-[#9bb1b5]">
+              <p className="truncate text-[11px] text-muted">
                 {accessLabel(me)}
               </p>
             </div>
             <button
               type="button"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-[#a8c0c3] hover:bg-white/10 hover:text-white"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
               title="Sign out"
               aria-label="Sign out"
               onClick={() => void logout()}
@@ -391,7 +448,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <span className="hidden h-6 w-px bg-border sm:block" aria-hidden />
             <ThemeToggle className="!rounded-lg" />
             <span
-              className="flex h-9 w-9 items-center justify-center rounded-full bg-[#e5f0ee] text-xs font-semibold text-[#1e6d68] dark:bg-background-elevated dark:text-primary"
+              className="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-brand"
               aria-label={`Signed in as ${me.user.display_name}`}
             >
               {userInitials}
@@ -423,8 +480,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div
             className={cn(
               'mx-auto flex h-full min-h-0 min-w-0 flex-col',
-              isChat
-                ? 'max-w-[1600px] px-3 py-3 sm:px-6 sm:py-5 lg:px-7'
+              isAcquisition || isChat
+                ? 'h-full max-w-none'
                 : 'workspace-scroll max-w-[1440px] overflow-y-auto px-4 py-6 sm:px-7 sm:py-8 lg:px-10 lg:py-9'
             )}
           >

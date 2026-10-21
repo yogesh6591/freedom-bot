@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assessment unavailable · JeanneCAIO / FreedomBot</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body" data-ops-mode="ai">
+{% from "assessment/_public_brand.html" import lockup %}
+<div class="assessment-shell">
+    <header class="assessment-header">
+      {{ lockup() }}
+      <h1 class="assessment-title">Link unavailable</h1>
+      <p class="assessment-lede">{{ message or "This assessment link is invalid or expired." }}</p>
+    </header>
+  </div>
+</body>
+</html>

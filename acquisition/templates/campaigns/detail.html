@@ -1,0 +1,563 @@
+{% extends "base.html" %}
+
+{% block title %}{{ campaign.name }}{% endblock %}
+{% block page_heading %}{{ campaign.name }}{% endblock %}
+
+{% block page_lede %}
+<p class="page-lede page-lede-status">
+  <span class="status-badge status-{{ campaign.status.value }}">{{ campaign.status.value|humanize }}</span>
+  {% if campaign.instantly_runtime_status.value == 'active' %}
+    <span class="status-badge status-active">Activated</span>
+  {% elif campaign.instantly_runtime_status.value == 'paused' %}
+    <span class="status-badge status-paused">Paused</span>
+  {% else %}
+    <span class="status-badge status-not_started">Not activated</span>
+  {% endif %}
+</p>
+{% endblock %}
+
+{% block top_actions %}
+<a class="btn btn-ghost" href="/campaigns">Back to list</a>
+{% if campaign.instantly_runtime_status.value != 'active' %}
+  {% if activation_remaining == 0 %}
+  <button type="button" class="btn btn-primary" data-goto="launch">Activate ready</button>
+  {% else %}
+  <button type="button" class="btn btn-secondary" data-goto="launch">{{ launch_done }}/{{ launch_total }} to activate</button>
+  {% endif %}
+{% endif %}
+{% endblock %}
+
+{% block flash %}
+  {% if flash == 'created' %}<div class="flash">Campaign created. Finish setup in the tabs, then Launch.</div>
+  {% elif flash == 'updated' %}<div class="flash">Campaign details saved.</div>
+  {% elif flash == 'name_required' %}<div class="flash flash-error">Campaign name is required.</div>
+  {% elif flash == 'sender_required' %}<div class="flash flash-error">Sender name is required.</div>
+  {% elif flash == 'details_error' %}<div class="flash flash-error">Could not save campaign details. Check name and sender, then try again.</div>
+  {% elif flash == 'message_added' %}<div class="flash">Message added.</div>
+  {% elif flash == 'message_updated' %}<div class="flash">Message updated.</div>
+  {% elif flash == 'message_deleted' %}<div class="flash">Message deleted.</div>
+  {% elif flash == 'message_error' %}<div class="flash flash-error">Could not save message. Check delays and required fields.</div>
+  {% elif flash == 'prospect_added' %}<div class="flash">Prospect attached.</div>
+  {% elif flash == 'prospect_removed' %}<div class="flash">Prospect removed.</div>
+  {% elif flash == 'prospect_error' %}<div class="flash flash-error">Could not update campaign prospects. Only approved ones can be attached once.</div>
+  {% elif flash == 'schedule_updated' %}<div class="flash">Sending schedule saved.</div>
+  {% elif flash == 'synced' %}<div class="flash">Campaign and prospects synced to Instantly.</div>
+  {% elif flash == 'sync_error' %}<div class="flash flash-error">Instantly sync failed. Check Launch for details.</div>
+  {% elif flash == 'synced_leads_error' %}<div class="flash flash-error">Campaign synced, but some prospects failed. Check Lead sync status under Prospects.</div>
+  {% elif flash == 'leads_synced' %}<div class="flash">Prospects synced to Instantly.</div>
+  {% elif flash == 'lead_synced' %}<div class="flash">Prospect synced to Instantly.</div>
+  {% elif flash == 'leads_sync_error' %}<div class="flash flash-error">Lead sync failed. Sync the campaign to Instantly first, then try again.</div>
+  {% elif flash == 'accounts_saved' %}<div class="flash">Sending accounts saved.</div>
+  {% elif flash == 'accounts_error' %}<div class="flash flash-error">Could not save sending accounts.</div>
+  {% elif flash == 'activated' %}<div class="flash">Campaign activated in Instantly.</div>
+  {% elif flash == 'activate_error' %}<div class="flash flash-error">Activation blocked — finish the checklist first.</div>
+  {% elif flash == 'paused' %}<div class="flash">Campaign paused in Instantly.</div>
+  {% elif flash == 'pause_error' %}<div class="flash flash-error">Could not pause campaign.</div>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+{% if errors %}
+  <div class="form-errors">
+    <strong>Please fix the following:</strong>
+    <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+<div class="campaign-layout">
+  <div class="campaign-main">
+    <nav class="camp-tabs" role="tablist" aria-label="Campaign sections">
+      <button type="button" class="camp-tab {% if active_tab == 'details' %}is-active{% endif %}" data-tab="details" role="tab" aria-selected="{{ 'true' if active_tab == 'details' else 'false' }}">Details</button>
+      <button type="button" class="camp-tab {% if active_tab == 'schedule' %}is-active{% endif %}" data-tab="schedule" role="tab" aria-selected="{{ 'true' if active_tab == 'schedule' else 'false' }}">Schedule</button>
+      <button type="button" class="camp-tab {% if active_tab == 'sequence' %}is-active{% endif %}" data-tab="sequence" role="tab" aria-selected="{{ 'true' if active_tab == 'sequence' else 'false' }}">Sequence</button>
+      <button type="button" class="camp-tab {% if active_tab == 'customers' %}is-active{% endif %}" data-tab="customers" role="tab" aria-selected="{{ 'true' if active_tab == 'customers' else 'false' }}">Customers</button>
+      <button type="button" class="camp-tab {% if active_tab == 'launch' %}is-active{% endif %}" data-tab="launch" role="tab" aria-selected="{{ 'true' if active_tab == 'launch' else 'false' }}">
+        Launch
+        {% if campaign.instantly_runtime_status.value == 'active' %}
+          <span class="camp-tab-badge camp-tab-badge-ok">Live</span>
+        {% elif activation_remaining %}
+          <span class="camp-tab-badge">{{ activation_remaining }}</span>
+        {% endif %}
+      </button>
+    </nav>
+
+    <section class="camp-panel panel form-panel {% if active_tab == 'details' %}is-active{% endif %}" id="tab-details" role="tabpanel" data-panel="details">
+      <h2 class="section-title">Campaign details</h2>
+      <p class="section-lede muted">Name and sender for this outreach. Assessment links are generated per prospect automatically.</p>
+      <form method="post" action="/campaigns/{{ campaign.id }}" class="prospect-form">
+        <input type="hidden" name="return_tab" value="details">
+        <div class="form-grid">
+          <label class="field">
+            <span>Name <em>*</em></span>
+            <input required name="name" value="{{ campaign.name }}" maxlength="255" placeholder="Campaign name">
+          </label>
+          <label class="field">
+            <span>Sender Name <em>*</em></span>
+            <input required name="sender_name" value="{{ campaign.sender_name }}" maxlength="255">
+          </label>
+          <input type="hidden" name="status_value" value="{{ campaign.status.value }}">
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Save Details</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="camp-panel panel form-panel {% if active_tab == 'schedule' %}is-active{% endif %}" id="tab-schedule" role="tabpanel" data-panel="schedule">
+      <h2 class="section-title">Sending schedule</h2>
+      <p class="section-lede muted">When Instantly is allowed to send.</p>
+      <form method="post" action="/campaigns/{{ campaign.id }}/schedule" class="sched-form" novalidate>
+        <div class="sched-stack">
+          <label class="sched-block">
+            <span class="sched-label">Timezone</span>
+            <select class="sched-select" name="send_timezone" required>
+              {% for tz_value, tz_label in timezone_choices %}
+              <option value="{{ tz_value }}" {% if selected_timezone == tz_value %}selected{% endif %}>{{ tz_label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <div class="sched-block">
+            <span class="sched-label">Daily send window</span>
+            <div class="sched-window">
+              <div class="sched-time" role="group" aria-label="Window start">
+                <select name="send_window_start_hour" aria-label="Start hour" required>
+                  {% for h in clock_hours %}
+                  <option value="{{ h }}" {% if window_start_12h.hour == h|string %}selected{% endif %}>{{ h }}</option>
+                  {% endfor %}
+                </select>
+                <span class="sched-colon" aria-hidden="true">:</span>
+                <select name="send_window_start_minute" aria-label="Start minute" required>
+                  {% for m in clock_minutes %}
+                  <option value="{{ m }}" {% if window_start_12h.minute == m %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                <select class="sched-ampm" name="send_window_start_period" aria-label="Start AM/PM" required>
+                  <option value="AM" {% if window_start_12h.period == 'AM' %}selected{% endif %}>AM</option>
+                  <option value="PM" {% if window_start_12h.period == 'PM' %}selected{% endif %}>PM</option>
+                </select>
+              </div>
+              <span class="sched-to" aria-hidden="true">→</span>
+              <div class="sched-time" role="group" aria-label="Window end">
+                <select name="send_window_end_hour" aria-label="End hour" required>
+                  {% for h in clock_hours %}
+                  <option value="{{ h }}" {% if window_end_12h.hour == h|string %}selected{% endif %}>{{ h }}</option>
+                  {% endfor %}
+                </select>
+                <span class="sched-colon" aria-hidden="true">:</span>
+                <select name="send_window_end_minute" aria-label="End minute" required>
+                  {% for m in clock_minutes %}
+                  <option value="{{ m }}" {% if window_end_12h.minute == m %}selected{% endif %}>{{ m }}</option>
+                  {% endfor %}
+                </select>
+                <select class="sched-ampm" name="send_window_end_period" aria-label="End AM/PM" required>
+                  <option value="AM" {% if window_end_12h.period == 'AM' %}selected{% endif %}>AM</option>
+                  <option value="PM" {% if window_end_12h.period == 'PM' %}selected{% endif %}>PM</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="sched-block">
+            <span class="sched-label">Send on</span>
+            <div class="sched-days" role="group" aria-label="Send days">
+              <label class="sched-day"><input type="checkbox" name="send_monday" value="true" {% if campaign.send_monday %}checked{% endif %}><span>Mon</span></label>
+              <label class="sched-day"><input type="checkbox" name="send_tuesday" value="true" {% if campaign.send_tuesday %}checked{% endif %}><span>Tue</span></label>
+              <label class="sched-day"><input type="checkbox" name="send_wednesday" value="true" {% if campaign.send_wednesday %}checked{% endif %}><span>Wed</span></label>
+              <label class="sched-day"><input type="checkbox" name="send_thursday" value="true" {% if campaign.send_thursday %}checked{% endif %}><span>Thu</span></label>
+              <label class="sched-day"><input type="checkbox" name="send_friday" value="true" {% if campaign.send_friday %}checked{% endif %}><span>Fri</span></label>
+              <label class="sched-day"><input type="checkbox" name="send_saturday" value="true" {% if campaign.send_saturday %}checked{% endif %}><span>Sat</span></label>
+              <label class="sched-day"><input type="checkbox" name="send_sunday" value="true" {% if campaign.send_sunday %}checked{% endif %}><span>Sun</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Save Schedule</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="camp-panel panel form-panel {% if active_tab == 'sequence' %}is-active{% endif %}" id="tab-sequence" role="tabpanel" data-panel="sequence">
+      <h2 class="section-title">Message sequence</h2>
+      <p class="section-lede muted">Ordered emails. Delays are hours after the previous message. Include <code>{{ '{{assessment_url}}' }}</code> before activation.</p>
+
+      <div class="sequence-list">
+        {% for message in messages %}
+        <article class="sequence-card {% if not message.is_active %}inactive{% endif %}">
+          <header class="sequence-card-header">
+            <div>
+              <span class="sequence-step">{{ message.sequence_order }}</span>
+              <strong>{% if message.message_type.value == 'initial' %}Initial Email{% else %}Follow-up{% endif %}</strong>
+              <span class="muted">· {{ message.channel.value|upper }}</span>
+            </div>
+            <span class="delay-chip">{{ delay_label(message.delay_after_previous_hours) }}</span>
+          </header>
+          <form method="post" action="/campaigns/{{ campaign.id }}/messages/{{ message.id }}" class="sequence-form">
+            <div class="form-grid">
+              <label class="field">
+                <span>Sequence order</span>
+                <input type="number" min="1" name="sequence_order" value="{{ message.sequence_order }}">
+              </label>
+              <label class="field">
+                <span>Message type</span>
+                <select name="message_type">
+                  <option value="initial" {% if message.message_type.value == 'initial' %}selected{% endif %}>Initial</option>
+                  <option value="follow_up" {% if message.message_type.value == 'follow_up' %}selected{% endif %}>Follow-up</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Delay after previous (hours)</span>
+                <input type="number" min="0" name="delay_after_previous_hours" value="{{ message.delay_after_previous_hours }}">
+              </label>
+              <label class="field checkbox-field">
+                <span>Active</span>
+                <label class="checkbox-inline">
+                  <input type="checkbox" name="is_active" value="true" {% if message.is_active %}checked{% endif %}>
+                  Include in sequence
+                </label>
+              </label>
+              <label class="field full">
+                <span>Subject</span>
+                <input name="subject" value="{{ message.subject or '' }}" placeholder="Enter approved subject copy" maxlength="500">
+              </label>
+              <label class="field full">
+                <span>Body</span>
+                <textarea name="body" rows="5" placeholder="Enter approved email body copy">{{ message.body or '' }}</textarea>
+              </label>
+            </div>
+            <div class="form-actions message-actions">
+              <button class="btn btn-secondary" type="submit">Save Message</button>
+              <button class="btn btn-danger" type="submit" form="delete-message-{{ message.id }}" onclick="return confirm('Delete this message?');">Delete Message</button>
+            </div>
+          </form>
+          <form id="delete-message-{{ message.id }}" method="post" action="/campaigns/{{ campaign.id }}/messages/{{ message.id }}/delete" hidden></form>
+        </article>
+        {% else %}
+          <div class="state state-empty">
+            <h2>No messages yet</h2>
+            <p>Add an initial email to start the sequence.</p>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="add-message panel-inset">
+        <h3 class="subsection-title">Add message</h3>
+        <form method="post" action="/campaigns/{{ campaign.id }}/messages" class="sequence-form">
+          <div class="form-grid">
+            <label class="field">
+              <span>Type</span>
+              <select name="message_type">
+                <option value="follow_up">Follow-up</option>
+                <option value="initial">Initial</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Delay after previous (hours)</span>
+              <input type="number" min="0" name="delay_after_previous_hours" value="48">
+            </label>
+            <label class="field checkbox-field">
+              <span>Active</span>
+              <label class="checkbox-inline">
+                <input type="checkbox" name="is_active" value="true" checked>
+                Include in sequence
+              </label>
+            </label>
+            <label class="field full">
+              <span>Subject</span>
+              <input name="subject" placeholder="Leave empty until approved copy is available" maxlength="500">
+            </label>
+            <label class="field full">
+              <span>Body</span>
+              <textarea name="body" rows="4" placeholder="Leave empty until approved copy is available"></textarea>
+            </label>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit">Add Message</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="camp-panel panel form-panel {% if active_tab == 'customers' %}is-active{% endif %}" id="tab-customers" role="tabpanel" data-panel="customers">
+      <div class="section-head-row">
+        <div>
+          <h2 class="section-title">Prospects</h2>
+          <p class="section-lede muted">Attach approved recipients. Launch → Sync Campaign to Instantly also pushes them as Instantly leads with assessment links.</p>
+        </div>
+      </div>
+
+      <div class="table-wrap mb-4">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Executive</th>
+              <th>Email</th>
+              <th>Lead sync</th>
+              <th>Outreach</th>
+              <th>Assessment</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for link in attached %}
+            <tr>
+              <td>{{ link.prospect.company if link.prospect else '—' }}</td>
+              <td>{{ link.prospect.executive_name if link.prospect else '—' }}</td>
+              <td>{{ link.prospect.email if link.prospect else '—' }}</td>
+              <td>
+                <span class="status-badge status-{{ link.sync_status.value }}">{{ link.sync_status.value|humanize }}</span>
+                {% if link.sync_error %}<div class="muted small">{{ link.sync_error }}</div>{% endif %}
+              </td>
+              <td>
+                {% if link.outreach_status.value == 'pending' and link.sync_status.value == 'synced' %}
+                  Queued
+                {% else %}
+                  {{ link.outreach_status.value|humanize }}
+                {% endif %}
+              </td>
+              <td>{{ link.assessment_status.value|humanize }}</td>
+              <td class="row-actions">
+                <form method="post" action="/campaigns/{{ campaign.id }}/prospects/{{ link.prospect_id }}/delete" class="inline-form">
+                  <button class="btn btn-small btn-danger" type="submit">Remove</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="muted">No prospects attached yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="subsection-title">Add approved prospect</h3>
+      <form class="filters mb-3" method="get" action="/campaigns/{{ campaign.id }}">
+        <input type="hidden" name="tab" value="customers">
+        <label class="field grow">
+          <input type="search" name="prospect_search" value="{{ prospect_search }}" placeholder="Company, executive, email" aria-label="Search approved prospects">
+        </label>
+        <div class="filter-actions">
+          <button class="btn btn-secondary" type="submit">Search</button>
+        </div>
+      </form>
+
+      {% if available_prospects %}
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead>
+            <tr><th>Company</th><th>Executive</th><th>Email</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for prospect in available_prospects %}
+            <tr>
+              <td>{{ prospect.company }}</td>
+              <td>{{ prospect.executive_name }}</td>
+              <td>{{ prospect.email }}</td>
+              <td>
+                <form method="post" action="/campaigns/{{ campaign.id }}/prospects">
+                  <input type="hidden" name="prospect_id" value="{{ prospect.id }}">
+                  <button class="btn btn-small btn-secondary" type="submit">Add</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </section>
+
+    <section class="camp-panel panel form-panel {% if active_tab == 'launch' %}is-active{% endif %}" id="tab-launch" role="tabpanel" data-panel="launch">
+      {% if campaign.instantly_runtime_status.value != 'active' and campaign.instantly_runtime_status.value != 'paused' %}
+      <p class="section-lede muted">Sync to Instantly (campaign + prospects), choose a sending account, then activate.</p>
+      {% endif %}
+
+      <div class="launch-stack">
+        <article class="launch-card">
+          <h3 class="subsection-title">1. Sending account</h3>
+          <p class="muted small mb-3">Pick Instantly mailboxes for this campaign.</p>
+          {% if sending_accounts is defined and sending_accounts %}
+          <form method="post" action="/campaigns/{{ campaign.id }}/sending-accounts">
+            <div class="day-grid">
+              {% for account in sending_accounts %}
+              <label class="checkbox-inline">
+                <input type="checkbox" name="selected_emails" value="{{ account.email }}" {% if account.email in selected_emails %}checked{% endif %}>
+                {{ account.email }}{% if account.status %} <span class="muted">({{ account.status }})</span>{% endif %}
+              </label>
+              {% endfor %}
+            </div>
+            <div class="form-actions">
+              <button class="btn btn-secondary" type="submit">Save Sending Accounts</button>
+            </div>
+          </form>
+          {% else %}
+            <p class="muted">No Instantly accounts loaded. Connect Instantly, then refresh.</p>
+            {% if selected_emails %}<p>Currently saved: {{ selected_emails|join(', ') }}</p>{% endif %}
+          {% endif %}
+        </article>
+
+        <article class="launch-card">
+          <h3 class="subsection-title">2. Sync campaign</h3>
+          <p class="muted small mb-3">Pushes schedule, sequence, campaign settings, and attached prospects to Instantly. Finish Details, Sequence, and Prospects first if sync fails.</p>
+          <dl class="sync-meta">
+            <div>
+              <dt>Status</dt>
+              <dd>
+                {% if campaign.instantly_sync_status.value == 'synced' %}Synced
+                {% elif campaign.instantly_sync_status.value == 'sync_error' %}Error
+                {% else %}Not synced{% endif %}
+              </dd>
+            </div>
+            <div>
+              <dt>Instantly ID</dt>
+              <dd>{{ campaign.instantly_campaign_id or '—' }}</dd>
+            </div>
+            <div>
+              <dt>Last synced</dt>
+              <dd>{{ format_datetime(campaign.instantly_last_synced_at, timezone_name=campaign.send_timezone) }}</dd>
+            </div>
+          </dl>
+          {% if campaign.instantly_sync_error %}
+            <p class="flash flash-error">{{ campaign.instantly_sync_error }}</p>
+          {% endif %}
+          {% if ready_remaining and campaign.status.value != 'ready' and campaign.instantly_sync_status.value != 'synced' %}
+          <ul class="mini-check mb-3">
+            {% for item in ready_checklist if not item.done %}
+            <li>{{ item.detail or item.label }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          <form method="post" action="/campaigns/{{ campaign.id }}/instantly/sync" onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').textContent='Syncing…';">
+            <button class="btn btn-secondary" type="submit" {% if campaign.status.value == 'archived' %}disabled{% endif %}>Sync Campaign to Instantly</button>
+          </form>
+        </article>
+
+        <article class="launch-card launch-card-activate">
+          <h3 class="subsection-title">3. Activate</h3>
+          {% if campaign.instantly_runtime_status.value == 'active' %}
+          <div class="form-actions">
+            <button class="btn btn-primary" type="button" disabled>Activated</button>
+            <form method="post" action="/campaigns/{{ campaign.id }}/pause">
+              <button class="btn btn-secondary" type="submit">Pause Campaign</button>
+            </form>
+          </div>
+          {% elif campaign.instantly_runtime_status.value == 'paused' %}
+          <div class="form-actions">
+            <form method="post" action="/campaigns/{{ campaign.id }}/activate" onsubmit="return confirm('Activate this campaign in Instantly? Emails may start sending.');">
+              <input type="hidden" name="confirm" value="true">
+              <button class="btn btn-primary" type="submit" {% if activation_remaining %}disabled{% endif %}>Resume / Activate</button>
+            </form>
+          </div>
+          {% else %}
+          <div class="form-actions">
+            <form method="post" action="/campaigns/{{ campaign.id }}/activate" onsubmit="return confirm('Activate this campaign in Instantly? Emails may start sending.');">
+              <input type="hidden" name="confirm" value="true">
+              <button class="btn btn-primary" type="submit" {% if activation_remaining %}disabled{% endif %}>Activate Campaign</button>
+            </form>
+            <form method="post" action="/campaigns/{{ campaign.id }}/pause">
+              <button class="btn btn-secondary" type="submit" disabled>Pause Campaign</button>
+            </form>
+          </div>
+          {% endif %}
+        </article>
+      </div>
+    </section>
+  </div>
+
+  <aside class="launch-rail" aria-label="Activation checklist">
+    <div class="launch-rail-card">
+      <div class="launch-rail-head">
+        <div>
+          {% if campaign.instantly_runtime_status.value == 'active' %}
+          <h2 class="launch-rail-title">Activated</h2>
+          {% elif campaign.instantly_runtime_status.value == 'paused' %}
+          <h2 class="launch-rail-title">Paused</h2>
+          {% else %}
+          <p class="launch-rail-kicker">Path to activate</p>
+          <h2 class="launch-rail-title">{% if activation_remaining == 0 %}Ready to activate{% else %}{{ activation_remaining }} item{{ 's' if activation_remaining != 1 else '' }} left{% endif %}</h2>
+          {% endif %}
+        </div>
+        <div class="launch-meter" style="--pct: {% if campaign.instantly_runtime_status.value == 'active' %}100{% else %}{{ launch_pct }}{% endif %}%" aria-hidden="true">
+          <span>{% if campaign.instantly_runtime_status.value == 'active' %}100{% else %}{{ launch_pct }}{% endif %}%</span>
+        </div>
+      </div>
+      <div class="launch-progress" aria-hidden="true"><i style="width: {% if campaign.instantly_runtime_status.value == 'active' %}100%{% else %}{{ launch_pct }}%{% endif %}"></i></div>
+
+      <p class="launch-rail-section">Setup</p>
+      <ul class="launch-checklist">
+        {% for item in ready_checklist %}
+        {% set goto = 'details' if item.key == 'details' else ('sequence' if item.key in ['structure','copy'] else 'customers') %}
+        <li class="{% if item.done %}is-done{% else %}is-todo{% endif %}">
+          <button type="button" class="launch-check-btn" data-goto="{{ goto }}">
+            <span class="launch-check-mark">{% if item.done %}✓{% else %}{{ loop.index }}{% endif %}</span>
+            <span class="launch-check-copy">
+              <strong>{{ item.label }}</strong>
+              {% if not item.done and item.detail %}<em>{{ item.detail }}</em>{% endif %}
+            </span>
+          </button>
+        </li>
+        {% endfor %}
+      </ul>
+
+      <p class="launch-rail-section">Go live</p>
+      <ul class="launch-checklist">
+        {% for item in activation_checklist %}
+        {% set goto = 'sequence' if item.key == 'cta' else ('customers' if item.key == 'prospects' else 'launch') %}
+        <li class="{% if item.done %}is-done{% else %}is-todo{% endif %}">
+          <button type="button" class="launch-check-btn" data-goto="{{ goto }}">
+            <span class="launch-check-mark">{% if item.done %}✓{% else %}{{ loop.index }}{% endif %}</span>
+            <span class="launch-check-copy">
+              <strong>{{ item.label }}</strong>
+              {% if not item.done and item.detail %}<em>{{ item.detail }}</em>{% endif %}
+            </span>
+          </button>
+        </li>
+        {% endfor %}
+      </ul>
+
+      <button type="button" class="btn {% if campaign.instantly_runtime_status.value == 'active' %}btn-secondary{% else %}btn-primary{% endif %} launch-rail-cta" data-goto="launch" {% if campaign.instantly_runtime_status.value != 'active' and activation_remaining %}disabled{% endif %}>
+        {% if campaign.instantly_runtime_status.value == 'active' %}
+          Manage
+        {% elif activation_remaining %}
+          Finish checklist
+        {% else %}
+          Go to Activate
+        {% endif %}
+      </button>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function () {
+  const tabs = Array.from(document.querySelectorAll(".camp-tab"));
+  const panels = Array.from(document.querySelectorAll(".camp-panel"));
+  if (!tabs.length) return;
+
+  function activate(name, push) {
+    tabs.forEach((tab) => {
+      const on = tab.dataset.tab === name;
+      tab.classList.toggle("is-active", on);
+      tab.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    panels.forEach((panel) => {
+      panel.classList.toggle("is-active", panel.dataset.panel === name);
+    });
+    if (push) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("tab", name);
+      url.searchParams.delete("flash");
+      window.history.replaceState({}, "", url);
+    }
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => activate(tab.dataset.tab, true));
+  });
+
+  document.querySelectorAll("[data-goto]").forEach((el) => {
+    el.addEventListener("click", () => activate(el.dataset.goto, true));
+  });
+})();
+</script>
+{% endblock %}

@@ -5,9 +5,12 @@
 #
 # Host ports are shifted off the common defaults so this stack can run alongside
 # other local Postgres / Next / API processes:
-#   UI  http://localhost:3001
-#   API http://localhost:8001
+#   UI  http://localhost:3001   (open this — one app)
+#   API http://localhost:8001   (the same process also serves /acquire)
 #   DB  localhost:5434 → container 5432
+#
+# Acquisition is part of this stack: the api image includes the acquisition
+# package and serves it at /acquire. The UI proxies that path.
 
 services:
   db:
@@ -52,11 +55,26 @@ services:
       # FB-043: shared secret for the checkout/contract sale webhook.
       SALE_WEBHOOK_SECRET: ${SALE_WEBHOOK_SECRET:-}
       MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
+      # Optional: none | low | medium | high. Leave unset for models that reject it with tools.
+      MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-}
+      # Acquisition runs in this process, on its own database.
+      DATABASE_URL: postgresql+psycopg://${DB_USER:-bizos}:${DB_PASS:-bizos}@db:5432/${ACQUISITION_DB_NAME:-acquisition}
+      ACQUISITION_URL_PREFIX: /acquire
+      PUBLIC_BASE_URL: http://localhost:3001/acquire
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-jeanne}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
+      SECRET_KEY: ${ACQUISITION_SECRET_KEY:-dev-local-acquisition-session-key-0001}
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
+      CALCOM_API_KEY: ${CALCOM_API_KEY:-}
+      CALCOM_API_BASE_URL: ${CALCOM_API_BASE_URL:-https://api.cal.com/v2}
+      CALCOM_WEBHOOK_SECRET: ${CALCOM_WEBHOOK_SECRET:-}
     ports:
       - "8001:8000"
-    # Seed the demo workspaces on first boot, then serve.
+    # Create the acquisition database, migrate it, seed the demo workspaces, then serve.
     command: >
-      sh -c "python -m scripts.bootstrap --demo &&
+      sh -c "python -m scripts.ensure_acquisition_db &&
+             python -m alembic -c acquisition_alembic.ini upgrade head &&
+             python -m scripts.bootstrap --demo &&
              python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   ui:
@@ -64,6 +82,9 @@ services:
       context: ./ui
       args:
         NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8001}
+        ACQUISITION_PROXY_URL: http://api:8000
+    environment:
+      ACQUISITION_PROXY_URL: http://api:8000
     depends_on:
       - api
     ports:

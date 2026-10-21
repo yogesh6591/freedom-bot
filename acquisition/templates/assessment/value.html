@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Value · JeanneCAIO / FreedomBot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+</head>
+<body class="assessment-body">
+{% set readiness = (payload.budget_readiness or 'not_assessed')|lower %}
+  {% set answered = payload.value_context_completed_at %}
+  {% set outcome_param = (request.query_params.get('outcome') or '')|lower %}
+  {% set outcome = (outcome_param or readiness)|lower %}
+  {% set revise = request.query_params.get('revise') == '1' %}
+  {# Finished card only right after not_ready submit (?outcome=not_ready).
+     Plain /value (e.g. Demo → Continue) always shows Value content + readiness. #}
+  {% set closed = answered and outcome_param == 'not_ready' and not revise %}
+  {% set need_context = answered and outcome == 'unclear' and not closed %}
+  {% from "assessment/_public_brand.html" import lockup %}
+  <div class="assessment-shell assessment-shell--journey{% if closed %} assessment-shell--value-complete{% endif %}">
+    <header class="assessment-header">
+      {{ lockup() }}
+      {% if not closed %}
+      <h1 class="assessment-title">{{ payload.value_heading or 'What this could mean for your business' }}</h1>
+      {% endif %}
+    </header>
+    <main class="assessment-result assessment-result--value{% if closed %} assessment-result--value-complete{% endif %}">
+      {% if not closed %}
+      <ol class="assessment-steps" aria-label="Journey progress">
+        <li class="is-done">Result</li>
+        <li class="is-done">Proof</li>
+        <li class="is-done">Demo</li>
+        <li class="is-current">Value</li>
+        <li{% if payload.calendar_eligible %} class="is-done"{% endif %}>Calendar</li>
+      </ol>
+
+      <div class="assessment-value-body">
+        {% if payload.personalized_value %}
+        <section class="assessment-result-block assessment-result-block--impact">
+          <h2>Your value opportunity</h2>
+          <p>{{ payload.personalized_value }}</p>
+        </section>
+        {% endif %}
+
+        {% if payload.value_investment_text %}
+        <section class="assessment-result-block">
+          <h2>Investment context</h2>
+          <p>{{ payload.value_investment_text }}</p>
+        </section>
+        {% endif %}
+
+        {% if payload.value_context_html %}
+        <section class="assessment-result-block">
+          {{ payload.value_context_html | safe }}
+        </section>
+        {% endif %}
+
+        {% if not payload.personalized_value and not payload.value_investment_text and not payload.value_context_html %}
+        <section class="assessment-result-block">
+          <h2>Coming soon</h2>
+          <p>More detail about how FreedomBot could support your business will appear here shortly.</p>
+        </section>
+        {% endif %}
+
+        {% if need_context %}
+        <section
+          id="value-status-unclear"
+          class="value-status-card"
+          data-value-outcome="unclear"
+          tabindex="-1"
+          aria-live="polite"
+        >
+          <div class="value-status-card__top">
+            <span class="value-status-card__icon" aria-hidden="true">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <circle cx="10" cy="10" r="8.25" stroke="currentColor" stroke-width="1.75"/>
+                <path d="M10 6v5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                <circle cx="10" cy="13.75" r="1" fill="currentColor"/>
+              </svg>
+            </span>
+            <p class="value-status-card__label">More context requested</p>
+          </div>
+          <h2 class="value-status-card__title">Need a little more context?</h2>
+          <p class="value-status-card__body">
+            No problem. You can review the FreedomBot demo and your value summary before deciding whether you want to schedule a conversation with Jeanne.
+          </p>
+          <div class="value-status-card__actions">
+            <a class="btn btn-primary" href="/a/{{ token }}/demo">Review FreedomBot Demo</a>
+          </div>
+        </section>
+        {% endif %}
+
+        <section id="value-readiness" class="assessment-result-block">
+          <h2>Ready for the next conversation?</h2>
+          {% if payload.budget_question %}
+          <p>{{ payload.budget_question }}</p>
+          {% endif %}
+          <div class="assessment-budget-options">
+            <label>
+              <input type="radio" name="budget_readiness" value="ready" form="fb-value-form" required{% if outcome == 'ready' %} checked{% endif %}>
+              <span>{{ payload.budget_label_ready }}</span>
+            </label>
+            <label>
+              <input type="radio" name="budget_readiness" value="unclear" form="fb-value-form"{% if outcome == 'unclear' %} checked{% endif %}>
+              <span>{{ payload.budget_label_unclear }}</span>
+            </label>
+            <label>
+              <input type="radio" name="budget_readiness" value="not_ready" form="fb-value-form"{% if outcome == 'not_ready' %} checked{% endif %}>
+              <span>{{ payload.budget_label_not_ready }}</span>
+            </label>
+          </div>
+        </section>
+      </div>
+
+      <form id="fb-value-form" method="post" action="/a/{{ token }}/value/complete">
+        <div class="assessment-cta">
+          <a class="btn btn-secondary" href="/a/{{ token }}/demo">← Back to Demo</a>
+          <button type="submit" class="btn btn-primary">
+            {% if answered and outcome == 'ready' and payload.calendar_eligible %}
+            Continue to Calendar →
+            {% elif answered %}
+            Update response
+            {% else %}
+            {{ payload.continue_button_text }}{% if '→' not in payload.continue_button_text %} →{% endif %}
+            {% endif %}
+          </button>
+        </div>
+      </form>
+      {% else %}
+      <section
+        id="value-status-not-ready"
+        class="value-complete-card"
+        data-value-outcome="not_ready"
+        tabindex="-1"
+        aria-live="polite"
+      >
+        <div class="value-complete-card__icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <circle cx="14" cy="14" r="12.25" stroke="currentColor" stroke-width="1.75"/>
+            <path d="M8.5 14.25l3.4 3.4 7.6-7.9" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <p class="value-complete-card__label">Assessment complete</p>
+        <h1 class="value-complete-card__title">Thanks for taking the time to complete your assessment</h1>
+        <p class="value-complete-card__body">
+          It sounds like now isn’t the right time to continue with a FreedomBot consultation. Your assessment has been saved, so you can revisit it later without starting over.
+        </p>
+        <p class="value-complete-card__note">
+          We hope the assessment gave you a clearer view of where operational friction may be affecting the business.
+        </p>
+        <div class="value-complete-card__actions">
+          <a class="btn btn-primary" href="/a/{{ token }}/result">View My Assessment Result</a>
+          <a class="btn btn-secondary" href="/a/{{ token }}/value?revise=1">Change My Response</a>
+        </div>
+      </section>
+      {% endif %}
+    </main>
+  </div>
+  {% if need_context %}
+  <script>
+    (function () {
+      var card = document.getElementById("value-status-unclear");
+      if (!card) return;
+      window.requestAnimationFrame(function () {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.classList.add("is-highlight");
+        try { card.focus({ preventScroll: true }); } catch (e) { card.focus(); }
+        window.setTimeout(function () {
+          card.classList.remove("is-highlight");
+        }, 1800);
+      });
+    })();
+  </script>
+  {% elif closed %}
+  <script>
+    (function () {
+      var card = document.getElementById("value-status-not-ready");
+      if (!card) return;
+      window.requestAnimationFrame(function () {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.classList.add("is-highlight");
+        try { card.focus({ preventScroll: true }); } catch (e) { card.focus(); }
+        window.setTimeout(function () {
+          card.classList.remove("is-highlight");
+        }, 1800);
+      });
+    })();
+  </script>
+  {% endif %}
+</body>
+</html>

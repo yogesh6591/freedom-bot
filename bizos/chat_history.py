@@ -147,6 +147,75 @@ def list_sessions(ctx: TenantContext, *, limit: int = 50) -> list[dict[str, Any]
     ]
 
 
+def set_latest_email_draft(
+    ctx: TenantContext,
+    session_id: str,
+    email_draft: str,
+    extra: dict | None = None,
+) -> None:
+    """Replace the email on the latest assistant turn with what the user edited.
+
+    Both the display trace (``meta.json``) and the committed state the next turn reads
+    (``meta.state.draft``) are updated, so the email that is sent is the email that was edited.
+    """
+    ensure_table(ctx)
+    with workspace_connection(ctx) as conn:
+        row = conn.execute(
+            text(
+                "SELECT id, meta FROM chat_messages "
+                "WHERE session_id = :s AND user_id = :u AND role = 'assistant' "
+                "ORDER BY created_at DESC, id DESC LIMIT 1"
+            ),
+            {"s": session_id, "u": ctx.user_id},
+        ).first()
+        if row is None:
+            raise SessionNotFound(session_id)
+        meta = row.meta or {}
+        if isinstance(meta, str):
+            meta = json.loads(meta)
+        if not isinstance(meta, dict):
+            meta = {}
+        keys = ("email_subject", "email_body", "email_from", "email_address")
+        payload = meta.get("json") if isinstance(meta.get("json"), dict) else {}
+        payload["email_draft"] = email_draft
+        for key in keys:
+            if extra and extra.get(key) is not None:
+                payload[key] = extra[key]
+        meta["json"] = payload
+        state = meta.get("state")
+        if isinstance(state, dict) and isinstance(state.get("draft"), dict):
+            draft = state["draft"]
+            draft["email_draft"] = email_draft
+            for key in ("email_subject", "email_body", "email_from"):
+                if extra and extra.get(key):
+                    draft[key] = extra[key]
+            meta["state"] = state
+        conn.execute(
+            text("UPDATE chat_messages SET meta = CAST(:m AS JSONB) WHERE id = :i"),
+            {"m": json.dumps(meta, default=str), "i": row.id},
+        )
+
+
+def delete_session(ctx: TenantContext, session_id: str) -> None:
+    """Remove one of the caller's conversations."""
+    ensure_table(ctx)
+    with workspace_connection(ctx) as conn:
+        result = conn.execute(
+            text("DELETE FROM chat_messages WHERE session_id = :s AND user_id = :u"),
+            {"s": session_id, "u": ctx.user_id},
+        )
+        if not result.rowcount:
+            raise SessionNotFound(session_id)
+
+
+def delete_all_sessions(ctx: TenantContext) -> int:
+    """Remove every conversation belonging to the caller in this workspace."""
+    ensure_table(ctx)
+    with workspace_connection(ctx) as conn:
+        result = conn.execute(text("DELETE FROM chat_messages WHERE user_id = :u"), {"u": ctx.user_id})
+        return int(result.rowcount or 0)
+
+
 def get_session(ctx: TenantContext, session_id: str) -> dict[str, Any]:
     """Every message of one of the caller's conversations, oldest first."""
     ensure_table(ctx)
