@@ -205,3 +205,44 @@ def test_known_values_carry_over_to_the_next_turn(fake_model, client_scratch, ct
     SCRIPT[:] = [route("crm"), call("crm_create_note", contact_id="C-310", body="Met today"), final("Noted.")]
     second = ask(operator, settings, "Add a note that we met today", session_id=first["session_id"])
     assert "crm_create_note" in effects.names() and "✅ " in second["content"]
+
+
+def test_a_missed_campaign_part_is_left_for_a_separate_message(fake_model, client_scratch, ctx_factory, effects):
+    SCRIPT[:] = [route("crm"), call("load_tools", domain="campaign"),
+                 call("crm_search_contacts", query="Acme"),
+                 call("crm_create_note", contact_id="C-310", body="Campaign follow-up"),
+                 final("I added the note on Acme. Please send the campaign request as a separate message.")]
+    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch, ExecutionMode.AUTO_WITHIN_SCOPE),
+              "send the approved campaign emails and add a note on Acme")
+    assert "send_approved" not in effects.names() and "crm_create_note" in effects.names()
+    assert out["trace"]["load_tools_misses"] == [{"domain": "campaign", "added": []}]
+    assert "send_approved" not in out["trace"]["loaded"]
+    assert "only work inside" not in out["content"] and "separate message" in out["content"]
+    assert "✅ " in out["content"]
+
+
+def test_v2_prompts_use_the_workspace_timezone_not_utc(client_scratch, ctx_factory, monkeypatch):
+    from datetime import datetime as real_datetime, timezone as tz
+
+    import bizos.util.timeutil as timeutil
+    from app.assistant.v2 import _executor_prompt
+    from bizos.agents.routing import render_playbooks, render_router_prompt
+    from bizos.util.timeutil import local_now, workspace_zone
+
+    class Frozen(real_datetime):
+        @classmethod
+        def now(cls, zone=None):
+            # 2026-10-21 19:00 UTC = Thursday 2026-10-22 00:30 IST.
+            return real_datetime(2026, 10, 21, 19, 0, tzinfo=tz.utc).astimezone(zone or tz.utc)
+
+    monkeypatch.setattr(timeutil, "datetime", Frozen)
+    ctx, settings = ctx_factory(client_scratch, "operator"), ClientSettings()
+    executor = _executor_prompt(ctx, settings, memory_context="", playbooks="", grounded="")
+    assert "Today is Thursday 2026-10-22, 00:30, timezone Asia/Kolkata." in executor and "UTC" not in executor
+    router = render_router_prompt(user_name="Dev", user_roles=["OPERATOR"],
+                                  today=local_now(settings).strftime("%A %Y-%m-%d, %H:%M"),
+                                  timezone=workspace_zone(settings).key, recent_messages="", menu=["calendar"])
+    assert "Today: Thursday 2026-10-22, 00:30 (Asia/Kolkata)" in router
+    playbook = render_playbooks(["calendar"], frozenset({"calendar_create_event", "calendar_check_availability"}),
+                                timezone="Asia/Kolkata")
+    assert "without an offset" in playbook and "(Asia/Kolkata)" in playbook and "UTC" not in playbook

@@ -10,14 +10,15 @@ The rules live in plain modules under bizos/agents (routing, guard, merged_tools
 this file only wires them together with Agno and the chat API. With the flag off nothing here runs.
 
 Campaign turns (an admin routed to the campaign domain) are handed to the current assistant, which owns
-the campaign flow, so admins' campaign behaviour is unchanged.
+the campaign flow, so admins' campaign behaviour is unchanged. When the router missed the campaign part
+and the executor asks for the campaign tools, it is told to finish the rest and have the user send the
+campaign request on its own (routing.CAMPAIGN_ELSEWHERE).
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from agno.agent import Agent
@@ -43,6 +44,7 @@ from bizos.agents.routing import (
 from bizos.agents.tool_args import normalize_tool_arguments
 from bizos.agents.tool_meta import GATE_TEXT, TOOL_META, render
 from bizos.tools.base import RunScope
+from bizos.util.timeutil import local_now, workspace_zone
 from bizos.tools.dry_run import bound_scope, policy_gate
 from bizos.types import ActionStatus
 from bizos.util.ids import new_id
@@ -142,13 +144,13 @@ def guard_hook_for(guard: Guard) -> Callable:
 
 def _executor_prompt(ctx, settings, *, memory_context: str, playbooks: str, grounded: str) -> str:
     text = (PROMPTS / "executor.md").read_text(encoding="utf-8")
-    now = datetime.now(timezone.utc)
+    now = local_now(settings)
     for key, value in {
         "{user_name}": ctx.display_name or ctx.email or "the user",
         "{user_roles}": ", ".join(sorted(str(r) for r in ctx.roles)),
         "{workspace_name}": getattr(settings, "company_name", "") or ctx.client_slug,
-        "{today}": now.date().isoformat(),
-        "{timezone}": "UTC",
+        "{today}": now.strftime("%A %Y-%m-%d, %H:%M"),
+        "{timezone}": workspace_zone(settings).key,
         "{memory_context}": memory_context or "(nothing relevant recorded)",
         "{playbooks}": playbooks or "(none)",
     }.items():
@@ -215,7 +217,8 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
     recent = "\n".join(f"{m.role}: {str(m.content)[:300]}" for m in history[-6:])
     router_prompt = render_router_prompt(
         user_name=ctx.display_name or ctx.email or "the user", user_roles=sorted(str(r) for r in ctx.roles),
-        today=datetime.now(timezone.utc).date().isoformat(), timezone="UTC", recent_messages=recent, menu=menu,
+        today=local_now(settings).strftime("%A %Y-%m-%d, %H:%M"), timezone=workspace_zone(settings).key,
+        recent_messages=recent, menu=menu,
     )
     memory_scope = bound_scope(scope, "memory_search", packs) if "memory_search" in visible else None
     pre = route_and_prefetch(lambda: route_query(router_prompt, message), memory_scope, message)
@@ -252,7 +255,7 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
         prompt = _executor_prompt(
             ctx, settings, memory_context=_memory_context(pre.memory), grounded=grounded_text,
             playbooks=render_playbooks(sorted({TOOL_META[t].domain for t in loader.loaded if t in TOOL_META}),
-                                       visible, timezone="UTC"),
+                                       visible, timezone=workspace_zone(settings).key),
         )
         loaded_before = list(loader.loaded)
         agent = Agent(

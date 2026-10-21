@@ -149,6 +149,24 @@ def test_load_tools_adds_only_visible_tools_and_logs_each_miss(client_scratch, c
     assert [m["domain"] for m in loader.misses] == ["admin_users", "calendar", "nonsense"]
 
 
+def test_load_tools_never_loads_the_campaign_tools_and_says_to_send_that_part_separately(client_scratch, ctx_factory):
+    from bizos.agents.routing import CAMPAIGN_ELSEWHERE
+
+    visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "admin"))
+    assert "send_approved" in visible  # an admin can see them; they are still not loaded here
+    loader = ToolLoader.for_route(Route(domains=["crm"], kind="task"), visible)
+    before = list(loader.loaded)
+    added, message = loader.load_tools("campaign")
+    assert added == [] and loader.loaded == before and message == CAMPAIGN_ELSEWHERE
+    assert "separate message" in message and "only work inside" not in message
+    assert loader.misses[-1] == {"domain": "campaign", "added": []}
+
+    # Not an admin: the campaign tools are not theirs, so they are told plainly, as for any other domain.
+    viewer, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "viewer"))
+    added, message = ToolLoader.for_route(Route(domains=["crm"], kind="task"), viewer).load_tools("campaign")
+    assert added == [] and "not available" in message
+
+
 def test_a_route_to_a_domain_not_on_the_menu_loads_nothing_from_it(client_scratch, ctx_factory):
     visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "drafter"))
     loader = ToolLoader.for_route(Route(domains=["admin_users", "crm"], kind="task"), visible)

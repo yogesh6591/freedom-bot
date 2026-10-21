@@ -138,6 +138,15 @@ def tools_for_route(domains: list[str], visible: frozenset[str]) -> list[str]:
     return loaded
 
 
+CAMPAIGN = "campaign"
+#: What the executor is told when it asks for the campaign tools mid-request.
+CAMPAIGN_ELSEWHERE = (
+    "Campaign requests are handled on their own, not in this request, so no campaign tools were loaded. "
+    "Finish the other parts of the request. Then tell the user that the campaign part was not done, and "
+    "that they should send it as a separate message (for example \"send the approved campaign emails\")."
+)
+
+
 @dataclass
 class ToolLoader:
     """The tools loaded for one request, and the executor's ``load_tools`` calls (each a router miss)."""
@@ -154,7 +163,11 @@ class ToolLoader:
     def load_tools(self, domain: str) -> tuple[list[str], str]:
         """Add a domain the router missed. Returns (newly loaded tools, message for the model)."""
         domain = str(domain or "").strip().casefold()
-        added = [t for t in bundle(domain) if t in self.visible and t not in self.loaded] if domain in DOMAINS else []
+        handed_off = domain == CAMPAIGN and any(t in self.visible for t in home_tools(domain))
+        added = (
+            [t for t in bundle(domain) if t in self.visible and t not in self.loaded]
+            if domain in DOMAINS and not handed_off else []
+        )
         self.loaded.extend(added)
         self.misses.append({"domain": domain, "added": added})
         log.info("v2 load_tools router miss: domain=%s added=%s", domain, added)
@@ -162,6 +175,9 @@ class ToolLoader:
             return [], f"There is no {domain!r} domain. Domains: {', '.join(domain_menu(self.visible))}."
         if not any(t in self.visible for t in home_tools(domain)):
             return [], f"The {domain} tools are not available to this user, so say so plainly."
+        if handed_off:
+            # The campaign flow runs only in a turn of its own (it is handed to the current assistant).
+            return [], CAMPAIGN_ELSEWHERE
         if not added:
             return [], f"The {domain} tools are already loaded."
         return added, f"Loaded {', '.join(added)}."

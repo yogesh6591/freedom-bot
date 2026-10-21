@@ -20,7 +20,9 @@
 
 ## calendar
 - Check availability before creating or rescheduling.
-- Use the user's timezone ({timezone}) unless they name another.
+- Send times as local times without an offset (e.g. 2026-10-22T15:00:00). The workspace calendar
+  reads them in the workspace timezone ({timezone}); a connected Google Calendar reads them in its
+  own zone. Add an offset only when the user names another timezone.
 - Never guess attendee emails.
 - Customers' and leads' emails come from crm_get_contact.
 - Colleagues' emails come from admin_list_users.
