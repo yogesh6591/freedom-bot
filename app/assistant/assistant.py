@@ -3163,7 +3163,7 @@ from agno.tools import tool
 
 
 
-def _audit(event: str, ctx, payload: dict, **extra) -> None:
+def _audit(event: str, ctx, payload: dict, *, status: str = "", **extra) -> None:
     """Record the send in the platform audit log. Never lets logging break the send."""
     try:
         from bizos.audit import events as audit
@@ -3173,7 +3173,7 @@ def _audit(event: str, ctx, payload: dict, **extra) -> None:
             AuditEventType(event),
             ctx=ctx,
             tool="campaign_send_approved",
-            status=event,
+            status=status or event,
             request={
                 "campaign": payload.get("campaign_name"),
                 "recipients": payload.get("email_address_list"),
@@ -3431,6 +3431,12 @@ class CampaignSession:
             self.errors += 1
         self.log.append({"tool": name, "args": logged_args, "why": why, "result": result[:300]})
         return result
+
+    def _in_latest_message(self, quote: str) -> bool:
+        """True when ``quote`` is the user's own words in their latest message (case and spacing ignored)."""
+        norm = lambda t: " ".join(str(t or "").casefold().split())  # noqa: E731
+        q = norm(quote)
+        return bool(q) and re.search(rf"(?<!\w){re.escape(q)}(?!\w)", norm(self.user_message)) is not None
 
     def _user_said(self, quote: str) -> bool:
         """True when ``quote`` really is something the user wrote (this turn or earlier)."""
@@ -3818,6 +3824,15 @@ class CampaignSession:
     def _send_approved(self, approval_evidence: str = "") -> str:
         if not self.state.get("draft"):
             return "error: no draft pending, nothing to send"
+        if not self._in_latest_message(approval_evidence):
+            _audit(
+                "ACTION_FAILED", self.ctx, self._payload(), status="APPROVAL_EVIDENCE_NOT_FOUND",
+                evidence=(approval_evidence or "")[:200],
+            )
+            return (
+                "error: approval_not_found: approval_evidence must be the user's own words copied from their "
+                "latest message. Nothing was sent. Ask the user whether to send the email as shown."
+            )
         if self.send_block:
             return f"error: {self.send_block}"
         conflict = self._conflict()
@@ -3842,10 +3857,38 @@ class CampaignSession:
 
 
 
+# ---------- policy check ----------
+# Every campaign call goes through guarded_call like any other tool (ToolSpecs in
+# bizos/rbac/registry.py). The effect hands the call to the turn's CampaignSession.
+
+
+def _campaign_effect(tool_name: str) -> Callable:
+    def run(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+        session = scope.campaign_session
+        if session is None:
+            return ConnectorResult.failure("The campaign tools only work inside an admin's chat turn.")
+        text = session.call(tool_name, dict(args))
+        failed = text.startswith("error") or '"error"' in text
+        return ConnectorResult(ok=not failed, summary=text, error=text if failed else None)
+
+    return run
+
+
+for _campaign_tool in CAMPAIGN_TOOLS:
+    effect(_campaign_tool["function"]["name"])(_campaign_effect(_campaign_tool["function"]["name"]))
+
+
 # ---------- Agno wiring ----------
 
-def build_campaign_tools(session: CampaignSession) -> list[Callable]:
-    """Agno callables for the campaign tools, all bound to one ``CampaignSession``."""
+def build_campaign_tools(session: CampaignSession, scope: RunScope) -> list[Callable]:
+    """Agno callables for the campaign tools, all bound to one ``CampaignSession``.
+
+    Each call goes through the policy check. All six stay offered (as before), so a refusal, such as
+    sending in Advise mode, comes back to the model as an explanation it can pass on.
+    """
+    from bizos.tools.base import guarded_call
+
+    bound_scope = dataclasses.replace(scope, campaign_session=session)
     tools: list[Callable] = []
     for spec in CAMPAIGN_TOOLS:
         fn = spec["function"]
@@ -3854,7 +3897,17 @@ def build_campaign_tools(session: CampaignSession) -> list[Callable]:
         def _make(tool_name: str, description: str, schema: dict) -> Callable:
             @tool(name=tool_name, description=description)
             def _invoke(**kwargs: Any) -> str:
-                return session.call(tool_name, dict(kwargs))
+                logged = len(session.log)
+                outcome = guarded_call(bound_scope, tool_name, dict(kwargs))
+                if len(session.log) > logged:
+                    return outcome.message  # the session ran: its own result, exactly as before
+                # Stopped before the session ran (policy or a failure); keep the trace complete.
+                text = outcome.agent_text()
+                session.errors += 1
+                session.log.append(
+                    {"tool": tool_name, "args": "", "why": str(kwargs.get("why") or ""), "result": text[:300]}
+                )
+                return text
 
             # Replace Agno's **kwargs schema with the real one.
             _invoke.parameters = schema
@@ -4367,7 +4420,7 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
             session.log = turn.calls  # one ordered log for ops and campaign calls
             session.user_message = message
             session.user_texts = [m["content"] for m in saved.get("messages") or [] if m["role"] == "user"] + [message]
-            tools = tools + _described(build_campaign_tools(session))
+            tools = tools + _described(build_campaign_tools(session, scope))
 
     def prompt_now() -> str:
         return build_prompt(

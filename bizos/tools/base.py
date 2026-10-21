@@ -111,6 +111,9 @@ class RunScope:
     #: User whose connected accounts an effect acts through. Set to the requester
     #: when an approver executes an approved action, so mail goes out as them.
     on_behalf_of: Optional[str] = None
+    #: The admin's campaign flow for this chat turn, when the campaign tools are offered.
+    #: Their effects act on it; without one they refuse.
+    campaign_session: Any = None
     _integrations: Optional[frozenset[str]] = None
 
     @property

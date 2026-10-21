@@ -38,6 +38,7 @@ CATEGORY_HR = "hr"
 CATEGORY_N8N = "n8n"
 CATEGORY_YOUTUBE = "youtube"
 CATEGORY_ADMIN = "admin"
+CATEGORY_CAMPAIGN = "campaign"
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,24 @@ def _spec(
 
 
 _ALL = ()  # empty domain tuple == available to every enabled domain
+
+
+def _campaign(name: str, title: str, description: str, *, write: bool = False) -> ToolSpec:
+    """An outbound-campaign tool: ADMIN-only and invisible to other roles."""
+    return _spec(
+        name,
+        title,
+        description,
+        CATEGORY_CAMPAIGN,
+        ("general",),
+        write=write,
+        external=write,
+        risk=RiskLevel.MEDIUM if write else RiskLevel.LOW,
+        permissions=matrix.ADMIN_ONLY,
+        admin_config=write,
+        view_min_role=Role.ADMIN,
+        tags=frozenset({"write" if write else "read", "campaign"}),
+    )
 
 
 def _admin(name: str, title: str, description: str, *, write: bool = False) -> ToolSpec:
@@ -866,6 +885,33 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         always_requires_approval=True,
         integration="n8n",
         tags=frozenset({"write", "n8n", "external"}),
+    ),
+    # ------------------------------------------------------------ campaign
+    # The admin-only outbound campaign flow (app/assistant/assistant.py, CampaignSession).
+    # Declared under "general" so the domain-selected packs never pick them up; the
+    # assistant adds them for admins only. All but send_approved change nothing except
+    # the conversation's saved selection, so they are reads to the policy check and work
+    # in every mode, as before. send_approved is the admin's own authority, like the
+    # Administration page: it skips the mode queue (Advise still forbids it), and the
+    # human gate is the user's own approval of the email card, checked in CampaignSession.
+    *(
+        _campaign(name, title, description)
+        for name, title, description in (
+            ("update_selection", "Commit campaign selection",
+             "Save the recipients, campaign and daily send window the user chose in this conversation."),
+            ("show_contacts", "Show campaign contacts", "Show the saved prospects table so the user can pick."),
+            ("show_campaigns", "Show campaigns", "Show the saved campaigns table so the user can pick one."),
+            ("propose_email", "Propose campaign email",
+             "Build the campaign email draft from the committed selection and show it for approval."),
+            ("approve_move", "Approve moving prospects",
+             "Record the user's yes to moving people out of another campaign into this one."),
+        )
+    ),
+    _campaign(
+        "send_approved",
+        "Send approved campaign email",
+        "Create the campaign and send the email the user approved to the committed recipients.",
+        write=True,
     ),
 )
 
