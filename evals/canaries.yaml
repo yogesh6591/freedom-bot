@@ -1,0 +1,38 @@
+# Deliberately wrong cases. Each one MUST fail on the check named in canary_breaks; the runner reports
+# them apart from the accuracy figures and exits non-zero if any passes. A canary that passes means the
+# scoring can show a pass for a broken case.
+
+- id: canary_hidden_tool_expected
+  canary_breaks: tool_selection
+  # A viewer cannot see email_send_message, so it can never be called.
+  query: "Send Raj a thank-you email"
+  user: {name: "Ravi", roles: [VIEWER]}
+  fixtures:
+    contacts: [{id: C-310, name: "Raj Mehta", email: "raj@acme.com", company: "Acme"}]
+  expected_tool_calls: [email_send_message]
+  expected_outcome: run
+
+- id: canary_wrong_gate
+  canary_breaks: "gate:crm_create_note"
+  # The policy check queues an operator's note for approval in the default workspace; "run" is wrong.
+  query: "Add a note to Raj Mehta: called about the renewal"
+  user: {name: "Dev", roles: [OPERATOR]}
+  fixtures:
+    contacts: [{id: C-310, name: "Raj Mehta", email: "raj@acme.com", company: "Acme"}]
+  expected_tool_calls: [crm_search_contacts, crm_create_note]
+  expected_gates: {crm_create_note: run}
+  expected_outcome: approval
+
+- id: canary_wrong_argument
+  canary_breaks: tool_selection
+  # The note is for Raj (C-310); C-311 is Priya.
+  query: "Add a note to Raj Mehta: called about the renewal"
+  user: {name: "Dev", roles: [OPERATOR]}
+  fixtures:
+    contacts:
+      - {id: C-310, name: "Raj Mehta", email: "raj@acme.com", company: "Acme"}
+      - {id: C-311, name: "Priya Shah", email: "priya@globex.com", company: "Globex"}
+  expected_tool_calls: [crm_search_contacts, crm_create_note]
+  expected_args:
+    crm_create_note: {contact_id: C-311}
+  expected_outcome: approval

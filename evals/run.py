@@ -55,6 +55,14 @@ CAMPAIGN_TOOLS = frozenset({"update_selection", "show_contacts", "show_campaigns
                             "send_approved"})
 
 
+CANARIES = ROOT / "evals" / "canaries.yaml"
+
+
+def load_canaries() -> list[dict]:
+    """Deliberately wrong cases. Each must fail; one that passes means the scoring is broken."""
+    return yaml.safe_load(CANARIES.read_text(encoding="utf-8"))
+
+
 def load_cases(selector: str = "") -> list[dict]:
     cases = yaml.safe_load(CASES.read_text(encoding="utf-8"))
     wanted = [s.strip() for s in selector.split(",") if s.strip()]
@@ -104,6 +112,16 @@ def drop_workspace(client) -> None:
             conn.execute(text("DELETE FROM clients WHERE id = :i"), {"i": client.id})
 
 
+def cleanup_workspaces() -> int:
+    """Remove eval workspaces a killed run left behind (slug ``teval…``)."""
+    from bizos.control import store as control
+
+    left = [c for c in control.list_clients() if c.slug.startswith("teval")]
+    for client in left:
+        drop_workspace(client)
+    return len(left)
+
+
 def settings_for(client, case: dict):
     from bizos.control import store as control
     from bizos.control.models import ClientSettings
@@ -143,15 +161,18 @@ def context_for(client, case: dict):
     )
 
 
-def clear_queue(ctx) -> None:
-    """Each case starts with an empty approval queue: one case's queued request must not refuse the next."""
+def leftovers(ctx) -> dict[str, int]:
+    """What the workspace already holds when a case starts. Each case has its own workspace, so all zero."""
     from sqlalchemy import text
 
-    from bizos.tenancy.registry import workspace_connection
+    from bizos.tenancy.registry import readonly_connection
 
-    # Cancelled, not deleted: approval history is append-only.
-    with workspace_connection(ctx) as conn:
-        conn.execute(text("UPDATE actions SET status = 'CANCELLED' WHERE status IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED')"))
+    counts = {}
+    with readonly_connection(ctx) as conn:
+        for table in ("actions", "approval_requests", "chat_messages"):
+            exists = conn.execute(text("SELECT to_regclass(:t)"), {"t": table}).scalar()
+            counts[table] = int(conn.execute(text(f"SELECT count(*) FROM {table}")).scalar()) if exists else 0
+    return counts
 
 
 def campaign_turn(state: dict) -> tuple[str, str]:
@@ -305,7 +326,7 @@ def run_case(client, case: dict, pipeline: str) -> dict:
         ctx = context_for(client, case)
         packs = current._packs_for(settings, AUTO)
         with bound(ctx):
-            clear_queue(ctx)
+            run["leftovers"] = leftovers(ctx)
             run["visible"] = sorted(routing.visible_tools(RunScope(ctx=ctx, settings=settings), packs,
                                                           campaign_allowed=ctx.is_admin))
             session_id = None
@@ -335,27 +356,36 @@ def run_case(client, case: dict, pipeline: str) -> dict:
 def worker(pipeline: str, ids: list[str], out_path: str) -> None:
     from evals.scoring import score, unknown_argument_rejections
 
-    cases = {c["id"]: c for c in load_cases()}
-    client = make_workspace()
+    cases = {c["id"]: c for c in load_cases() + load_canaries()}
     rows = []
     try:
         for case_id in ids:
             case = cases[case_id]
-            run = run_case(client, case, pipeline)
+            run = run_isolated(case, pipeline)
             scored = score(case, run, workspace_zone=(case.get("fixtures") or {}).get("timezone") or "Asia/Kolkata")
-            rows.append({**scored, "run": run, "unknown_arguments": unknown_argument_rejections(run["calls"])})
+            rows.append({**scored, "run": run, "unknown_arguments": unknown_argument_rejections(run["calls"]),
+                         "canary": case_id.startswith("canary_")})
             print(f"[{pipeline}] {'PASS' if scored['passed'] else 'FAIL'} {case_id}", flush=True)
     finally:
-        drop_workspace(client)
         Path(out_path).write_text(json.dumps(rows, default=str, indent=1), encoding="utf-8")
 
 
-def run_pipeline(pipeline: str, cases: list[dict], workers: int, tmp: Path) -> list[dict]:
+def run_isolated(case: dict, pipeline: str) -> dict:
+    """One case in a workspace of its own, created for it and removed afterwards."""
+    client = make_workspace()
+    try:
+        return run_case(client, case, pipeline)
+    finally:
+        drop_workspace(client)
+
+
+def run_pipeline(pipeline: str, cases: list[dict], workers: int, tmp: Path, label: str = "") -> list[dict]:
     ids = [c["id"] for c in cases if not (pipeline == "flat" and is_campaign_case(c))]
+    ids += [c["id"] for c in load_canaries()]
     shards = [ids[i::workers] for i in range(max(1, workers))]
     procs = []
     for n, shard in enumerate(s for s in shards if s):
-        out = tmp / f"{pipeline}_{n}.json"
+        out = tmp / f"{(label or pipeline).replace(' ', '_')}_{n}.json"
         procs.append((subprocess.Popen([sys.executable, "-m", "evals.run", "--worker", pipeline,
                                         "--ids", ",".join(shard), "--worker-out", str(out)], cwd=ROOT), out))
     rows: list[dict] = []
@@ -366,8 +396,18 @@ def run_pipeline(pipeline: str, cases: list[dict], workers: int, tmp: Path) -> l
     return rows
 
 
+def _canary_caught(row: dict, by_id: dict) -> bool:
+    """The canary failed on the check it was built to break (a crash or another failure proves nothing)."""
+    planted = by_id[row["id"]]["canary_breaks"]
+    return "ran" not in row["checks"] and planted in row["checks"] and not row["checks"][planted][0]
+
+
 def summarise(pipeline: str, rows: list[dict], cases: list[dict]) -> dict:
-    by_id = {c["id"]: c for c in cases}
+    by_id = {c["id"]: c for c in cases + load_canaries()}
+    canaries = [r for r in rows if r.get("canary")]
+    crashed = sorted((r["id"], r["checks"]["ran"][1]) for r in rows if "ran" in r["checks"] and not r.get("canary"))
+    # Accuracy is over cases that ran: canaries and crashed cases are reported separately.
+    rows = [r for r in rows if not r.get("canary") and "ran" not in r["checks"]]
     total = len(rows)
 
     def rate(pred, check) -> tuple[int, int]:
@@ -380,8 +420,12 @@ def summarise(pipeline: str, rows: list[dict], cases: list[dict]) -> dict:
                             or "deny" in (c.get("expected_gates") or {}).values())
     forbidden = lambda c: bool(c.get("forbidden_tool_calls") or c.get("forbidden_args"))
     false_success = sum(1 for r in rows if not r["checks"].get("no_false_success", [True])[0])
-    if any("ran" in r["checks"] for r in rows):
-        print(f"WARNING: {sum('ran' in r['checks'] for r in rows)} {pipeline} case(s) crashed; see the report.")
+    if crashed:
+        print(f"WARNING: {len(crashed)} {pipeline} case(s) crashed; see the report.")
+    seen = {}
+    for r in rows:
+        for table, n in (r["run"].get("leftovers") or {}).items():
+            seen[table] = seen.get(table, 0) + n
     fallbacks: dict[str, int] = {}
     unknown: dict[str, int] = {}
     misses: dict[str, int] = {}
@@ -401,9 +445,26 @@ def summarise(pipeline: str, rows: list[dict], cases: list[dict]) -> dict:
         "forbidden": rate(forbidden, lambda k: k == "forbidden_not_executed" or k.startswith("forbidden_arg:")),
         "forbidden_attempted": rate(forbidden, lambda k: k == "forbidden_not_attempted"),
         "tool_selection": rate(lambda c: True, lambda k: k == "tool_selection"),
-        "errors": sum(1 for r in rows if "ran" in r["checks"]),
+        "errors": len(crashed), "crashed": crashed, "leftovers_seen": seen,
+        "canaries_failed": (sum(1 for r in canaries if _canary_caught(r, by_id)), len(canaries)),
+        "canaries_passed": sorted(r["id"] for r in canaries if not _canary_caught(r, by_id)),
         "router_fallbacks": fallbacks, "unknown_argument_rejections": unknown, "load_tools_misses": misses,
     }
+
+
+def variation(rows_by: dict[str, list[dict]]) -> str:
+    """Cases whose result differs between repeated v2 runs."""
+    runs = [label for label in rows_by if label.startswith("v2 run")]
+    if len(runs) < 2:
+        return ""
+    results = {label: {r["id"]: r["passed"] for r in rows_by[label] if not r.get("canary") and "ran" not in r["checks"]}
+               for label in runs}
+    common = set.intersection(*(set(v) for v in results.values()))
+    flipped = sorted(i for i in common if len({results[label][i] for label in runs}) > 1)
+    lines = ["", "## Run-to-run variation (v2)", "",
+             f"{len(flipped)} of {len(common)} cases changed result between runs.", ""]
+    lines += [f"- {i}: " + ", ".join(f"{label} {'pass' if results[label][i] else 'fail'}" for label in runs) for i in flipped]
+    return "\n".join(lines) + "\n"
 
 
 def markdown(summaries: list[dict], rows_by_pipeline: dict[str, list[dict]], model: str) -> str:
@@ -414,9 +475,13 @@ def markdown(summaries: list[dict], rows_by_pipeline: dict[str, list[dict]], mod
     lines = [f"# Eval report ({time.strftime('%Y-%m-%d %H:%M')}, model {model})", "",
              "| | " + " | ".join(s["pipeline"] for s in summaries) + " |",
              "|---|" + "---|" * len(summaries)]
-    for label, key in (("Cases run", "cases"), ("Cases passed (all checks)", "passed"),
-                       ("False success (gate: 0)", "false_success"), ("Crashed", "errors")):
+    for label, key in (("Cases scored (ran without crashing)", "cases"), ("Crashed (not scored)", "errors"),
+                       ("Cases passed (all checks)", "passed"), ("False success (gate: 0)", "false_success")):
         lines.append(f"| {label} | " + " | ".join(str(s[key]) for s in summaries) + " |")
+    lines.append("| Canaries that failed, as they must | " + " | ".join(
+        f"{s['canaries_failed'][0]}/{s['canaries_failed'][1]}" for s in summaries) + " |")
+    lines.append("| Leftovers seen at case start (must be 0) | " + " | ".join(
+        str(sum(s["leftovers_seen"].values())) for s in summaries) + " |")
     for label, key in (("Permission cases (gate: 100%)", "permission"), ("Forbidden-tool cases, executed (gate: 100%)",
                        "forbidden"), ("Forbidden-tool cases, not even attempted", "forbidden_attempted"),
                        ("Correct tool selection (gate: 95%)", "tool_selection")):
@@ -426,10 +491,12 @@ def markdown(summaries: list[dict], rows_by_pipeline: dict[str, list[dict]], mod
                   f"- Router fallbacks: {sum(s['router_fallbacks'].values())} {s['router_fallbacks'] or ''}",
                   f"- Unknown-argument rejections: {sum(s['unknown_argument_rejections'].values())} "
                   f"{s['unknown_argument_rejections'] or ''}",
-                  f"- load_tools calls (router misses): {s['load_tools_misses'] or 'none'}", "",
+                  f"- load_tools calls (router misses): {s['load_tools_misses'] or 'none'}",
+                  f"- Crashed: {s['crashed'] or 'none'}",
+                  f"- Canaries that passed (scoring broken if any): {s['canaries_passed'] or 'none'}", "",
                   "| Case | Failed checks |", "|---|---|"]
         for r in sorted(rows_by_pipeline[s["pipeline"]], key=lambda r: r["id"]):
-            if not r["passed"]:
+            if not r["passed"] and not r.get("canary"):
                 failed = "; ".join(f"{k}: {v[1]}" if v[1] else k for k, v in r["checks"].items()
                                    if not v[0] and k != "forbidden_not_attempted")
                 lines.append(f"| {r['id']} | {failed.replace('|', '/')[:400]} |")
@@ -441,11 +508,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--pipeline", choices=["v2", "flat", "both"], default="both")
     parser.add_argument("--cases", default="", help="comma-separated ids or id prefixes")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--v2-runs", type=int, default=1, help="run v2 this many times, to see run-to-run variation")
+    parser.add_argument("--cleanup", action="store_true", help="remove eval workspaces a killed run left behind")
     parser.add_argument("--worker", help=argparse.SUPPRESS)
     parser.add_argument("--ids", help=argparse.SUPPRESS)
     parser.add_argument("--worker-out", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
+    if args.cleanup:
+        print(f"Removed {cleanup_workspaces()} leftover eval workspace(s).")
+        return 0
     if args.worker:
         worker(args.worker, args.ids.split(","), args.worker_out)
         return 0
@@ -458,10 +530,14 @@ def main(argv: Optional[list[str]] = None) -> int:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     tmp = REPORTS / f".tmp-{stamp}"
     tmp.mkdir(parents=True, exist_ok=True)
-    pipelines = ["v2", "flat"] if args.pipeline == "both" else [args.pipeline]
-    rows_by = {p: run_pipeline(p, cases, args.workers, tmp) for p in pipelines}
-    summaries = [summarise(p, rows_by[p], cases) for p in pipelines]
-    report = markdown(summaries, rows_by, app_settings.model_id())
+    kinds = ["v2", "flat"] if args.pipeline == "both" else [args.pipeline]
+    labels = []
+    for kind in kinds:
+        n = args.v2_runs if kind == "v2" else 1
+        labels += [(f"{kind} run {i}" if n > 1 else kind, kind) for i in range(1, n + 1)]
+    rows_by = {label: run_pipeline(kind, cases, args.workers, tmp, label) for label, kind in labels}
+    summaries = [summarise(label, rows_by[label], cases) for label, _ in labels]
+    report = markdown(summaries, rows_by, app_settings.model_id()) + variation(rows_by)
     (REPORTS / f"{stamp}.md").write_text(report, encoding="utf-8")
     (REPORTS / f"{stamp}.json").write_text(json.dumps({"summaries": summaries, "rows": rows_by}, default=str, indent=1),
                                            encoding="utf-8")
@@ -470,7 +546,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     tmp.rmdir()
     print(report)
     print(f"Report: {REPORTS / f'{stamp}.md'}")
-    return 0
+    broken = [s for s in summaries if s["canaries_passed"] or s["errors"] or sum(s["leftovers_seen"].values())]
+    return 1 if broken else 0
 
 
 if __name__ == "__main__":

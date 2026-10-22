@@ -123,3 +123,37 @@ def test_one_case_end_to_end_on_the_scripted_model(fake_model, client_scratch):
     got = score(case, result)
     assert got["passed"], got["checks"]
     assert "Done" not in result["content"]
+
+
+def test_leftovers_are_counted_when_a_workspace_is_not_empty(client_scratch, ctx_factory):
+    from app.api.deps import bound
+    from bizos import chat_history
+    from evals.run import leftovers
+
+    ctx = ctx_factory(client_scratch, "operator")
+    with bound(ctx):
+        chat_history.record_turn(ctx, session_id="ses_left", user_message="hi", reply="hello", domain="general", meta={})
+        assert leftovers(ctx)["chat_messages"] >= 2
+
+
+def test_each_case_runs_in_a_workspace_of_its_own_that_is_removed(monkeypatch):
+    import evals.run as er
+    from bizos.control import store as control
+
+    seen = []
+    monkeypatch.setattr(er, "run_case", lambda client, case, pipeline: seen.append(client.id) or {"calls": []})
+    er.run_isolated({"id": "x"}, "v2")
+    er.run_isolated({"id": "y"}, "v2")
+    assert len(set(seen)) == 2
+    assert not {c.id for c in control.list_clients()} & set(seen)
+
+
+def test_a_canary_only_counts_when_its_planted_check_fails():
+    from evals.run import _canary_caught
+
+    by_id = {"canary_x": {"canary_breaks": "gate:crm_create_note"}}
+    caught = {"id": "canary_x", "checks": {"gate:crm_create_note": [False, "want run"]}}
+    other = {"id": "canary_x", "checks": {"gate:crm_create_note": [True, ""], "outcome": [False, ""]}}
+    crashed = {"id": "canary_x", "checks": {"ran": [False, "boom"]}}
+    assert _canary_caught(caught, by_id)
+    assert not _canary_caught(other, by_id) and not _canary_caught(crashed, by_id)
