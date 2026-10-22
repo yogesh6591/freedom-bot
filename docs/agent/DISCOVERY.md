@@ -387,10 +387,11 @@ through them.
      Asia/Kolkata. A time the model sends with an offset or `Z` is used as given.
    - *Times, workspace calendar* (`bizos/connectors/calendar.py`). The naive string goes straight into
      `CAST(:s AS TIMESTAMPTZ)`, so Postgres reads it in the **database server's** `TimeZone` setting.
-     The app sets no session timezone (`bizos/tenancy/registry.py` sets only `search_path`). The local
-     dev Postgres here reports `Asia/Kolkata`. The `pgvector/pgvector:pg17` image in `compose.yaml`
-     sets no `TZ`, so it uses the image default (UTC). With that image, "3pm" is stored as 15:00 UTC =
-     20:30 IST. So the result depends on deployment.
+     The app sets no session timezone (`bizos/tenancy/registry.py` sets only `search_path`). The project's
+     database (compose `db`, `pgvector/pgvector:pg17`, port 5434 — the one `.env` and the tests use)
+     reports `Etc/UTC`, the image default. So "3pm" is stored as 15:00 UTC = 20:30 IST. (Corrected
+     before Phase 8: the `Asia/Kolkata` reading first reported here came from an unrelated Homebrew
+     Postgres on port 5432.) The result depends on the server's configuration.
    - *v2 today.* v2 passes "UTC" as `{timezone}` to the router, executor and playbooks, and the calendar
      playbook says "Use the user's timezone ({timezone}) unless they name another". That nudges the
      model to send explicit `+00:00`/`Z` times. With Google Calendar, those override the calendar's own

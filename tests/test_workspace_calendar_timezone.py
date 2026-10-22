@@ -1,7 +1,7 @@
 """The workspace calendar reads times without an offset in the workspace timezone, in app code.
 
-The local test database runs in Asia/Kolkata, so the cases use other workspace zones: a result that
-followed the database server's timezone would come out 5:30 hours off.
+The test database (compose `db`, port 5434) runs in Etc/UTC, so every case uses a workspace zone that is not
+UTC: a result that followed the database server's timezone would come out hours off.
 """
 
 from __future__ import annotations
@@ -36,16 +36,16 @@ def _stored_utc(ctx, event_id):
 
 
 def test_3pm_without_an_offset_is_3pm_in_the_workspace_zone(client_scratch, ctx_factory, zone):
-    zone("Europe/London")  # GMT in November
+    zone("Europe/Berlin")  # CET (UTC+1) in November
     ctx = ctx_factory(client_scratch, "operator")
     with tenant_scope(ctx):
         out = WorkspaceCalendarConnector(ctx).create_event(
             title="Review", starts_at="2026-11-05T15:00:00", ends_at="2026-11-05T15:30:00")
         assert out.ok, out.error
         assert _stored_utc(ctx, out.data["event_id"]) == (
-            datetime(2026, 11, 5, 15, 0, tzinfo=timezone.utc), datetime(2026, 11, 5, 15, 30, tzinfo=timezone.utc))
-        assert out.data["starts_at"] == "2026-11-05T15:00:00+00:00"
-        assert "Thu 05 Nov 15:00 (Europe/London)" in out.summary
+            datetime(2026, 11, 5, 14, 0, tzinfo=timezone.utc), datetime(2026, 11, 5, 14, 30, tzinfo=timezone.utc))
+        assert out.data["starts_at"] == "2026-11-05T15:00:00+01:00"
+        assert "Thu 05 Nov 15:00 (Europe/Berlin)" in out.summary
 
 
 def test_india_3pm_is_0930_utc(client_scratch, ctx_factory, zone):
