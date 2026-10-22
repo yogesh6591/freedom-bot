@@ -145,10 +145,11 @@ class WorkspaceRegistry:
                 engine.dispose()
             self._engines.clear()
 
-    def dispose(self, db_name: str) -> None:
-        """Drop every cached engine for one database (used before dropping it)."""
+    def dispose(self, db_name: str, db_schema: Optional[str] = None) -> None:
+        """Drop the cached engines for one database, or only for one schema in it (used before dropping
+        it, and when provisioning it failed)."""
         with self._lock:
-            for key in [k for k in self._engines if k[0] == db_name]:
+            for key in [k for k in self._engines if k[0] == db_name and (db_schema is None or k[1] == db_schema)]:
                 self._engines.pop(key).dispose()
 
 

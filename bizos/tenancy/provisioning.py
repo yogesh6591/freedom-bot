@@ -118,21 +118,38 @@ def provision_client(client: Client, *, with_agno_tables: bool = True) -> dict:
         "tables": [],
     }
 
-    if client.deployment_type == DeploymentType.DEDICATED_DB:
-        report["database_created"] = create_database(db_name)
-    else:
-        # The shared host database for schema-isolated tenants.
-        report["database_created"] = create_database(db_name)
-        engine = registry.engine(db_name, "public")
-        with engine.begin() as conn:
-            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{validate_identifier(db_schema)}"'))
-        report["schema_created"] = True
+    try:
+        if client.deployment_type == DeploymentType.DEDICATED_DB:
+            report["database_created"] = create_database(db_name)
+        else:
+            # The shared host database for schema-isolated tenants.
+            report["database_created"] = create_database(db_name)
+            engine = registry.engine(db_name, "public")
+            with engine.begin() as conn:
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{validate_identifier(db_schema)}"'))
+            report["schema_created"] = True
 
-    apply_workspace_schema(ctx)
-    if with_agno_tables:
-        provision_agno_tables(ctx)
-    report["tables"] = verify_workspace(ctx)
+        apply_workspace_schema(ctx)
+        if with_agno_tables:
+            provision_agno_tables(ctx)
+        report["tables"] = verify_workspace(ctx)
+    except BaseException:
+        # A half-made workspace must not keep connection pools open: close the ones it opened.
+        _release_pools(client, db_name, db_schema)
+        raise
     return report
+
+
+def _release_pools(client: Client, db_name: str, db_schema: str) -> None:
+    """Close every pool this process holds for one workspace (agno's and the registry's)."""
+    from bizos.tenancy import agnodb
+
+    if client.deployment_type == DeploymentType.DEDICATED_DB:
+        agnodb.release(db_name)
+        registry.dispose(db_name)
+    else:
+        agnodb.release(db_name, db_schema)
+        registry.dispose(db_name, db_schema)
 
 
 def _provisioning_context(client: Client) -> TenantContext:
@@ -239,6 +256,7 @@ def deprovision_client(client: Client) -> None:
     """Destroy a client's workspace. Irreversible; used by tests and offboarding."""
     ctx = _provisioning_context(client)
     db_name, db_schema = workspace_location(ctx)
+    _release_pools(client, db_name, db_schema)
     if client.deployment_type == DeploymentType.DEDICATED_DB:
         drop_database(db_name)
         return

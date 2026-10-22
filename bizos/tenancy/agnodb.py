@@ -14,6 +14,7 @@ and a table-resolution cache.
 from __future__ import annotations
 
 import threading
+from typing import Optional
 
 from agno.db.postgres import PostgresDb
 
@@ -45,7 +46,30 @@ def workspace_db(ctx: TenantContext) -> PostgresDb:
     return db
 
 
-def clear_cache() -> None:
-    """Drop cached instances (shutdown, and between test modules)."""
+def _close(db: PostgresDb) -> None:
+    engine = getattr(db, "db_engine", None)
+    if engine is not None:
+        engine.dispose()
+
+
+def release(db_name: str, db_schema: Optional[str] = None) -> int:
+    """Close and forget the cached ``PostgresDb`` for one workspace (or every schema of ``db_name``).
+
+    Called when a workspace is removed or its provisioning fails: each instance owns a connection pool,
+    and a forgotten instance keeps that pool's connections open for the life of the process.
+    """
     with _lock:
+        keys = [k for k in _dbs if k[0] == db_name and (db_schema is None or k[1] == db_schema)]
+        dropped = [_dbs.pop(k) for k in keys]
+    for db in dropped:
+        _close(db)
+    return len(dropped)
+
+
+def clear_cache() -> None:
+    """Close and drop every cached instance (shutdown, and between test modules)."""
+    with _lock:
+        dropped = list(_dbs.values())
         _dbs.clear()
+    for db in dropped:
+        _close(db)
