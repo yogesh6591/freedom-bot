@@ -22,6 +22,7 @@ outside `AGENT_PIPELINE_V2` loads.
 | `9fe0e35` | The current assistant's prompt gives the date and time in the workspace timezone ("Current date and time: … (Asia/Kolkata, the workspace timezone)") instead of UTC. Between 00:00 and 05:30 IST, "today" and "tomorrow" now resolve to the IST date. |
 | `12a8a5e` | Workspace calendar (not Google): a time without an offset is read in the workspace timezone in app code, and every time is stored timezone-aware. Before, it was read in the database server's timezone (UTC with the compose image, so "3pm" was stored as 15:00 UTC = 20:30 IST). Event times are returned in the workspace zone, and a non-ISO time is refused before anything is written. Google calendars are unchanged (they use the calendar's own zone). |
 | `ed775cb` | v2 only (no effect with the flag off): v2 prompts use the workspace timezone and ask for local times without an offset; `load_tools("campaign")` no longer loads the campaign tools and tells the executor to have the user send the campaign part separately. |
+| `8ecd1a5` | Deprovisioning a workspace closes its cached agno `PostgresDb` connection pool (and the registry engines for it); a provisioning that fails partway closes the pools it opened; `agnodb.clear_cache()` closes pools instead of only forgetting them. Before, each removed workspace kept its pooled connections open until the process exited. `WorkspaceRegistry.dispose` takes an optional schema. |
 
 Already on `cepoch/club-freedom` before this work, and not part of it: `fe5b089`, `6afd759`.
 
