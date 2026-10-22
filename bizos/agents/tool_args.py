@@ -46,6 +46,18 @@ def _f(description: str) -> dict[str, Any]:
     return {"type": "number", "description": description}
 
 
+#: An email address (the platform's own check, as in bizos/admin_ops.py). A name such as "Raj" never matches.
+EMAIL_PATTERN = r"^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$"
+
+
+def _emails(description: str) -> dict[str, Any]:
+    return {
+        "type": "array",
+        "description": f"{description}: email addresses only, never names (look them up first)",
+        "items": {"type": "string", "pattern": EMAIL_PATTERN},
+    }
+
+
 def _arr(description: str, item_type: str = "string") -> dict[str, Any]:
     return {
         "type": "array",
@@ -267,19 +279,19 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "email_read_thread": _obj({"thread_id": _s("Thread id")}, ["thread_id"]),
     "email_create_draft": _obj(
         {
-            "recipients": _arr("To addresses"),
+            "recipients": _emails("To"),
             "subject": _s("Subject"),
             "body": _s("Body"),
-            "cc": _arr("Cc addresses"),
+            "cc": _emails("Cc"),
         },
         ["recipients", "subject", "body"],
     ),
     "email_send_message": _obj(
         {
-            "recipients": _arr("To addresses"),
+            "recipients": _emails("To"),
             "subject": _s("Subject"),
             "body": _s("Body"),
-            "cc": _arr("Cc addresses"),
+            "cc": _emails("Cc"),
         },
         ["recipients", "subject", "body"],
     ),

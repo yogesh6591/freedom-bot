@@ -274,6 +274,9 @@ def _explain(error) -> str:
     if error.validator == "additionalProperties":
         allowed = ", ".join(sorted((error.schema or {}).get("properties") or {})) or "none"
         return f"{error.message}; allowed arguments: {allowed}"
+    if error.validator == "pattern" and error.path and str(list(error.path)[0]) in ("recipients", "cc"):
+        return (f"{error.instance!r} is not an email address; look it up with crm_search_contacts or "
+                "admin_list_users, or ask the user")
     if error.validator == "type":
         return f"{where or 'value'} must be {error.validator_value}"
     return f"{where + ': ' if where else ''}{error.message}"

@@ -207,6 +207,9 @@ def crm_delete_record(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 # ------------------------------------------------------------------------------------------------
 # email  (bizos/tools/email.py) - Email Tool Effects
 # ------------------------------------------------------------------------------------------------
+import re
+
+from bizos.agents.tool_args import EMAIL_PATTERN
 
 
 
@@ -219,6 +222,29 @@ def _recipients_email(args: dict[str, Any]) -> list[str]:
     if isinstance(raw, str):
         return [part.strip() for part in raw.split(",") if part.strip()]
     return [str(item).strip() for item in raw if str(item).strip()]
+
+
+_ADDRESS = re.compile(EMAIL_PATTERN)
+
+
+def _addresses_only(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    """Recipients must be email addresses: a name ("Raj") is refused before anything is queued or sent."""
+    cc = args.get("cc") or []
+    cc = [p.strip() for p in cc.split(",")] if isinstance(cc, str) else [str(p).strip() for p in cc]
+    bad = [r for r in _recipients_email(args) + [c for c in cc if c] if not _ADDRESS.match(r)]
+    if not _recipients_email(args):
+        return "recipients is required: give at least one email address. Nothing was sent."
+    if bad:
+        return (
+            f"{', '.join(repr(b) for b in bad)} {'is' if len(bad) == 1 else 'are'} not an email address. "
+            "Look up the address with crm_search_contacts (customers and leads) or admin_list_users "
+            "(colleagues), or ask the user for it. Nothing was sent."
+        )
+    return None
+
+
+precheck("email_send_message")(_addresses_only)
+precheck("email_create_draft")(_addresses_only)
 
 
 @effect("email_search_threads")
