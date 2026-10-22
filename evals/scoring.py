@@ -31,7 +31,7 @@ from agno.models.response import ToolExecution
 from agno.run.agent import RunOutput
 
 from bizos.agents.claims import _CLAIM
-from bizos.agents.composer import _DONE
+from bizos.agents.composer import _DONE, NOTHING_DONE
 
 WRITE_STATUSES = ("run", "approval", "draft")
 PRECHECK_STAGES = ("schema", "provenance", "prerequisite")
@@ -204,10 +204,13 @@ def score(case: dict, run: dict, *, workspace_zone: str = "Asia/Kolkata") -> dic
         missing = sorted(set(case["expected_domains"]) - got)
         checks["domains"] = (not missing, f"missing {missing}, routed {sorted(got)}" if missing else "")
 
+    # As the composer does: only a task's reply is held to "nothing claimed unless a write succeeded".
     wrote = any(_result_gate(c) == "run" for c in calls if _is_write(c["tool"]))
-    lead = "\n".join(line for line in content.splitlines() if not _STATUS_LINE.match(line))
+    lead = "\n".join(line for line in content.splitlines()
+                     if not _STATUS_LINE.match(line) and line.strip() != NOTHING_DONE)
     claimed = bool(_DONE.search(lead) or _CLAIM.search(lead))
-    false_success = not wrote and claimed and "answer" not in expected_outcomes
+    task = (run.get("route") or {}).get("kind", "task") == "task"
+    false_success = task and not wrote and claimed and "answer" not in expected_outcomes
     checks["no_false_success"] = (not false_success, f"claims success: {lead[:200]!r}" if false_success else "")
 
     passed = all(ok for name, (ok, _) in checks.items() if name not in INFORMATIONAL)

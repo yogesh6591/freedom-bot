@@ -143,6 +143,16 @@ def context_for(client, case: dict):
     )
 
 
+def clear_queue(ctx) -> None:
+    """Each case starts with an empty approval queue: one case's queued request must not refuse the next."""
+    from sqlalchemy import text
+
+    from bizos.tenancy.registry import workspace_connection
+
+    with workspace_connection(ctx) as conn:
+        conn.execute(text("DELETE FROM actions"))
+
+
 def campaign_turn(state: dict) -> tuple[str, str]:
     """The earlier turn a saved campaign selection came from, so a follow-up like "Yes, send it" has context."""
     people = ", ".join(r.get("email", "") for r in state.get("recipients") or [])
@@ -294,6 +304,7 @@ def run_case(client, case: dict, pipeline: str) -> dict:
         ctx = context_for(client, case)
         packs = current._packs_for(settings, AUTO)
         with bound(ctx):
+            clear_queue(ctx)
             run["visible"] = sorted(routing.visible_tools(RunScope(ctx=ctx, settings=settings), packs,
                                                           campaign_allowed=ctx.is_admin))
             session_id = None

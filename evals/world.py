@@ -130,9 +130,29 @@ class World:
 
     # ------------------------------------------------------------------ effects
 
+    #: The status an approval write needs (as the real store enforces), by tool.
+    _NEEDS_STATUS = {"approvals_approve": "PENDING_APPROVAL", "approvals_reject": "PENDING_APPROVAL",
+                     "approvals_request_changes": "PENDING_APPROVAL", "approvals_submit": "DRAFT",
+                     "approvals_cancel": None}
+
+    def _approval_problem(self, name: str, args: dict) -> Optional[str]:
+        ref = str(args.get("action_id") or args.get("match") or "")
+        row = self._first(self.actions, "id", ref) or next(
+            (a for a in self.actions if ref and ref.casefold() in str(a.get("title", "")).casefold()), None)
+        if row is None:
+            return f"No action {ref!r} that you can see."
+        needed = self._NEEDS_STATUS[name]
+        if needed and row.get("status") != needed:
+            return f"{row['id']} is {row.get('status')}, so this cannot be done now. Nothing was changed."
+        return None
+
     def effect(self, name: str) -> Callable:
         def run(scope: Any, args: dict) -> ConnectorResult:
             self.ran.append((name, dict(args)))
+            if name in self._NEEDS_STATUS:
+                problem = self._approval_problem(name, dict(args))
+                if problem:
+                    return ConnectorResult.failure(problem)
             found = self.read(name, dict(args))
             if found is not None:
                 return found

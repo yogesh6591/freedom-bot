@@ -54,6 +54,10 @@ def test_false_success_is_caught_but_status_lines_are_not_claims():
     case = {**NOTE, "expected_outcome": "blocked", "expected_gates": {}, "expected_tool_calls": []}
     claimed = score(case, run([], content="Done! Your call with Raj is scheduled."))
     assert not claimed["checks"]["no_false_success"][0]
+    nothing = score(case, run([call("crm_create_note", status="error")], content="Nothing was changed.\n\n❌ Add a note: no"))
+    assert nothing["checks"]["no_false_success"][0]
+    question = score(case, run([], content="Drafters can create drafts.", route={"kind": "question", "domains": []}))
+    assert question["checks"]["no_false_success"][0]
     honest = score(case, run([call("crm_create_note", status="pending", kind="draft")],
                              content="📝 Add a CRM note was saved as a draft for review (act_1)"))
     assert honest["checks"]["no_false_success"][0]
@@ -91,6 +95,12 @@ def test_the_world_answers_from_fixtures_and_writes_never_leave_it():
     assert found.ok and found.data[0]["email"] == "raj@acme.com" and found.data[0]["first_name"] == "Raj"
     assert not world.effect("crm_get_contact")(None, {"contact_id": "C-999"}).ok
     assert world.billables_for({"customer": "Acme Corp"}).data["total"] == 1200
+    approvals = World({"actions": [{"id": "act_1", "title": "Expense", "status": "PENDING_APPROVAL"},
+                                   {"id": "act_2", "title": "Draft", "status": "DRAFT"}]})
+    assert approvals.effect("approvals_approve")(None, {"action_id": "act_1"}).ok
+    assert not approvals.effect("approvals_approve")(None, {"action_id": "act_999"}).ok
+    assert not approvals.effect("approvals_approve")(None, {"action_id": "act_2"}).ok
+    assert approvals.effect("approvals_submit")(None, {"action_id": "act_2"}).ok
     sent = world.effect("email_send_message")(None, {"recipients": ["raj@acme.com"]})
     assert sent.ok and world.ran[-1][0] == "email_send_message"
 
