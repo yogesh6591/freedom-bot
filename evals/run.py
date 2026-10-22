@@ -6,7 +6,9 @@ Eval runner
     python -m evals.run --pipeline v2 --cases calendar_tz_,campaign_mixed_001
 
 Runs every case in evals/cases.yaml through a pipeline with a real model and mocked tools (evals/world.py),
-scores it (evals/scoring.py) and writes a JSON and a Markdown report to evals/reports/.
+scores it (evals/scoring.py) and appends each result to evals/reports/<run id>/*.jsonl the moment it is
+scored; the report (report.md, summary.json) is built from those files. A crash loses at most the case in
+progress: `--resume <run id>` runs only what is not saved yet, `--report <run id>` rebuilds the report.
 
 Pipelines:
     v2    the v2 pipeline as shipped behind AGENT_PIPELINE_V2 (router, guard, executor, composer).
@@ -353,21 +355,42 @@ def run_case(client, case: dict, pipeline: str) -> dict:
 # --------------------------------------------------------------------------- workers and report
 
 
-def worker(pipeline: str, ids: list[str], out_path: str) -> None:
+def worker(pipeline: str, label: str, ids: list[str], run_dir: str) -> None:
+    """Run cases one by one, appending each result to this worker's JSONL file the moment it is scored."""
     from evals.scoring import score, unknown_argument_rejections
 
     cases = {c["id"]: c for c in load_cases() + load_canaries()}
-    rows = []
-    try:
+    out = Path(run_dir) / f"{_slug(label)}.{os.getpid()}.jsonl"
+    with out.open("a", encoding="utf-8") as sink:
         for case_id in ids:
             case = cases[case_id]
             run = run_isolated(case, pipeline)
             scored = score(case, run, workspace_zone=(case.get("fixtures") or {}).get("timezone") or "Asia/Kolkata")
-            rows.append({**scored, "run": run, "unknown_arguments": unknown_argument_rejections(run["calls"]),
-                         "canary": case_id.startswith("canary_")})
-            print(f"[{pipeline}] {'PASS' if scored['passed'] else 'FAIL'} {case_id}", flush=True)
-    finally:
-        Path(out_path).write_text(json.dumps(rows, default=str, indent=1), encoding="utf-8")
+            row = {**scored, "label": label, "run": run, "unknown_arguments": unknown_argument_rejections(run["calls"]),
+                   "canary": case_id.startswith("canary_")}
+            sink.write(json.dumps(row, default=str) + "\n")
+            sink.flush()
+            os.fsync(sink.fileno())
+            print(f"[{label}] {'PASS' if scored['passed'] else 'FAIL'} {case_id}", flush=True)
+
+
+def _slug(label: str) -> str:
+    return label.replace(" ", "_")
+
+
+def recorded(run_dir: Path) -> dict[str, dict[str, dict]]:
+    """Every result saved for this run, by label then case id (the last line wins if a case was re-run)."""
+    rows: dict[str, dict[str, dict]] = {}
+    for path in sorted(run_dir.glob("*.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue  # a line cut off by a crash: that case is simply run again on resume
+            rows.setdefault(row["label"], {})[row["id"]] = row
+    return rows
 
 
 def run_isolated(case: dict, pipeline: str) -> dict:
@@ -379,21 +402,18 @@ def run_isolated(case: dict, pipeline: str) -> dict:
         drop_workspace(client)
 
 
-def run_pipeline(pipeline: str, cases: list[dict], workers: int, tmp: Path, label: str = "") -> list[dict]:
+def eligible(pipeline: str, cases: list[dict]) -> list[str]:
     ids = [c["id"] for c in cases if not (pipeline == "flat" and is_campaign_case(c))]
-    ids += [c["id"] for c in load_canaries()]
+    return ids + [c["id"] for c in load_canaries()]
+
+
+def run_pipeline(pipeline: str, label: str, ids: list[str], workers: int, run_dir: Path) -> None:
     shards = [ids[i::workers] for i in range(max(1, workers))]
-    procs = []
-    for n, shard in enumerate(s for s in shards if s):
-        out = tmp / f"{(label or pipeline).replace(' ', '_')}_{n}.json"
-        procs.append((subprocess.Popen([sys.executable, "-m", "evals.run", "--worker", pipeline,
-                                        "--ids", ",".join(shard), "--worker-out", str(out)], cwd=ROOT), out))
-    rows: list[dict] = []
-    for proc, out in procs:
+    procs = [subprocess.Popen([sys.executable, "-m", "evals.run", "--worker", pipeline, "--label", label,
+                               "--ids", ",".join(shard), "--run-dir", str(run_dir)], cwd=ROOT)
+             for shard in shards if shard]
+    for proc in procs:
         proc.wait()
-        if out.exists():
-            rows += json.loads(out.read_text(encoding="utf-8"))
-    return rows
 
 
 def _canary_caught(row: dict, by_id: dict) -> bool:
@@ -503,6 +523,27 @@ def markdown(summaries: list[dict], rows_by_pipeline: dict[str, list[dict]], mod
     return "\n".join(lines) + "\n"
 
 
+def build_report(run_dir: Path) -> int:
+    """The report, from the saved results alone. Returns the exit code (1 if the run is not trustworthy)."""
+    meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    cases = load_cases(meta["cases"])
+    saved = recorded(run_dir)
+    rows_by = {label: list(saved.get(label, {}).values()) for label, _ in meta["labels"]}
+    missing = {label: sorted(set(eligible(kind, cases)) - set(saved.get(label, {}))) for label, kind in meta["labels"]}
+    summaries = [summarise(label, rows_by[label], cases) for label, _ in meta["labels"]]
+    report = markdown(summaries, rows_by, meta["model"]) + variation(rows_by)
+    if any(missing.values()):
+        report += "\n## Not run yet (resume with --resume " + run_dir.name + ")\n\n" + "\n".join(
+            f"- {label}: {len(ids)} case(s)" for label, ids in missing.items() if ids) + "\n"
+    (run_dir / "report.md").write_text(report, encoding="utf-8")
+    (run_dir / "summary.json").write_text(json.dumps({"summaries": summaries, "missing": missing}, default=str,
+                                                     indent=1), encoding="utf-8")
+    print(report)
+    print(f"Report: {run_dir / 'report.md'}")
+    broken = [s for s in summaries if s["canaries_passed"] or s["errors"] or sum(s["leftovers_seen"].values())]
+    return 1 if broken or any(missing.values()) else 0
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pipeline", choices=["v2", "flat", "both"], default="both")
@@ -510,45 +551,51 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--v2-runs", type=int, default=1, help="run v2 this many times, to see run-to-run variation")
     parser.add_argument("--cleanup", action="store_true", help="remove eval workspaces a killed run left behind")
+    parser.add_argument("--resume", metavar="RUN_ID", help="continue a run, skipping cases already saved for it")
+    parser.add_argument("--report", metavar="RUN_ID", help="rebuild a run's report from its saved results only")
     parser.add_argument("--worker", help=argparse.SUPPRESS)
+    parser.add_argument("--label", help=argparse.SUPPRESS)
     parser.add_argument("--ids", help=argparse.SUPPRESS)
-    parser.add_argument("--worker-out", help=argparse.SUPPRESS)
+    parser.add_argument("--run-dir", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
     if args.cleanup:
         print(f"Removed {cleanup_workspaces()} leftover eval workspace(s).")
         return 0
     if args.worker:
-        worker(args.worker, args.ids.split(","), args.worker_out)
+        worker(args.worker, args.label, args.ids.split(","), args.run_dir)
         return 0
+
+    if args.report:
+        return build_report(REPORTS / args.report)
 
     from bizos import settings as app_settings
     from bizos.control.db import migrate_control_plane
 
-    migrate_control_plane()  # once, here: workers running it at the same time collide
-    cases = load_cases(args.cases)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    tmp = REPORTS / f".tmp-{stamp}"
-    tmp.mkdir(parents=True, exist_ok=True)
-    kinds = ["v2", "flat"] if args.pipeline == "both" else [args.pipeline]
-    labels = []
-    for kind in kinds:
-        n = args.v2_runs if kind == "v2" else 1
-        labels += [(f"{kind} run {i}" if n > 1 else kind, kind) for i in range(1, n + 1)]
-    rows_by = {label: run_pipeline(kind, cases, args.workers, tmp, label) for label, kind in labels}
-    summaries = [summarise(label, rows_by[label], cases) for label, _ in labels]
-    report = markdown(summaries, rows_by, app_settings.model_id()) + variation(rows_by)
-    (REPORTS / f"{stamp}.md").write_text(report, encoding="utf-8")
-    (REPORTS / f"{stamp}.json").write_text(json.dumps({"summaries": summaries, "rows": rows_by}, default=str, indent=1),
-                                           encoding="utf-8")
-    for f in tmp.iterdir():
-        f.unlink()
-    tmp.rmdir()
-    print(report)
-    print(f"Report: {REPORTS / f'{stamp}.md'}")
-    broken = [s for s in summaries if s["canaries_passed"] or s["errors"] or sum(s["leftovers_seen"].values())]
-    return 1 if broken else 0
+    if args.resume:
+        run_dir = REPORTS / args.resume
+        meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
+    else:
+        kinds = ["v2", "flat"] if args.pipeline == "both" else [args.pipeline]
+        labels = []
+        for kind in kinds:
+            n = args.v2_runs if kind == "v2" else 1
+            labels += [(f"{kind} run {i}" if n > 1 else kind, kind) for i in range(1, n + 1)]
+        run_dir = REPORTS / time.strftime("%Y%m%d-%H%M%S")
+        run_dir.mkdir(parents=True, exist_ok=False)
+        meta = {"cases": args.cases, "labels": labels, "model": app_settings.model_id(),
+                "started": time.strftime("%Y-%m-%d %H:%M:%S")}
+        (run_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
 
+    migrate_control_plane()  # once, here: workers running it at the same time collide
+    cases = load_cases(meta["cases"])
+    done = recorded(run_dir)
+    for label, kind in meta["labels"]:
+        todo = [i for i in eligible(kind, cases) if i not in done.get(label, {})]
+        print(f"{label}: {len(todo)} to run, {len(done.get(label, {}))} already saved", flush=True)
+        if todo:
+            run_pipeline(kind, label, todo, args.workers, run_dir)
+    return build_report(run_dir)
 
 if __name__ == "__main__":
     raise SystemExit(main())

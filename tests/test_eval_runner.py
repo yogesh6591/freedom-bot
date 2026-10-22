@@ -157,3 +157,51 @@ def test_a_canary_only_counts_when_its_planted_check_fails():
     crashed = {"id": "canary_x", "checks": {"ran": [False, "boom"]}}
     assert _canary_caught(caught, by_id)
     assert not _canary_caught(other, by_id) and not _canary_caught(crashed, by_id)
+
+
+def _saved(run_dir, label, case_id, passed=True):
+    row = {"id": case_id, "label": label, "passed": passed, "checks": {"tool_selection": [passed, ""]},
+           "run": {"calls": [], "leftovers": {"actions": 0}}, "canary": case_id.startswith("canary_")}
+    with (run_dir / f"{label}.1.jsonl").open("a") as f:
+        f.write(json.dumps(row) + "\n")
+
+
+def test_saved_results_survive_a_line_cut_off_by_a_crash(tmp_path):
+    from evals.run import recorded
+
+    _saved(tmp_path, "v2", "a")
+    _saved(tmp_path, "v2", "b")
+    with (tmp_path / "v2.1.jsonl").open("a") as f:
+        f.write('{"id": "c", "label": "v2", "pass')  # the process died mid-write
+    assert set(recorded(tmp_path)["v2"]) == {"a", "b"}
+
+
+def test_resume_runs_only_cases_not_saved_yet(tmp_path, monkeypatch):
+    import evals.run as er
+
+    run_dir = tmp_path / "run1"
+    run_dir.mkdir()
+    (run_dir / "meta.json").write_text(json.dumps({"cases": "t_crm_create_note_00", "labels": [["v2", "v2"]],
+                                                   "model": "m"}))
+    _saved(run_dir, "v2", "t_crm_create_note_001")
+    _saved(run_dir, "v2", "canary_wrong_gate", passed=False)
+    ran = []
+    monkeypatch.setattr(er, "REPORTS", tmp_path)
+    monkeypatch.setattr(er, "run_pipeline", lambda kind, label, ids, workers, d: ran.extend(ids))
+    monkeypatch.setattr(er, "build_report", lambda d: 0)
+    assert er.main(["--resume", "run1"]) == 0
+    assert "t_crm_create_note_001" not in ran and "canary_wrong_gate" not in ran
+    assert {"t_crm_create_note_002", "t_crm_create_note_003", "canary_hidden_tool_expected"} <= set(ran)
+
+
+def test_the_report_is_built_from_saved_results_and_names_what_is_missing(tmp_path, monkeypatch):
+    import evals.run as er
+
+    run_dir = tmp_path / "run2"
+    run_dir.mkdir()
+    (run_dir / "meta.json").write_text(json.dumps({"cases": "t_crm_create_note_00", "labels": [["v2", "v2"]],
+                                                   "model": "m"}))
+    _saved(run_dir, "v2", "t_crm_create_note_001")
+    assert er.build_report(run_dir) == 1  # cases are missing, so the run is not complete
+    report = (run_dir / "report.md").read_text()
+    assert "Not run yet" in report and "--resume run2" in report
