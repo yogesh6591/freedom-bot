@@ -126,8 +126,17 @@ def domain_menu(visible: frozenset[str]) -> list[str]:
 # --------------------------------------------------------------------------- loading
 
 
+#: Admin requests often need a tool from a neighbouring admin domain ("make every email a draft" is routed to
+#: admin_setup but needs admin_set_tool_mode), so routing to any of these loads all of them that are visible.
+ADMIN_FAMILY = ("admin_setup", "admin_permissions", "admin_users", "admin_launch", "admin_alerts", "admin_commercial")
+
+
 def tools_for_route(domains: list[str], visible: frozenset[str]) -> list[str]:
-    """(bundles of the routed domains ∪ ALWAYS_ON) ∩ visible. ``load_tools`` is always included."""
+    """(bundles of the routed domains ∪ ALWAYS_ON) ∩ visible. ``load_tools`` is always included.
+
+    Any admin domain brings the whole admin family (ADMIN_FAMILY)."""
+    if any(d in ADMIN_FAMILY for d in domains):
+        domains = list(domains) + [d for d in ADMIN_FAMILY if d not in domains]
     wanted: list[str] = []
     for domain in domains:
         for tool in bundle(domain):

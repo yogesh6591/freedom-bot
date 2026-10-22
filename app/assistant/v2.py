@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any, Callable, Optional
 
 from agno.agent import Agent
@@ -139,6 +140,22 @@ def guard_hook_for(guard: Guard) -> Callable:
     return hook
 
 
+#: Entity values that name nothing a lookup could find ("her", "the deal", "next week").
+_GENERIC = frozenset({"it", "him", "her", "them", "they", "this", "that", "these", "those", "he", "she", "someone",
+                      "client", "the client", "customer", "deal", "the deal", "meeting", "the meeting", "request",
+                      "the request", "user", "contact", "team", "the team", "set", "value", "stage", "field"})
+_NAMED = re.compile(r"[A-Z][a-z]|\d|@|\b(?:act|evt|C|D|T|E)[_-]\w", re.U)
+
+
+def names_something(entities: dict) -> bool:
+    """True when the router found a name, number, id or address a lookup can resolve ("Raj", "act_502")."""
+    for value in (entities or {}).values():
+        text = str(value or "").strip()
+        if text and text.casefold() not in _GENERIC and _NAMED.search(text):
+            return True
+    return False
+
+
 def executor_model() -> Any:
     """The executor's model: EXECUTOR_MODEL_ID when set (e.g. a stronger model), else MODEL_ID.
 
@@ -246,9 +263,12 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
     if "campaign" in route.domains:
         # The campaign flow (selection state, records, its own checks) belongs to the current assistant.
         return reply(body, ctx, settings)
-    if route.clarify:
+    if route.clarify and not names_something(route.entities):
         return _respond(ctx, scope, body, session_id, saved, text=route.clarify, before=before, guard=None,
                         trace=trace)
+    if route.clarify:
+        # Something named can be looked up; the executor asks afterwards if several records match.
+        trace["clarify_skipped"] = route.clarify
 
     # ---- guard, tools and executor
     known, succeeded = _known(saved, message)

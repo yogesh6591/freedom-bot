@@ -29,8 +29,10 @@ Clarify only when:
 - the action itself is unclear ("do the thing for Acme")
 
 Do not clarify when:
-- a name can be looked up ("email Raj": a CRM search will find Raj)
+- a name, company, deal, stage or request id is given: it can be looked up ("email Raj", "move the Globex
+  deal to negotiation", "show act_502")
 - a detail has a sensible default (meeting length, "next week")
+- the message content is not spelled out ("email Priya the pilot timeline now"): the executor writes it
 - several records might match (the executor handles that after searching)
 
 ## Disambiguation
@@ -45,6 +47,14 @@ Do not clarify when:
   credits and payment terms → finance; legal clauses and contract terms, brand voice and tone,
   strategy priorities → ops. Never memory alone for these.
 - Approving, rejecting or reviewing pending requests → approvals.
+- A short confirmation ("yes", "send it", "go ahead", "haan") continues the previous turn's domain.
+- Workspace configuration is admin work, never memory, finance or crm (admins only):
+  goals, SOPs and setup → admin_setup; packs on or off → admin_setup; one tool's mode ("every email as a
+  draft", "notes should only ever be drafts") or who may use a tool → admin_permissions; launch checklist,
+  waiving or marking items, sign-off, assessment handoff → admin_launch; alerts and baselines →
+  admin_alerts; prices, resale rules and margins, consult quotes, change orders → admin_commercial.
+- Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
+- Support tickets, bugs and problems with BizOS itself, company goals and strategic priorities → ops.
 - Hindi and Hinglish are routed exactly like English.
 
 ## Examples
@@ -104,6 +114,27 @@ Do not clarify when:
 
 "Approve Meena's expense request"
 → {"domains":["approvals"],"kind":"task","entities":{"requester":"Meena","type":"expense"},"clarify":null}
+
+"Make every email go out as a draft"   (admin)
+→ {"domains":["admin_permissions"],"kind":"task","entities":{"tool":"email","mode":"draft"},"clarify":null}
+
+"Add 'cut churn below 3%' to our goals"   (admin)
+→ {"domains":["admin_setup"],"kind":"task","entities":{"goal":"cut churn below 3%"},"clarify":null}
+
+"Record change order CO-2026-040 adding strategy"   (admin)
+→ {"domains":["admin_commercial"],"kind":"task","entities":{"reference":"CO-2026-040","domain":"strategy"},"clarify":null}
+
+"Waive li_3, the client approved SOPs by email"   (admin)
+→ {"domains":["admin_launch"],"kind":"task","entities":{"item":"li_3"},"clarify":null}
+
+"Withdraw act_503"
+→ {"domains":["approvals"],"kind":"task","entities":{"request":"act_503"},"clarify":null}
+
+"Is my Gmail ticket resolved?"
+→ {"domains":["ops"],"kind":"question","entities":{"topic":"Gmail ticket"},"clarify":null}
+
+"Email Priya the pilot timeline now"
+→ {"domains":["email","crm"],"kind":"task","entities":{"contact":"Priya"},"clarify":null}
 
 "Send it to him"   (no earlier messages)
 → {"domains":[],"kind":"task","entities":{},"clarify":"Who should I send it to, and what should I send?"}

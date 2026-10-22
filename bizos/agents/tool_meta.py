@@ -182,11 +182,11 @@ TOOL_META: dict[str, AgentMeta] = {
 
     # ------------------------------------------------------------------ merged (v2 shows these)
     "memory_add": M("memory", d("""
-        Record something new in company memory: a fact, an SOP (step-by-step procedure) or a decision
-        and its approver.
+        Record something new in company memory: a fact, an SOP (procedure) or a decision.
         Use when: "remember that Acme renews in March", "save these steps as our onboarding SOP".
-        Don't use: "add a note on" a person, company or deal -> crm_create_note; a wrong value ->
-        memory_correct; sources disagree -> memory_escalate_conflict.
+        Don't use: "add a note on" a record -> crm_create_note; a wrong value -> memory_correct;
+        disagreement -> memory_escalate_conflict; never instead of an action you can't take (strategy
+        options, goals, baselines).
         Effect: saved as a new item, or a new version of an existing key. {gate}
     """), suggested_prior=("memory_search",)),
     "approvals_decide": M("approvals", d("""
@@ -465,11 +465,11 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: records the question as needing counsel. {gate}
     """)),
     "support_create_ticket": M("ops", d("""
-        Raise a Cepoch support ticket about a problem with BizOS or the platform. A ticket with the
-        same open subject gets the new details added instead.
+        Raise a Cepoch support ticket about a problem with BizOS. A ticket with the same open subject
+        gets the new details added instead.
         Use when: "the approvals page won't load", "report a bug", "I need help from support".
-        Don't use: a sales follow-up -> crm_create_task; buying or upgrades -> ask an admin about a
-        change order; legal questions -> legal_flag_for_counsel.
+        Don't use: a sales follow-up -> crm_create_task; never in place of an action you can't take
+        yourself (counsel flags, change orders, packs, alerts, settings) - say it isn't available.
         Effect: Cepoch support receives the ticket. {gate}
     """)),
     "support_my_tickets": M("ops", d("""

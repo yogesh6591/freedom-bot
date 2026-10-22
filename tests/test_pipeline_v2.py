@@ -258,3 +258,19 @@ def test_the_executor_model_can_differ_from_the_router_model(monkeypatch):
     assert executor_model().id == "gpt-4.1-mini" and router_model().id == "gpt-4.1-mini"
     monkeypatch.setenv("EXECUTOR_MODEL_ID", "openai:gpt-4.1")
     assert executor_model().id == "gpt-4.1" and router_model().id == "gpt-4.1-mini"
+
+
+def test_a_router_question_is_kept_only_when_nothing_is_named():
+    from app.assistant.v2 import names_something
+
+    assert not names_something({}) and not names_something({"user": "her", "deal": "deal", "when": "next week"})
+    assert names_something({"contact": "Raj"}) and names_something({"request": "act_502"})
+    assert names_something({"deal": "Globex", "stage": "negotiation"})
+
+
+def test_a_named_target_is_looked_up_instead_of_asking(fake_model, client_scratch, ctx_factory, effects):
+    SCRIPT[:] = [{"content": json.dumps({"domains": ["crm"], "kind": "task", "entities": {"contact": "Raj"},
+                                         "clarify": "Which Raj do you mean?"})},
+                 call("crm_search_contacts", query="Raj"), final("Raj Mehta at Acme is the only Raj.")]
+    out = ask(ctx_factory(client_scratch, "operator"), _settings(client_scratch), "Who is Raj?")
+    assert "crm_search_contacts" in effects.names() and out["content"] == "Raj Mehta at Acme is the only Raj."

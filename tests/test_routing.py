@@ -264,3 +264,11 @@ def test_the_test_session_keeps_existing_loggers_enabled():
     import logging
 
     assert not logging.getLogger("bizos.agents.router_agent").disabled
+
+
+def test_any_admin_domain_loads_the_whole_admin_family(client_scratch, ctx_factory):
+    visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "admin"))
+    loaded = ToolLoader.for_route(Route(domains=["admin_setup"], kind="task"), visible).loaded
+    assert {"admin_update_settings", "admin_set_tool_mode", "admin_record_change_order", "admin_mark_launch_item"} <= set(loaded)
+    crm_only = ToolLoader.for_route(Route(domains=["crm"], kind="task"), visible).loaded
+    assert not [t for t in crm_only if t.startswith("admin_")]
