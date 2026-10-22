@@ -66,3 +66,38 @@ def test_questions_are_never_claims():
         assert compose(lead, [], task=True).text == lead
     mixed = compose("Done, I've updated it. Should I also email Raj?", [], task=True).text
     assert mixed == "Should I also email Raj?"
+
+
+def test_a_question_that_also_claims_keeps_only_the_question():
+    assert compose("I've sent it, anything else?", [], task=True).text == "Anything else?"
+    assert compose("Done - should I email Priya too?", [], task=True).text == "Should I email Priya too?"
+    assert compose("Is there anything else, now that I've booked it?", [], task=True).text == "Is there anything else"
+    # A real question keeps its own verbs.
+    assert compose("Should I set the baseline to 6 hours?", [], task=True).text == "Should I set the baseline to 6 hours?"
+
+
+def test_facts_are_not_claims_but_the_assistants_own_actions_are():
+    for fact in ("The renewal is scheduled for March.", "The launch checklist is not fully completed yet.", "You have a meeting scheduled tomorrow at 10:00.",
+                 "The workspace timezone is set to Asia/Kolkata.", "The Acme deal was moved to negotiation last week.",
+                 "There is already a draft invoice created for Globex."):
+        assert compose(fact, [], task=True).text == fact, fact
+    for claim in ("Your call with Raj is scheduled.", "I’ve saved a note on Raj.", "I’ve set up a call with her.",
+                  "I found the priorities and have added a note on the Acme deal.",
+                  "The conflict has been flagged and is awaiting approval.", "Raj was updated successfully.",
+                  "Meeting with Priya booked for Tuesday.", "Invoice drafted!", "Saved the note for you."):
+        assert compose(claim, [], task=True).text == "Nothing was changed." or claim not in compose(claim, [], task=True).text, claim
+
+
+def test_asking_clauses_future_wording_and_pending_requests_are_not_claims():
+    pending = [r("crm_tag_lead", "pending", "", "approval", "act_9")]
+    for lead in ("Which deal or pipeline stage should I set, and to what value?",
+                 "Would you like me to mark these as done, or waive them?"):
+        assert compose(lead, [], task=True).text == lead
+    assert compose("I'll keep you updated once it's approved and completed.", pending).text.startswith(
+        "I'll keep you updated once it's approved and completed.")
+    assert compose("I have created the request to tag Raj Mehta as hot.", pending).text.startswith(
+        "I have created the request")
+    # Still a claim while pending: the note itself was not added.
+    claimed = compose("The note has been added and is awaiting approval before it can be recorded.",
+                      [r("crm_create_note", "pending", "", "approval", "act_8")]).text
+    assert "has been added" not in claimed

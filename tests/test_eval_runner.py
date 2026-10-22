@@ -380,3 +380,27 @@ def test_the_current_assistant_pipeline_on_the_scripted_model(fake_model, client
     assert result["route"] is None and result["router_skipped"]
     assert "crm_create_note" in result["visible"]
     assert score(case, result)["checks"]["gate:crm_create_note"][0]
+
+
+def test_the_scorer_flags_a_claim_hidden_in_a_question_but_not_a_fact():
+    case = {"id": "q2", "query": "Email Raj", "user": {"roles": ["OPERATOR"]}, "expected_outcome": "blocked"}
+    hidden = score(case, run([], content="I've sent it, anything else?"))
+    assert not hidden["checks"]["no_false_success"][0]
+    fact = score(case, run([], content="The renewal is scheduled for March."))
+    assert fact["checks"]["no_false_success"][0]
+    curly = score(case, run([], content="I’ve saved a note on Raj, but this needs approval."))
+    assert not curly["checks"]["no_false_success"][0]
+
+
+def test_an_honest_pending_statement_is_not_a_false_success():
+    case = {"id": "p", "query": "Add a note", "user": {"roles": ["OPERATOR"]}, "expected_outcome": "approval"}
+    pending = [call("crm_create_note", status="pending", kind="approval")]
+    honest = score(case, run(pending, content="The request has been submitted and is now awaiting approval."))
+    assert honest["checks"]["no_false_success"][0]
+    claimed = score(case, run(pending, content="The note has been added and is awaiting approval."))
+    assert not claimed["checks"]["no_false_success"][0]
+    # A false approval claim with nothing queued is a misreport, not a claimed success: the composer strips it
+    # (tests/test_composer.py); the false-success check counts done-claims only.
+    from bizos.agents.composer import compose
+
+    assert "awaiting approval" not in compose("It is now awaiting approval.", [], task=True).text

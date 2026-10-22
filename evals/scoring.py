@@ -30,8 +30,7 @@ from agno.eval.reliability import ReliabilityEval
 from agno.models.response import ToolExecution
 from agno.run.agent import RunOutput
 
-from bizos.agents.claims import _CLAIM
-from bizos.agents.composer import _DONE, NOTHING_DONE, is_question
+from bizos.agents.composer import NOTHING_DONE, claims_in
 
 WRITE_STATUSES = ("run", "approval", "draft")
 PRECHECK_STAGES = ("schema", "provenance", "prerequisite")
@@ -218,9 +217,10 @@ def score(case: dict, run: dict, *, workspace_zone: str = "Asia/Kolkata") -> dic
     wrote = any(_result_gate(c) == "run" for c in calls if _is_write(c["tool"]))
     lead = "\n".join(line for line in content.splitlines()
                      if not _STATUS_LINE.match(line) and line.strip() != NOTHING_DONE)
-    # Questions are never claims ("Should I set the baseline?"), as in the composer.
-    statements = [x for x in re.split(r"(?<=[.!?])\s+", lead) if x.strip() and not is_question(x)]
-    claimed = any(_DONE.search(x) or _CLAIM.search(x) for x in statements)
+    # The composer's own claim detection, so the two never disagree.
+    pending_approval = any(r.get("pending_kind") == "approval" for c in calls for r in c.get("results") or []
+                           if r.get("status") == "pending")
+    claimed = bool(claims_in(lead, pending_approval=pending_approval))
     task = (run.get("route") or {}).get("kind", "task") == "task"
     false_success = task and not wrote and claimed and "answer" not in expected_outcomes
     checks["no_false_success"] = (not false_success, f"claims success: {lead[:200]!r}" if false_success else "")
