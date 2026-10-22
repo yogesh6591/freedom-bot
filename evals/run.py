@@ -139,7 +139,7 @@ def context_for(client, case: dict):
     ctx = control.build_context(record)
     return dataclasses.replace(
         ctx, roles=frozenset(Role(r) for r in roles), display_name=user.get("name") or ctx.display_name,
-        data_scopes=frozenset(user.get("data_scopes") or ALL_AREAS),
+        data_scopes=frozenset(user["data_scopes"] if "data_scopes" in user else ALL_AREAS),
     )
 
 
@@ -155,12 +155,36 @@ def campaign_turn(state: dict) -> tuple[str, str]:
 # --------------------------------------------------------------------------- one case
 
 
+def patch_world(mp, world, fixtures: dict) -> None:
+    """Every effect answers from the world; prechecks and risk inputs that read systems use it too."""
+    import app.assistant.assistant as current
+    import bizos.util.timeutil as timeutil
+    from bizos.tools import base as tools_base
+    from evals.world import CONNECTED
+
+    for name in list(tools_base.EFFECTS):
+        mp.setitem(tools_base.EFFECTS, name, world.effect(name))
+    mp.setitem(tools_base.RISK_INPUTS, "crm_bulk_update_contacts", world.bulk_inputs)
+    mp.setattr(current, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
+    mp.setattr(current, "known_records", lambda ctx=None: world.campaign_records())
+    mp.setattr(current, "_find_user", world.find_user(current._find_user))
+    mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
+    if fixtures.get("now"):
+        frozen = real_datetime.fromisoformat(str(fixtures["now"]))
+
+        class Frozen(real_datetime):
+            @classmethod
+            def now(cls, zone=None):
+                return frozen.astimezone(zone or tz.utc)
+
+        mp.setattr(timeutil, "datetime", Frozen)
+
+
 def run_case(client, case: dict, pipeline: str) -> dict:
     from pytest import MonkeyPatch
 
     import app.assistant.assistant as current
     import app.assistant.v2 as v2
-    import bizos.util.timeutil as timeutil
     from app.api.chat import ChatRequest
     from app.api.deps import bound
     from bizos import chat_history
@@ -173,7 +197,7 @@ def run_case(client, case: dict, pipeline: str) -> dict:
     from bizos.tools import base as tools_base
     from bizos.tools.base import RunScope
     from bizos.util.ids import new_id
-    from evals.world import CONNECTED, World
+    from evals.world import World
 
     fixtures = case.get("fixtures") or {}
     world = World(fixtures)
@@ -182,23 +206,7 @@ def run_case(client, case: dict, pipeline: str) -> dict:
                            "router_skipped": pipeline == "flat" or "router_override" in fixtures}
     mp = MonkeyPatch()
     try:
-        for name in list(tools_base.EFFECTS):
-            mp.setitem(tools_base.EFFECTS, name, world.effect(name))
-        mp.setitem(tools_base.RISK_INPUTS, "crm_bulk_update_contacts", world.bulk_inputs)
-        mp.setattr(current, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
-        mp.setattr(current, "known_records", lambda ctx=None: world.campaign_records())
-        mp.setattr(current, "_find_user", world.find_user(current._find_user))
-        mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
-
-        if fixtures.get("now"):
-            frozen = real_datetime.fromisoformat(str(fixtures["now"]))
-
-            class Frozen(real_datetime):
-                @classmethod
-                def now(cls, zone=None):
-                    return frozen.astimezone(zone or tz.utc)
-
-            mp.setattr(timeutil, "datetime", Frozen)
+        patch_world(mp, world, fixtures)
 
         # ---- capture every guarded call (v2) and every call during a hand-off (current assistant)
         real_pre, real_exec = guard_mod.Guard.pre_check, guard_mod.Guard.execute

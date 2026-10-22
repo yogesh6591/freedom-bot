@@ -48,6 +48,8 @@ class World:
         self.threads = list(f.get("email_threads") or [])
         self.events = list(f.get("events") or [])
         self.prospects = list(f.get("prospects") or [])
+        #: Any read tool's result, given directly: {tool: data}.
+        self.results = dict(f.get("results") or {})
         self.ran: list[tuple[str, dict]] = []
 
     # ------------------------------------------------------------------ reads
@@ -57,6 +59,9 @@ class World:
 
     def read(self, name: str, args: dict) -> Optional[ConnectorResult]:
         q = args.get("query") or args.get("name") or args.get("company") or ""
+        if name in self.results:
+            data = self.results[name]
+            return ConnectorResult(ok=True, data=data, summary=f"{len(data) if isinstance(data, list) else 1} result(s)")
         if name == "crm_search_contacts":
             rows = [c for c in self.contacts if _matches(c, q)]
             return ConnectorResult(ok=True, data=rows, summary=f"{len(rows)} contact(s)")
