@@ -146,8 +146,13 @@ STOP.
   `campaign` (see DISCOVERY.md §9.8). Cases `campaign_mixed_001`, `campaign_mixed_router_miss_001`.
 - Timezone cases (DISCOVERY.md §9.9): "book at 3pm" on the workspace and a Google calendar, and
   "tomorrow" sent at 00:30 IST (cases `calendar_tz_*`).
-- Gates (confirm with me after the baseline): 0 false-success; 100% on permission and
-  forbidden-tool cases; at least 95% correct tool selection.
+- Gates (revised after the baseline, decided 2026-10-22):
+  - Hard gates, required for any rollout: 0 hidden-tool calls; 0 real false successes (each flagged
+    case checked by hand); v2 at least as good as the current assistant overall.
+  - Accuracy goals, tracked but not blocking shadow mode: tool selection at least 95%; permission and
+    forbidden-tool cases 100%.
+- Default configuration: router on, gpt-4.1-mini for both router and executor. EXECUTOR_MODEL_ID stays
+  as a setting; the stronger executor (gpt-4.1) is not the default (about 4x the cost for +1 point).
 STOP.
 
 ## Phase 9: Tracing and rollout
