@@ -143,9 +143,9 @@ STOP.
 - Mixed campaign turn (admin): "send the approved campaign emails and add a note on Acme". Expect the
   whole turn to be handed to the current assistant, which offers both the campaign and the CRM tools.
   Check that it does both, or says what it did not do. Include a variant where the router misses
-  `campaign` (see DISCOVERY.md §9.8).
-- Timezone cases, once the timezone source is decided (DISCOVERY.md §9.9): "book at 3pm" and
-  "tomorrow" sent late at night in IST.
+  `campaign` (see DISCOVERY.md §9.8). Cases `campaign_mixed_001`, `campaign_mixed_router_miss_001`.
+- Timezone cases (DISCOVERY.md §9.9): "book at 3pm" on the workspace and a Google calendar, and
+  "tomorrow" sent at 00:30 IST (cases `calendar_tz_*`).
 - Gates (confirm with me after the baseline): 0 false-success; 100% on permission and
   forbidden-tool cases; at least 95% correct tool selection.
 STOP.
@@ -164,3 +164,5 @@ STOP.
   risk and drop its not_queueable refusal (DISCOVERY.md §9.2).
 - Native campaign flow in v2. Today v2 hands every turn routed to `campaign` to the current assistant
   (DISCOVERY.md §9.8).
+- Per-user timezone (from the browser or a profile field), overriding the workspace timezone for
+  that user's "today" and calendar times (DISCOVERY.md §9.9).

@@ -363,7 +363,12 @@ through them.
      replies "Campaign requests are handled on their own; ask the user to send that part as a separate
      message"; (b) re-hand the turn to the current assistant when `campaign` is loaded mid-run, which
      risks running the CRM write twice; (c) leave as is until the native v2 campaign flow (plan.md
-     "Later"). Not changed; waiting for a decision.
+     "Later").
+
+     **Decision: (a), done in `ed775cb`.** `load_tools("campaign")` loads nothing and tells the
+     executor to finish the other parts and ask the user to send the campaign request as a separate
+     message. So the user never sees "The campaign tools only work inside an admin's chat turn".
+     Non-admins still get the plain "not available" reply.
    - *Non-admin.* `campaign` is not on the menu, so the router cannot pick it, and `clean_route` drops it
      if it does. v2 handles the turn and has no campaign tools, as with the flag off.
 
@@ -398,3 +403,19 @@ through them.
      IANA zone with each chat request (per user, no setting); (c) for v2 only, stop naming UTC: tell the
      model to send naive local times and leave the zone to the calendar. That fixes Google but not
      "today" or the workspace calendar. (a) and (b) change shared code.
+
+   **Decision: (a) plus the v2 part of (c). Done:**
+   - `52140e0`: the workspace setting `timezone` (IANA, default `Asia/Kolkata`), backfilled for existing
+     workspaces, changeable with `admin_update_settings`. The control plane has no Alembic: its
+     migration is `migrate_control_plane()` (idempotent `CONTROL_DDL`, run on every boot), so the
+     backfill is one `UPDATE … WHERE NOT (settings ? 'timezone')` statement there. The Alembic project
+     (`acquisition_alembic`) is the acquisition database's and was not touched, so the pre-existing
+     index differences (§9.7) cannot be picked up.
+   - `9fe0e35`: the current assistant's prompt gives the date and time in the workspace timezone.
+   - `12a8a5e`: the workspace calendar converts times in app code with the workspace timezone and sends
+     aware datetimes to Postgres. The database server's timezone no longer matters.
+   - `ed775cb`: v2 uses the workspace timezone for "today" and names it as the zone, and the calendar
+     playbook asks for local times without an offset. Google calendars keep their own zone.
+   - Not changed: the legacy `GoogleCalendarConnector` in `bizos/connectors/calendar.py` (agno's
+     `GoogleCalendarTools`, workspace-level credentials, marked NOT TESTED). It passes times through as
+     given. Per-user timezones are in plan.md "Later".
