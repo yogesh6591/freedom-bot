@@ -11,7 +11,7 @@ CASES = load_cases()
 KNOWN_FIELDS = {
     "id", "query", "user", "fixtures", "workspace", "history", "expected_domains", "expected_tool_calls",
     "expected_args", "expected_gates", "expected_outcome", "expected_hidden", "forbidden_tool_calls",
-    "forbidden_args", "expected_reply_contains", "expected_local_times", "expected_local_dates",
+    "forbidden_args", "expected_reply_contains", "expected_local_times", "expected_local_dates", "gate_args",
 }
 OUTCOMES = {"run", "approval", "draft", "blocked", "clarify", "not_permitted", "answer", "handed_off"}
 
@@ -25,7 +25,7 @@ def test_case_ids_are_unique_and_fields_are_known():
         assert set(case) <= KNOWN_FIELDS, (case["id"], set(case) - KNOWN_FIELDS)
         outcomes = case["expected_outcome"] if isinstance(case["expected_outcome"], list) else [case["expected_outcome"]]
         assert set(outcomes) <= OUTCOMES, case["id"]
-        named = [str(t).split(" x")[0] for t in case.get("expected_tool_calls") or []]
+        named = [alt for t in case.get("expected_tool_calls") or [] for alt in str(t).split(" x")[0].split("|")]
         named += list(case.get("expected_gates") or {}) + list(case.get("forbidden_tool_calls") or [])
         named += list(case.get("expected_hidden") or []) + list(case.get("expected_args") or {})
         assert set(named) <= MODEL_TOOLS, (case["id"], set(named) - MODEL_TOOLS)

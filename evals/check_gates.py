@@ -3,7 +3,8 @@ Expected gates come from the policy check
 =========================================
 
 ``gate_for(client, case, tool)`` is what the policy check gives ``tool`` for this case's user, workspace preset
-and arguments: the policy dry-run (bizos/tools/dry_run.py) in the scope the live assistant binds the tool to,
+and arguments (``expected_args``, completed by ``gate_args`` where the gate depends on the full call, such as
+an email body): the policy dry-run (bizos/tools/dry_run.py) in the scope the live assistant binds the tool to,
 in the case's mocked world. A merged tool's gate is the strictest gate of the old tools its call maps to.
 ``tests/test_eval_cases.py`` checks every case's ``expected_gates`` and ``expected_hidden`` against it, so a
 case can never carry a hand-written gate.
@@ -58,7 +59,8 @@ def gates_and_visible(client, case: dict) -> tuple[dict[str, str], frozenset[str
             visible = visible_tools(scope, packs, campaign_allowed=ctx.is_admin)
             gates: dict[str, str] = {}
             for tool in tools:
-                args: dict[str, Any] = dict((case.get("expected_args") or {}).get(tool) or {})
+                args: dict[str, Any] = {**((case.get("expected_args") or {}).get(tool) or {}),
+                                        **((case.get("gate_args") or {}).get(tool) or {})}
                 worst = "run"
                 for old, old_args in _olds(tool, args, lambda t: bound_scope(scope, t, packs)):
                     gate = dry_run_for_user(scope, old, old_args, packs=packs).gate

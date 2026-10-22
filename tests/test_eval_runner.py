@@ -310,3 +310,16 @@ def test_the_health_check_uses_a_new_connection_every_time():
     import evals.run as er
 
     assert er.database_problem() is None
+
+
+def test_an_alternative_step_accepts_either_tool_and_still_checks_order():
+    case = {"id": "alt", "query": "q", "user": {"roles": ["OPERATOR"]}, "expected_outcome": "approval",
+            "expected_tool_calls": ["crm_search_contacts|crm_get_contact", "calendar_create_event"]}
+    for lookup in ("crm_search_contacts", "crm_get_contact"):
+        got = score(case, run([call(lookup), call("calendar_create_event", status="pending", kind="approval")]))
+        assert got["checks"]["tool_selection"][0], lookup
+    neither = score(case, run([call("calendar_create_event", status="pending", kind="approval")]))
+    assert not neither["checks"]["tool_selection"][0]
+    wrong_order = score(case, run([call("calendar_create_event", status="pending", kind="approval"),
+                                   call("crm_search_contacts")]))
+    assert not wrong_order["checks"]["tool_selection"][0]

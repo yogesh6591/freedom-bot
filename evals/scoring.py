@@ -46,7 +46,8 @@ def _expected_list(value: Any) -> list[str]:
 
 
 def _expand(expected: list[str]) -> list[tuple[str, int]]:
-    """["crm_create_note x3", "crm_get_contact"] -> [("crm_create_note", 3), ("crm_get_contact", 1)]."""
+    """["crm_create_note x3", "crm_search_contacts|crm_get_contact"] ->
+    [("crm_create_note", 3), ("crm_search_contacts|crm_get_contact", 1)]."""
     out = []
     for item in expected:
         name, _, times = str(item).partition(" x")
@@ -111,9 +112,11 @@ def reliability(case: dict, calls: list[dict]) -> dict:
     expected = _expand(case.get("expected_tool_calls") or [])
     if not expected and not case.get("expected_args"):
         return {"passed": True, "missing": [], "failed_args": []}
+    # "a|b" means either tool satisfies the step; ReliabilityEval checks the single-name steps.
+    single = [n for n, _ in expected if "|" not in n]
     evaluation = ReliabilityEval(
         name=case["id"], agent_response=RunOutput(tools=executions, messages=[]),
-        expected_tool_calls=[n for n, _ in expected] or None, allow_additional_tool_calls=True,
+        expected_tool_calls=single or None, allow_additional_tool_calls=True,
         expected_tool_call_arguments=case.get("expected_args") or None,
         telemetry=False, show_spinner=False, print_results=False,
     )
@@ -121,16 +124,20 @@ def reliability(case: dict, calls: list[dict]) -> dict:
     missing = list(result.missing_tool_calls)
     clean = [c["tool"] for c in calls if _clean(c, blocked_expected=blocked)]
     for name, times in expected:
-        if times > 1 and clean.count(name) < times:
-            missing.append(f"{name} x{times} (made {clean.count(name)})")
-    # Order: the expected names must appear as a subsequence of the calls that counted.
+        made = sum(clean.count(alt) for alt in name.split("|"))
+        if "|" in name and made == 0:
+            missing.append(name)
+        elif times > 1 and made < times:
+            missing.append(f"{name} x{times} (made {made})")
+    # Order: the expected steps must appear as a subsequence of the calls that counted.
     position, in_order = 0, True
     for name, _ in expected:
-        try:
-            position = clean.index(name, position) + 1
-        except ValueError:
+        alts = set(name.split("|"))
+        found = next((i for i in range(position, len(clean)) if clean[i] in alts), None)
+        if found is None:
             in_order = False
             break
+        position = found + 1
     return {"passed": result.eval_status == "PASSED" and not missing and in_order, "missing": missing,
             "failed_args": list(result.failed_argument_checks), "in_order": in_order}
 

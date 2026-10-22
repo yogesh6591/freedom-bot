@@ -74,7 +74,8 @@ def load_cases(selector: str = "") -> list[dict]:
 
 
 def is_campaign_case(case: dict) -> bool:
-    named = set(case.get("expected_domains") or []) | {str(t).split(" x")[0] for t in case.get("expected_tool_calls") or []}
+    named = set(case.get("expected_domains") or []) | {
+        alt for t in case.get("expected_tool_calls") or [] for alt in str(t).split(" x")[0].split("|")}
     return "campaign" in named or bool(named & CAMPAIGN_TOOLS) or "handed_off" in str(case.get("expected_outcome"))
 
 
