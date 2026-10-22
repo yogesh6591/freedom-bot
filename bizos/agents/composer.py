@@ -39,7 +39,7 @@ _THING = (
 #: starts with a write verb ("Saved the note."), and a thing plus a write verb ("Invoice drafted!").
 _DONE = re.compile(
     r"\b(?:done|all set|all done|taken care of|completed|finished|that's sorted|ho gaya|kar diya)\b"
-    rf"|\b(?:i(?:'ve| have)?(?: just)?|(?:has|have) been|(?:was|were|is|are) (?:now |successfully )?|successfully)\s+{_WROTE}\b"
+    rf"|\b(?:i(?:'ve| have)?(?: just)?|(?:has|have) been|(?:was|were|is|are)(?: now| successfully)?|successfully)\s+{_WROTE}\b"
     rf"|^\W*{_WROTE}\b"
     rf"|\b{_THING}\s+(?:\w+\s+){{0,3}}{_WROTE}\b",
     re.I,

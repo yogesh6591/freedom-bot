@@ -32,10 +32,12 @@ def test_one_line_per_write_and_reads_stay_out():
 def test_never_says_done_when_nothing_succeeded():
     for lead in ("Done! I've updated Raj's phone.", "All set, the email has been sent.", "I have booked the meeting.",
                  "Ho gaya, maine kar diya.", "Saved the note for you.", "Forwarded.", "Invoice drafted!",
-                 "Meeting with Priya booked for Tuesday."):
+                 "Meeting with Priya booked for Tuesday.", "Your call with Raj is scheduled.",
+                 "Raj was updated successfully.", "The invites are now sent."):
         ack = compose(lead, [], task=True)
         assert not ack.wrote
-        for word in ("done", "updated", "has been sent", "booked", "ho gaya", "saved", "forwarded", "drafted"):
+        for word in ("done", "updated", "has been sent", "booked", "ho gaya", "saved", "forwarded", "drafted",
+                     "scheduled", "now sent"):
             assert word not in ack.text.casefold(), (lead, ack.text)
 
 
