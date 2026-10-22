@@ -13,7 +13,8 @@ question.
 
 Only writes get a line; reads are part of the answer. If no write succeeded, the lead-in never claims
 that something was done, sent, created or saved, and it only mentions approval when something is
-actually waiting for approval. The claim patterns are the platform's existing ones (bizos/agents/claims.py).
+actually waiting for approval. The claim patterns are the platform's existing ones (bizos/agents/claims.py);
+a sentence ending in "?" is a question, never a claim.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from bizos.agents.claims import _APPROVAL_CLAIM, _CLAIM, _drop
+from bizos.agents.claims import _APPROVAL_CLAIM, _CLAIM
 from bizos.agents.tool_result import ToolResult
 from bizos.rbac.registry import get_spec
 
@@ -46,6 +47,23 @@ _DONE = re.compile(
 )
 
 NOTHING_DONE = "Nothing was changed."
+
+
+def is_question(sentence: str) -> bool:
+    """A sentence that asks something is never a claim, whatever verbs it uses ("Should I set it?")."""
+    return sentence.rstrip().rstrip("\"')»”").endswith("?")
+
+
+def _drop(text: str, pattern: re.Pattern[str]) -> str:
+    """Remove the sentences that match ``pattern``, keeping questions (the platform's sentence split)."""
+    paragraphs: list[str] = []
+    for para in re.split(r"\n\s*\n", text):
+        sentences = re.split(r"(?<=[.!?])\s+", para)
+        kept = [x for x in sentences if is_question(x) or not pattern.search(x)]
+        joined = " ".join(kept).strip()
+        if joined:
+            paragraphs.append(joined)
+    return "\n\n".join(paragraphs).strip()
 
 
 @dataclass(frozen=True)

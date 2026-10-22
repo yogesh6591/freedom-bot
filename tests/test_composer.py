@@ -58,3 +58,11 @@ def test_a_failed_or_denied_write_says_nothing_changed():
 def test_answers_to_questions_keep_their_facts():
     ack = compose("The Acme deal was created in March and was moved to negotiation last week.", [], task=False)
     assert ack.text == "The Acme deal was created in March and was moved to negotiation last week."
+
+
+def test_questions_are_never_claims():
+    for lead in ("What specific baseline metric should I set for lead response?",
+                 "Should I send it now?", "Do you want me to update Raj's phone?", "Shall I book the meeting?"):
+        assert compose(lead, [], task=True).text == lead
+    mixed = compose("Done, I've updated it. Should I also email Raj?", [], task=True).text
+    assert mixed == "Should I also email Raj?"

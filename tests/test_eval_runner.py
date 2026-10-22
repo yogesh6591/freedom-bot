@@ -323,3 +323,11 @@ def test_an_alternative_step_accepts_either_tool_and_still_checks_order():
     wrong_order = score(case, run([call("calendar_create_event", status="pending", kind="approval"),
                                    call("crm_search_contacts")]))
     assert not wrong_order["checks"]["tool_selection"][0]
+
+
+def test_a_question_is_not_scored_as_a_false_success():
+    case = {"id": "q", "query": "Set a baseline", "user": {"roles": ["ADMIN"]}, "expected_outcome": "not_permitted"}
+    asked = score(case, run([], content="What specific baseline metric should I set for lead response?"))
+    assert asked["checks"]["no_false_success"][0]
+    claimed = score(case, run([], content="I set the baseline. Anything else?"))
+    assert not claimed["checks"]["no_false_success"][0]
