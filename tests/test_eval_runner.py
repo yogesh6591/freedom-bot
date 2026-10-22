@@ -256,7 +256,7 @@ def test_a_case_that_fails_because_the_database_dropped_is_not_recorded(tmp_path
 
     monkeypatch.setattr(er, "run_isolated", dies)
     er.worker("v2", "v2", ["t_crm_create_note_001", "t_crm_create_note_002"], str(tmp_path))
-    assert "dropped during" in (tmp_path / er.ABORT).read_text()
+    assert "connection failed during" in (tmp_path / er.ABORT).read_text()
     assert er.recorded(tmp_path) == {}
 
 
@@ -281,3 +281,32 @@ def test_an_abort_stops_every_worker_promptly(tmp_path, monkeypatch):
     assert er.run_pipeline("v2", "v2", ["a", "b", "c"], 3, tmp_path) is False
     assert time.monotonic() - started < 10
     assert len(spawned) == 3 and all(p.poll() is not None for p in spawned)
+
+
+def test_a_connection_error_stops_the_run_even_when_a_fresh_connection_works(tmp_path, monkeypatch):
+    import evals.run as er
+
+    monkeypatch.setattr(er, "database_problem", lambda: None)
+    monkeypatch.setattr(er, "run_isolated", lambda case, pipeline: {
+        "calls": [], "error": "workspace setup failed: OperationalError: FATAL:  sorry, too many clients already"})
+    er.worker("v2", "v2", ["t_crm_create_note_001", "t_crm_create_note_002"], str(tmp_path))
+    assert "connection failed during" in (tmp_path / er.ABORT).read_text()
+    assert er.recorded(tmp_path) == {}
+
+
+def test_dropping_a_workspace_closes_every_pool_it_opened():
+    import evals.run as er
+    from bizos.tenancy import agnodb
+    from bizos.tenancy.registry import registry
+
+    before_agno, before_registry = len(agnodb._dbs), len(registry._engines)
+    for _ in range(3):
+        er.drop_workspace(er.make_workspace())
+    assert len(agnodb._dbs) == before_agno
+    assert len(registry._engines) <= before_registry + 1  # deprovisioning keeps one "public" engine
+
+
+def test_the_health_check_uses_a_new_connection_every_time():
+    import evals.run as er
+
+    assert er.database_problem() is None

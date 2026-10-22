@@ -101,6 +101,18 @@ def make_workspace():
     return control.get_client(client.id)
 
 
+def release_pools(client) -> None:
+    """Close the connection pools cached for this workspace (deprovisioning alone leaves agno's open)."""
+    from bizos.tenancy import agnodb, provisioning
+    from bizos.tenancy.registry import workspace_location
+
+    key = workspace_location(provisioning._provisioning_context(client))
+    with agnodb._lock:
+        db = agnodb._dbs.pop(key, None)
+    if db is not None and getattr(db, "db_engine", None) is not None:
+        db.db_engine.dispose()
+
+
 def drop_workspace(client) -> None:
     from sqlalchemy import text
 
@@ -108,6 +120,7 @@ def drop_workspace(client) -> None:
     from bizos.tenancy import provisioning
 
     try:
+        release_pools(client)
         provisioning.deprovision_client(client)
     finally:
         with control_connection() as conn:
@@ -376,8 +389,8 @@ def worker(pipeline: str, label: str, ids: list[str], run_dir: str) -> None:
                 return
             case = cases[case_id]
             run = run_isolated(case, pipeline)
-            if run.get("error") and database_problem():
-                abort(run_path, f"database dropped during {label} / {case_id}: {run['error'][:200]}")
+            if run.get("error") and (is_connection_error(run["error"]) or database_problem()):
+                abort(run_path, f"database connection failed during {label} / {case_id}: {run['error'][:200]}")
                 return  # not recorded: the case did not fail, the database did
             scored = score(case, run, workspace_zone=(case.get("fixtures") or {}).get("timezone") or "Asia/Kolkata")
             row = {**scored, "label": label, "run": run, "unknown_arguments": unknown_argument_rejections(run["calls"]),
@@ -397,17 +410,34 @@ def abort(run_dir: Path, reason: str) -> None:
 
 
 def database_problem() -> Optional[str]:
-    """None when the control-plane database answers; otherwise why not, in one line."""
-    from sqlalchemy import text
+    """None when a brand-new connection to the database succeeds; otherwise why not, in one line.
 
-    from bizos.control.db import control_connection
+    A new connection, not a pooled one: a pooled connection keeps working when the server refuses new
+    ones (for example "too many clients"), which is exactly when every case would fail.
+    """
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.pool import NullPool
 
+    from bizos import settings as app_settings
+
+    engine = create_engine(app_settings.control_db_url(), poolclass=NullPool, connect_args={"connect_timeout": 5})
     try:
-        with control_connection() as conn:
+        with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
     except Exception as exc:  # noqa: BLE001 - any failure here means "do not start or continue"
         return f"{type(exc).__name__}: {str(exc).splitlines()[0][:200]}"
+    finally:
+        engine.dispose()
     return None
+
+
+#: A case error that is the database's fault, not the case's: never recorded, always stops the run.
+CONNECTION_ERRORS = ("too many clients", "connection failed", "connection refused", "could not connect",
+                     "server closed the connection", "terminating connection", "connection timed out")
+
+
+def is_connection_error(error: str) -> bool:
+    return any(marker in error.casefold() for marker in CONNECTION_ERRORS)
 
 
 def preflight() -> Optional[str]:
