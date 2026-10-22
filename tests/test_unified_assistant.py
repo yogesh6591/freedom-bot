@@ -162,6 +162,7 @@ def ask(ctx, settings, message, session_id=None, **extra):
 # ------------------------------------------------------------------------------------------ ops
 
 
+@pytest.mark.skip(reason="Chat is campaign-only; ops tools are not on this agent.")
 def test_ops_task_runs_a_tool_with_why_and_structured_reply(fake_model, acq, client_scratch, ctx_factory):
     ctx = ctx_factory(client_scratch, "admin")
     SCRIPT[:] = [
