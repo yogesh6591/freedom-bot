@@ -246,3 +246,15 @@ def test_v2_prompts_use_the_workspace_timezone_not_utc(client_scratch, ctx_facto
     playbook = render_playbooks(["calendar"], frozenset({"calendar_create_event", "calendar_check_availability"}),
                                 timezone="Asia/Kolkata")
     assert "without an offset" in playbook and "(Asia/Kolkata)" in playbook and "UTC" not in playbook
+
+
+def test_the_executor_model_can_differ_from_the_router_model(monkeypatch):
+    from app.assistant.v2 import executor_model
+    from bizos.agents.router_agent import router_model
+
+    monkeypatch.setenv("MODEL_ID", "openai:gpt-4.1-mini")
+    monkeypatch.delenv("EXECUTOR_MODEL_ID", raising=False)
+    monkeypatch.delenv("ROUTER_MODEL_ID", raising=False)
+    assert executor_model().id == "gpt-4.1-mini" and router_model().id == "gpt-4.1-mini"
+    monkeypatch.setenv("EXECUTOR_MODEL_ID", "openai:gpt-4.1")
+    assert executor_model().id == "gpt-4.1" and router_model().id == "gpt-4.1-mini"

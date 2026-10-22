@@ -139,6 +139,24 @@ def guard_hook_for(guard: Guard) -> Callable:
     return hook
 
 
+def executor_model() -> Any:
+    """The executor's model: EXECUTOR_MODEL_ID when set (e.g. a stronger model), else MODEL_ID.
+
+    The router has its own setting (ROUTER_MODEL_ID), so the two can differ.
+    """
+    from app.assistant.assistant import _model
+
+    mid = (os.environ.get("EXECUTOR_MODEL_ID") or "").strip()
+    if not mid:
+        return _model(None)
+    provider, _, name = mid.partition(":")
+    if provider == "openai" and name:
+        from agno.models.openai import OpenAIChat
+
+        return OpenAIChat(id=name)
+    return mid
+
+
 # --------------------------------------------------------------------------- prompts
 
 
@@ -178,7 +196,7 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
     """One chat turn through the v2 pipeline. Must be called with the tenant bound."""
     from app.api.chat import _regulated_data_refusal as regulated_data_refusal
     from app.api.deps import run_scope
-    from app.assistant.assistant import _guardrail_audit, _history, _model, _packs_for, reply
+    from app.assistant.assistant import _guardrail_audit, _history, _packs_for, reply
 
     session_id = body.session_id or new_id("ses")
     saved: dict = {"messages": []}
@@ -261,7 +279,7 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
         agent = Agent(
             name=agent_instructions.assistant_name(settings),
             id="bizos-assistant-v2",
-            model=_model(None),
+            model=executor_model(),
             user_id=ctx.user_id,
             session_id=session_id,
             instructions=prompt,
