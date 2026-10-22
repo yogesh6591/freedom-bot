@@ -150,6 +150,9 @@ def score(case: dict, run: dict, *, workspace_zone: str = "Asia/Kolkata") -> dic
     executed = [c["tool"] for c in calls if _result_gate(c) in WRITE_STATUSES
                 or (c["stage"] == "policy" and not _is_write(c["tool"]) and _result_gate(c) == "run")]
     expected_outcomes = _expected_list(case.get("expected_outcome"))
+    if run.get("pipeline") == "current":
+        # The current assistant has no hand-off: it runs campaign turns itself.
+        expected_outcomes = [o for o in expected_outcomes if o != "handed_off"]
 
     if run.get("error"):
         checks["ran"] = (False, run["error"][:300])

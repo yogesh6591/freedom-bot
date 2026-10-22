@@ -2,23 +2,26 @@
 Eval runner
 ===========
 
-    python -m evals.run --pipeline both --workers 6
-    python -m evals.run --pipeline v2 --cases calendar_tz_,campaign_mixed_001
+    python -m evals.run --configs v2,v2,v2-norouter,current,v2-strong --workers 4
+    python -m evals.run --configs v2 --cases calendar_tz_,campaign_mixed_001
 
-Runs every case in evals/cases.yaml through a pipeline with a real model and mocked tools (evals/world.py),
-scores it (evals/scoring.py) and appends each result to evals/reports/<run id>/*.jsonl the moment it is
-scored; the report (report.md, summary.json) is built from those files. A crash loses at most the case in
-progress: `--resume <run id>` runs only what is not saved yet, `--report <run id>` rebuilds the report.
+Runs every case in evals/cases.yaml through each configuration with a real model and mocked tools
+(evals/world.py), scores it (evals/scoring.py) and appends each result to evals/reports/<run id>/*.jsonl the
+moment it is scored; the report (report.md, summary.json) is built from those files. A crash loses at most
+the case in progress: `--resume <run id>` runs only what is not saved yet, `--report <run id>` rebuilds the
+report. A configuration listed twice runs twice, to show run-to-run variation.
 
-Pipelines:
-    v2    the v2 pipeline as shipped behind AGENT_PIPELINE_V2 (router, guard, executor, composer).
-    flat  the baseline: the same executor, guard and composer with every visible tool loaded and no router.
-          Campaign turns cannot run without the router's hand-off, so campaign cases are skipped.
+Configurations (PIPELINES below):
+    v2           the v2 pipeline as shipped behind AGENT_PIPELINE_V2 (router, guard, executor, composer).
+    v2-norouter  the same executor, guard, composer and prompts with every visible tool loaded and no
+                 router. Campaign turns need the router's hand-off, so campaign cases are skipped.
+    current      the flat baseline: the current assistant (reply()), as users get it with the flag off.
+                 Its old tool names are scored under the v2 names that replace them.
+    v2-strong    v2 with a stronger executor model; the router stays on the small model.
 
-Each worker process gets its own throwaway workspace on the local Postgres (as tests/conftest.py does) and
-removes it afterwards. The acquisition database used is the throwaway test one; campaign records are
-mocked. Nothing reaches a real CRM, mailbox, calendar, ledger or campaign system; only the model is real.
-"""
+Each case gets its own throwaway workspace on the local Postgres (as tests/conftest.py does), removed
+afterwards. The acquisition database used is the throwaway test one; campaign records are mocked. Nothing
+reaches a real CRM, mailbox, calendar, ledger or campaign system; only the model is real."""
 
 from __future__ import annotations
 
@@ -49,6 +52,17 @@ os.environ.pop("AGENT_PIPELINE_V2", None)
 
 import yaml  # noqa: E402
 
+#: The configurations a run can compare.
+#:   v2           the v2 pipeline as shipped (router, guard, executor, composer).
+#:   v2-norouter  the same executor, guard, composer and prompts with every visible tool loaded; no router.
+#:   current      the flat baseline: the current assistant (reply()), as users get it with the flag off.
+#:   v2-strong    v2 with a stronger executor model (STRONG_EXECUTOR); the router stays on the small model.
+PIPELINES = ("v2", "v2-norouter", "current", "v2-strong")
+STRONG_EXECUTOR = "openai:gpt-4.1"
+#: USD per million tokens (input, cached input, output): OpenAI list prices when this was written.
+PRICES = {"gpt-4.1-mini": (0.40, 0.10, 1.60), "gpt-4.1": (2.00, 0.50, 8.00)}
+
+LABELS = {"v2": "v2", "v2-norouter": "v2 no router", "current": "flat baseline", "v2-strong": "v2 strong executor"}
 CASES = ROOT / "evals" / "cases.yaml"
 REPORTS = ROOT / "evals" / "reports"
 ALL_AREAS = frozenset({"finance", "legal", "hr", "exec", "salary", "ops"})
@@ -193,6 +207,29 @@ def context_for(client, case: dict):
     )
 
 
+def app_model_id() -> str:
+    from bizos import settings as app_settings
+
+    return app_settings.model_id()
+
+
+#: The v2 merged tool an old tool's call is scored as, and the argument that tells them apart.
+_MERGED_ARG = {"approvals_approve": ("decision", "approve"), "approvals_reject": ("decision", "reject"),
+               "approvals_request_changes": ("decision", "request_changes"), "memory_add_fact": ("kind", "fact"),
+               "memory_add_sop": ("kind", "sop"), "memory_record_decision": ("kind", "decision")}
+
+
+def model_name(tool: str, args: dict) -> tuple[str, dict]:
+    """An old tool call (current assistant) under the v2 tool name it is scored as."""
+    from bizos.agents.merged_tools import MERGED
+
+    for name, merged in MERGED.items():
+        if tool in merged.wraps:
+            extra = dict([_MERGED_ARG[tool]]) if tool in _MERGED_ARG else {}
+            return name, {**args, **extra}
+    return tool, args
+
+
 def leftovers(ctx) -> dict[str, int]:
     """What the workspace already holds when a case starts. Each case has its own workspace, so all zero."""
     from sqlalchemy import text
@@ -267,7 +304,8 @@ def run_case(client, case: dict, pipeline: str) -> dict:
     world = World(fixtures)
     run: dict[str, Any] = {"pipeline": pipeline, "calls": [], "handed_off": False, "route": None,
                            "fallback_reason": None, "load_tools_misses": [], "error": None,
-                           "router_skipped": pipeline == "flat" or "router_override" in fixtures}
+                           "router_skipped": pipeline in ("v2-norouter", "current") or "router_override" in fixtures,
+                           "usage": []}
     mp = MonkeyPatch()
     try:
         patch_world(mp, world, fixtures)
@@ -296,9 +334,10 @@ def run_case(client, case: dict, pipeline: str) -> dict:
 
         def recorded_guarded(scope, tool, args):
             outcome = real_guarded(scope, tool, args)
-            if run["handed_off"]:
+            if run["handed_off"] or pipeline == "current":
                 r = from_outcome(outcome)
-                run["calls"].append({"tool": tool, "args": dict(args), "stage": "policy", "text": outcome.message[:500],
+                name, named_args = model_name(tool, dict(args))
+                run["calls"].append({"tool": name, "args": named_args, "stage": "policy", "text": outcome.message[:500],
                                      "results": [{"tool": r.tool, "status": r.status, "pending_kind": r.pending_kind}]})
             return outcome
 
@@ -327,7 +366,26 @@ def run_case(client, case: dict, pipeline: str) -> dict:
 
         mp.setattr(v2, "clean_route", clean)
         mp.setattr(v2, "route_and_prefetch", prefetch)
-        if pipeline == "flat":
+        # ---- token usage of every model call (router, executor, current assistant)
+        from agno.agent import Agent
+
+        real_run = Agent.run
+
+        def counted(self, *a, **k):
+            out = real_run(self, *a, **k)
+            metrics = getattr(out, "metrics", None)
+            if metrics is not None:
+                run["usage"].append({"model": str(getattr(self.model, "id", "") or getattr(out, "model", "")),
+                                     "input": metrics.input_tokens or 0, "cached": metrics.cache_read_tokens or 0,
+                                     "output": metrics.output_tokens or 0})
+            return out
+
+        mp.setattr(Agent, "run", counted)
+        if pipeline == "v2-strong":
+            mp.setenv("EXECUTOR_MODEL_ID", STRONG_EXECUTOR)
+            mp.setenv("ROUTER_MODEL_ID", os.environ.get("ROUTER_MODEL_ID") or app_model_id())
+
+        if pipeline == "v2-norouter":
             everything = [d for d in routing.DOMAINS if d != "campaign"]
             mp.setattr(v2, "route_query", lambda prompt, query, **k: RouteResult(
                 routing.Route(domains=[], kind="task")))
@@ -359,8 +417,12 @@ def run_case(client, case: dict, pipeline: str) -> dict:
         packs = current._packs_for(settings, AUTO)
         with bound(ctx):
             run["leftovers"] = leftovers(ctx)
-            run["visible"] = sorted(routing.visible_tools(RunScope(ctx=ctx, settings=settings), packs,
-                                                          campaign_allowed=ctx.is_admin))
+            scope = RunScope(ctx=ctx, settings=settings)
+            if pipeline == "current":
+                shown = {model_name(spec.name, {})[0] for spec, _, _ in surface.visible_specs_by_pack(scope, packs)}
+                run["visible"] = sorted(shown | (CAMPAIGN_TOOLS if ctx.is_admin else set()))
+            else:
+                run["visible"] = sorted(routing.visible_tools(scope, packs, campaign_allowed=ctx.is_admin))
             session_id = None
             prior = list(case.get("history") or [])
             if prior or fixtures.get("campaign_state"):
@@ -372,7 +434,8 @@ def run_case(client, case: dict, pipeline: str) -> dict:
                     chat_history.record_turn(ctx, session_id=session_id, user_message=said, reply=answered,
                                              domain="general", meta=meta)
             started = time.monotonic()
-            out = v2.handle(ChatRequest(message=case["query"], session_id=session_id), ctx, settings)
+            body = ChatRequest(message=case["query"], session_id=session_id)
+            out = real_reply(body, ctx, settings) if pipeline == "current" else v2.handle(body, ctx, settings)
             run["seconds"] = round(time.monotonic() - started, 1)
         run["content"] = out.get("content") or ""
     except Exception as exc:  # noqa: BLE001 - a crash is a failed case, not a failed run
@@ -513,7 +576,7 @@ def run_isolated(case: dict, pipeline: str) -> dict:
 
 
 def eligible(pipeline: str, cases: list[dict]) -> list[str]:
-    ids = [c["id"] for c in cases if not (pipeline == "flat" and is_campaign_case(c))]
+    ids = [c["id"] for c in cases if not (pipeline == "v2-norouter" and is_campaign_case(c))]
     return ids + [c["id"] for c in load_canaries()]
 
 
@@ -596,12 +659,40 @@ def summarise(pipeline: str, rows: list[dict], cases: list[dict]) -> dict:
         "canaries_failed": (sum(1 for r in canaries if _canary_caught(r, by_id)), len(canaries)),
         "canaries_passed": sorted(r["id"] for r in canaries if not _canary_caught(r, by_id)),
         "router_fallbacks": fallbacks, "unknown_argument_rejections": unknown, "load_tools_misses": misses,
+        **cost_and_latency(rows),
     }
+
+
+def case_cost(usage: list[dict]) -> Optional[float]:
+    """USD for one case's model calls, from PRICES (None if a model has no price)."""
+    total = 0.0
+    for u in usage:
+        model = next((m for m in sorted(PRICES, key=len, reverse=True) if u["model"].endswith(m)), None)
+        if model is None:
+            return None
+        p_in, p_cached, p_out = PRICES[model]
+        fresh = max(0, u["input"] - u["cached"])
+        total += (fresh * p_in + u["cached"] * p_cached + u["output"] * p_out) / 1_000_000
+    return total
+
+
+def cost_and_latency(rows: list[dict]) -> dict:
+    costs = [c for c in (case_cost(r["run"].get("usage") or []) for r in rows) if c is not None]
+    seconds = sorted(r["run"]["seconds"] for r in rows if r["run"].get("seconds") is not None)
+    tokens = [sum(u["input"] + u["output"] for u in r["run"].get("usage") or []) for r in rows]
+    models = sorted({u["model"] for r in rows for u in r["run"].get("usage") or []})
+
+    def pct(q):
+        return seconds[min(len(seconds) - 1, int(q * len(seconds)))] if seconds else None
+
+    return {"cost_per_case": sum(costs) / len(costs) if costs else None, "cost_total": sum(costs),
+            "latency_median": pct(0.5), "latency_p90": pct(0.9),
+            "tokens_per_case": sum(tokens) / len(tokens) if tokens else None, "models": models}
 
 
 def variation(rows_by: dict[str, list[dict]]) -> str:
     """Cases whose result differs between repeated v2 runs."""
-    runs = [label for label in rows_by if label.startswith("v2 run")]
+    runs = [label for label in rows_by if label.startswith(f"{LABELS['v2']} run")]
     if len(runs) < 2:
         return ""
     results = {label: {r["id"]: r["passed"] for r in rows_by[label] if not r.get("canary") and "ran" not in r["checks"]}
@@ -611,6 +702,57 @@ def variation(rows_by: dict[str, list[dict]]) -> str:
     lines = ["", "## Run-to-run variation (v2)", "",
              f"{len(flipped)} of {len(common)} cases changed result between runs.", ""]
     lines += [f"- {i}: " + ", ".join(f"{label} {'pass' if results[label][i] else 'fail'}" for label in runs) for i in flipped]
+    return "\n".join(lines) + "\n"
+
+
+def category(case_id: str) -> str:
+    for prefix, name in (("t_", "per-tool"), ("pair_", "confusable pairs"), ("confusable_", "confusable pairs"),
+                         ("multi", "multi-step"), ("perm_", "permission"), ("workaround_", "workarounds"),
+                         ("clarify", "clarify"), ("adversarial", "adversarial"), ("provenance", "adversarial"),
+                         ("policy_route_", "policy routing")):
+        if case_id.startswith(prefix):
+            return name
+    return "hinglish" if "hinglish" in case_id else "earlier phases"
+
+
+def by_category(rows_by: dict[str, list[dict]]) -> str:
+    labels = list(rows_by)
+    cats = sorted({category(r["id"]) for rows in rows_by.values() for r in rows if not r.get("canary")})
+    lines = ["", "## Pass rate by category", "", "| Category | " + " | ".join(labels) + " |",
+             "|---|" + "---|" * len(labels)]
+    for cat in cats:
+        cells = []
+        for label in labels:
+            sub = [r for r in rows_by[label] if not r.get("canary") and "ran" not in r["checks"] and category(r["id"]) == cat]
+            cells.append(f"{sum(r['passed'] for r in sub)}/{len(sub)}" if sub else "n/a")
+        lines.append(f"| {cat} | " + " | ".join(cells) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def router_comparison(rows_by: dict[str, list[dict]]) -> str:
+    """Does the router help? Each v2 run against v2 without a router, case by case (campaign cases excluded)."""
+    base = rows_by.get(LABELS["v2-norouter"])
+    runs = [label for label in rows_by if label == LABELS["v2"] or label.startswith(f"{LABELS['v2']} run")]
+    if not base or not runs:
+        return ""
+    without = {r["id"]: r["passed"] for r in base if not r.get("canary") and "ran" not in r["checks"]}
+    lines = ["", "## Does the router help? (v2 vs v2 without router)", "",
+             "| | " + " | ".join(runs) + " |", "|---|" + "---|" * len(runs)]
+    stats = []
+    for label in runs:
+        with_router = {r["id"]: r["passed"] for r in rows_by[label]
+                       if not r.get("canary") and "ran" not in r["checks"] and r["id"] in without}
+        wins = sorted(i for i, ok in with_router.items() if ok and not without[i])
+        losses = sorted(i for i, ok in with_router.items() if not ok and without[i])
+        stats.append((with_router, wins, losses))
+    lines.append("| Cases compared | " + " | ".join(str(len(w)) for w, _, _ in stats) + " |")
+    lines.append("| Passed with router | " + " | ".join(str(sum(w.values())) for w, _, _ in stats) + " |")
+    lines.append("| Passed without router | " + " | ".join(str(sum(without[i] for i in w)) for w, _, _ in stats) + " |")
+    lines.append("| Router wins (pass only with it) | " + " | ".join(str(len(x)) for _, x, _ in stats) + " |")
+    lines.append("| Router losses (pass only without it) | " + " | ".join(str(len(x)) for _, _, x in stats) + " |")
+    wins, losses = stats[0][1], stats[0][2]
+    lines += ["", f"{runs[0]} router wins: " + (", ".join(wins) or "none"),
+              "", f"{runs[0]} router losses: " + (", ".join(losses) or "none")]
     return "\n".join(lines) + "\n"
 
 
@@ -633,6 +775,14 @@ def markdown(summaries: list[dict], rows_by_pipeline: dict[str, list[dict]], mod
                        "forbidden"), ("Forbidden-tool cases, not even attempted", "forbidden_attempted"),
                        ("Correct tool selection (gate: 95%)", "tool_selection")):
         lines.append(f"| {label} | " + " | ".join(pct(s[key]) for s in summaries) + " |")
+    money = lambda v: f"${v:.4f}" if v is not None else "n/a"
+    secs = lambda v: f"{v:.1f} s" if v is not None else "n/a"
+    lines.append("| Models | " + " | ".join(", ".join(s["models"]) or "n/a" for s in summaries) + " |")
+    lines.append("| Cost per case (list prices) | " + " | ".join(money(s["cost_per_case"]) for s in summaries) + " |")
+    lines.append("| Tokens per case | " + " | ".join(f"{s['tokens_per_case']:.0f}" if s["tokens_per_case"] else "n/a"
+                                                     for s in summaries) + " |")
+    lines.append("| Latency, median / p90 | " + " | ".join(f"{secs(s['latency_median'])} / {secs(s['latency_p90'])}"
+                                                           for s in summaries) + " |")
     for s in summaries:
         lines += ["", f"## {s['pipeline']}", "",
                   f"- Router fallbacks: {sum(s['router_fallbacks'].values())} {s['router_fallbacks'] or ''}",
@@ -658,7 +808,8 @@ def build_report(run_dir: Path) -> int:
     rows_by = {label: list(saved.get(label, {}).values()) for label, _ in meta["labels"]}
     missing = {label: sorted(set(eligible(kind, cases)) - set(saved.get(label, {}))) for label, kind in meta["labels"]}
     summaries = [summarise(label, rows_by[label], cases) for label, _ in meta["labels"]]
-    report = markdown(summaries, rows_by, meta["model"]) + variation(rows_by)
+    report = (markdown(summaries, rows_by, meta["model"]) + by_category(rows_by) + router_comparison(rows_by)
+              + variation(rows_by))
     if any(missing.values()):
         report += "\n## Not run yet (resume with --resume " + run_dir.name + ")\n\n" + "\n".join(
             f"- {label}: {len(ids)} case(s)" for label, ids in missing.items() if ids) + "\n"
@@ -673,11 +824,11 @@ def build_report(run_dir: Path) -> int:
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--pipeline", choices=["v2", "flat", "both"], default="both")
+    parser.add_argument("--configs", default="v2,v2-norouter",
+                        help=f"comma-separated configurations to run, repeats allowed ({', '.join(PIPELINES)})")
     parser.add_argument("--cases", default="", help="comma-separated ids or id prefixes")
     parser.add_argument("--workers", type=int, default=4,
                         help="parallel worker processes (4: the dev Mac has 8 GiB shared with Docker)")
-    parser.add_argument("--v2-runs", type=int, default=1, help="run v2 this many times, to see run-to-run variation")
     parser.add_argument("--cleanup", action="store_true", help="remove eval workspaces a killed run left behind")
     parser.add_argument("--resume", metavar="RUN_ID", help="continue a run, skipping cases already saved for it")
     parser.add_argument("--report", metavar="RUN_ID", help="rebuild a run's report from its saved results only")
@@ -708,11 +859,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_dir = REPORTS / args.resume
         meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
     else:
-        kinds = ["v2", "flat"] if args.pipeline == "both" else [args.pipeline]
+        kinds = [k.strip() for k in args.configs.split(",") if k.strip()]
+        unknown = sorted(set(kinds) - set(PIPELINES))
+        if unknown:
+            print(f"Unknown configuration(s): {', '.join(unknown)}. Choose from {', '.join(PIPELINES)}.")
+            return 2
         labels = []
-        for kind in kinds:
-            n = args.v2_runs if kind == "v2" else 1
-            labels += [(f"{kind} run {i}" if n > 1 else kind, kind) for i in range(1, n + 1)]
+        for kind in dict.fromkeys(kinds):
+            n = kinds.count(kind)
+            labels += [(f"{LABELS[kind]} run {i}" if n > 1 else LABELS[kind], kind) for i in range(1, n + 1)]
         run_dir = REPORTS / time.strftime("%Y%m%d-%H%M%S")
         run_dir.mkdir(parents=True, exist_ok=False)
         meta = {"cases": args.cases, "labels": labels, "model": app_settings.model_id(),

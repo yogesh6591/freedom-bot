@@ -230,7 +230,7 @@ def test_main_does_not_start_when_preflight_fails(tmp_path, monkeypatch):
     monkeypatch.setattr(er, "REPORTS", tmp_path)
     monkeypatch.setattr(er, "preflight", lambda: "the database does not answer")
     monkeypatch.setattr(er, "run_pipeline", lambda *a: (_ for _ in ()).throw(AssertionError("started")))
-    assert er.main(["--pipeline", "v2", "--cases", "t_crm_create_note_001"]) == 2
+    assert er.main(["--configs", "v2", "--cases", "t_crm_create_note_001"]) == 2
     assert list(tmp_path.iterdir()) == []  # no run directory, nothing half-made
 
 
@@ -331,3 +331,52 @@ def test_a_question_is_not_scored_as_a_false_success():
     assert asked["checks"]["no_false_success"][0]
     claimed = score(case, run([], content="I set the baseline. Anything else?"))
     assert not claimed["checks"]["no_false_success"][0]
+
+
+def test_old_tool_calls_are_scored_under_the_v2_names():
+    from evals.run import model_name
+
+    assert model_name("approvals_reject", {"action_id": "act_1"}) == ("approvals_decide", {"action_id": "act_1",
+                                                                                          "decision": "reject"})
+    assert model_name("memory_add_sop", {"title": "t"}) == ("memory_add", {"title": "t", "kind": "sop"})
+    assert model_name("admin_set_user_roles", {"user": "u"})[0] == "admin_update_user"
+    assert model_name("crm_create_note", {"body": "b"}) == ("crm_create_note", {"body": "b"})
+
+
+def test_cost_uses_list_prices_and_counts_cached_input_at_the_cached_price():
+    from evals.run import case_cost
+
+    usage = [{"model": "gpt-4.1-mini", "input": 1_000_000, "cached": 500_000, "output": 100_000},
+             {"model": "gpt-4.1", "input": 100_000, "cached": 0, "output": 10_000}]
+    assert round(case_cost(usage), 4) == round(0.20 + 0.05 + 0.16 + 0.20 + 0.08, 4)
+    assert case_cost([{"model": "some-unpriced-model", "input": 1, "cached": 0, "output": 1}]) is None
+
+
+def test_router_comparison_counts_wins_and_losses():
+    from evals.run import router_comparison
+
+    def row(i, ok):
+        return {"id": i, "passed": ok, "checks": {}}
+
+    report = router_comparison({"v2": [row("a", True), row("b", False), row("c", True)],
+                                "v2 no router": [row("a", False), row("b", True), row("c", True)]})
+    assert "| Router wins (pass only with it) | 1 |" in report
+    assert "| Router losses (pass only without it) | 1 |" in report
+    assert "router wins: a" in report and "router losses: b" in report
+
+
+def test_the_current_assistant_pipeline_on_the_scripted_model(fake_model, client_scratch):
+    from evals.run import run_case
+
+    case = {**NOTE, "fixtures": {"contacts": [{"id": "C-310", "name": "Raj Mehta", "email": "raj@acme.com"}]}}
+    SCRIPT[:] = [
+        {"tool_calls": [{"name": "crm_search_contacts", "arguments": {"query": "Raj"}}]},
+        {"tool_calls": [{"name": "crm_create_note", "arguments": {"contact_id": "C-310", "body": "Called"}}]},
+        {"content": "The note is waiting for approval."},
+    ] + [{"content": "ok"}] * 5
+    result = run_case(client_scratch, case, "current")
+    assert result["error"] is None, result["error"]
+    assert [c["tool"] for c in result["calls"]][:2] == ["crm_search_contacts", "crm_create_note"]
+    assert result["route"] is None and result["router_skipped"]
+    assert "crm_create_note" in result["visible"]
+    assert score(case, result)["checks"]["gate:crm_create_note"][0]
