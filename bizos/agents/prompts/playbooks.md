@@ -3,7 +3,9 @@
 
 ## crm
 - Find before you change: crm_search_contacts, crm_search_companies or crm_search_deals, then use the ID.
-- Contact email for emailing or inviting: crm_search_contacts, then crm_get_contact.
+- Contact email for emailing or inviting: take it from crm_search_contacts results.
+- crm_get_contact only when the search result has no email address.
+- A note about one person, company or deal: crm_create_note.
 - One contact, one field: crm_update_contact_field. Several named contacts (for example everyone at
   one company): search, then crm_update_contact_field once per contact.
 - crm_bulk_update_contacts only filters by lifecycle stage. Use it only when the user means a whole
@@ -14,7 +16,8 @@
   needs approval.
 
 ## email
-- Default to email_create_draft. Use email_send_message only when the user clearly says send.
+- Default to email_create_draft when the user did not clearly say send.
+- "send", "now" or "right away" is a clear request to send: use email_send_message.
 - For emails to people outside the company, call brand_get_voice first and match it.
 - Replying to a thread: email_search_threads, then email_read_thread for context.
 
@@ -41,6 +44,7 @@
 - If the user corrects a stored fact, use memory_correct. If two sources disagree and it is unclear
   which is right, use memory_escalate_conflict (it always needs approval).
 - memory_add kind: "decision" for decisions, "sop" for procedures, "fact" for everything else.
+- memory_add is for facts about the whole company, never a note about one person or company.
 
 ## approvals
 - Find the action_id with approvals_list or approvals_get first.
@@ -79,6 +83,7 @@
 - admin_set_tool_permission sets one of the five levels for one role. When loosening a high-risk
   tool, say so plainly first.
 - admin_set_tool_mode can only make a tool stricter than the workspace mode, never looser.
+- "Make every email go out as a draft" is one tool's mode: admin_set_tool_mode, not a workspace change.
 
 ## admin_commercial
 - admin_pricing for standard prices; admin_consult_quote for one client's scope;

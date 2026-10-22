@@ -183,12 +183,12 @@ TOOL_META: dict[str, AgentMeta] = {
     # ------------------------------------------------------------------ merged (v2 shows these)
     "memory_add": M("memory", d("""
         Record something new in company memory: a fact, an SOP (step-by-step procedure) or a decision
-        with who approved it and when.
-        Use when: "remember that Acme renews in March", "save these steps as our onboarding SOP",
-        "log that we dropped the starter plan".
-        Don't use: a stored value that is wrong -> memory_correct; two sources disagree ->
-        memory_escalate_conflict.
-        Effect: saved as a new item, or a new version under an existing key. {gate}
+        and its approver.
+        Use when: "remember our support email is help@ourco.in", "save these steps as our onboarding
+        SOP", "log that we dropped the starter plan".
+        Don't use: a note on one person, company or deal -> crm_create_note; a wrong value ->
+        memory_correct; sources disagree -> memory_escalate_conflict.
+        Effect: saved as a new item, or a new version of an existing key. {gate}
     """), suggested_prior=("memory_search",)),
     "approvals_decide": M("approvals", d("""
         Decide a pending approval request: approve, reject, or send it back with a comment. An approved
@@ -251,9 +251,10 @@ TOOL_META: dict[str, AgentMeta] = {
     """)),
     "crm_create_note": M("crm", d("""
         Add a note to a CRM contact or deal.
-        Use when: "note on Raj: called about the renewal", "Acme deal pe note daal do ki pricing bheji".
-        Don't use: a follow-up with an owner or due date -> crm_create_task; a problem with BizOS itself
-        -> support_create_ticket.
+        Use when: any note about one person, company or deal - "note on Raj: wants quarterly billing",
+        "Acme deal pe note daal do ki pricing bheji".
+        Don't use: a follow-up with a due date -> crm_create_task; a BizOS problem -> support_create_ticket;
+        a fact for the whole company -> memory_add.
         Needs: contact_id or deal_id from crm_search_contacts or crm_search_deals.
         Effect: the note is saved on the record. {gate}
     """), id_fields=("contact_id", "deal_id")),
@@ -332,16 +333,16 @@ TOOL_META: dict[str, AgentMeta] = {
     """), id_fields=("thread_id",)),
     "email_create_draft": M("email", d("""
         Save an email as a draft in the user's mailbox for them to review and send themselves.
-        Use when: "draft a follow-up to Raj", "Priya ke liye mail ka draft bana do", or whenever the
-        user did not clearly say send.
-        Don't use: the user clearly says send now -> email_send_message; campaign emails -> propose_email.
+        Use when: "draft a follow-up to Raj", "let me review it first", "Priya ke liye draft bana do",
+        or whenever the user did not clearly say send.
+        Don't use: "send", "now" or "right away" -> email_send_message; campaign emails -> propose_email.
         Needs: recipient addresses from crm_get_contact, admin_list_users, or the user's message.
         Effect: a draft is saved; nothing is sent. {gate}
     """), id_fields=("recipients",)),
     "email_send_message": M("email", d("""
         Send one email now to specific people the user named.
-        Use when: the user clearly asks to send - "email Priya that the contract is signed",
-        "Raj ko mail bhej do ki meeting confirm hai".
+        Use when: the user says "send", "now" or "right away" - "email Priya that the contract is
+        signed", "send Raj the deck now", "Raj ko mail bhej do".
         Don't use: saving for review -> email_create_draft; campaigns or emailing a selected list ->
         propose_email, approve_move, send_approved.
         Needs: recipient addresses from crm_get_contact, admin_list_users, or the user's message.
@@ -543,12 +544,12 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: setup changes for the whole workspace. {gate}
     """), requires_prior=("admin_get_setup",)),
     "admin_update_settings": M("admin_setup", d("""
-        Change workspace settings: default execution mode, data-processing permissions, the
-        approval, risk, memory and retention policies, and the workspace timezone (IANA name).
-        Use when: "switch the workspace to wait-for-approval mode", "require approval for anything high risk",
-        "our office is in Dubai, set the timezone to Asia/Dubai".
-        Don't use: who may use one tool -> admin_set_tool_permission; one pack -> admin_toggle_domain;
-        goals and SOPs -> admin_apply_setup.
+        Change workspace settings: mode for every kind of action, data-processing permissions, approval,
+        risk, memory and retention policies, and the timezone (IANA name).
+        Use when: "switch the workspace to wait-for-approval mode", "set the timezone to Asia/Dubai".
+        Don't use: one kind of action ("make every email go out as a draft") -> admin_set_tool_mode;
+        who may use one tool -> admin_set_tool_permission; one pack -> admin_toggle_domain; goals and
+        SOPs -> admin_apply_setup.
         Effect: applies to every user. {gate}
     """), requires_prior=("admin_get_setup",)),
     "admin_list_domains": M("admin_setup", d("""
@@ -696,9 +697,10 @@ TOOL_META: dict[str, AgentMeta] = {
     "admin_set_tool_mode": M("admin_permissions", d("""
         Make one tool run under a stricter mode than the workspace (ADVISE, DRAFT, WAIT_FOR_APPROVAL),
         or reset it. It can only tighten, never loosen.
-        Use when: "always draft emails first", "make calendar bookings wait for approval".
-        Don't use: who may use the tool -> admin_set_tool_permission; the whole workspace mode ->
-        admin_update_settings.
+        Use when: "always draft emails first", "make every email go out as a draft" (tool
+        email_send_message, mode DRAFT), "make calendar bookings wait for approval".
+        Don't use: who may use the tool -> admin_set_tool_permission; the whole workspace mode, for every
+        kind of action -> admin_update_settings.
         Effect: applies to every user. {gate}
     """), requires_prior=("admin_tool_permissions",)),
 

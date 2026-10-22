@@ -44,13 +44,13 @@ Domain = Literal[
 
 #: What the router reads for each domain (ARCHITECTURE.md §7).
 DOMAIN_DESCRIPTIONS: dict[str, str] = {
-    "memory": "Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts",
+    "memory": "Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts (policy, contract and brand questions also need finance or ops)",
     "approvals": "Approval requests: list, view, submit, approve/reject/request changes, cancel",
     "crm": "Contacts, companies, deals: search, view, notes, tasks, tags, create contacts, update contact fields, bulk updates by lifecycle stage, deal stages, delete records",
     "email": "Email: search and read threads, draft, send to named people",
     "calendar": "Meetings: list, check availability, create, reschedule, cancel",
-    "finance": "Finance policies, pending billables, invoices, invoice drafts, adjustments",
-    "ops": "Strategy priorities, candidate matching, brand voice, legal clauses, counsel flags, support tickets, n8n automations",
+    "finance": "Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments",
+    "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations",
     "youtube": "YouTube: search videos, our channel and videos, one video's details and comments",
     "admin_setup": "Workspace config: overview, setup, settings, enable or disable domain packs",
     "admin_launch": "Go-live: launch checklist, mark items, sign-off, handoff readiness",

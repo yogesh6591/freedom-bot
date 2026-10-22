@@ -40,6 +40,9 @@ Do not clarify when:
 - Turning a whole domain pack on or off for the workspace → admin_setup.
 - Emailing one or a few named people → email. Campaigns, bulk outreach, "selected contacts" → campaign.
 - Remembering or correcting company facts, SOPs or decisions → memory.
+- Policy questions → the domain that owns the policy, plus memory when unsure: discounts, refunds,
+  credits and payment terms → finance; legal clauses and contract terms, brand voice and tone,
+  strategy priorities → ops. Never memory alone for these.
 - Approving, rejecting or reviewing pending requests → approvals.
 - Hindi and Hinglish are routed exactly like English.
 
@@ -73,6 +76,15 @@ Do not clarify when:
 
 "What's our refund policy on annual plans?"
 → {"domains":["finance","memory"],"kind":"question","entities":{"topic":"refund policy, annual plans"},"clarify":null}
+
+"What's our discount policy?"
+→ {"domains":["finance","memory"],"kind":"question","entities":{"topic":"discount policy"},"clarify":null}
+
+"What does our contract say about limitation of liability?"
+→ {"domains":["ops","memory"],"kind":"question","entities":{"topic":"limitation of liability"},"clarify":null}
+
+"How should our emails sound? What's our brand voice?"
+→ {"domains":["ops","memory"],"kind":"question","entities":{"topic":"brand voice"},"clarify":null}
 
 "Draft an invoice for Acme's pending hours"
 → {"domains":["finance","crm"],"kind":"task","entities":{"company":"Acme"},"clarify":null}
