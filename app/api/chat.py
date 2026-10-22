@@ -52,6 +52,9 @@ class ChatRequest(BaseModel):
 class EditMessageRequest(BaseModel):
     message_id: str = Field(min_length=1, max_length=80)
     message: str = Field(min_length=1, max_length=20000)
+    #: Same pin as ChatRequest.domain — acquisition keeps an edited turn on
+    #: the campaign assistant instead of the v2 ops pipeline.
+    domain: str = AUTO
 
 
 @router.get("/context")
@@ -240,15 +243,22 @@ def _engine() -> str:
     return os.environ.get("ASSISTANT_ENGINE", "unified").strip().lower()
 
 
-@router.post("")
-def chat(
-    body: ChatRequest,
-    ctx: TenantContext = Depends(current_context),
-    settings: ClientSettings = Depends(client_settings),
-) -> dict[str, Any]:
-    """One chat turn."""
+def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings) -> dict[str, Any]:
+    """Pick the assistant for this turn.
+
+    Admin chat with ``domain=acquisition`` always uses the campaign assistant
+    (``app.assistant.assistant``). Everything else uses the v2 pipeline when
+    ``AGENT_PIPELINE_V2`` is on, otherwise the same campaign assistant or the
+    legacy per-domain agent.
+    """
     from app.assistant import v2
 
+    pinned = (body.domain or AUTO).strip().lower()
+    if pinned == "acquisition" and ctx.is_admin:
+        from app.assistant.assistant import reply
+
+        with bound(ctx):
+            return reply(body, ctx, settings)
     if v2.enabled():  # AGENT_PIPELINE_V2: the routed pipeline (off by default)
         with bound(ctx):
             return v2.handle(body, ctx, settings)
@@ -258,6 +268,16 @@ def chat(
         with bound(ctx):
             return reply(body, ctx, settings)
     return _legacy_chat(body, ctx, settings)
+
+
+@router.post("")
+def chat(
+    body: ChatRequest,
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """One chat turn."""
+    return _dispatch(body, ctx, settings)
 
 
 def _legacy_chat(
@@ -643,14 +663,11 @@ def edit_message(
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
         except chat_history.NotUserMessage as exc:
             raise HTTPException(status_code=400, detail="Only user messages can be edited") from exc
-        request = ChatRequest(message=body.message, session_id=session_id)
+        request = ChatRequest(
+            message=body.message, session_id=session_id, domain=body.domain or AUTO
+        )
         with chat_history.excluding_messages(ids):
-            if _engine() != "legacy":
-                from app.assistant.assistant import reply
-
-                response = reply(request, ctx, settings)
-            else:
-                response = _legacy_chat(request, ctx, settings)
+            response = _dispatch(request, ctx, settings)
         chat_history.delete_messages(ctx, session_id, ids)
         return response
 

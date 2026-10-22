@@ -70,11 +70,11 @@ def _settings(client, mode=ExecutionMode.WAIT_FOR_APPROVAL, **extra):
     return ClientSettings.from_dict({**base.to_dict(), "default_execution_mode": mode.value, **extra})
 
 
-def ask(ctx, settings, message, session_id=None):
+def ask(ctx, settings, message, session_id=None, domain="auto"):
     from app.assistant.v2 import handle
 
     with bound(ctx):
-        return handle(ChatRequest(message=message, session_id=session_id), ctx, settings)
+        return handle(ChatRequest(message=message, session_id=session_id, domain=domain), ctx, settings)
 
 
 # --------------------------------------------------------------------------- the six outcomes
@@ -180,8 +180,31 @@ def test_campaign_turns_go_to_the_current_assistant(fake_model, client_scratch, 
 
     monkeypatch.setattr(current, "reply", lambda body, ctx, settings: {"content": "handled by current", "engine": "agno"})
     SCRIPT[:] = [route("campaign")]
-    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "Email Ethan in the snowflake campaign")
+    out = ask(
+        ctx_factory(client_scratch, "admin"),
+        _settings(client_scratch),
+        "Email Ethan in the snowflake campaign",
+        domain="acquisition",
+    )
     assert out["content"] == "handled by current"
+
+
+def test_acquisition_toggle_uses_current_assistant(client_scratch, ctx_factory, monkeypatch):
+    """Admin Acquisition pin uses assistant.py even when the v2 pipeline is on."""
+    import app.assistant.assistant as current
+    import app.assistant.v2 as v2
+    from app.api.chat import chat
+
+    monkeypatch.setenv("AGENT_PIPELINE_V2", "1")
+    monkeypatch.setattr(current, "reply", lambda body, ctx, settings: {"via": "current"})
+    monkeypatch.setattr(v2, "handle", lambda body, ctx, settings: {"via": "v2"})
+    settings = _settings(client_scratch)
+    admin = ctx_factory(client_scratch, "admin")
+    drafter = ctx_factory(client_scratch, "drafter")
+    assert chat(ChatRequest(message="hi"), ctx=drafter, settings=settings)["via"] == "v2"
+    assert chat(ChatRequest(message="hi"), ctx=admin, settings=settings)["via"] == "v2"
+    assert chat(ChatRequest(message="hi", domain="acquisition"), ctx=admin, settings=settings)["via"] == "current"
+    assert chat(ChatRequest(message="hi", domain="acquisition"), ctx=drafter, settings=settings)["via"] == "v2"
 
 
 @pytest.mark.parametrize("flag,expected", [("", "current"), ("1", "v2"), ("true", "v2"), ("off", "current")])

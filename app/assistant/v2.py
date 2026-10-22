@@ -9,10 +9,12 @@ One chat turn:
 The rules live in plain modules under bizos/agents (routing, guard, merged_tools, composer, tool_meta);
 this file only wires them together with Agno and the chat API. With the flag off nothing here runs.
 
-Campaign turns (an admin routed to the campaign domain) are handed to the current assistant, which owns
-the campaign flow, so admins' campaign behaviour is unchanged. When the router missed the campaign part
-and the executor asks for the campaign tools, it is told to finish the rest and have the user send the
-campaign request on its own (routing.CAMPAIGN_ELSEWHERE).
+Campaign turns are the current assistant (``app.assistant.assistant``). The chat
+Acquisition toggle pins ``domain=acquisition`` so those turns never enter this
+pipeline. If a turn still arrives here pinned to acquisition, it is handed off.
+When the router missed the campaign part and the executor asks for campaign
+tools, it is told to finish the rest and have the user send the campaign request
+on its own (routing.CAMPAIGN_ELSEWHERE).
 """
 
 from __future__ import annotations
@@ -245,7 +247,7 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
     # ---- visibility, router and memory prefetch
     pinned = getattr(body, "domain", AUTO)
     packs = _packs_for(settings, pinned)
-    campaign_allowed = bool(ctx.is_admin and pinned in (AUTO, "acquisition", None))
+    campaign_allowed = bool(ctx.is_admin and (pinned or "").strip().lower() == "acquisition")
     visible = visible_tools(scope, packs, campaign_allowed=campaign_allowed)
     menu = domain_menu(visible)
     history = _history(saved)

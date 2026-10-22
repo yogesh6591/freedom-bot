@@ -55,6 +55,7 @@ services:
       # FB-043: shared secret for the checkout/contract sale webhook.
       SALE_WEBHOOK_SECRET: ${SALE_WEBHOOK_SECRET:-}
       MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
+      AGENT_PIPELINE_V2: ${AGENT_PIPELINE_V2:-}
       # Optional: none | low | medium | high. Leave unset for models that reject it with tools.
       MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-}
       # Acquisition runs in this process, on its own database.

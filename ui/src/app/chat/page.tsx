@@ -3,9 +3,10 @@
 /**
  * Chat.
  *
- * One company conversation (FB-034): there is no domain menu. The server routes
- * each turn to the domain it is about, inside one session, so context carries
- * from strategy to operations to finance.
+ * One company conversation (FB-034): the server routes each turn to the domain
+ * it is about, inside one session, so context carries from strategy to
+ * operations to finance. Admins can pin the turn to Acquisition, which uses
+ * the campaign assistant instead of the ops pipeline.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -531,7 +532,8 @@ function whenLabel(iso: string | null): string {
 }
 
 function ChatView() {
-  const { me } = useSession()
+  const { me, hasRole } = useSession()
+  const canAcquire = hasRole('ADMIN')
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
   const storageKey = me ? `bizos:chat:${me.client.id}:${me.user.id}` : null
@@ -549,17 +551,19 @@ function ChatView() {
   const [sessionId, setSessionId] = useState<string | undefined>()
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [developer, setDeveloper] = useState(false)
+  const [acquisition, setAcquisition] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const refreshContext = useCallback(async () => {
     try {
-      const data = await api.get<ChatContext>('/api/chat/context?domain=auto')
+      const domain = canAcquire && acquisition ? 'acquisition' : 'auto'
+      const data = await api.get<ChatContext>(`/api/chat/context?domain=${domain}`)
       setContext(data)
     } catch {
       // Context is informational; chat still works without it.
     }
-  }, [])
+  }, [acquisition, canAcquire])
 
   useEffect(() => {
     void refreshContext()
@@ -568,8 +572,10 @@ function ChatView() {
   useEffect(() => {
     try {
       setDeveloper(localStorage.getItem('bizos:chat:developer') === 'on')
+      setAcquisition(localStorage.getItem('bizos:chat:acquisition') === 'on')
     } catch {
       setDeveloper(false)
+      setAcquisition(false)
     }
   }, [])
 
@@ -684,6 +690,23 @@ function ChatView() {
     remember(undefined)
   }
 
+  function toggleAcquisition() {
+    setAcquisition((current) => {
+      const next = !current
+      try {
+        localStorage.setItem('bizos:chat:acquisition', next ? 'on' : 'off')
+      } catch {
+        // The toggle still works for this visit.
+      }
+      return next
+    })
+    startNewConversation()
+  }
+
+  function engineDomain(): 'acquisition' | undefined {
+    return canAcquire && acquisition ? 'acquisition' : undefined
+  }
+
   async function attachMessageIds(id: string, nextTurns: Turn[]) {
     try {
       const detail = await api.get<ChatSessionDetail>(
@@ -718,7 +741,7 @@ function ChatView() {
     try {
       const data = await api.post<ChatResponse & { response?: string }>(
         '/api/chat',
-        { message, session_id: sessionId }
+        { message, session_id: sessionId, domain: engineDomain() ?? 'auto' }
       )
       setSessionId(data.session_id)
       remember(data.session_id)
@@ -751,7 +774,7 @@ function ChatView() {
     try {
       const data = await api.post<ChatResponse & { response?: string }>(
         `/api/chat/sessions/${encodeURIComponent(sessionId)}/edit`,
-        { message_id: turn.id, message }
+        { message_id: turn.id, message, domain: engineDomain() ?? 'auto' }
       )
       const nextTurns = [
         ...turns.slice(0, index),
@@ -905,11 +928,31 @@ function ChatView() {
                 </span>
                 <span className="flex items-center gap-1.5 text-[11px] text-muted">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-                  Ready
+                  {canAcquire && acquisition ? 'Acquisition' : 'Ready'}
                 </span>
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
+            {canAcquire && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={acquisition}
+                aria-label="Acquisition"
+                onClick={toggleAcquisition}
+                className={`inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-[12px] font-semibold ${
+                  acquisition
+                    ? 'border-purple-300 bg-purple-50 text-brand'
+                    : 'border-border text-muted hover:text-primary'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${acquisition ? 'bg-brand' : 'bg-border'}`}
+                  aria-hidden
+                />
+                <span className="hidden sm:inline">Acquisition</span>
+              </button>
+            )}
             <button
               type="button"
               role="switch"
