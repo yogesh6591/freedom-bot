@@ -356,15 +356,29 @@ def run_case(client, case: dict, pipeline: str) -> dict:
 
 
 def worker(pipeline: str, label: str, ids: list[str], run_dir: str) -> None:
-    """Run cases one by one, appending each result to this worker's JSONL file the moment it is scored."""
+    """Run cases one by one, appending each result to this worker's JSONL file the moment it is scored.
+
+    Before each case the database must answer. If it does not, the worker writes ABORT (which stops the
+    other workers too) and exits without recording the case, so --resume runs it later.
+    """
     from evals.scoring import score, unknown_argument_rejections
 
     cases = {c["id"]: c for c in load_cases() + load_canaries()}
-    out = Path(run_dir) / f"{_slug(label)}.{os.getpid()}.jsonl"
+    run_path = Path(run_dir)
+    out = run_path / f"{_slug(label)}.{os.getpid()}.jsonl"
     with out.open("a", encoding="utf-8") as sink:
         for case_id in ids:
+            if (run_path / ABORT).exists():
+                return
+            down = database_problem()
+            if down:
+                abort(run_path, f"database unreachable before {label} / {case_id}: {down}")
+                return
             case = cases[case_id]
             run = run_isolated(case, pipeline)
+            if run.get("error") and database_problem():
+                abort(run_path, f"database dropped during {label} / {case_id}: {run['error'][:200]}")
+                return  # not recorded: the case did not fail, the database did
             scored = score(case, run, workspace_zone=(case.get("fixtures") or {}).get("timezone") or "Asia/Kolkata")
             row = {**scored, "label": label, "run": run, "unknown_arguments": unknown_argument_rejections(run["calls"]),
                    "canary": case_id.startswith("canary_")}
@@ -372,6 +386,49 @@ def worker(pipeline: str, label: str, ids: list[str], run_dir: str) -> None:
             sink.flush()
             os.fsync(sink.fileno())
             print(f"[{label}] {'PASS' if scored['passed'] else 'FAIL'} {case_id}", flush=True)
+
+
+ABORT = "ABORT"
+
+
+def abort(run_dir: Path, reason: str) -> None:
+    (run_dir / ABORT).write_text(reason + "\n", encoding="utf-8")
+    print(f"ABORT: {reason}", flush=True)
+
+
+def database_problem() -> Optional[str]:
+    """None when the control-plane database answers; otherwise why not, in one line."""
+    from sqlalchemy import text
+
+    from bizos.control.db import control_connection
+
+    try:
+        with control_connection() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001 - any failure here means "do not start or continue"
+        return f"{type(exc).__name__}: {str(exc).splitlines()[0][:200]}"
+    return None
+
+
+def preflight() -> Optional[str]:
+    """Why a run must not start (a non-local or non-dev database, or one that does not answer), else None."""
+    from sqlalchemy.engine import make_url
+
+    from bizos import settings as app_settings
+
+    if os.environ.get("RUNTIME_ENV", "") != "dev":
+        return f"RUNTIME_ENV is {os.environ.get('RUNTIME_ENV')!r}; evals only run against a dev environment."
+    for name in (app_settings.control_database(), "acquisition_test"):
+        host = make_url(app_settings.database_url(name)).host or ""
+        if host not in LOCAL_HOSTS:
+            return f"database {name!r} is on {host!r}; evals only run against a local database ({', '.join(LOCAL_HOSTS)})."
+    down = database_problem()
+    if down:
+        return f"the database does not answer ({down}). Start it (docker start freedombot_9sep-db-1) and retry."
+    return None
+
+
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 def _slug(label: str) -> str:
@@ -395,11 +452,17 @@ def recorded(run_dir: Path) -> dict[str, dict[str, dict]]:
 
 def run_isolated(case: dict, pipeline: str) -> dict:
     """One case in a workspace of its own, created for it and removed afterwards."""
-    client = make_workspace()
+    try:
+        client = make_workspace()
+    except Exception as exc:  # noqa: BLE001 - reported as this case's crash (or an abort, if the database is gone)
+        return {"calls": [], "error": f"workspace setup failed: {type(exc).__name__}: {exc}"}
     try:
         return run_case(client, case, pipeline)
     finally:
-        drop_workspace(client)
+        try:
+            drop_workspace(client)
+        except Exception as exc:  # noqa: BLE001 - --cleanup removes it later
+            print(f"could not remove workspace {client.slug}: {type(exc).__name__}", flush=True)
 
 
 def eligible(pipeline: str, cases: list[dict]) -> list[str]:
@@ -407,13 +470,30 @@ def eligible(pipeline: str, cases: list[dict]) -> list[str]:
     return ids + [c["id"] for c in load_canaries()]
 
 
-def run_pipeline(pipeline: str, label: str, ids: list[str], workers: int, run_dir: Path) -> None:
+def run_pipeline(pipeline: str, label: str, ids: list[str], workers: int, run_dir: Path) -> bool:
+    """Run the cases across workers. Returns False (after stopping every worker) if a worker aborted."""
     shards = [ids[i::workers] for i in range(max(1, workers))]
     procs = [subprocess.Popen([sys.executable, "-m", "evals.run", "--worker", pipeline, "--label", label,
                                "--ids", ",".join(shard), "--run-dir", str(run_dir)], cwd=ROOT)
              for shard in shards if shard]
+    while any(proc.poll() is None for proc in procs):
+        if (run_dir / ABORT).exists():
+            stop_all(procs)
+            return False
+        time.sleep(1)
+    return not (run_dir / ABORT).exists()
+
+
+def stop_all(procs: list) -> None:
     for proc in procs:
-        proc.wait()
+        if proc.poll() is None:
+            proc.terminate()
+    deadline = time.monotonic() + 15
+    for proc in procs:
+        try:
+            proc.wait(timeout=max(0.1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            proc.kill()
 
 
 def _canary_caught(row: dict, by_id: dict) -> bool:
@@ -548,7 +628,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pipeline", choices=["v2", "flat", "both"], default="both")
     parser.add_argument("--cases", default="", help="comma-separated ids or id prefixes")
-    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=4,
+                        help="parallel worker processes (4: the dev Mac has 8 GiB shared with Docker)")
     parser.add_argument("--v2-runs", type=int, default=1, help="run v2 this many times, to see run-to-run variation")
     parser.add_argument("--cleanup", action="store_true", help="remove eval workspaces a killed run left behind")
     parser.add_argument("--resume", metavar="RUN_ID", help="continue a run, skipping cases already saved for it")
@@ -572,6 +653,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     from bizos import settings as app_settings
     from bizos.control.db import migrate_control_plane
 
+    problem = preflight()
+    if problem:
+        print(f"Not starting: {problem}", flush=True)
+        return 2
     if args.resume:
         run_dir = REPORTS / args.resume
         meta = json.loads((run_dir / "meta.json").read_text(encoding="utf-8"))
@@ -588,13 +673,18 @@ def main(argv: Optional[list[str]] = None) -> int:
         (run_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
 
     migrate_control_plane()  # once, here: workers running it at the same time collide
+    (run_dir / ABORT).unlink(missing_ok=True)  # a resumed run starts clean
     cases = load_cases(meta["cases"])
     done = recorded(run_dir)
     for label, kind in meta["labels"]:
         todo = [i for i in eligible(kind, cases) if i not in done.get(label, {})]
         print(f"{label}: {len(todo)} to run, {len(done.get(label, {}))} already saved", flush=True)
-        if todo:
-            run_pipeline(kind, label, todo, args.workers, run_dir)
+        if todo and not run_pipeline(kind, label, todo, args.workers, run_dir):
+            reason = (run_dir / ABORT).read_text(encoding="utf-8").strip()
+            build_report(run_dir)
+            print(f"\nSTOPPED: {reason}\nEvery worker was stopped; finished cases are saved. "
+                  f"Fix the database, then: python -m evals.run --resume {run_dir.name}", flush=True)
+            return 2
     return build_report(run_dir)
 
 if __name__ == "__main__":

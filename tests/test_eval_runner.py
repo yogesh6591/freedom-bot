@@ -187,7 +187,7 @@ def test_resume_runs_only_cases_not_saved_yet(tmp_path, monkeypatch):
     _saved(run_dir, "v2", "canary_wrong_gate", passed=False)
     ran = []
     monkeypatch.setattr(er, "REPORTS", tmp_path)
-    monkeypatch.setattr(er, "run_pipeline", lambda kind, label, ids, workers, d: ran.extend(ids))
+    monkeypatch.setattr(er, "run_pipeline", lambda kind, label, ids, workers, d: ran.extend(ids) or True)
     monkeypatch.setattr(er, "build_report", lambda d: 0)
     assert er.main(["--resume", "run1"]) == 0
     assert "t_crm_create_note_001" not in ran and "canary_wrong_gate" not in ran
@@ -205,3 +205,79 @@ def test_the_report_is_built_from_saved_results_and_names_what_is_missing(tmp_pa
     assert er.build_report(run_dir) == 1  # cases are missing, so the run is not complete
     report = (run_dir / "report.md").read_text()
     assert "Not run yet" in report and "--resume run2" in report
+
+
+def test_preflight_refuses_a_non_dev_env_a_remote_database_or_one_that_does_not_answer(monkeypatch):
+    import evals.run as er
+    from bizos import settings as app_settings
+
+    assert er.preflight() is None  # the local test database
+    monkeypatch.setenv("RUNTIME_ENV", "prod")
+    assert "dev environment" in er.preflight()
+    monkeypatch.setenv("RUNTIME_ENV", "dev")
+    real = app_settings.database_url
+    monkeypatch.setattr(app_settings, "database_url", lambda name: real(name).replace("127.0.0.1", "db.staging.example.com")
+                        .replace("localhost", "db.staging.example.com"))
+    assert "local database" in er.preflight()
+    monkeypatch.setattr(app_settings, "database_url", real)
+    monkeypatch.setattr(er, "database_problem", lambda: "OperationalError: connection refused")
+    assert "does not answer" in er.preflight()
+
+
+def test_main_does_not_start_when_preflight_fails(tmp_path, monkeypatch):
+    import evals.run as er
+
+    monkeypatch.setattr(er, "REPORTS", tmp_path)
+    monkeypatch.setattr(er, "preflight", lambda: "the database does not answer")
+    monkeypatch.setattr(er, "run_pipeline", lambda *a: (_ for _ in ()).throw(AssertionError("started")))
+    assert er.main(["--pipeline", "v2", "--cases", "t_crm_create_note_001"]) == 2
+    assert list(tmp_path.iterdir()) == []  # no run directory, nothing half-made
+
+
+def test_a_worker_aborts_without_recording_when_the_database_is_gone(tmp_path, monkeypatch):
+    import evals.run as er
+
+    monkeypatch.setattr(er, "database_problem", lambda: "OperationalError: connection refused")
+    monkeypatch.setattr(er, "run_isolated", lambda case, pipeline: (_ for _ in ()).throw(AssertionError("ran")))
+    er.worker("v2", "v2", ["t_crm_create_note_001", "t_crm_create_note_002"], str(tmp_path))
+    assert "database unreachable" in (tmp_path / er.ABORT).read_text()
+    assert er.recorded(tmp_path) == {}
+
+
+def test_a_case_that_fails_because_the_database_dropped_is_not_recorded(tmp_path, monkeypatch):
+    import evals.run as er
+
+    state = {"up": True}
+    monkeypatch.setattr(er, "database_problem", lambda: None if state["up"] else "connection refused")
+
+    def dies(case, pipeline):
+        state["up"] = False
+        return {"calls": [], "error": "OperationalError: connection refused"}
+
+    monkeypatch.setattr(er, "run_isolated", dies)
+    er.worker("v2", "v2", ["t_crm_create_note_001", "t_crm_create_note_002"], str(tmp_path))
+    assert "dropped during" in (tmp_path / er.ABORT).read_text()
+    assert er.recorded(tmp_path) == {}
+
+
+def test_an_abort_stops_every_worker_promptly(tmp_path, monkeypatch):
+    import subprocess
+    import threading
+    import time
+
+    import evals.run as er
+
+    spawned = []
+    real_popen = subprocess.Popen
+
+    def fake_popen(cmd, cwd=None):
+        proc = real_popen(["sleep", "60"])
+        spawned.append(proc)
+        return proc
+
+    monkeypatch.setattr(er.subprocess, "Popen", fake_popen)
+    threading.Timer(1.0, lambda: er.abort(tmp_path, "database dropped")).start()
+    started = time.monotonic()
+    assert er.run_pipeline("v2", "v2", ["a", "b", "c"], 3, tmp_path) is False
+    assert time.monotonic() - started < 10
+    assert len(spawned) == 3 and all(p.poll() is not None for p in spawned)
