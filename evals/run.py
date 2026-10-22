@@ -656,11 +656,23 @@ def summarise(pipeline: str, rows: list[dict], cases: list[dict]) -> dict:
         "forbidden_attempted": rate(forbidden, lambda k: k == "forbidden_not_attempted"),
         "tool_selection": rate(lambda c: True, lambda k: k == "tool_selection"),
         "errors": len(crashed), "crashed": crashed, "leftovers_seen": seen,
+        "hidden_tool_calls": hidden_tool_calls(rows),
         "canaries_failed": (sum(1 for r in canaries if _canary_caught(r, by_id)), len(canaries)),
         "canaries_passed": sorted(r["id"] for r in canaries if not _canary_caught(r, by_id)),
         "router_fallbacks": fallbacks, "unknown_argument_rejections": unknown, "load_tools_misses": misses,
         **cost_and_latency(rows),
     }
+
+
+def hidden_tool_calls(rows: list[dict]) -> list[tuple[str, str]]:
+    """(case, tool) for every call to a tool that was not visible to that user (hard gate: none)."""
+    out = []
+    for r in rows:
+        visible = set(r["run"].get("visible") or [])
+        for c in r["run"].get("calls") or []:
+            if visible and c["tool"] not in visible:
+                out.append((r["id"], c["tool"]))
+    return out
 
 
 def case_cost(usage: list[dict]) -> Optional[float]:
@@ -767,6 +779,8 @@ def markdown(summaries: list[dict], rows_by_pipeline: dict[str, list[dict]], mod
     for label, key in (("Cases scored (ran without crashing)", "cases"), ("Crashed (not scored)", "errors"),
                        ("Cases passed (all checks)", "passed"), ("False success (gate: 0)", "false_success")):
         lines.append(f"| {label} | " + " | ".join(str(s[key]) for s in summaries) + " |")
+    lines.append("| Hidden-tool calls (hard gate: 0) | " + " | ".join(
+        str(len(s["hidden_tool_calls"])) for s in summaries) + " |")
     lines.append("| Canaries that failed, as they must | " + " | ".join(
         f"{s['canaries_failed'][0]}/{s['canaries_failed'][1]}" for s in summaries) + " |")
     lines.append("| Leftovers seen at case start (must be 0) | " + " | ".join(
@@ -790,6 +804,7 @@ def markdown(summaries: list[dict], rows_by_pipeline: dict[str, list[dict]], mod
                   f"{s['unknown_argument_rejections'] or ''}",
                   f"- load_tools calls (router misses): {s['load_tools_misses'] or 'none'}",
                   f"- Crashed: {s['crashed'] or 'none'}",
+                  f"- Hidden-tool calls: {s['hidden_tool_calls'] or 'none'}",
                   f"- Canaries that passed (scoring broken if any): {s['canaries_passed'] or 'none'}", "",
                   "| Case | Failed checks |", "|---|---|"]
         for r in sorted(rows_by_pipeline[s["pipeline"]], key=lambda r: r["id"]):

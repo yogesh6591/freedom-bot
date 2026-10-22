@@ -404,3 +404,12 @@ def test_an_honest_pending_statement_is_not_a_false_success():
     from bizos.agents.composer import compose
 
     assert "awaiting approval" not in compose("It is now awaiting approval.", [], task=True).text
+
+
+def test_hidden_tool_calls_are_counted_across_all_cases():
+    from evals.run import hidden_tool_calls
+
+    rows = [{"id": "a", "run": {"visible": ["crm_search_contacts"], "calls": [call("crm_search_contacts"),
+                                                                              call("crm_delete_record")]}},
+            {"id": "b", "run": {"visible": ["crm_search_contacts"], "calls": [call("crm_search_contacts")]}}]
+    assert hidden_tool_calls(rows) == [("a", "crm_delete_record")]
