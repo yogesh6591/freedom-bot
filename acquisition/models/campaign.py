@@ -326,6 +326,10 @@ class CampaignProspect(Base):
         nullable=False,
     )
     instantly_lead_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Typed by the user for THIS campaign only; None = use the prospect record.
+    first_name_override: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_name_override: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    company_override: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sync_status: Mapped[LeadSyncStatus] = mapped_column(
         Enum(
             LeadSyncStatus,

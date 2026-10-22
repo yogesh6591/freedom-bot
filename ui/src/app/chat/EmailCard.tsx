@@ -1,0 +1,979 @@
+'use client'
+
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
+import { Pencil } from 'lucide-react'
+import { api, ApiError } from '@/lib/api'
+import type { EmailCardScope, EmailView, EmailViewPerson } from '@/lib/types'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+
+const TOKEN_FIRST = '{{firstName}}'
+const TOKEN_LAST = '{{lastName}}'
+const TOKEN_COMPANY = '{{companyName}}'
+const TOKEN_SPLIT = /(\{\{(?:firstName|lastName|companyName)\}\})/g
+const KNOWN_TOKENS = new Set([TOKEN_FIRST, TOKEN_LAST, TOKEN_COMPANY])
+
+type NameKey = 'first' | 'last' | 'company'
+type Names = Record<NameKey, string>
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function isGreetingPlainTextWarning(warning: string): boolean {
+  return warning.includes('as plain text, so everyone who gets this email sees exactly that')
+}
+
+function uniqueKeepOrder(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of values) {
+    const value = raw.trim()
+    if (!value) continue
+    const key = value.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(value)
+  }
+  return out
+}
+
+function namesFromGreeting(text: string): { first_name: string; last_name: string } {
+  const pattern =
+    /\b(?:Hi|Hello|Dear|Hey)\s+(?!\{\{)(?!there\b)([A-Za-z][A-Za-z'-]*)(?:\s+([A-Z][A-Za-z'-]*))?\b/g
+  const match = pattern.exec(text || '')
+  const first = (match?.[1] || '').trim()
+  const last = (match?.[2] || '').trim()
+  if (!first || /^firstName$/i.test(first)) return { first_name: '', last_name: '' }
+  return {
+    first_name: first,
+    last_name: /^lastName$/i.test(last) ? '' : last
+  }
+}
+
+function isEmail(value: string): boolean {
+  return value.includes('@')
+}
+
+function displayName(person: EmailViewPerson): string {
+  const name = [person.first_name, person.last_name]
+    .map((part) => part.trim())
+    .filter((part) => part && part.toLowerCase() !== 'there')
+    .join(' ')
+  return name || person.email || ''
+}
+
+function previewFirstName(person: EmailViewPerson): string {
+  const first = person.first_name.trim()
+  if (first && first.toLowerCase() !== 'there') return first
+  const name = displayName(person)
+  if (name && !isEmail(name)) return name.split(/\s+/)[0] || name
+  const local = (person.email || '').split('@')[0].trim()
+  return local || 'Recipient'
+}
+
+function uniquePeople(people: EmailViewPerson[]): EmailViewPerson[] {
+  const seen = new Set<string>()
+  const out: EmailViewPerson[] = []
+  for (const person of people) {
+    const key = (person.email || displayName(person)).trim().toLowerCase()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(person)
+  }
+  return out
+}
+
+function recipientEmails(view: EmailView): string[] {
+  return uniqueKeepOrder([
+    ...(view.people || []).map((person) => person.email),
+    ...(view.previews || []).map((item) => item.email),
+    ...(view.audience?.will_send_now || []).filter(isEmail)
+  ])
+}
+
+function attachEmails(people: EmailViewPerson[], emails: string[]): EmailViewPerson[] {
+  const unique = uniqueKeepOrder(emails)
+  if (!people.length) {
+    return unique.map((email) => ({
+      email,
+      first_name: '',
+      last_name: '',
+      company: '',
+      sources: { first_name: 'missing', last_name: 'missing', company: 'missing' }
+    }))
+  }
+  const used = new Set<string>()
+  return people.map((person, index) => {
+    const email = person.email.trim() || unique[index] || unique[0] || ''
+    const key = email.toLowerCase()
+    if (key && used.has(key)) return { ...person, email }
+    if (key) used.add(key)
+    return { ...person, email }
+  })
+}
+
+function peopleForBlanks(view: EmailView): EmailViewPerson[] {
+  const greeting = namesFromGreeting(
+    [view.template?.subject, view.template?.body, view.previews?.[0]?.body]
+      .filter(Boolean)
+      .join('\n')
+  )
+  const emails = recipientEmails(view)
+  const fallback = {
+    first_name: greeting.first_name,
+    last_name: greeting.last_name,
+    company: '',
+    sources: {
+      first_name: greeting.first_name ? 'chat' : 'missing',
+      last_name: greeting.last_name ? 'chat' : 'missing',
+      company: 'missing'
+    } as EmailViewPerson['sources']
+  }
+  if (view.people?.length) {
+    return attachEmails(view.people, emails)
+  }
+  if (!emails.length) return [{ email: '', ...fallback }]
+  return emails.map((email) => ({ email, ...fallback }))
+}
+
+function replaceOutsideTokens(
+  text: string,
+  pattern: RegExp,
+  replacement: string | ((match: string, ...args: string[]) => string)
+): string {
+  return (text || '')
+    .split(TOKEN_SPLIT)
+    .map((part) => {
+      if (KNOWN_TOKENS.has(part)) return part
+      return typeof replacement === 'string'
+        ? part.replace(pattern, replacement)
+        : part.replace(pattern, replacement)
+    })
+    .join('')
+}
+
+/** Shared text never contains a real name — blanks fill in per person after save. */
+function tokenizeText(text: string, people: EmailViewPerson[]): string {
+  let out = text || ''
+  for (const person of people) {
+    const first = person.first_name.trim()
+    const last = person.last_name.trim()
+    if (!first) continue
+    const lastGroup = last ? `(?:\\s+${escapeRegExp(last)})?` : ''
+    out = replaceOutsideTokens(
+      out,
+      new RegExp(`\\b(Hi|Hello|Dear|Hey)\\s+${escapeRegExp(first)}${lastGroup}\\b`, 'gi'),
+      (match, greeting: string) =>
+        `${greeting} ${TOKEN_FIRST}` +
+        (last && match.toLowerCase().includes(last.toLowerCase()) ? ` ${TOKEN_LAST}` : '')
+    )
+  }
+  out = replaceOutsideTokens(
+    out,
+    /\b(Hi|Hello|Dear|Hey)\s+there\b/gi,
+    `$1 ${TOKEN_FIRST}`
+  )
+  for (const person of people) {
+    const first = person.first_name.trim()
+    const last = person.last_name.trim()
+    const company = person.company.trim()
+    if (first && !/^there$/i.test(first)) {
+      out = replaceOutsideTokens(
+        out,
+        new RegExp(`(?<!\\{)${escapeRegExp(first)}(?!\\w)`, 'gi'),
+        TOKEN_FIRST
+      )
+    }
+    if (last && last.length > 1) {
+      out = replaceOutsideTokens(
+        out,
+        new RegExp(`(?<!\\{)${escapeRegExp(last)}(?!\\w)`, 'gi'),
+        TOKEN_LAST
+      )
+    }
+    if (company) {
+      out = replaceOutsideTokens(
+        out,
+        new RegExp(`(?<!\\{)${escapeRegExp(company)}(?!\\w)`, 'gi'),
+        TOKEN_COMPANY
+      )
+    }
+  }
+  return out
+}
+
+function namesFromPerson(person?: EmailViewPerson): Names {
+  return {
+    first: (person?.first_name || '').trim() || 'there',
+    last: (person?.last_name || '').trim(),
+    company: (person?.company || '').trim()
+  }
+}
+
+function nameChange(original: Names, next: Names): { from: string; to: string } | null {
+  if (next.first !== original.first) return { from: original.first, to: next.first }
+  if (next.last !== original.last) return { from: original.last, to: next.last }
+  if (next.company !== original.company) return { from: original.company, to: next.company }
+  return null
+}
+
+function applyNames(person: EmailViewPerson | undefined, names: Names): EmailViewPerson {
+  return {
+    email: person?.email || '',
+    first_name: names.first,
+    last_name: names.last,
+    company: names.company,
+    sources: {
+      first_name: names.first !== (person?.first_name || '') ? 'typed' : person?.sources.first_name || 'typed',
+      last_name: names.last !== (person?.last_name || '') ? 'typed' : person?.sources.last_name || 'missing',
+      company: names.company !== (person?.company || '') ? 'typed' : person?.sources.company || 'missing'
+    }
+  }
+}
+
+function fillText(text: string, person?: EmailViewPerson): string {
+  const first = (person?.first_name || '').trim() || 'there'
+  const last = (person?.last_name || '').trim()
+  const company = (person?.company || '').trim()
+  return (text || '')
+    .split(TOKEN_FIRST)
+    .join(first)
+    .split(TOKEN_LAST)
+    .join(last)
+    .split(TOKEN_COMPANY)
+    .join(company)
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+([,.!?:;])/g, '$1')
+}
+
+/** Chip replacements stay blanks in shared text. A typed name never becomes everyone else's wording. */
+function keepSharedBlanks(text: string, original: string, names: Names): string {
+  let out = text || ''
+  const slots: { token: string; typed: string }[] = [
+    { token: TOKEN_FIRST, typed: names.first },
+    { token: TOKEN_LAST, typed: names.last },
+    { token: TOKEN_COMPANY, typed: names.company }
+  ]
+  for (const { token, typed } of slots) {
+    if (!original.includes(token) || out.includes(token)) continue
+    const origAt = original.indexOf(token)
+    const prefix = original.slice(0, origAt)
+    const suffix = original.slice(origAt + token.length)
+    if (out.startsWith(prefix) && out.endsWith(suffix) && prefix.length + suffix.length <= out.length) {
+      out = prefix + token + suffix
+      continue
+    }
+    const name = visibleName(typed)
+    if (name) {
+      const at = out.indexOf(name)
+      if (at >= 0) {
+        out = out.slice(0, at) + token + out.slice(at + name.length)
+      }
+    }
+  }
+  return out
+}
+
+function isSelectedPerson(
+  person: EmailViewPerson,
+  index: number,
+  selected: EmailViewPerson | undefined,
+  all: EmailViewPerson[]
+): boolean {
+  if (selected?.email && person.email) {
+    return person.email.toLowerCase() === selected.email.toLowerCase()
+  }
+  return (!selected?.email && index === 0) || all.length === 1
+}
+
+function typedFromRemovedChip(text: string, original: string, token: string): string {
+  if (!original.includes(token) || (text || '').includes(token)) return ''
+  const origAt = original.indexOf(token)
+  const prefix = original.slice(0, origAt)
+  const suffix = original.slice(origAt + token.length)
+  if (!(text.startsWith(prefix) && text.endsWith(suffix))) return ''
+  if (prefix.length + suffix.length > text.length) return ''
+  return visibleName(text.slice(prefix.length, text.length - suffix.length))
+}
+
+function namesFromChipReplacement(
+  subjectText: string,
+  bodyText: string,
+  originalSubject: string,
+  originalBody: string,
+  names: Names
+): Names {
+  const next = { ...names }
+  const slots: { token: string; key: NameKey }[] = [
+    { token: TOKEN_FIRST, key: 'first' },
+    { token: TOKEN_LAST, key: 'last' },
+    { token: TOKEN_COMPANY, key: 'company' }
+  ]
+  for (const { token, key } of slots) {
+    const typed =
+      typedFromRemovedChip(subjectText, originalSubject, token) ||
+      typedFromRemovedChip(bodyText, originalBody, token)
+    if (typed) next[key] = typed
+  }
+  return next
+}
+
+const TOKEN_META: Record<string, { key: NameKey; ariaLabel: string }> = {
+  [TOKEN_FIRST]: { key: 'first', ariaLabel: 'First name' },
+  [TOKEN_LAST]: { key: 'last', ariaLabel: 'Last name' },
+  [TOKEN_COMPANY]: { key: 'company', ariaLabel: 'Company' }
+}
+
+function visibleName(value: string): string {
+  const text = value.replace(/[{}]/g, '')
+  return text.toLowerCase() === 'there' ? '' : text
+}
+
+function NameChip({
+  value,
+  original,
+  onChange,
+  'aria-label': ariaLabel
+}: {
+  value: string
+  original: string
+  onChange: (next: string) => void
+  'aria-label': string
+}) {
+  const inner = visibleName(value)
+  const copied = `{{${inner || visibleName(original)}}}`
+  const width = Math.max(inner.length, 1)
+
+  function copyBlank(event: { preventDefault: () => void; clipboardData: DataTransfer }) {
+    event.preventDefault()
+    event.clipboardData.setData('text/plain', copied)
+  }
+
+  return (
+    <span
+      contentEditable={false}
+      data-token={copied}
+      className="mx-0.5 inline-flex items-baseline rounded-md bg-[#e8f0fe] px-1 py-0.5 align-baseline text-[13px] font-medium text-[#1a73e8]"
+      onCopy={copyBlank}
+    >
+      <span aria-hidden>{'{{'}</span>
+      <input
+        value={inner}
+        aria-label={ariaLabel}
+        size={width}
+        style={{ width: `${width}ch` }}
+        className="min-w-[1ch] border-0 bg-transparent p-0 text-[13px] font-medium text-[#1a73e8] outline-none"
+        onChange={(event) => onChange(event.target.value.replace(/[{}]/g, ''))}
+        onBlur={() => {
+          if (!visibleName(value)) onChange(original)
+        }}
+        onCopy={copyBlank}
+        onKeyDown={(event) => event.stopPropagation()}
+      />
+      <span aria-hidden>{'}}'}</span>
+    </span>
+  )
+}
+
+function EditableText({
+  value,
+  onChange,
+  multiline
+}: {
+  value: string
+  onChange: (next: string) => void
+  multiline: boolean
+}) {
+  const ref = useRef<HTMLSpanElement>(null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if ((el.textContent || '') === value) return
+    el.textContent = value
+  }, [value])
+
+  return (
+    <span
+      ref={ref}
+      contentEditable
+      suppressContentEditableWarning
+      className={multiline ? 'whitespace-pre-wrap outline-none' : 'outline-none'}
+      onInput={() => {
+        const el = ref.current
+        if (!el) return
+        onChange(el.textContent || '')
+      }}
+      onKeyDown={(event) => {
+        if (!multiline && event.key === 'Enter') event.preventDefault()
+      }}
+    />
+  )
+}
+
+function TokenField({
+  value,
+  names,
+  originalNames,
+  onChange,
+  onNames,
+  multiline = false,
+  'aria-label': ariaLabel
+}: {
+  value: string
+  names: Names
+  originalNames: Names
+  onChange: (next: string) => void
+  onNames: (key: NameKey, next: string) => void
+  multiline?: boolean
+  'aria-label': string
+}) {
+  const parts = (value || '').split(TOKEN_SPLIT)
+
+  function setPart(index: number, next: string) {
+    const copy = (value || '').split(TOKEN_SPLIT)
+    if (KNOWN_TOKENS.has(copy[index])) return
+    copy[index] = next
+    onChange(copy.join(''))
+  }
+
+  return (
+    <div
+      role="textbox"
+      aria-multiline={multiline}
+      aria-label={ariaLabel}
+      className={
+        multiline
+          ? 'min-h-[12rem] w-full whitespace-pre-wrap break-words px-4 py-3 text-[14px] leading-6 text-[#202124]'
+          : 'w-full whitespace-nowrap text-[14px] leading-5 text-[#202124]'
+      }
+      onCopy={(event) => {
+        const selection = window.getSelection()
+        if (!selection || selection.rangeCount === 0) return
+        const copied = selection.getRangeAt(0).cloneContents().textContent || ''
+        if (!copied) return
+        event.preventDefault()
+        event.clipboardData.setData('text/plain', copied)
+      }}
+    >
+      {parts.map((part, index) => {
+        const meta = TOKEN_META[part]
+        if (meta) {
+          return (
+            <NameChip
+              key={`${part}-${index}`}
+              value={names[meta.key]}
+              original={originalNames[meta.key]}
+              onChange={(next) => onNames(meta.key, next)}
+              aria-label={meta.ariaLabel}
+            />
+          )
+        }
+        return (
+          <EditableText
+            key={`text-${index}`}
+            value={part}
+            multiline={multiline}
+            onChange={(next) => setPart(index, next)}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function MailRow({
+  label,
+  children
+}: {
+  label: string
+  children: ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-3 border-b border-[#f1f3f4] px-4 py-2.5">
+      <span className="w-[4.75rem] shrink-0 text-[13px] text-[#5f6368]">{label}</span>
+      <div className="min-w-0 flex-1 text-[14px] leading-5 text-[#202124]">{children}</div>
+    </div>
+  )
+}
+
+export function EmailCard({
+  view,
+  sessionId,
+  editable,
+  onView
+}: {
+  view: EmailView
+  sessionId: string
+  editable: boolean
+  onView: (next: EmailView) => void
+}) {
+  const template = view.template
+  const blanks = peopleForBlanks(view)
+  const sharedSubject = tokenizeText(template?.subject ?? '', blanks)
+  const sharedBody = tokenizeText(template?.body ?? '', blanks)
+  const previews = view.previews ?? []
+  const audience = view.audience
+  const warnings = (view.warnings ?? []).filter((warning) => !isGreetingPlainTextWarning(warning))
+  const everyone = uniquePeople(blanks)
+  const previewPeople =
+    everyone.length > 0
+      ? everyone
+      : uniqueKeepOrder(previews.map((item) => item.email)).map(
+          (email) =>
+            blanks.find((person) => person.email === email) || {
+              email,
+              first_name: '',
+              last_name: '',
+              company: '',
+              sources: {
+                first_name: 'missing' as const,
+                last_name: 'missing' as const,
+                company: 'missing' as const
+              }
+            }
+        )
+  const toLine = uniqueKeepOrder(previewPeople.map((person) => person.email)).join(', ') || '—'
+
+  const [editing, setEditing] = useState(false)
+  const [subject, setSubject] = useState(sharedSubject)
+  const [body, setBody] = useState(sharedBody)
+  const [names, setNames] = useState<Names>(() => namesFromPerson(blanks[0]))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [previewIndex, setPreviewIndex] = useState(0)
+  const [askNameScope, setAskNameScope] = useState(false)
+
+  const previewPerson = previewPeople[previewIndex] || previewPeople[0]
+  const originalNames = namesFromPerson(previewPerson)
+
+  useEffect(() => {
+    if (!editing) {
+      setSubject(sharedSubject)
+      setBody(sharedBody)
+      setNames(originalNames)
+      setAskNameScope(false)
+      setError(null)
+    }
+  }, [editing, sharedSubject, sharedBody, originalNames.first, originalNames.last, originalNames.company])
+
+  useEffect(() => {
+    if (previewIndex >= Math.max(previewPeople.length, 1)) setPreviewIndex(0)
+  }, [previewIndex, previewPeople.length])
+
+  if (!template) return null
+
+  const fillPerson = editing
+    ? applyNames(previewPerson, names)
+    : {
+        email: previewPerson?.email || '',
+        first_name: (previewPerson?.first_name || '').trim(),
+        last_name: (previewPerson?.last_name || '').trim(),
+        company: (previewPerson?.company || '').trim(),
+        sources: previewPerson?.sources || {
+          first_name: 'missing',
+          last_name: 'missing',
+          company: 'missing'
+        }
+      }
+  const shownSubject = fillText(sharedSubject, fillPerson)
+  const shownBody = fillText(sharedBody, fillPerson)
+  const waitingNames = uniqueKeepOrder(
+    (audience?.also_waiting ?? []).map((person) => person.name)
+  ).join(', ')
+  const showWaitingNote =
+    Boolean(audience) &&
+    !audience?.campaign_is_new &&
+    (audience?.also_waiting?.length ?? 0) > 0 &&
+    Boolean(audience?.template_changed)
+  const campaign = audience?.campaign || 'this campaign'
+  const resolvedNames = namesFromChipReplacement(
+    subject,
+    body,
+    sharedSubject,
+    sharedBody,
+    names
+  )
+  const changed = nameChange(originalNames, resolvedNames)
+  const namesChanged = Boolean(changed)
+  const templateChanged = subject !== sharedSubject || body !== sharedBody
+  const canSave =
+    Boolean(subject.trim() && body.trim()) &&
+    (templateChanged || namesChanged) &&
+    !saving
+
+  function updateNames(key: NameKey, next: string) {
+    setNames((current) => ({ ...current, [key]: next }))
+  }
+
+  function openEditor() {
+    setSubject(sharedSubject)
+    setBody(sharedBody)
+    setNames(originalNames)
+    setAskNameScope(false)
+    setError(null)
+    setEditing(true)
+  }
+
+  function cancel() {
+    setSubject(sharedSubject)
+    setBody(sharedBody)
+    setNames(originalNames)
+    setAskNameScope(false)
+    setError(null)
+    setEditing(false)
+  }
+
+  function localView(_scope: 'forever' | 'this_email' | null): EmailView {
+    const emails = recipientEmails(view)
+    const sourcePeople = attachEmails(
+      view.people?.length ? view.people : blanks,
+      emails
+    )
+    const people = sourcePeople.map((person, index) =>
+      isSelectedPerson(person, index, previewPerson, sourcePeople)
+        ? applyNames(person, resolvedNames)
+        : person
+    )
+    const nextSubject = keepSharedBlanks(subject, sharedSubject, resolvedNames)
+    const nextBody = keepSharedBlanks(body, sharedBody, resolvedNames)
+    const previewRows = previews.length
+      ? previews
+      : emails.map((email) => ({ email, subject: nextSubject, body: nextBody }))
+    const uniquePreviews = uniqueKeepOrder(previewRows.map((item) => item.email)).map(
+      (email) =>
+        previewRows.find((item) => item.email === email) || {
+          email,
+          subject: nextSubject,
+          body: nextBody
+        }
+    )
+    const rows = uniquePreviews.length
+      ? uniquePreviews
+      : [{ email: emails[0] || '', subject: nextSubject, body: nextBody }]
+    return {
+      ...view,
+      template: { subject: nextSubject, body: nextBody },
+      people,
+      previews: rows.map((item) => {
+        const person = people.find(
+          (row) =>
+            row.email &&
+            item.email &&
+            row.email.toLowerCase() === item.email.toLowerCase()
+        ) || {
+          email: item.email || '',
+          first_name: '',
+          last_name: '',
+          company: '',
+          sources: {
+            first_name: 'missing' as const,
+            last_name: 'missing' as const,
+            company: 'missing' as const
+          }
+        }
+        return {
+          ...item,
+          subject: fillText(nextSubject, person),
+          body: fillText(nextBody, person)
+        }
+      })
+    }
+  }
+
+  async function postCard(bodyPayload: {
+    subject?: string
+    body?: string
+    people?: Record<string, { first_name?: string; last_name?: string; company?: string }>
+    name_scope?: 'forever' | 'this_email'
+    scope?: EmailCardScope
+  }) {
+    const data = await api.post<{ email_view: EmailView }>('/api/chat/email-card', {
+      session_id: sessionId,
+      ...bodyPayload
+    })
+    return data.email_view
+  }
+
+  function requestSave() {
+    if (!canSave || !template) return
+    if (namesChanged) {
+      setAskNameScope(true)
+      return
+    }
+    void save(null)
+  }
+
+  async function save(scope: 'forever' | 'this_email' | null) {
+    if (!template) return
+    if (namesChanged && !scope) return
+    const next = localView(scope)
+    onView(next)
+    setEditing(false)
+    setAskNameScope(false)
+    setSaving(true)
+    setError(null)
+    try {
+      const people: Record<string, { first_name?: string; last_name?: string; company?: string }> =
+        {}
+      for (const person of next.people || []) {
+        if (!person.email) continue
+        people[person.email] = {
+          first_name: person.first_name,
+          last_name: person.last_name,
+          company: person.company
+        }
+      }
+      const target =
+        previewPerson?.email ||
+        recipientEmails(view)[0] ||
+        Object.keys(people)[0]
+      if (target) {
+        people[target] = {
+          first_name: resolvedNames.first,
+          last_name: resolvedNames.last,
+          company: resolvedNames.company
+        }
+      }
+      if (!sessionId) {
+        setError('This conversation is not saved yet. Send a message first, then edit the email.')
+        return
+      }
+      const remote = await postCard({
+        subject: next.template?.subject ?? subject,
+        body: next.template?.body ?? body,
+        ...(Object.keys(people).length ? { people } : {}),
+        ...(scope ? { name_scope: scope } : {})
+      })
+      if (remote) {
+        onView({
+          ...remote,
+          draft_id: remote.draft_id || next.draft_id || view.draft_id
+        })
+      }
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : 'Could not save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function setScope(scope: 'everyone' | '') {
+    setSaving(true)
+    setError(null)
+    try {
+      const remote = await postCard({ scope })
+      if (remote) onView(remote)
+    } catch (err) {
+      onView({
+        ...view,
+        audience: view.audience ? { ...view.audience, scope } : view.audience
+      })
+      if (!(err instanceof ApiError) || err.status !== 404) {
+        setError(err instanceof ApiError || err instanceof Error ? err.message : 'Could not save')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <>
+    <article className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]">
+      <div className="flex items-center justify-between px-3 pt-3">
+        <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
+        {editing ? (
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              className="text-[13px] font-medium text-[#5f6368]"
+              onClick={cancel}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="text-[13px] font-medium text-[#1a73e8] disabled:opacity-40"
+              onClick={requestSave}
+              disabled={!canSave}
+            >
+              Save
+            </button>
+          </div>
+        ) : editable ? (
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#5f6368] hover:bg-[#f1f3f4]"
+            aria-label="Edit email"
+            onClick={openEditor}
+          >
+            <Pencil size={16} aria-hidden />
+          </button>
+        ) : (
+          <span className="h-8 w-8" />
+        )}
+      </div>
+
+      <MailRow label="To">
+        <span className="break-words">{toLine}</span>
+      </MailRow>
+
+      {previewPeople.length > 1 ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-[#f1f3f4] px-4 py-2.5">
+          <span className="text-[13px] text-[#5f6368]">Preview as:</span>
+          <div role="tablist" aria-label="Preview as" className="flex flex-wrap gap-1.5">
+            {previewPeople.map((person, index) => {
+              const selected = index === Math.min(previewIndex, previewPeople.length - 1)
+              return (
+                <button
+                  key={person.email || index}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  className={
+                    selected
+                      ? 'rounded-full bg-[#e8f0fe] px-3 py-1 text-[13px] font-medium text-[#1a73e8]'
+                      : 'rounded-full bg-[#f1f3f4] px-3 py-1 text-[13px] font-medium text-[#5f6368] hover:bg-[#e8eaed]'
+                  }
+                  onClick={() => {
+                    setPreviewIndex(index)
+                    if (editing) setNames(namesFromPerson(previewPeople[index]))
+                  }}
+                >
+                  {previewFirstName(person)}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ) : null}
+
+      <MailRow label="Subject">
+        {editing ? (
+          <TokenField
+            value={subject}
+            names={names}
+            originalNames={originalNames}
+            onChange={setSubject}
+            onNames={updateNames}
+            aria-label="Subject"
+          />
+        ) : (
+          <span className="break-words">{shownSubject || '—'}</span>
+        )}
+      </MailRow>
+
+      {editing ? (
+        <TokenField
+          value={body}
+          names={names}
+          originalNames={originalNames}
+          onChange={setBody}
+          onNames={updateNames}
+          multiline
+          aria-label="Body"
+        />
+      ) : (
+        <p className="whitespace-pre-wrap px-4 py-4 text-[14px] leading-6 text-[#202124]">
+          {shownBody}
+        </p>
+      )}
+
+      {error ? (
+        <p className="mx-4 mb-3 rounded-lg bg-red-50 px-3 py-2 text-[12px] leading-5 text-red-700">
+          {error}
+        </p>
+      ) : null}
+
+      {showWaitingNote && audience?.scope !== 'everyone' ? (
+        <p className="mx-4 mb-2 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-800">
+          This changes the first email for everyone in {campaign} who hasn&apos;t been
+          emailed yet: {waitingNames}.
+        </p>
+      ) : null}
+
+      {editable && audience?.scope_needed && audience.scope !== 'everyone' ? (
+        <div className="px-4 pb-3">
+          <button
+            type="button"
+            disabled={saving}
+            className="rounded-lg border border-[#e6e6e6] px-3 py-2 text-left text-[13px] font-medium text-[#202124] hover:bg-[#f8f9fa] disabled:opacity-40"
+            onClick={() => void setScope('everyone')}
+          >
+            Change it for everyone in {campaign}
+          </button>
+        </div>
+      ) : null}
+
+      {audience?.scope === 'everyone' ? (
+        <p className="px-4 pb-3 text-[12px] leading-5 text-[#5f6368]">
+          <span className="mr-2 inline-flex rounded-md bg-[#e8f0fe] px-2 py-0.5 font-medium text-[#1a73e8]">
+            Change it for everyone in {campaign}
+          </span>
+          {editable ? (
+            <button
+              type="button"
+              className="text-[12px] font-medium text-[#1a73e8]"
+              onClick={() => void setScope('')}
+            >
+              change
+            </button>
+          ) : null}
+        </p>
+      ) : null}
+
+      {warnings.map((warning) => (
+        <p
+          key={warning}
+          className="mx-4 mb-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-800"
+        >
+          {warning}
+        </p>
+      ))}
+    </article>
+
+    <Dialog open={askNameScope} onOpenChange={setAskNameScope}>
+      <DialogContent className="max-w-[28rem] bg-white text-[#202124]">
+        <DialogHeader>
+          <DialogTitle className="sr-only">Replace this name?</DialogTitle>
+          <DialogDescription className="pb-4 text-[15px] leading-6 text-[#202124]">
+            Do you want {changed?.to || 'this name'} to replace{' '}
+            {changed?.from || 'the current name'} forever, or only for this email?
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter className="mt-2 flex-col gap-2 sm:flex-col sm:space-x-0">
+          <button
+            type="button"
+            disabled={saving}
+            className="rounded-lg border border-[#e6e6e6] px-3 py-2 text-left text-[13px] font-medium text-[#202124] hover:bg-[#f8f9fa] disabled:opacity-40"
+            onClick={() => void save('forever')}
+          >
+            Replace {changed?.from || 'this name'} forever
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            className="rounded-lg border border-[#e6e6e6] px-3 py-2 text-left text-[13px] font-medium text-[#202124] hover:bg-[#f8f9fa] disabled:opacity-40"
+            onClick={() => void save('this_email')}
+          >
+            Only this email
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
+  )
+}

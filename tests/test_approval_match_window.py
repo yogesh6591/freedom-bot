@@ -6,7 +6,7 @@ must be refused, with nothing approved.
 
 from __future__ import annotations
 
-from app.assistant.assistant import _MATCH_PAGE, _resolve
+from app.assistant.company_tools import _MATCH_PAGE, _resolve
 from bizos.actions import store as actions
 from bizos.policy.engine import evaluate
 from bizos.policy.models import PolicyRequest

@@ -19,3 +19,5 @@ deploy/clients/
 
 # Eval run output (summaries are copied into docs/agent/EVALS.md)
 evals/reports/
+# Dumped model prompt (real emails and names)
+prompt_full.txt

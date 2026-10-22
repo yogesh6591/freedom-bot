@@ -9,7 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.assistant.assistant import _bulk_scope, _packs_for
+from app.assistant.assistant import _packs_for
+from app.assistant.company_tools import _bulk_scope
 from bizos import admin_ops as ops
 from bizos.agents.merged_tools import MERGED, MergeArgumentError, run, schema_for
 from bizos.agents.tool_args import schema_for_tool

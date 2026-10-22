@@ -49,6 +49,11 @@ class ChatRequest(BaseModel):
     execution_mode: Optional[str] = None
 
 
+class EditMessageRequest(BaseModel):
+    message_id: str = Field(min_length=1, max_length=80)
+    message: str = Field(min_length=1, max_length=20000)
+
+
 @router.get("/context")
 def chat_context(
     domain: str = AUTO,
@@ -132,27 +137,102 @@ class EmailDraftUpdate(BaseModel):
     email_address: str = Field(default="", max_length=500)
 
 
+class EmailCardPersonPatch(BaseModel):
+    first_name: str = Field(default="", max_length=120)
+    last_name: str = Field(default="", max_length=120)
+    company: str = Field(default="", max_length=255)
+
+
+class EmailCardUpdate(BaseModel):
+    """What the user changed in the email card. Only what changed needs to be sent."""
+
+    session_id: str = Field(min_length=1, max_length=80)
+    subject: str | None = Field(default=None, max_length=1000, description="template subject, blanks visible")
+    body: str | None = Field(default=None, max_length=20000, description="template body, blanks visible")
+    people: dict[str, EmailCardPersonPatch] | None = None
+    name_scope: str = Field(default="", max_length=20, description='"forever" or "this_email"')
+    scope: str | None = Field(default=None, description='"everyone", "keep", or "" to clear')
+
+
 @router.post("/email-draft")
 def update_email_draft(
     body: EmailDraftUpdate, ctx: TenantContext = Depends(current_context)
 ) -> dict[str, str]:
     """Save an email the user edited in the chat. The next turn sends this version."""
+    from app.assistant.assistant import edit_draft
+
     with bound(ctx):
         try:
-            chat_history.set_latest_email_draft(
+            # The text is one person's rendered email: real names go back to blanks before it is saved.
+            chat_history.edit_latest_assistant_meta(
                 ctx,
                 body.session_id,
-                body.email_draft.strip(),
-                {
-                    "email_subject": body.email_subject.strip(),
-                    "email_body": body.email_body.strip(),
-                    "email_from": body.email_from.strip(),
-                    "email_address": body.email_address.strip(),
-                },
+                lambda meta: edit_draft(
+                    ctx, meta, subject=body.email_subject, body=body.email_body, rendered=True
+                ),
             )
         except chat_history.SessionNotFound as exc:
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
+        except ValueError:
+            try:  # no template draft on that turn: keep the plain save
+                chat_history.set_latest_email_draft(
+                    ctx,
+                    body.session_id,
+                    body.email_draft.strip(),
+                    {
+                        "email_subject": body.email_subject.strip(),
+                        "email_body": body.email_body.strip(),
+                        "email_from": body.email_from.strip(),
+                        "email_address": body.email_address.strip(),
+                    },
+                )
+            except chat_history.SessionNotFound as exc:
+                raise HTTPException(status_code=404, detail="Conversation not found") from exc
     return {"email_draft": body.email_draft.strip()}
+
+
+@router.post("/email-card")
+def update_email_card(
+    body: EmailCardUpdate, ctx: TenantContext = Depends(current_context)
+) -> dict[str, Any]:
+    """Apply a change made in the email card and return the refreshed view.
+
+    Names typed for a person belong to that person's email only. With ``name_scope="forever"`` the
+    stored name is also replaced, so every later campaign uses it.
+    """
+    from app.assistant.assistant import edit_draft, replace_person_name
+
+    if body.subject is not None and not body.subject.strip():
+        raise HTTPException(status_code=422, detail="Subject and body are required")
+    if body.body is not None and not body.body.strip():
+        raise HTTPException(status_code=422, detail="Subject and body are required")
+    people = {
+        email.strip(): patch.model_dump()
+        for email, patch in (body.people or {}).items()
+        if email.strip() and "@" in email
+    }
+    with bound(ctx):
+        try:
+            if body.name_scope.strip().lower() == "forever":
+                for email, patch in people.items():
+                    replace_person_name(
+                        email=email,
+                        first_name=str(patch.get("first_name") or ""),
+                        last_name=str(patch.get("last_name") or ""),
+                        company=str(patch.get("company") or ""),
+                    )
+            view = chat_history.edit_latest_assistant_meta(
+                ctx,
+                body.session_id,
+                lambda meta: edit_draft(
+                    ctx, meta, subject=body.subject, body=body.body, people=people or None, scope=body.scope
+                ),
+            )
+        except chat_history.SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"email_view": view}
 
 
 def _engine() -> str:
@@ -540,6 +620,39 @@ def get_session(session_id: str, ctx: TenantContext = Depends(current_context)) 
             return chat_history.get_session(ctx, session_id)
         except chat_history.SessionNotFound as exc:
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
+
+
+@router.post("/sessions/{session_id}/edit")
+def edit_message(
+    session_id: str,
+    body: EditMessageRequest,
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Replace a user message (and everything after it) and rerun from the new text.
+
+    The deleted rows stay in the table until the new reply is stored, so a model
+    failure (502) leaves the original conversation intact. Sent emails, approvals
+    and tickets are not undone.
+    """
+    with bound(ctx):
+        try:
+            chat_history.assert_can_continue(ctx, session_id)
+            ids = chat_history.tail_from_user_message(ctx, session_id, body.message_id)
+        except chat_history.SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
+        except chat_history.NotUserMessage as exc:
+            raise HTTPException(status_code=400, detail="Only user messages can be edited") from exc
+        request = ChatRequest(message=body.message, session_id=session_id)
+        with chat_history.excluding_messages(ids):
+            if _engine() != "legacy":
+                from app.assistant.assistant import reply
+
+                response = reply(request, ctx, settings)
+            else:
+                response = _legacy_chat(request, ctx, settings)
+        chat_history.delete_messages(ctx, session_id, ids)
+        return response
 
 
 _GLUED = re.compile(r"(?<=[a-z0-9)][.!?])(?=[A-Z][a-z ])")

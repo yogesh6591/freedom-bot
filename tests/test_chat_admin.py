@@ -156,6 +156,19 @@ def test_tool_permissions_and_tool_modes(client_scratch, ctx_factory):
     assert not unknown.ok
 
 
+def test_empty_apply_setup_writes_nothing(client_scratch, ctx_factory):
+    before = _call(client_scratch, ctx_factory, "admin_get_setup").data
+    empty = _call(client_scratch, ctx_factory, "admin_apply_setup")
+    assert not empty.ok
+    assert empty.message == "Nothing to apply. Tell me what to set up."
+    after = _call(client_scratch, ctx_factory, "admin_get_setup").data
+    assert after == before
+    applied = _call(client_scratch, ctx_factory, "admin_apply_setup", goals=["x"])
+    assert applied.ok, applied.message
+    setup = _call(client_scratch, ctx_factory, "admin_get_setup").data
+    assert setup["goals"] == ["x"]
+
+
 def test_setup_keeps_omitted_fields_and_live_mode(client_scratch, ctx_factory):
     first = _call(client_scratch, ctx_factory, "admin_apply_setup",
                   goals=["Cut invoice turnaround"], systems=["HubSpot"], autonomy_mode="WAIT_FOR_APPROVAL")

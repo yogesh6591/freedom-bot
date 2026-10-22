@@ -51,7 +51,7 @@ def _invoice(
     # Pending requests without a snapshot: resolve billables live.
     if not items:
         try:
-            from app.assistant.assistant import finance_list_pending_billables
+            from app.assistant.company_tools import finance_list_pending_billables
             from bizos.tools.base import RunScope
             from bizos.control import store as control
 

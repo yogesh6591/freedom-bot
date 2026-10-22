@@ -1,2318 +1,11 @@
-"""The whole assistant in ONE file: tools, helpers, prompt and agent.
+"""Campaign assistant: people, campaigns, the email card, and send via Instantly.
 
-Read this file top to bottom. Order:
-
-  PART 1  Company tools   what each ops tool DOES (crm_*, email_*, calendar_*, memory_*, support_*,
-                          approvals_*, admin_*, finance/hr/... domain tools, youtube_*).
-  PART 2  Campaign helpers  load people/campaigns, "who is already in a campaign", send via Instantly.
-  PART 3  Campaign tools   the six tools the model uses for outbound campaigns + the saved form.
-  PART 4  The prompt       APPROACH, CAMPAIGN_SECTION, build_prompt().
-  PART 5  The agent        reply(): runs one chat turn (Agno agent, self-check, saving, trace).
-
-NOT in this file on purpose (it is the engine, shared by everything, and has its own tests):
-  bizos/rbac/registry.py   WHO may use each tool, its risk level and mode (the ToolSpec list).
-  bizos/tools/base.py      guarded_call: the policy engine every ops tool call goes through.
-  bizos/tools/executor.py  runs an action after an approver releases it.
-  bizos/agents/surface.py  turns the ToolSpec list into Agno tools for the model.
-  bizos/agents/instructions.py  the platform-rules part of the prompt (role, mode, hard rules).
-
-To add or change an ops tool: its behaviour is in PART 1, its permissions are in registry.py.
-To change campaign behaviour: PART 2-3. To change what the model is told: PART 4.
+Company/ops tool effects live in ``app.assistant.company_tools``.
 """
 
 from __future__ import annotations
 
-
-####################################################################################################
-# PART 1 - COMPANY TOOLS (CRM, email, calendar, memory, support, approvals, admin, domain packs, YouTube)
-####################################################################################################
-
-# ------------------------------------------------------------------------------------------------
-# crm  (bizos/tools/crm.py) - CRM Tool Effects
-# ------------------------------------------------------------------------------------------------
-from typing import Any, Optional
-
-from bizos.connectors.base import ConnectorResult
-from bizos.connectors.registry import get_connector
-from bizos.tools.base import RunScope, effect, precheck, risk_inputs
-
-
-def _crm(scope: RunScope):
-    return get_connector("crm", ctx=scope.ctx)
-
-
-# ------------------------------------------------------------------- reads
-
-
-@effect("crm_search_contacts")
-def crm_search_contacts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).search_contacts(
-        args.get("query", ""), lifecycle=args.get("lifecycle"), limit=int(args.get("limit", 20))
-    )
-
-
-@effect("crm_get_contact")
-def crm_get_contact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).get_contact(str(args.get("contact_id", "")))
-
-
-@effect("crm_search_companies")
-def crm_search_companies(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).search_companies(args.get("query", ""), limit=int(args.get("limit", 20)))
-
-
-@effect("crm_search_deals")
-def crm_search_deals(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).search_deals(
-        stage=args.get("stage"), owner=args.get("owner"), limit=int(args.get("limit", 50))
-    )
-
-
-@effect("crm_pipeline_summary")
-def crm_pipeline_summary(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).pipeline_summary()
-
-
-# ------------------------------------------------------------------ writes
-
-
-@effect("crm_create_note")
-def crm_create_note(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).create_note(
-        body=str(args.get("body", "")),
-        contact_id=args.get("contact_id"),
-        deal_id=args.get("deal_id"),
-    )
-
-
-@effect("crm_create_task")
-def crm_create_task(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).create_task(
-        title=str(args.get("title", "")),
-        body=str(args.get("body", "")),
-        contact_id=args.get("contact_id"),
-        deal_id=args.get("deal_id"),
-        assignee=args.get("assignee"),
-        due_at=args.get("due_at"),
-    )
-
-
-@effect("crm_tag_lead")
-def crm_tag_lead(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).tag_lead(
-        str(args.get("contact_id", "")),
-        add_tags=list(args.get("add_tags") or []),
-        remove_tags=list(args.get("remove_tags") or []),
-        lifecycle=args.get("lifecycle"),
-    )
-
-
-@risk_inputs("crm_tag_lead")
-def _tag_lead_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
-    """Tagging touches ``tags`` and, when a lifecycle is given, ``lifecycle``."""
-    fields = ["tags"]
-    if args.get("lifecycle"):
-        fields.append("lifecycle")
-    return {"fields": tuple(fields), "record_count": 1}
-
-
-@effect("crm_update_contact_field")
-def crm_update_contact_field(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).update_contact_field(
-        str(args.get("contact_id", "")), field=str(args.get("field", "")), value=args.get("value")
-    )
-
-
-@risk_inputs("crm_update_contact_field")
-def _update_field_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
-    return {"fields": (str(args.get("field", "")),), "record_count": 1}
-
-
-@effect("crm_create_contact")
-def crm_create_contact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).create_contact(
-        first_name=str(args.get("first_name", "")),
-        last_name=str(args.get("last_name", "")),
-        email=args.get("email"),
-        company=args.get("company"),
-        title=args.get("title"),
-        lifecycle=str(args.get("lifecycle", "lead")),
-        tags=list(args.get("tags") or []),
-        properties=dict(args.get("properties") or {}),
-    )
-
-
-@effect("crm_update_deal_stage")
-def crm_update_deal_stage(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).update_deal_stage(str(args.get("deal_id", "")), stage=str(args.get("stage", "")))
-
-
-@risk_inputs("crm_update_deal_stage")
-def _deal_stage_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
-    return {"fields": ("stage",), "record_count": 1}
-
-
-_EVERY_CONTACT = "ALL"
-
-
-def _bulk_scope(args: dict[str, Any]) -> tuple[bool, Optional[str]]:
-    """(scope given?, lifecycle filter). ``lifecycle_stage="ALL"`` means every contact.
-
-    ``lifecycle_filter`` is the older argument, still accepted for actions queued before the rename.
-    """
-    stage = str(args.get("lifecycle_stage") or "").strip()
-    if stage:
-        return True, None if stage.upper() == _EVERY_CONTACT else stage
-    legacy = str(args.get("lifecycle_filter") or "").strip()
-    return bool(legacy), legacy or None
-
-
-@effect("crm_bulk_update_contacts")
-def crm_bulk_update_contacts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).bulk_update_contacts(
-        lifecycle_filter=_bulk_scope(args)[1],
-        field=str(args.get("field", "")),
-        value=args.get("value"),
-    )
-
-
-@risk_inputs("crm_bulk_update_contacts")
-def _bulk_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
-    """Count the rows the filter actually matches, before updating any of them.
-
-    This is what makes the §30 bulk-action scenario real: the agent asking to
-    change 1000 leads is measured against the workspace, not trusted.
-    """
-    count = _crm(scope).count_contacts(lifecycle=_bulk_scope(args)[1])
-    return {"record_count": count, "fields": (str(args.get("field", "")),)}
-
-
-@precheck("crm_bulk_update_contacts")
-def _bulk_needs_a_scope(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
-    """Changing every contact must be asked for explicitly, never the result of a missing argument."""
-    if not _bulk_scope(args)[0]:
-        return (
-            "lifecycle_stage is required: pass one lifecycle stage such as lead, or ALL only when the "
-            "user clearly means every contact. Nothing was changed."
-        )
-    return None
-
-
-@effect("crm_delete_record")
-def crm_delete_record(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).delete_record(
-        record_type=str(args.get("record_type", "contact")), record_id=str(args.get("record_id", ""))
-    )
-
-# ------------------------------------------------------------------------------------------------
-# email  (bizos/tools/email.py) - Email Tool Effects
-# ------------------------------------------------------------------------------------------------
-import re
-
-from bizos.agents.tool_args import EMAIL_PATTERN
-
-
-
-def _email(scope: RunScope):
-    return get_connector("email", ctx=scope.ctx, owner_user_id=scope.on_behalf_of)
-
-
-def _recipients_email(args: dict[str, Any]) -> list[str]:
-    raw = args.get("recipients") or args.get("to") or []
-    if isinstance(raw, str):
-        return [part.strip() for part in raw.split(",") if part.strip()]
-    return [str(item).strip() for item in raw if str(item).strip()]
-
-
-_ADDRESS = re.compile(EMAIL_PATTERN)
-
-
-def _addresses_only(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
-    """Recipients must be email addresses: a name ("Raj") is refused before anything is queued or sent."""
-    cc = args.get("cc") or []
-    cc = [p.strip() for p in cc.split(",")] if isinstance(cc, str) else [str(p).strip() for p in cc]
-    bad = [r for r in _recipients_email(args) + [c for c in cc if c] if not _ADDRESS.match(r)]
-    if not _recipients_email(args):
-        return "recipients is required: give at least one email address. Nothing was sent."
-    if bad:
-        return (
-            f"{', '.join(repr(b) for b in bad)} {'is' if len(bad) == 1 else 'are'} not an email address. "
-            "Look up the address with crm_search_contacts (customers and leads) or admin_list_users "
-            "(colleagues), or ask the user for it. Nothing was sent."
-        )
-    return None
-
-
-precheck("email_send_message")(_addresses_only)
-precheck("email_create_draft")(_addresses_only)
-
-
-@effect("email_search_threads")
-def email_search_threads(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _email(scope).search_threads(args.get("query", ""), limit=int(args.get("limit", 20)))
-
-
-@effect("email_read_thread")
-def email_read_thread(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _email(scope).read_thread(str(args.get("thread_id", "")))
-
-
-@effect("email_create_draft")
-def email_create_draft(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _email(scope).create_draft(
-        recipients=_recipients_email(args),
-        subject=str(args.get("subject", "")),
-        body=str(args.get("body", "")),
-        cc=list(args.get("cc") or []),
-        thread_id=args.get("thread_id"),
-        action_id=args.get("action_id"),
-    )
-
-
-@risk_inputs("email_create_draft")
-def _draft_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
-    return {"recipients": tuple(_recipients_email(args))}
-
-
-@effect("email_send_message")
-def email_send_message(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _email(scope).send_message(
-        recipients=_recipients_email(args),
-        subject=str(args.get("subject", "")),
-        body=str(args.get("body", "")),
-        cc=list(args.get("cc") or []),
-        thread_id=args.get("thread_id"),
-        draft_id=args.get("draft_id"),
-    )
-
-
-@risk_inputs("email_send_message")
-def _send_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
-    """Recipients drive the domain allowlist; the count drives the record limit."""
-    recipients = _recipients_email(args)
-    return {"recipients": tuple(recipients), "record_count": max(1, len(recipients))}
-
-# ------------------------------------------------------------------------------------------------
-# calendar  (bizos/tools/calendar.py) - Calendar tool effects.
-# ------------------------------------------------------------------------------------------------
-
-
-
-def _calendar(scope: RunScope):
-    return get_connector("calendar", ctx=scope.ctx, owner_user_id=scope.on_behalf_of)
-
-
-def _attendees(args: dict[str, Any]) -> list[str]:
-    raw = args.get("attendees") or []
-    if isinstance(raw, str):
-        return [part.strip() for part in raw.split(",") if part.strip()]
-    return [str(item).strip() for item in raw if str(item).strip()]
-
-
-@effect("calendar_list_events")
-def calendar_list_events(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _calendar(scope).list_events(
-        start=args.get("start"), end=args.get("end"), limit=int(args.get("limit", 50))
-    )
-
-
-@effect("calendar_check_availability")
-def calendar_check_availability(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _calendar(scope).check_availability(
-        start=str(args.get("start")),
-        end=str(args.get("end")),
-        slot_minutes=int(args.get("slot_minutes", 30)),
-    )
-
-
-@effect("calendar_create_event")
-def calendar_create_event(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _calendar(scope).create_event(
-        title=str(args.get("title", "")),
-        starts_at=str(args.get("starts_at")),
-        ends_at=str(args.get("ends_at")),
-        attendees=_attendees(args),
-        description=str(args.get("description", "")),
-        location=args.get("location"),
-    )
-
-
-@risk_inputs("calendar_create_event")
-def _create_event_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
-    """Attendees are external recipients for the domain allowlist."""
-    return {"recipients": tuple(_attendees(args))}
-
-
-@effect("calendar_reschedule_event")
-def calendar_reschedule_event(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _calendar(scope).reschedule_event(
-        str(args.get("event_id", "")),
-        starts_at=str(args.get("starts_at")),
-        ends_at=str(args.get("ends_at")),
-    )
-
-
-@effect("calendar_cancel_event")
-def calendar_cancel_event(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _calendar(scope).cancel_event(str(args.get("event_id", "")))
-
-# ------------------------------------------------------------------------------------------------
-# memory  (bizos/tools/memory.py) - Memory and Knowledge Tool Effects
-# ------------------------------------------------------------------------------------------------
-from typing import Any, Optional
-
-from bizos.memory import store as memory_store
-from bizos.tools.base import RunScope, effect
-from bizos.types import ApprovalStatus, MemoryCategory, SourceType
-
-
-def _render_memory(item: Any) -> dict[str, Any]:
-    """The shape a memory item takes when the model sees it.
-
-    Provenance travels with the value, so the agent can say "per the SOP recorded
-    by Dana on 3 June" instead of asserting bare facts.
-    """
-    version = item.current
-    return {
-        "id": item.id,
-        "category": str(item.category),
-        "key": item.memory_key,
-        "title": item.title,
-        "value": version.content if version else None,
-        # FB-036: how the agent must present this value — "fact" or "estimate".
-        "label": item.label,
-        "source": str(version.source_type) if version else None,
-        "recorded_by": version.created_by if version else None,
-        "confidence": version.confidence if version else None,
-        "approval_status": str(version.approval_status) if version else None,
-        "version": version.version_no if version else None,
-        "last_updated": version.updated_at.isoformat() if version and version.updated_at else None,
-        "attributes": version.attributes if version else {},
-    }
-
-
-@effect("memory_search")
-def memory_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    categories = None
-    raw = args.get("categories")
-    if raw:
-        parsed = [MemoryCategory.parse(c) for c in (raw if isinstance(raw, list) else [raw])]
-        categories = [c for c in parsed if c is not None]
-    items = memory_store.search(
-        str(args.get("query", "")),
-        categories=categories,
-        domain=args.get("domain"),
-        authoritative_only=bool(args.get("authoritative_only", True)),
-        limit=int(args.get("limit", 10)),
-        ctx=scope.ctx,
-    )
-    rendered = [_render_memory(i) for i in items]
-    ids = {i.id for i in items}
-    conflicts = [
-        c for c in memory_store.find_conflicts(ctx=scope.ctx)
-        if any(entry["item_id"] in ids for entry in c["items"])
-    ]
-    summary = f"{len(items)} memory item(s) matched {args.get('query','')!r}"
-    if not items:
-        hidden = memory_store.restricted_areas_matching(str(args.get("query", "")), ctx=scope.ctx)
-        if hidden:
-            summary += (
-                f". Matching records exist in the restricted {', '.join(hidden)} area(s), which "
-                "this user cannot access. Tell them it is restricted; do not say it is missing "
-                "and do not offer to create it"
-            )
-    if items:
-        summary += (
-            ". When you answer, write 'Fact:' before values labelled fact and "
-            "'Estimate:' before values labelled estimate"
-        )
-    if conflicts:
-        topics = ", ".join(c["topic"] for c in conflicts)
-        summary += (
-            f". CONFLICT on {topics}: recorded policies disagree. Do not choose between "
-            "them — tell the user and call memory_escalate_conflict so a person decides."
-        )
-    data: Any = rendered
-    if conflicts:
-        data = {"items": rendered, "conflicts": conflicts}
-    return ConnectorResult(ok=True, data=data, summary=summary)
-
-
-@effect("memory_get_fact")
-def memory_get_fact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    category = MemoryCategory.parse(args.get("category"), MemoryCategory.FACT)
-    key = str(args.get("key") or args.get("memory_key") or "").strip()
-    if not key:
-        return ConnectorResult.failure("key is required — pass the fact key to look up.")
-    item = memory_store.get_by_key(category, key, ctx=scope.ctx)  # type: ignore[arg-type]
-    if item is None:
-        # The model often guesses a key ("salary_band_engineer_ii"); search the
-        # words of it before concluding nothing is recorded.
-        phrase = key.replace("_", " ").replace("-", " ")
-        hits = memory_store.search(phrase, limit=5, ctx=scope.ctx)
-        if hits:
-            return ConnectorResult(
-                ok=True,
-                data=[_render_memory(i) for i in hits],
-                summary=(
-                    f"no item under key {key!r}, but {len(hits)} related item(s) matched; answer "
-                    "from the one that fits, prefixed with its label (Fact:/Estimate:)"
-                ),
-            )
-        hidden = memory_store.restricted_areas_matching(phrase, ctx=scope.ctx)
-        if hidden:
-            return ConnectorResult(
-                ok=True,
-                data=None,
-                summary=(
-                    f"a matching record exists in the restricted {', '.join(hidden)} area(s), which "
-                    "this user cannot access. Tell them it is restricted; do not say it is missing."
-                ),
-            )
-        return ConnectorResult(ok=True, data=None, summary=f"no {category} recorded for that key")
-    value = item.current.content if item.current else ""
-    return ConnectorResult(
-        ok=True,
-        data=_render_memory(item),
-        summary=f"{item.label.title()}: {value} (state it to the user prefixed with '{item.label.title()}:')",
-    )
-
-
-@effect("memory_history")
-def memory_history(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    item = memory_store.history(str(args.get("item_id", "")), ctx=scope.ctx)
-    return ConnectorResult(
-        ok=True,
-        data=item.to_dict(include_versions=True),
-        summary=f"{len(item.versions)} version(s) of {item.title!r}",
-    )
-
-
-def _normalize_write_args(args: dict[str, Any]) -> dict[str, Any]:
-    """Accept common aliases the model uses for memory writes."""
-    out = dict(args)
-    if not str(out.get("key") or "").strip():
-        for alt in ("memory_key", "fact_key", "name"):
-            if str(out.get(alt) or "").strip():
-                out["key"] = str(out[alt]).strip()
-                break
-    if not str(out.get("content") or "").strip():
-        for alt in ("value", "fact", "text", "body", "decision"):
-            if str(out.get(alt) or "").strip():
-                out["content"] = str(out[alt]).strip()
-                break
-    if not str(out.get("title") or "").strip():
-        if str(out.get("key") or "").strip():
-            out["title"] = str(out["key"]).replace("_", " ").strip()
-        elif str(out.get("name") or "").strip():
-            out["title"] = str(out["name"]).strip()
-    return out
-
-
-#: The restricted area a department domain's writes belong to.
-_DOMAIN_AREAS = {"operations": "ops", "finance": "finance", "legal": "legal"}
-
-
-def _write_area(scope: RunScope, args: dict[str, Any], title: str, content: str) -> Optional[str]:
-    """The access area a new memory item must carry.
-
-    Content derived from a restricted record (a checklist made from the ops
-    payroll SOP) stays in that record's area; otherwise a department domain's
-    write lands in that department. Without this, a restricted SOP rewritten
-    as a "team checklist" would become visible to everyone.
-    """
-    ctx = scope.ctx
-    requested = str(args.get("access_area") or "").strip() or None
-    if requested and ctx.can_see_area(requested):
-        return requested
-    text_ = f"{title}\n{content}"
-    sources = [
-        i for i in memory_store.search(text_[:400], authoritative_only=False, limit=10, ctx=ctx)
-        if i.access_area
-    ]
-    for item in sources:
-        body = item.current.content if item.current else ""
-        overlap = memory_store.word_hits(f"{item.title} {item.memory_key} {body}", text_[:400])
-        if len(overlap) >= 3:
-            return item.access_area
-    area = _DOMAIN_AREAS.get(scope.domain)
-    if area and ctx.can_see_area(area) and not ctx.is_admin:
-        return area
-    return None
-
-
-def _put(scope: RunScope, args: dict[str, Any], category: MemoryCategory) -> ConnectorResult:
-    args = _normalize_write_args(args)
-    title = str(args.get("title") or "").strip()
-    content = str(args.get("content") or "").strip()
-    key = str(args.get("key") or "").strip() or None
-    if not content:
-        return ConnectorResult.failure(
-            "content is required — pass the non-empty fact/SOP text to store "
-            "(and a title or key so it can be looked up later)."
-        )
-    if not title and not key:
-        return ConnectorResult.failure(
-            "Provide a title and/or key so this memory item can be retrieved later."
-        )
-    if not title:
-        title = key.replace("_", " ")  # type: ignore[union-attr]
-
-    source = SourceType.parse(args.get("source_type"), SourceType.MANUAL)
-    attributes = dict(args.get("attributes") or {})
-    if args.get("topic"):
-        attributes.setdefault("topic", str(args["topic"]))
-    item = memory_store.put(
-        category=category,
-        title=title,
-        content=content,
-        memory_key=key,
-        domain=args.get("domain") or scope.domain,
-        tags=list(args.get("tags") or []),
-        attributes=attributes,
-        access_area=_write_area(scope, args, title, content),
-        source_type=source,  # type: ignore[arg-type]
-        source_id=args.get("source_id"),
-        confidence=float(args.get("confidence", 1.0)),
-        settings=scope.settings,
-        ctx=scope.ctx,
-    )
-    pending = item.current is not None and item.current.approval_status == ApprovalStatus.PENDING
-    note = " (recorded as PENDING because it was inferred rather than stated)" if pending else ""
-    if item.current is not None and item.current.attributes.get("conflict_with"):
-        note = (
-            " (held as PENDING: it conflicts with an existing approved policy, so a person "
-            "must choose which one stands)"
-        )
-    return ConnectorResult(
-        ok=True,
-        data=_render_memory(item),
-        summary=(
-            f"{category} '{item.title}' recorded under key '{item.memory_key}' "
-            f"as version {item.current.version_no}{note}"
-        ),
-    )
-
-
-@effect("memory_add_fact")
-def memory_add_fact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _put(scope, args, MemoryCategory.FACT)
-
-
-@effect("memory_add_sop")
-def memory_add_sop(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _put(scope, args, MemoryCategory.SOP)
-
-
-@effect("memory_record_decision")
-def memory_record_decision(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Record a decision with the §2 C structured fields."""
-    attributes = {
-        "decision": args.get("decision") or args.get("content"),
-        "decided_on": args.get("decided_on"),
-        "approved_by": args.get("approved_by"),
-        "context": args.get("context"),
-        "reason": args.get("reason"),
-        "status": args.get("status", "active"),
-        **dict(args.get("attributes") or {}),
-    }
-    return _put(scope, {**args, "attributes": attributes}, MemoryCategory.DECISION)
-
-
-@effect("memory_correct")
-def memory_correct(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Supersede a memory value. Never overwrites; history is preserved."""
-    item_id = args.get("item_id")
-    if not item_id:
-        # Allow correcting by key, which is how a user phrases it in chat.
-        category = MemoryCategory.parse(args.get("category"), MemoryCategory.FACT)
-        existing = memory_store.get_by_key(category, str(args.get("key", "")), ctx=scope.ctx)  # type: ignore[arg-type]
-        if existing is None:
-            return ConnectorResult.failure(
-                f"No {category} is recorded under key {args.get('key')!r}, so there is nothing to "
-                "correct. Record it as a new fact instead."
-            )
-        item_id = existing.id
-
-    item = memory_store.correct(
-        item_id=str(item_id),
-        new_content=str(args.get("new_content") or args.get("content", "")),
-        reason=str(args.get("reason", "user correction")),
-        source_type=SourceType.parse(args.get("source_type"), SourceType.MANUAL),  # type: ignore[arg-type]
-        source_id=args.get("source_id"),
-        confidence=float(args.get("confidence", 1.0)),
-        settings=scope.settings,
-        ctx=scope.ctx,
-    )
-    previous = item.current.attributes.get("previous_value") if item.current else None
-    return ConnectorResult(
-        ok=True,
-        data=_render_memory(item),
-        summary=(
-            f"corrected to {item.current.content!r} (version {item.current.version_no}); "
-            f"previous value {previous!r} kept in history as superseded"
-        ),
-    )
-
-
-@effect("memory_escalate_conflict")
-def memory_escalate_conflict(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Hand a policy conflict to a person. Runs only after an approver accepts it.
-
-    The approver's resolution is recorded as a DECISION so the next retrieval
-    has an authoritative answer; the agent itself never picks a side.
-    """
-    topic = str(args.get("topic") or "").strip()
-    if not topic:
-        return ConnectorResult.failure("topic is required — name the conflicting policy.")
-    item = memory_store.put(
-        category=MemoryCategory.DECISION,
-        title=f"Conflict escalated: {topic}",
-        content=str(args.get("question") or f"Which {topic} policy applies?"),
-        memory_key=f"conflict_{topic.replace(' ', '_')}"[:80],
-        attributes={
-            "status": "escalated",
-            "conflict_topic": topic,
-            "item_ids": list(args.get("item_ids") or []),
-        },
-        settings=scope.settings,
-        ctx=scope.ctx,
-    )
-    return ConnectorResult(
-        ok=True,
-        data=_render_memory(item),
-        summary=f"conflict on {topic!r} escalated to a person; recorded as {item.memory_key}",
-    )
-
-# ------------------------------------------------------------------------------------------------
-# support  (bizos/tools/support.py) - Support Tool Effects (FB-046)
-# ------------------------------------------------------------------------------------------------
-
-from bizos import support
-
-
-def _render_support(ticket: dict[str, Any]) -> dict[str, Any]:
-    history = ticket.get("history") or []
-    return {
-        "id": ticket["id"],
-        "subject": ticket["subject"],
-        "severity": ticket["severity"],
-        "status": ticket["status"],
-        "handled_by": "Cepoch support",
-        "created_at": ticket.get("created_at"),
-        "updated_at": ticket.get("updated_at"),
-        "latest_update": (history[-1].get("note") if history else "") or "",
-    }
-
-
-@effect("support_create_ticket")
-def support_create_ticket(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    subject = str(args.get("subject") or "").strip()
-    if not subject:
-        return ConnectorResult.failure("subject is required — summarize the problem in one line.")
-    body = str(args.get("body") or "").strip()
-    if scope.session_id:
-        body = f"{body}\n\nRaised from FreedomBot chat (session {scope.session_id}).".strip()
-    ticket, merged = support.submit_ticket(
-        client_id=scope.ctx.client_id,
-        subject=subject,
-        body=body,
-        severity=str(args.get("severity") or support.SEVERITY_NORMAL),
-        created_by=scope.ctx.user_id,
-    )
-    return ConnectorResult(
-        ok=True,
-        data=_render_support(ticket),
-        summary=(
-            f"added to the open Cepoch support ticket {ticket['id']} with the same subject"
-            if merged
-            else f"opened Cepoch support ticket {ticket['id']} ({ticket['severity']})"
-        ),
-    )
-
-
-@effect("support_my_tickets")
-def support_my_tickets(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    mine = [
-        t for t in support.list_tickets(client_id=scope.ctx.client_id)
-        if t.get("created_by") == scope.ctx.user_id
-    ]
-    if not mine:
-        return ConnectorResult(ok=True, data=[], summary="this user has not raised any support tickets")
-    return ConnectorResult(
-        ok=True,
-        data=[_render_support(t) for t in mine[:20]],
-        summary=f"{len(mine)} support ticket(s) raised by this user",
-    )
-
-# ------------------------------------------------------------------------------------------------
-# approvals  (bizos/tools/approvals.py) - Approval Tool Effects
-# ------------------------------------------------------------------------------------------------
-import dataclasses
-
-from bizos.actions import store as actions
-from bizos.actions.models import Action
-from bizos.rbac.registry import get_spec
-from bizos.types import ActionStatus, Role
-
-_STATUS_WORDS: dict[str, tuple[ActionStatus, ...]] = {
-    "pending": (ActionStatus.PENDING_APPROVAL,),
-    "pending_approval": (ActionStatus.PENDING_APPROVAL,),
-    "waiting": (ActionStatus.PENDING_APPROVAL,),
-    "queue": (ActionStatus.PENDING_APPROVAL,),
-    "draft": (ActionStatus.DRAFT,),
-    "drafts": (ActionStatus.DRAFT,),
-    "changes_requested": (ActionStatus.DRAFT,),
-    "approved": (ActionStatus.APPROVED,),
-    "executing": (ActionStatus.EXECUTING,),
-    "completed": (ActionStatus.COMPLETED,),
-    "complete": (ActionStatus.COMPLETED,),
-    "done": (ActionStatus.COMPLETED,),
-    "executed": (ActionStatus.COMPLETED,),
-    "failed": (ActionStatus.FAILED,),
-    "rejected": (ActionStatus.REJECTED,),
-    "declined": (ActionStatus.REJECTED,),
-    "cancelled": (ActionStatus.CANCELLED,),
-    "canceled": (ActionStatus.CANCELLED,),
-}
-
-_ALL_WORDS = {"all", "any", "everything", "history"}
-
-
-def _statuses(raw: Any) -> Optional[list[ActionStatus]]:
-    """Status words from the model -> statuses. ``None`` means every status."""
-    words = raw if isinstance(raw, list) else str(raw or "pending").replace(",", " ").split()
-    picked: list[ActionStatus] = []
-    for word in words:
-        key = str(word).strip().casefold().replace(" ", "_").replace("-", "_")
-        if key in _ALL_WORDS:
-            return None
-        for status in _STATUS_WORDS.get(key, (ActionStatus.parse(key),) if ActionStatus.parse(key) else ()):
-            if status not in picked:
-                picked.append(status)
-    return picked or [ActionStatus.PENDING_APPROVAL]
-
-
-def _names(scope: RunScope) -> dict[str, str]:
-    from bizos.control import store as control
-
-    try:
-        return {u.id: u.display_name or u.email for u in control.list_users(scope.ctx.client_id)}
-    except Exception:
-        return {}
-
-
-def _approver_role(scope: RunScope) -> Role:
-    return Role.parse(scope.settings.approval_policy.approver_role, Role.APPROVER)
-
-
-def _can_decide(scope: RunScope) -> bool:
-    return scope.ctx.is_admin or scope.ctx.has_role(_approver_role(scope))
-
-
-def _summary_of(action: Action, scope: RunScope) -> str:
-    from bizos.actions.preview import content_for
-
-    try:
-        content = content_for(action, ctx=scope.ctx)
-        return str(content.get("summary") or content.get("headline") or action.title)
-    except Exception:
-        return action.description or action.title
-
-
-def _render_approvals(action: Action, scope: RunScope, names: dict[str, str]) -> dict[str, Any]:
-    entry: dict[str, Any] = {
-        "action_id": action.id,
-        "title": action.title,
-        "status": str(action.status),
-        "tool": action.tool,
-        "what": _summary_of(action, scope),
-        "requested_by": names.get(action.requested_by, action.requested_by),
-        "requested_by_role": action.requested_by_role,
-        "requested_by_you": action.requested_by == scope.ctx.user_id,
-        "why_it_needs_review": action.policy_reason,
-        "created_at": action.created_at.isoformat() if action.created_at else None,
-        "updated_at": action.updated_at.isoformat() if action.updated_at else None,
-    }
-    if action.approval and action.approval.decided_by:
-        entry["decided_by"] = names.get(action.approval.decided_by, action.approval.decided_by)
-        entry["decided_at"] = action.approval.decided_at.isoformat() if action.approval.decided_at else None
-        entry["decision_comment"] = action.approval.comment
-    if action.executed_by:
-        entry["executed_by"] = names.get(action.executed_by, action.executed_by)
-        entry["executed_at"] = action.executed_at.isoformat() if action.executed_at else None
-    if action.status == ActionStatus.FAILED and action.error:
-        entry["error"] = action.error
-    if action.status == ActionStatus.COMPLETED and action.result:
-        entry["result"] = action.result.get("summary") if isinstance(action.result, dict) else action.result
-    customer = (action.payload or {}).get("customer")
-    if action.tool == "finance_draft_invoice" and customer:
-        from bizos.tools.domains import finance_list_pending_billables
-
-        entry["customer"] = customer
-        if action.status == ActionStatus.PENDING_APPROVAL:
-            listed = finance_list_pending_billables(scope, {"customer": customer})
-            entry["amount"] = (listed.data or {}).get("total")
-            entry["line_items"] = (listed.data or {}).get("items")
-    return entry
-
-
-def _visible(action: Action, scope: RunScope) -> bool:
-    area = getattr(get_spec(action.tool), "data_area", None)
-    return not area or scope.ctx.can_see_area(area)
-
-
-_MATCH_PAGE = 200
-_MATCH_LISTED = 8
-
-
-def _resolve(
-    scope: RunScope, args: dict[str, Any], statuses: Optional[list[ActionStatus]] = None
-) -> tuple[Optional[Action], Optional[str]]:
-    """Find the one action the user means, by id or by a phrase from its title."""
-    ref = str(args.get("action_id") or args.get("id") or "").strip()
-    if ref:
-        try:
-            action = actions.get_action(ref, include_events=True, ctx=scope.ctx)
-            if _visible(action, scope):
-                return action, None
-        except actions.ActionNotFound:
-            pass
-    phrase = str(args.get("match") or ("" if ref.startswith("act") else ref)).strip().casefold()
-    if not phrase:
-        return None, (
-            f"No action {ref!r} that you can see." if ref
-            else "Say which action — give its id, or call approvals_list to find it."
-        )
-    # Every action in these statuses, not only the newest page: a phrase that also matches an older request
-    # is ambiguous. Stop once there are more matches than the refusal lists.
-    candidates: list[Action] = []
-    offset = 0
-    while len(candidates) <= _MATCH_LISTED:
-        page = actions.list_actions(statuses=statuses, limit=_MATCH_PAGE, offset=offset, ctx=scope.ctx)
-        candidates += [
-            a for a in page
-            if _visible(a, scope)
-            and (phrase in a.title.casefold() or phrase in (a.description or "").casefold())
-        ]
-        if len(page) < _MATCH_PAGE:
-            break
-        offset += _MATCH_PAGE
-    if len(candidates) == 1:
-        return actions.get_action(candidates[0].id, include_events=True, ctx=scope.ctx), None
-    if not candidates:
-        return None, f"No action matching {phrase!r} that you can see."
-    listed = "; ".join(f"{a.id} — {a.title} ({a.status})" for a in candidates[:_MATCH_LISTED])
-    return None, f"More than one action matches {phrase!r}; ask the user which one: {listed}"
-
-
-def _decision_error(exc: Exception, action: Action, scope: RunScope, verb: str) -> ConnectorResult:
-    if isinstance(exc, actions.NotAnApprover):
-        roles = ", ".join(sorted(str(r) for r in scope.ctx.roles)) or "no role"
-        return ConnectorResult.failure(
-            f"Not permitted: you cannot {verb} {action.id}. Deciding approvals needs the "
-            f"{_approver_role(scope)} role and you hold {roles}. Nothing was changed."
-        )
-    if isinstance(exc, actions.SelfApprovalRejected):
-        return ConnectorResult.failure(
-            f"Not permitted: you requested {action.id} yourself, and this workspace does not "
-            "allow self-approval. Another approver must decide it. Nothing was changed."
-        )
-    if isinstance(exc, actions.IllegalTransition):
-        return ConnectorResult.failure(
-            f"{action.id} is {action.status}, so it cannot be {verb}d now. "
-            "Only an action that is PENDING_APPROVAL can be decided."
-        )
-    if isinstance(exc, actions.ActionNotFound):
-        return ConnectorResult.failure(f"No action {action.id} that you can see.")
-    raise exc
-
-
-@effect("approvals_list")
-def approvals_list(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Actions in the requested statuses, as the caller may see them."""
-    statuses = _statuses(args.get("status"))
-    mine = bool(args.get("mine"))
-    try:
-        limit = max(1, min(int(args.get("limit") or 25), 100))
-    except (TypeError, ValueError):
-        limit = 25
-    names = _names(scope)
-    found = [
-        a for a in actions.list_actions(
-            statuses=statuses,
-            requested_by=scope.ctx.user_id if mine else None,
-            limit=limit,
-            ctx=scope.ctx,
-        )
-        if _visible(a, scope)
-    ]
-    label = "all statuses" if statuses is None else ", ".join(str(s) for s in statuses)
-    can_decide = _can_decide(scope)
-    return ConnectorResult(
-        ok=True,
-        data={
-            "statuses": label,
-            "only_mine": mine,
-            "actions": [_render_approvals(a, scope, names) for a in found],
-            "you_can_approve": can_decide,
-            "approver_role": str(_approver_role(scope)),
-            "self_approval_allowed": bool(scope.settings.approval_policy.allow_self_approval),
-        },
-        summary=(
-            f"{len(found)} action(s) in {label}"
-            + ("; this user can approve or reject pending ones" if can_decide
-               else f"; this user cannot approve (needs {_approver_role(scope)})")
-        ),
-    )
-
-
-@effect("approvals_get")
-def approvals_get(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """One action with its full history of who did what."""
-    action, problem = _resolve(scope, args)
-    if action is None:
-        return ConnectorResult.failure(problem or "Action not found.")
-    names = _names(scope)
-    data = _render_approvals(action, scope, names)
-    data["payload"] = action.payload
-    data["history"] = [
-        {
-            "event": e.event,
-            "from": e.from_status,
-            "to": e.to_status,
-            "by": names.get(e.actor_id, e.actor_id),
-            "role": e.actor_role,
-            "comment": e.comment,
-            "at": e.created_at.isoformat() if e.created_at else None,
-        }
-        for e in action.events
-    ]
-    return ConnectorResult(ok=True, data=data, summary=f"{action.id} ({action.status}): {action.title}")
-
-
-@effect("approvals_approve")
-def approvals_approve(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Approve a pending action, then run it when this user may execute it."""
-    from bizos.tools.executor import can_execute, execute_approved_action
-
-    action, problem = _resolve(scope, args, [ActionStatus.PENDING_APPROVAL])
-    if action is None:
-        return ConnectorResult.failure(problem or "Action not found.")
-    comment = str(args.get("comment") or "").strip() or None
-    try:
-        approved = actions.approve(action.id, settings=scope.settings, comment=comment, ctx=scope.ctx)
-    except Exception as exc:
-        return _decision_error(exc, action, scope, "approve")
-
-    run = dataclasses.replace(scope, domain=approved.domain or scope.domain, counters={})
-    if not can_execute(run, approved):
-        return ConnectorResult(
-            ok=True,
-            data={"action_id": approved.id, "status": str(approved.status), "executed": False},
-            summary=(
-                f"approved {approved.id} ({approved.title}). This role may approve "
-                f"{approved.tool} but not carry it out, so it is waiting for an operator to run it."
-            ),
-        )
-    outcome = execute_approved_action(run, approved.id)
-    final = actions.get_action(approved.id, ctx=scope.ctx)
-    return ConnectorResult(
-        ok=True,
-        data={
-            "action_id": final.id,
-            "status": str(final.status),
-            "executed": outcome.ok,
-            "result": outcome.message,
-        },
-        summary=(
-            f"approved and carried out {final.id} ({final.title}): {outcome.message}"
-            if outcome.ok
-            else f"approved {final.id} ({final.title}), but running it failed: {outcome.message}"
-        ),
-    )
-
-
-@effect("approvals_reject")
-def approvals_reject(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    action, problem = _resolve(scope, args, [ActionStatus.PENDING_APPROVAL])
-    if action is None:
-        return ConnectorResult.failure(problem or "Action not found.")
-    comment = str(args.get("comment") or args.get("reason") or "").strip() or None
-    try:
-        rejected = actions.reject(action.id, settings=scope.settings, comment=comment, ctx=scope.ctx)
-    except Exception as exc:
-        return _decision_error(exc, action, scope, "reject")
-    return ConnectorResult(
-        ok=True,
-        data={"action_id": rejected.id, "status": str(rejected.status)},
-        summary=f"rejected {rejected.id} ({rejected.title}); it will not run",
-    )
-
-
-@effect("approvals_request_changes")
-def approvals_request_changes(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    comment = str(args.get("comment") or args.get("reason") or "").strip()
-    if not comment:
-        return ConnectorResult.failure("Say what needs to change — the requester sees this comment.")
-    action, problem = _resolve(scope, args, [ActionStatus.PENDING_APPROVAL])
-    if action is None:
-        return ConnectorResult.failure(problem or "Action not found.")
-    try:
-        returned = actions.request_changes(action.id, settings=scope.settings, comment=comment, ctx=scope.ctx)
-    except Exception as exc:
-        return _decision_error(exc, action, scope, "send back")
-    return ConnectorResult(
-        ok=True,
-        data={"action_id": returned.id, "status": str(returned.status)},
-        summary=f"sent {returned.id} ({returned.title}) back to the requester as a draft with the requested changes",
-    )
-
-
-@effect("approvals_submit")
-def approvals_submit(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Put a saved draft into the approval queue."""
-    action, problem = _resolve(scope, args, [ActionStatus.DRAFT])
-    if action is None:
-        return ConnectorResult.failure(problem or "Action not found.")
-    if action.requested_by != scope.ctx.user_id and not scope.ctx.is_admin:
-        return ConnectorResult.failure(
-            f"Not permitted: {action.id} is someone else's draft. Only its requester or an admin can submit it."
-        )
-    if action.status != ActionStatus.DRAFT:
-        return ConnectorResult.failure(f"{action.id} is {action.status}; only a DRAFT can be submitted for approval.")
-    try:
-        submitted = actions.submit_for_approval(action.id, settings=scope.settings, ctx=scope.ctx)
-    except actions.IllegalTransition as exc:
-        return ConnectorResult.failure(str(exc))
-    return ConnectorResult(
-        ok=True,
-        data={"action_id": submitted.id, "status": str(submitted.status)},
-        summary=(
-            f"submitted {submitted.id} ({submitted.title}) for approval; it is now pending approval "
-            f"by a {_approver_role(scope)}"
-        ),
-    )
-
-
-@effect("approvals_cancel")
-def approvals_cancel(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    action, problem = _resolve(
-        scope, args, [ActionStatus.DRAFT, ActionStatus.PENDING_APPROVAL, ActionStatus.APPROVED, ActionStatus.FAILED]
-    )
-    if action is None:
-        return ConnectorResult.failure(problem or "Action not found.")
-    comment = str(args.get("comment") or args.get("reason") or "").strip() or None
-    try:
-        cancelled = actions.cancel(action.id, comment=comment, ctx=scope.ctx)
-    except actions.NotAnApprover:
-        return ConnectorResult.failure(
-            f"Not permitted: only the requester of {action.id} or an admin can cancel it. Nothing was changed."
-        )
-    except actions.IllegalTransition:
-        return ConnectorResult.failure(f"{action.id} is {action.status} and can no longer be cancelled.")
-    return ConnectorResult(
-        ok=True,
-        data={"action_id": cancelled.id, "status": str(cancelled.status)},
-        summary=f"cancelled {cancelled.id} ({cancelled.title})",
-    )
-
-# ------------------------------------------------------------------------------------------------
-# admin  (bizos/tools/admin.py) - Admin Tool Effects
-# ------------------------------------------------------------------------------------------------
-import secrets
-
-from bizos import admin_ops as ops
-from bizos.control import store as control
-from bizos.types import Role
-
-
-def _failure(exc: ops.AdminError) -> ConnectorResult:
-    return ConnectorResult.failure(f"Not changed: {exc.message}")
-
-
-def _settings(scope: RunScope):
-    return ops.current_settings(scope.ctx)
-
-
-def _list(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if isinstance(value, str):
-        return [p.strip() for p in value.replace("\n", ",").split(",") if p.strip()]
-    return [str(v).strip() for v in value if str(v).strip()]
-
-
-def _user_row(user) -> dict[str, Any]:
-    return {
-        "user_id": user.id,
-        "name": user.display_name,
-        "email": user.email,
-        "roles": sorted(str(r) for r in user.roles),
-        "data_access": sorted(user.data_scopes),
-        "status": user.status,
-    }
-
-
-def _find_user(scope: RunScope, ref: Any):
-    """A user in this client by id, email, email name or display name."""
-    wanted = str(ref or "").strip().casefold()
-    if not wanted:
-        raise ops.AdminError("Say which user — their email or name.")
-    users = control.list_users(scope.ctx.client_id)
-    for match in (
-        lambda u: u.id.casefold() == wanted,
-        lambda u: u.email.casefold() == wanted,
-        lambda u: u.email.split("@")[0].casefold() == wanted,
-        lambda u: (u.display_name or "").casefold() == wanted,
-        lambda u: wanted in (u.display_name or "").casefold() or wanted in u.email.casefold(),
-    ):
-        found = [u for u in users if match(u)]
-        if len(found) == 1:
-            return found[0]
-        if len(found) > 1:
-            names = "; ".join(f"{u.display_name} <{u.email}>" for u in found[:8])
-            raise ops.AdminError(f"More than one user matches {ref!r}; ask which: {names}")
-    raise ops.AdminNotFound(f"No user matching {ref!r} in this workspace")
-
-
-def _temporary_password() -> str:
-    return secrets.token_urlsafe(12)
-
-
-# --------------------------------------------------------------------- reads
-
-
-@effect("admin_workspace_overview")
-def admin_workspace_overview(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.insights import open_alerts
-    from bizos.launch import checklist_summary
-    from bizos.onboarding import get_profile
-    from bizos.pricing import get_rules
-
-    settings = _settings(scope)
-    users = control.list_users(scope.ctx.client_id)
-    launch = checklist_summary(settings)
-    rules = get_rules(settings)
-    profile = get_profile(settings)
-    data = {
-        "company": settings.company_name,
-        "workspace_mode": str(settings.mode),
-        "purchased_domains": sorted(settings.purchased_domains),
-        "enabled_domains": sorted(settings.enabled_domains),
-        "order_dpa_allows": sorted(settings.order_dpa_allows),
-        "llm_baa_covered": settings.llm_baa_covered,
-        "approval_policy": dataclasses.asdict(settings.approval_policy),
-        "risk_policy": dataclasses.asdict(settings.risk_policy),
-        "tool_modes": dict(settings.tool_modes),
-        "users": {"total": len(users), "active": sum(1 for u in users if u.status == "ACTIVE")},
-        "setup": {
-            "configured_at": profile.configured_at,
-            "goals": len(profile.goals),
-            "systems": len(profile.systems),
-            "open_questions": profile.open_questions,
-        },
-        "launch": {"ready": launch["ready"], "pending_items": launch["pending_count"]},
-        "open_alerts": len(open_alerts(settings, scope.ctx)),
-        "pricing": {
-            "configured": rules.get("configured"),
-            "quote_status": rules.get("quote_status"),
-            "customer_price_usd": rules.get("customer_price_usd"),
-        },
-    }
-    return ConnectorResult(ok=True, data=data, summary=f"workspace overview for {settings.company_name}")
-
-
-@effect("admin_list_users")
-def admin_list_users(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.types import DATA_AREAS
-
-    users = control.list_users(scope.ctx.client_id)
-    return ConnectorResult(
-        ok=True,
-        data={
-            "users": [_user_row(u) for u in users],
-            "roles": [str(r) for r in Role],
-            "data_areas": list(DATA_AREAS),
-        },
-        summary=f"{len(users)} user(s) in this workspace",
-    )
-
-
-@effect("admin_get_setup")
-def admin_get_setup(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.onboarding import get_profile
-
-    settings = _settings(scope)
-    profile = get_profile(settings).to_dict()
-    blob = settings.onboarding or {}
-    profile["handoff_at"] = blob.get("handoff_at")
-    profile["handoff_source"] = blob.get("handoff_source")
-    profile["change_orders"] = blob.get("change_orders") or []
-    return ConnectorResult(ok=True, data=profile, summary="first-client setup profile")
-
-
-@effect("admin_list_alerts")
-def admin_list_alerts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.insights import last_scanned, list_alerts, list_baselines, visible_to
-
-    settings = _settings(scope)
-    alerts = [a for a in list_alerts(settings) if visible_to(a, scope.ctx)]
-    return ConnectorResult(
-        ok=True,
-        data={
-            "alerts": alerts,
-            "scanned_at": last_scanned(settings),
-            "baselines": list_baselines(settings),
-            "note": "Directional only — not a full always-on waste engine. No guaranteed ROI.",
-        },
-        summary=f"{len(alerts)} alert(s); {sum(1 for a in alerts if a.get('status', 'open') == 'open')} open",
-    )
-
-
-@effect("admin_launch_checklist")
-def admin_launch_checklist(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.launch import checklist_summary
-
-    summary = checklist_summary(_settings(scope))
-    return ConnectorResult(
-        ok=True,
-        data=summary,
-        summary=(
-            "launch checklist ready for sign-off"
-            if summary["ready"]
-            else f"launch checklist: {summary['pending_count']} item(s) pending"
-        ),
-    )
-
-
-@effect("admin_pricing")
-def admin_pricing(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.pricing import face_scope_config, get_rules, list_consult_quotes
-
-    settings = _settings(scope)
-    return ConnectorResult(
-        ok=True,
-        data={
-            "resale_rules": get_rules(settings),
-            "scope_weights": face_scope_config(settings),
-            "saved_quotes": list_consult_quotes(settings)[:10],
-        },
-        summary="resale rules, consult scope weights and saved quotes",
-    )
-
-
-@effect("admin_list_domains")
-def admin_list_domains(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.domains.packs import PACKS
-
-    settings = _settings(scope)
-    items = [
-        {
-            "domain": p.name,
-            "title": p.title,
-            "purchased": settings.domain_purchased(p.name),
-            "enabled": p.name in settings.enabled_domains,
-            "mode_ceiling": str(p.mode_ceiling) if p.mode_ceiling else None,
-        }
-        for p in PACKS
-    ]
-    return ConnectorResult(ok=True, data=items, summary=f"{len(items)} domain pack(s)")
-
-
-@effect("admin_tool_permissions")
-def admin_tool_permissions(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.rbac import permissions as perms
-    from bizos.rbac.registry import TOOL_SPECS
-
-    query = str(args.get("tool") or args.get("query") or "").strip().casefold()
-    settings = _settings(scope)
-    overrides = perms.load_overrides(scope.ctx, refresh=True)
-    rows = []
-    for spec in TOOL_SPECS:
-        if query and query not in spec.name.casefold() and query not in spec.title.casefold() \
-                and query != spec.category:
-            continue
-        rows.append(
-            {
-                "tool": spec.name,
-                "title": spec.title,
-                "category": spec.category,
-                "write": spec.write,
-                "permissions": {
-                    str(r): str(perms.permission_for_role(spec, r, overrides)) for r in Role
-                },
-                "overridden_roles": sorted(str(r) for r in Role if (spec.name, str(r)) in overrides),
-                "tool_mode": settings.tool_modes.get(spec.name),
-            }
-        )
-    if not query and len(rows) > 40:
-        rows = [
-            {"tool": r["tool"], "write": r["write"], "overridden_roles": r["overridden_roles"],
-             "tool_mode": r["tool_mode"]}
-            for r in rows
-        ]
-    return ConnectorResult(
-        ok=True,
-        data={"tools": rows, "permission_values": ["DENIED", "DRAFT_ONLY", "APPROVE_ONLY",
-                                                     "EXECUTE_AFTER_APPROVAL", "ALLOWED"]},
-        summary=f"{len(rows)} tool(s)" + (f" matching {query!r}" if query else ""),
-    )
-
-
-# --------------------------------------------------------------------- setup
-
-
-_SETUP_FIELDS = (
-    "goals", "systems", "sops", "roles_notes", "access_notes", "autonomy_mode",
-    "enabled_domains", "review_points", "exclusions", "baselines", "assessment",
-)
-
-
-@effect("admin_apply_setup")
-def admin_apply_setup(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Apply first-client setup. Fields left out keep their current values."""
-    from bizos.onboarding import get_profile
-
-    settings = _settings(scope)
-    current = get_profile(settings).to_dict()
-    fields = {k: current.get(k) for k in _SETUP_FIELDS}
-    fields["baselines"] = None
-    # Applying setup also sets the live mode and packs; leaving them out must
-    # not revert a change made since on the Policies or Domains tab.
-    fields["autonomy_mode"] = settings.default_execution_mode
-    fields["enabled_domains"] = list(settings.enabled_domains)
-    for key in ("goals", "systems", "review_points", "exclusions", "enabled_domains"):
-        if args.get(key) is not None:
-            fields[key] = _list(args[key])
-    for key in ("roles_notes", "access_notes", "autonomy_mode"):
-        if args.get(key) is not None:
-            fields[key] = str(args[key])
-    if args.get("sops") is not None:
-        fields["sops"] = [
-            {"title": str(s.get("title") or ""), "content": str(s.get("content") or "")}
-            for s in args["sops"] if isinstance(s, dict) and s.get("title")
-        ]
-    else:
-        # Already-stored SOPs live in memory; re-applying must not write them again.
-        fields["sops"] = []
-    try:
-        result = ops.apply_onboarding(scope.ctx, settings, **fields)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(ok=True, data=result, summary="applied first-client setup")
-
-
-@effect("admin_handoff_assessment")
-def admin_handoff_assessment(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    assessment = args.get("assessment")
-    if not isinstance(assessment, dict):
-        return ConnectorResult.failure("assessment must be a JSON object of the sale/assessment details")
-    try:
-        result = ops.handoff_assessment(scope.ctx, _settings(scope), assessment)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(ok=True, data=result, summary="prefilled setup from the assessment")
-
-
-# ------------------------------------------------------------------ insights
-
-
-@effect("admin_scan_alerts")
-def admin_scan_alerts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.insights import scan_alerts
-
-    items = scan_alerts(client_id=scope.ctx.client_id, settings=_settings(scope), ctx=scope.ctx)
-    open_items = [a for a in items if a.get("status", "open") == "open"]
-    return ConnectorResult(
-        ok=True,
-        data=items,
-        summary=f"scanned: {len(open_items)} open alert(s) of {len(items)} detected (directional only)",
-    )
-
-
-@effect("admin_dismiss_alert")
-def admin_dismiss_alert(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    alert_id = str(args.get("alert_id") or "").strip()
-    if not alert_id:
-        return ConnectorResult.failure("Say which alert — call admin_list_alerts for ids.")
-    try:
-        ops.dismiss_alert(scope.ctx, _settings(scope), alert_id)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(ok=True, data={"alert_id": alert_id}, summary=f"dismissed alert {alert_id}")
-
-
-@effect("admin_set_baselines")
-def admin_set_baselines(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Add or update before/after baselines; others are kept unless removed."""
-    from bizos.insights import list_baselines
-
-    settings = _settings(scope)
-    keep = ("id", "workflow", "metric", "before_value", "after_value", "unit", "notes")
-    current = [{k: b.get(k) for k in keep if b.get(k) is not None} for b in list_baselines(settings)]
-    remove = {str(r).casefold() for r in _list(args.get("remove"))}
-
-    def key(row: dict[str, Any]) -> str:
-        return str(row.get("id") or f"{row.get('workflow')}|{row.get('metric')}").casefold()
-
-    def label(row: dict[str, Any]) -> str:
-        return str(row.get("workflow") or "").casefold()
-
-    merged = {key(b): b for b in current if key(b) not in remove and label(b) not in remove}
-    for row in args.get("items") or []:
-        if not isinstance(row, dict):
-            continue
-        clean = {k: row[k] for k in keep if row.get(k) not in (None, "")}
-        existing = next(
-            (k for k, b in merged.items() if clean.get("id") and b.get("id") == clean["id"]
-             or (b.get("workflow"), b.get("metric")) == (clean.get("workflow"), clean.get("metric"))),
-            None,
-        )
-        if existing:
-            merged[existing] = {**merged[existing], **clean}
-        else:
-            merged[key(clean)] = clean
-    try:
-        saved = ops.save_baselines(scope.ctx, settings, list(merged.values()))
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True, data=saved, summary=f"{len(saved)} baseline(s) saved (directional before/after only)"
-    )
-
-
-# -------------------------------------------------------------------- launch
-
-
-@effect("admin_mark_launch_item")
-def admin_mark_launch_item(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    item_id = str(args.get("item_id") or "").strip()
-    if not item_id:
-        return ConnectorResult.failure("Say which checklist item — call admin_launch_checklist for ids.")
-    try:
-        result = ops.mark_launch_item(
-            scope.ctx,
-            _settings(scope),
-            item_id=item_id,
-            status=str(args.get("status") or "done"),
-            waive_reason=str(args.get("waive_reason") or ""),
-        )
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(ok=True, data=result, summary=f"launch item {item_id} marked {args.get('status') or 'done'}")
-
-
-@effect("admin_launch_sign_off")
-def admin_launch_sign_off(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    try:
-        result = ops.launch_sign_off(scope.ctx, _settings(scope), force=bool(args.get("force")))
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(ok=True, data=result, summary="launch signed off")
-
-
-# ------------------------------------------------------------------- pricing
-
-
-_RULE_FIELDS = ("customer_price_usd", "cepoch_cost_usd", "margin_percent", "quote_status", "notes", "scope_rules")
-
-
-@effect("admin_set_resale_rules")
-def admin_set_resale_rules(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    rules = {k: args[k] for k in _RULE_FIELDS if args.get(k) is not None}
-    if not rules:
-        return ConnectorResult.failure("Give at least one value to change (price, cost, margin, status, notes or scope weights).")
-    try:
-        saved = ops.save_resale_rules(scope.ctx, _settings(scope), rules)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    note = " — numbers changed after confirmation, so the quote needs reconfirming" if saved.get("reconfirm_needed") else ""
-    return ConnectorResult(ok=True, data=saved, summary=f"resale rules saved ({saved.get('quote_status')}){note}")
-
-
-@effect("admin_consult_quote")
-def admin_consult_quote(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    try:
-        result = ops.consult_quote(
-            scope.ctx,
-            _settings(scope),
-            domains=_list(args.get("domains")),
-            autonomy=str(args.get("autonomy") or "WAIT_FOR_APPROVAL"),
-            integrations=int(args.get("integrations") or 0),
-            discount_percent=float(args.get("discount_percent") or 0),
-            label=str(args.get("label") or ""),
-            save=bool(args.get("save")),
-        )
-    except (TypeError, ValueError):
-        return ConnectorResult.failure("integrations must be a whole number and discount_percent a number")
-    except ops.AdminError as exc:
-        return _failure(exc)
-    quote = result["quote"]
-    return ConnectorResult(
-        ok=True,
-        data=result,
-        summary=(
-            f"consult quote {quote.get('customer_price_usd')} USD"
-            + (f", saved as {result['saved']['id']}" if result.get("saved") else ", not saved")
-        ),
-    )
-
-
-# --------------------------------------------------------------------- users
-
-
-@effect("admin_create_user")
-def admin_create_user(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    password = _temporary_password()
-    try:
-        user = ops.create_user(
-            scope.ctx,
-            email=str(args.get("email") or ""),
-            password=password,
-            display_name=str(args.get("display_name") or args.get("name") or ""),
-            roles=_list(args.get("roles")) or ["VIEWER"],
-            data_scopes=_list(args.get("data_access") or args.get("data_scopes")),
-        )
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True,
-        data={**_user_row(user), "temporary_password": password},
-        summary=f"created {user.email} as {', '.join(sorted(str(r) for r in user.roles))}",
-    )
-
-
-@effect("admin_set_user_roles")
-def admin_set_user_roles(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    try:
-        user = _find_user(scope, args.get("user"))
-        roles = ops.parse_roles(_list(args.get("roles")))
-        if user.id == scope.ctx.user_id and Role.ADMIN not in roles:
-            return ConnectorResult.failure(
-                "Not changed: you cannot remove your own Admin role from chat. Ask another admin."
-            )
-        updated = ops.set_roles(scope.ctx, user.id, [str(r) for r in roles])
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True,
-        data=_user_row(updated),
-        summary=f"{updated.email} now holds {', '.join(sorted(str(r) for r in updated.roles))}",
-    )
-
-
-@effect("admin_set_user_access")
-def admin_set_user_access(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Grant or revoke restricted data areas; ``data_access`` replaces, add/remove edit."""
-    try:
-        user = _find_user(scope, args.get("user"))
-        if args.get("data_access") is not None:
-            wanted = set(_list(args.get("data_access")))
-        else:
-            wanted = set(user.data_scopes)
-        wanted |= set(_list(args.get("add")))
-        wanted -= set(_list(args.get("remove")))
-        updated = ops.set_scopes(scope.ctx, user.id, sorted(s.casefold() for s in wanted))
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True,
-        data=_user_row(updated),
-        summary=f"{updated.email} data access: {', '.join(sorted(updated.data_scopes)) or 'general only'}",
-    )
-
-
-@effect("admin_set_user_status")
-def admin_set_user_status(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    raw = str(args.get("status") or "").strip().upper()
-    status = {"DISABLE": "SUSPENDED", "DISABLED": "SUSPENDED", "SUSPEND": "SUSPENDED",
-              "ENABLE": "ACTIVE", "ENABLED": "ACTIVE", "REACTIVATE": "ACTIVE"}.get(raw, raw)
-    try:
-        user = _find_user(scope, args.get("user"))
-        if user.id == scope.ctx.user_id and status != "ACTIVE":
-            return ConnectorResult.failure("Not changed: you cannot suspend your own account from chat.")
-        updated = ops.set_status(scope.ctx, user.id, status)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(ok=True, data=_user_row(updated), summary=f"{updated.email} is now {updated.status}")
-
-
-@effect("admin_reset_password")
-def admin_reset_password(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    password = _temporary_password()
-    try:
-        user = _find_user(scope, args.get("user"))
-        ops.set_password(scope.ctx, user.id, password)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True,
-        data={"email": user.email, "temporary_password": password},
-        summary=f"reset the password for {user.email}",
-    )
-
-
-# ------------------------------------------------------------------ policies
-
-
-_POLICY_FIELDS = (
-    "default_execution_mode", "order_dpa_allows", "llm_baa_covered", "approval_policy",
-    "risk_policy", "memory_policy", "retention_policy", "timezone",
-)
-
-
-@effect("admin_update_settings")
-def admin_update_settings(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    changes: dict[str, Any] = {k: args[k] for k in _POLICY_FIELDS if args.get(k) is not None}
-    if "order_dpa_allows" in changes:
-        changes["order_dpa_allows"] = [s.casefold() for s in _list(changes["order_dpa_allows"])]
-    for key in ("approval_policy", "risk_policy", "memory_policy", "retention_policy"):
-        if key in changes and not isinstance(changes[key], dict):
-            return ConnectorResult.failure(f"{key} must be an object of the fields to change")
-    if not changes:
-        return ConnectorResult.failure("Say which setting to change.")
-    try:
-        updated = ops.update_settings(scope.ctx, _settings(scope), changes)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    shown = {k: updated.to_dict().get(k) for k in changes}
-    return ConnectorResult(ok=True, data=shown, summary=f"updated {', '.join(sorted(changes))}")
-
-
-@effect("admin_toggle_domain")
-def admin_toggle_domain(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    domain = str(args.get("domain") or "").strip().casefold()
-    enabled = bool(args.get("enabled", True))
-    try:
-        updated = ops.toggle_domain(scope.ctx, _settings(scope), domain, enabled)
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True,
-        data={"domain": domain, "enabled": enabled, "enabled_domains": updated.enabled_domains},
-        summary=f"{domain} pack {'enabled' if enabled else 'disabled'}",
-    )
-
-
-@effect("admin_record_change_order")
-def admin_record_change_order(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    domain = str(args.get("domain") or "").strip().casefold()
-    try:
-        updated = ops.record_change_order(
-            scope.ctx,
-            _settings(scope),
-            domain,
-            reference=str(args.get("reference") or ""),
-            note=str(args.get("note") or ""),
-            enable=bool(args.get("enable", True)),
-        )
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True,
-        data={"purchased_domains": updated.purchased_domains, "enabled_domains": updated.enabled_domains},
-        summary=f"recorded change order {args.get('reference')} adding the {domain} pack",
-    )
-
-
-# ---------------------------------------------------------------------- tools
-
-
-def _is_default(value: Optional[str]) -> bool:
-    return str(value or "").strip().casefold() in {"", "default", "none", "clear", "reset", "inherit"}
-
-
-@effect("admin_set_tool_permission")
-def admin_set_tool_permission(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    tool = str(args.get("tool") or "").strip()
-    role = str(args.get("role") or "").strip()
-    permission = args.get("permission")
-    try:
-        if _is_default(permission):
-            ops.clear_tool_permission(scope.ctx, tool=tool, role=role)
-            return ConnectorResult(
-                ok=True, data={"tool": tool, "role": role.upper(), "permission": "default"},
-                summary=f"{tool} for {role.upper()} reset to the registry default",
-            )
-        result = ops.set_tool_permission(scope.ctx, tool=tool, role=role, permission=str(permission))
-    except ops.AdminError as exc:
-        return _failure(exc)
-    return ConnectorResult(
-        ok=True, data=result, summary=f"{tool} for {result['role']} is now {result['permission']}"
-    )
-
-
-@effect("admin_set_tool_mode")
-def admin_set_tool_mode(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    tool = str(args.get("tool") or "").strip()
-    mode = args.get("mode")
-    try:
-        updated = ops.update_settings(
-            scope.ctx, _settings(scope), {"tool_modes": {tool: None if _is_default(mode) else str(mode)}}
-        )
-    except ops.AdminError as exc:
-        return _failure(exc)
-    current = updated.tool_modes.get(tool)
-    return ConnectorResult(
-        ok=True,
-        data={"tool": tool, "mode": current},
-        summary=f"{tool} now {'runs in ' + current + ' mode' if current else 'follows the workspace mode'}",
-    )
-
-# ------------------------------------------------------------------------------------------------
-# domains  (bizos/tools/domains.py) - Domain-oriented tools (FB-035)
-# ------------------------------------------------------------------------------------------------
-
-from bizos.memory import store as memory
-from bizos.tools.base import RunScope, effect, precheck
-
-
-def _hit(i: Any) -> dict:
-    return {
-        "id": i.id,
-        "key": i.memory_key,
-        "title": i.title,
-        "content": i.current.content if i.current else "",
-        "category": str(i.category),
-        "label": i.label,
-        "access_area": i.access_area,
-    }
-
-
-def _memory_hits(
-    scope: RunScope,
-    query: str,
-    *,
-    tags: list[str],
-    areas: tuple[str, ...] = (),
-    limit: int = 5,
-) -> list[dict]:
-    """Domain memory for a query.
-
-    An item belongs to the domain when it carries one of ``tags`` *or* sits in
-    one of ``areas`` — seeded or user-recorded facts do not always carry tags,
-    and a finance-area fact is finance content whatever it is tagged.
-    Query matches rank first; the domain's other content follows.
-    """
-    wanted = {t.casefold() for t in tags}
-
-    def in_domain(i: Any) -> bool:
-        if i.access_area and i.access_area in areas:
-            return True
-        return bool({t.casefold() for t in (i.tags or [])} & wanted)
-
-    matched = memory.search(query, authoritative_only=True, limit=max(limit * 3, 15), ctx=scope.ctx)
-    domain_matched = [i for i in matched if in_domain(i)]
-    everything = memory.search("", authoritative_only=True, limit=200, ctx=scope.ctx)
-    seen = {i.id for i in domain_matched}
-    rest = [i for i in everything if i.id not in seen and in_domain(i)]
-    ordered = domain_matched + rest
-    if not ordered:
-        ordered = matched
-    return [_hit(i) for i in ordered[:limit]]
-
-
-@effect("strategy_list_priorities")
-def strategy_list_priorities(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """List recorded strategic priorities / goals from org memory."""
-    hits = _memory_hits(
-        scope,
-        str(args.get("query") or "priority goal objective"),
-        tags=["strategy", "goal"],
-        areas=("exec",),
-    )
-    return ConnectorResult(ok=True, data=hits, summary=f"{len(hits)} strategy memory item(s)")
-
-
-@effect("strategy_record_option")
-def strategy_record_option(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Record a strategic option or recommendation for human decision (not execution)."""
-    title = str(args.get("title") or "Strategic option").strip()
-    content = str(args.get("content") or args.get("option") or "").strip()
-    if not content:
-        return ConnectorResult.failure("content is required")
-    item = memory.put(
-        category=MemoryCategory.DECISION,
-        memory_key=str(args.get("key") or "").strip() or None,
-        title=title,
-        content=content,
-        tags=["strategy", "option"],
-        source_type=SourceType.MANUAL,
-        attributes={
-            "status": "OPTION",
-            "pros": args.get("pros"),
-            "cons": args.get("cons"),
-            "recommended": bool(args.get("recommended", False)),
-        },
-        approval_status=ApprovalStatus.PENDING,
-        settings=scope.settings,
-        ctx=scope.ctx,
-    )
-    return ConnectorResult(
-        ok=True,
-        data={"id": item.id, "title": item.title},
-        summary=f"Recorded strategic option {item.title!r} for human review",
-    )
-
-
-@effect("finance_lookup_policy")
-def finance_lookup_policy(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Look up recorded finance policies (discounts, refunds, payment terms)."""
-    query = str(args.get("query") or "finance policy pricing payment").strip()
-    hits = _memory_hits(
-        scope, query, tags=["finance", "pricing", "payment", "discount"], areas=("finance",)
-    )
-    return ConnectorResult(
-        ok=True,
-        data=hits,
-        summary=f"{len(hits)} finance policy hit(s) — figures are recorded data, not advice",
-    )
-
-
-@effect("finance_list_pending_billables")
-def finance_list_pending_billables(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """List CRM deals staged as pending_invoice for a customer (finance-scoped)."""
-    from sqlalchemy import text
-
-    from bizos.tenancy.registry import readonly_connection
-
-    customer = str(args.get("customer") or args.get("company") or "").strip()
-    limit = max(1, min(int(args.get("limit") or 50), 100))
-    clauses = ["stage = :stage"]
-    params: dict[str, Any] = {"stage": "pending_invoice", "limit": limit}
-    if customer:
-        clauses.append("(d.name ILIKE :q OR co.name ILIKE :q)")
-        params["q"] = f"%{customer}%"
-    where = " AND ".join(clauses)
-    with readonly_connection(scope.ctx) as conn:
-        rows = conn.execute(
-            text(
-                "SELECT d.id, d.name, d.amount, d.currency, d.stage, co.name AS company "
-                "FROM crm_deals d "
-                "LEFT JOIN crm_companies co ON co.id = d.company_id "
-                f"WHERE {where} ORDER BY d.updated_at DESC LIMIT :limit"
-            ),
-            params,
-        ).fetchall()
-    items = [
-        {
-            "deal_id": r.id,
-            "name": r.name,
-            "company": r.company,
-            "amount": float(r.amount or 0),
-            "currency": r.currency or "USD",
-            "stage": r.stage,
-        }
-        for r in rows
-    ]
-    total = sum(i["amount"] for i in items)
-    label = customer or "all customers"
-    return ConnectorResult(
-        ok=True,
-        data={"customer": customer or None, "items": items, "total": total},
-        summary=f"{len(items)} pending billable(s) for {label} totaling {total:,.2f}",
-    )
-
-
-@precheck("finance_draft_invoice")
-def _draft_invoice_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
-    """No empty invoices and no duplicate requests reach the approval queue."""
-    from bizos.actions import store as actions
-    from bizos.types import ActionStatus
-
-    customer = str(args.get("customer") or args.get("company") or "").strip()
-    if not customer:
-        return "customer is required — name the customer to invoice."
-    pending = actions.list_actions(
-        statuses=[ActionStatus.PENDING_APPROVAL],
-        tool="finance_draft_invoice",
-        limit=50,
-        ctx=scope.ctx,
-    )
-    for action in pending:
-        queued = str((action.payload or {}).get("customer") or "")
-        if queued and (queued.casefold() in customer.casefold() or customer.casefold() in queued.casefold()):
-            return (
-                f"An invoice for {queued} is already awaiting approval ({action.id}). "
-                "Nothing new was queued; an approver needs to act on the existing request."
-            )
-    listed = finance_list_pending_billables(scope, {"customer": customer})
-    if not (listed.data or {}).get("items"):
-        return (
-            f"There are no pending billables for {customer}, so there is nothing to invoice. "
-            "Nothing was queued. Any earlier billables may already be on a draft invoice — "
-            "use finance_list_invoices to check."
-        )
-    # Snapshot what the approver will see, so the card stays accurate even after
-    # the billables move off pending_invoice.
-    data = listed.data or {}
-    args["_content_snapshot"] = {
-        "kind": "invoice",
-        "customer": customer,
-        "total": data.get("total"),
-        "line_items": data.get("items") or [],
-    }
-    return None
-
-
-@effect("finance_list_invoices")
-def finance_list_invoices(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """List invoices (including drafts) for a customer from the accounting ledger."""
-    from sqlalchemy import text
-
-    from bizos.tenancy.registry import readonly_connection
-
-    customer = str(args.get("customer") or args.get("company") or "").strip()
-    params: dict[str, Any] = {"limit": max(1, min(int(args.get("limit") or 20), 100))}
-    where = ""
-    if customer:
-        where = "WHERE customer_name ILIKE :q"
-        params["q"] = f"%{customer}%"
-    with readonly_connection(scope.ctx) as conn:
-        rows = conn.execute(
-            text(
-                "SELECT id, number, customer_name, status, currency, total, balance_due "
-                f"FROM accounting_invoices {where} ORDER BY number DESC LIMIT :limit"
-            ),
-            params,
-        ).fetchall()
-    items = [
-        {
-            "invoice_id": r.id,
-            "number": r.number,
-            "customer": r.customer_name,
-            "status": r.status,
-            "currency": r.currency,
-            "total": float(r.total or 0),
-            "balance_due": float(r.balance_due or 0),
-        }
-        for r in rows
-    ]
-    return ConnectorResult(
-        ok=True,
-        data=items,
-        summary=f"{len(items)} invoice(s) for {customer or 'all customers'}",
-    )
-
-
-@effect("finance_draft_invoice")
-def finance_draft_invoice(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Draft an invoice from pending billables (runs only after policy/approval)."""
-    from sqlalchemy import text
-
-    from bizos.tenancy.registry import workspace_connection
-    from bizos.util.ids import new_id
-
-    customer = str(args.get("customer") or args.get("company") or "").strip()
-    if not customer:
-        return ConnectorResult.failure("customer is required")
-
-    # Reuse the list effect so the draft always matches what finance could see.
-    listed = finance_list_pending_billables(
-        scope, {"customer": customer, "limit": int(args.get("limit") or 50)}
-    )
-    items = list((listed.data or {}).get("items") or [])
-    if not items:
-        return ConnectorResult.failure(f"No pending billables for {customer!r}")
-
-    total = float(sum(float(i.get("amount") or 0) for i in items))
-    invoice_id = new_id("inv")
-    number = f"DRAFT-{invoice_id[-8:].upper()}"
-    with workspace_connection(scope.ctx) as conn:
-        conn.execute(
-            text(
-                "INSERT INTO accounting_invoices "
-                "(id, number, customer_name, status, currency, total, balance_due) "
-                "VALUES (:i, :n, :c, 'draft', 'USD', :t, :t)"
-            ),
-            {"i": invoice_id, "n": number, "c": customer, "t": total},
-        )
-        for item in items:
-            deal_id = item.get("deal_id")
-            if not deal_id:
-                continue
-            conn.execute(
-                text(
-                    "UPDATE crm_deals SET stage = 'invoiced_draft', updated_at = NOW() "
-                    "WHERE id = :i AND stage = 'pending_invoice'"
-                ),
-                {"i": deal_id},
-            )
-    return ConnectorResult(
-        ok=True,
-        data={
-            "invoice_id": invoice_id,
-            "number": number,
-            "customer": customer,
-            "status": "draft",
-            "total": total,
-            "line_items": items,
-        },
-        summary=f"Draft invoice {number} for {customer} totaling {total:,.2f} USD",
-    )
-
-
-def _find_hr_record(scope: RunScope, *, key: str, name: str, prefix: str, default: str) -> Any:
-    """A job opening or resume by exact key, else by name within HR memory."""
-    if key:
-        item = memory.get_by_key(MemoryCategory.FACT, key, ctx=scope.ctx)
-        if item is not None:
-            return item
-    if name:
-        for item in memory.search(name, authoritative_only=True, limit=20, ctx=scope.ctx):
-            if (item.memory_key or "").startswith(prefix):
-                return item
-    return memory.get_by_key(MemoryCategory.FACT, default, ctx=scope.ctx)
-
-
-@effect("hr_match_candidate")
-def hr_match_candidate(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Compare a resume against a recorded job opening (HR-scoped; not a hiring decision)."""
-    resume_text = str(args.get("resume_text") or "").strip()
-    opening = _find_hr_record(
-        scope,
-        key=str(args.get("opening_key") or "").strip(),
-        name=str(args.get("opening") or args.get("role") or args.get("job") or "").strip(),
-        prefix="job_opening",
-        default="job_opening_ops_coordinator",
-    )
-    if opening is None or not opening.current:
-        return ConnectorResult.failure("No matching job opening is recorded in HR memory")
-
-    if resume_text:
-        resume_body = resume_text
-        resume_title = "Uploaded resume"
-        resume_key = None
-    else:
-        resume = _find_hr_record(
-            scope,
-            key=str(args.get("resume_key") or "").strip(),
-            name=str(args.get("candidate_name") or args.get("candidate") or args.get("name") or "").strip(),
-            prefix="candidate_resume",
-            default="candidate_resume_jordan_lee",
-        )
-        if resume is None or not resume.current:
-            return ConnectorResult.failure("No matching candidate resume is recorded in HR memory")
-        resume_body = resume.current.content
-        resume_title = resume.title
-        resume_key = resume.memory_key
-
-    must, nice = _requirements(opening.current.content)
-    must_met = [r for r in must if _requirement_met(r, resume_body)]
-    nice_met = [r for r in nice if _requirement_met(r, resume_body)]
-    # Must-haves carry the decision; nice-to-haves only nudge it.
-    score = round(
-        80.0 * len(must_met) / max(len(must), 1) + 20.0 * len(nice_met) / max(len(nice), 1)
-        if nice
-        else 100.0 * len(must_met) / max(len(must), 1),
-        1,
-    )
-    applicable = len(must_met) == len(must) or score >= 70.0
-    missing = [r for r in must if r not in must_met] + [
-        f"{r} (nice-to-have)" for r in nice if r not in nice_met
-    ]
-    verdict = "Likely fit" if applicable else "Weak fit"
-    return ConnectorResult(
-        ok=True,
-        data={
-            "opening": {"key": opening.memory_key, "title": opening.title},
-            "resume": {"key": resume_key, "title": resume_title},
-            "match_score": score,
-            "applicable": applicable,
-            "must_haves_met": must_met,
-            "must_haves_total": len(must),
-            "nice_to_haves_met": nice_met,
-            "missing": missing,
-            "note": "Assistive comparison only — hiring decision stays with a human.",
-        },
-        summary=(
-            f"{verdict} vs {opening.title}: {len(must_met)}/{len(must)} must-haves met, "
-            f"{len(nice_met)}/{len(nice)} nice-to-haves (score {score}%). "
-            f"Missing: {', '.join(missing) or 'nothing'}. Assistive only — a human decides."
-        ),
-    )
-
-
-_REQ_STOP = frozenset(
-    "the and for with that this from have must role years year plus basics basic "
-    "experience strong good ability".split()
-)
-
-
-def _stem(word: str) -> str:
-    """Crude stem so "coordination" matches "coordinator" and "planning" matches "plan"."""
-    return word[:6] if len(word) > 6 else word
-
-
-def _requirements(opening: str) -> tuple[list[str], list[str]]:
-    """Must-have and nice-to-have lines from an opening's text."""
-    import re
-
-    def section(label: str) -> list[str]:
-        m = re.search(label + r"\s*:\s*(.+?)(?:\.\s+[A-Z][\w-]*\s*:|$)", opening, re.I | re.S)
-        if not m:
-            return []
-        return [p.strip(" .") for p in re.split(r",|;", m.group(1)) if p.strip(" .")]
-
-    must = section(r"must[- ]haves?")
-    nice = section(r"nice[- ]to[- ]haves?")
-    if not must:
-        must = [p.strip(" .") for p in re.split(r"[.,;]", opening) if len(p.strip()) > 3]
-    return must, nice
-
-
-def _requirement_met(requirement: str, resume: str) -> bool:
-    import re
-
-    text_ = resume.casefold()
-    resume_stems = {_stem(w) for w in re.findall(r"[a-z0-9+]+", text_)}
-    words = [
-        w for w in re.findall(r"[a-z]+", requirement.casefold()) if len(w) > 2 and w not in _REQ_STOP
-    ]
-    if not words:
-        return False
-    # "No SQL" in a resume is an explicit gap, not a match.
-    for w in words:
-        if re.search(rf"\bno {re.escape(w)}", text_):
-            return False
-    years = re.search(r"(\d+)\+?\s*years?", requirement.casefold())
-    if years:
-        have = [int(n) for n in re.findall(r"(\d+)\+?\s*years?", text_)]
-        if not have or max(have) < int(years.group(1)):
-            return False
-    hits = sum(1 for w in words if _stem(w) in resume_stems)
-    return hits * 2 >= len(words)
-
-
-@effect("finance_propose_adjustment")
-def finance_propose_adjustment(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Propose a financial adjustment for licensed human approval (never auto-runs)."""
-    # Effect only runs after approval; here we just acknowledge the payload.
-    return ConnectorResult(
-        ok=True,
-        data={
-            "customer": args.get("customer"),
-            "amount": args.get("amount"),
-            "reason": args.get("reason"),
-            "kind": args.get("kind") or "adjustment",
-        },
-        summary=(
-            f"Recorded finance adjustment proposal for {args.get('customer')!r} "
-            f"amount={args.get('amount')!r} (human-approved)"
-        ),
-    )
-
-
-@effect("brand_get_voice")
-def brand_get_voice(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Retrieve brand voice / messaging guidelines from org memory."""
-    hits = _memory_hits(scope, str(args.get("query") or "brand voice tone messaging"), tags=["brand", "voice"])
-    return ConnectorResult(ok=True, data=hits, summary=f"{len(hits)} brand guideline(s)")
-
-
-@effect("legal_find_clause")
-def legal_find_clause(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Find recorded contract/clause summaries — never a legal conclusion."""
-    query = str(args.get("query") or "").strip()
-    if not query:
-        return ConnectorResult.failure("query is required")
-    hits = _memory_hits(scope, query, tags=["legal", "contract", "clause"], areas=("legal",))
-    return ConnectorResult(
-        ok=True,
-        data=hits,
-        summary=f"{len(hits)} clause/summary hit(s) — hand judgment to counsel",
-    )
-
-
-@effect("legal_flag_for_counsel")
-def legal_flag_for_counsel(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Escalate a legal question to human counsel (always requires approval)."""
-    question = str(args.get("question") or "").strip()
-    if not question:
-        return ConnectorResult.failure("question is required")
-    item = memory.put(
-        category=MemoryCategory.DECISION,
-        title=f"Legal escalation: {question[:80]}",
-        content=question,
-        tags=["legal", "escalation"],
-        source_type=SourceType.MANUAL,
-        attributes={
-            "status": "NEEDS_COUNSEL",
-            "context": args.get("context"),
-            "urgency": args.get("urgency") or "normal",
-        },
-        settings=scope.settings,
-        ctx=scope.ctx,
-    )
-    return ConnectorResult(
-        ok=True,
-        data={"id": item.id, "question": question},
-        summary="Flagged for human counsel",
-    )
-
-
-@effect("n8n_trigger_webhook")
-def n8n_trigger_webhook(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """Call the client's n8n webhook after policy/approval (FB-040)."""
-    event = str(args.get("event") or args.get("workflow") or "bizos.event").strip()
-    payload = args.get("payload") if isinstance(args.get("payload"), dict) else {
-        k: v for k, v in args.items() if k not in {"event", "workflow", "payload"}
-    }
-    connector = get_connector("n8n", ctx=scope.ctx)
-    return connector.trigger(  # type: ignore[attr-defined]
-        event=event,
-        payload=payload or {},
-        workflow=str(args.get("workflow") or ""),
-    )
-
-# ------------------------------------------------------------------------------------------------
-# youtube  (bizos/tools/youtube.py) - YouTube tool effects (read-only, the user's own Composio connection).
-# ------------------------------------------------------------------------------------------------
-
-
-
-def _youtube(scope: RunScope):
-    return get_connector("youtube", ctx=scope.ctx, owner_user_id=scope.on_behalf_of)
-
-
-def _ids(args: dict[str, Any]) -> list[str]:
-    raw = args.get("video_ids") or args.get("video_id") or []
-    if isinstance(raw, str):
-        return [part.strip() for part in raw.split(",") if part.strip()]
-    return [str(item).strip() for item in raw if str(item).strip()]
-
-
-@effect("youtube_search_videos")
-def youtube_search_videos(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _youtube(scope).search_videos(
-        str(args.get("query", "")), limit=int(args.get("limit", 5)), order=args.get("order")
-    )
-
-
-@effect("youtube_my_channel")
-def youtube_my_channel(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _youtube(scope).my_channel()
-
-
-@effect("youtube_my_videos")
-def youtube_my_videos(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _youtube(scope).my_videos(limit=int(args.get("limit", 10)))
-
-
-@effect("youtube_video_details")
-def youtube_video_details(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _youtube(scope).video_details(_ids(args))
-
-
-@effect("youtube_video_comments")
-def youtube_video_comments(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _youtube(scope).video_comments(
-        str(args.get("video_id", "")),
-        limit=int(args.get("limit", 20)),
-        order=str(args.get("order", "relevance")),
-    )
-
+from typing import Any, Callable, Optional
 
 ####################################################################################################
 # PART 2 - CAMPAIGN HELPERS (load people/campaigns, who is already in a campaign, send through Instantly)
@@ -2691,11 +384,28 @@ def check_people(emails: list[str]) -> list[PersonStatus]:
         db.close()
 
 
-def stop_for_move(db: Session, client, link_id) -> None:
-    """Stop one person in their old campaign. Keeps history, deletes nothing.
+def _instantly_lead_id(client, link) -> str:
+    """The lead's id in Instantly: the saved one, else look it up by campaign and email."""
+    if link.instantly_lead_id:
+        return str(link.instantly_lead_id)
+    email = (link.prospect.email if link.prospect else "") or ""
+    cid = link.campaign.instantly_campaign_id if link.campaign else ""
+    if not (email and cid):
+        return ""
+    data = client.list_leads({"campaign": cid, "search": email, "limit": 20})
+    for item in data.get("items") or []:
+        if str(item.get("email") or "").lower() == email.lower():
+            return str(item.get("id") or "")
+    return ""
 
-    Instantly first, then local: if Instantly fails, local state is untouched and the person
-    is still (correctly) shown as active there.
+
+def stop_for_move(db: Session, client, link_id) -> None:
+    """Take one person out of their old campaign so they appear only in the new one.
+
+    Instantly first: the lead is deleted from the old campaign (not labelled "Not interested"),
+    which also cancels anything still scheduled for them there. Only after that succeeds is the
+    local link removed. If Instantly fails, nothing local changes and the person is still
+    (correctly) shown as active there. The person, their other campaigns and the audit log stay.
     """
     link = db.scalar(
         select(CampaignProspect)
@@ -2705,12 +415,23 @@ def stop_for_move(db: Session, client, link_id) -> None:
     if link is None:
         return
     try:
-        stop_instantly_lead_outreach(client, campaign=link.campaign, link=link)
+        lead_id = _instantly_lead_id(client, link)
+        if lead_id:
+            try:
+                client._request("DELETE", f"/leads/{lead_id}", json={})
+            except InstantlyError as exc:
+                if getattr(exc, "status_code", None) != 404:  # 404 = already gone
+                    raise
     except InstantlyError as exc:
-        raise StopError(str(exc) or "Instantly did not accept the stop request.") from exc
-    link.outreach_status = OutreachStatus.STOPPED
-    db.add(link)
-    db.commit()
+        raise StopError(str(exc) or "Instantly did not accept the request to remove the lead.") from exc
+    try:
+        db.delete(link)
+        db.commit()
+    except Exception:  # noqa: BLE001  - could not remove locally: keep the record, but make it inactive
+        db.rollback()
+        link.outreach_status = OutreachStatus.STOPPED
+        db.add(link)
+        db.commit()
 
 # ------------------------------------------------------------------------------------------------
 # fulfill  (app/assistant/fulfill.py) - Create the approved campaign and hand the email to Instantly.
@@ -2814,8 +535,20 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
         CampaignActivationService(db).save_sending_accounts(campaign.id, accounts)
         prospects = ProspectService(db)
         people = []
+        fields_by_email = {
+            str(row.get("email") or "").strip().lower(): row
+            for row in parsed.get("people_fields") or []
+        }
         for email in recipients:
-            person = _person(db, prospects, email, stated_name)
+            row = fields_by_email.get(email.lower()) or {}
+            first = str(row.get("first_name") or "").strip()
+            last = str(row.get("last_name") or "").strip()
+            if row.get("first_is_fallback"):
+                first = ""
+            own_name = " ".join(part for part in (first, last) if part)
+            if not own_name and len(recipients) == 1:
+                own_name = stated_name
+            person = _person(db, prospects, email, own_name)
             people.append(person)
             if person.approval_status != ProspectApprovalStatus.APPROVED:
                 prospects.bulk_approve([person.id])
@@ -2826,15 +559,26 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
                 if "already attached" in exc.message:
                     continue
                 raise FulfillError(exc.message, campaign_id=campaign_id) from exc
-        template_subject, template_body = _template_copy(
-            subject,
-            body,
-            people,
-            assessment_url=(campaigns.settings.public_base_url or "").strip(),
-            placeholder=campaigns.settings.assessment_url_placeholder,
+        _apply_person_fields(db, campaign.id, people, parsed.get("people_fields"))
+        if parsed.get("email_template"):
+            template_subject, template_body = finalize_template(subject, body)
+        else:
+            template_subject, template_body = _template_copy(
+                subject,
+                body,
+                people,
+                assessment_url=(campaigns.settings.public_base_url or "").strip(),
+                placeholder=campaigns.settings.assessment_url_placeholder,
+            )
+        keep_saved_email = parsed.get("email_scope") == "keep" and not progress.created_here
+        if not keep_saved_email:
+            _write_initial(campaigns, campaign, template_subject, template_body)
+        companies = (
+            [str(f.get("company") or "").strip() for f in parsed.get("people_fields") or []]
+            if parsed.get("people_fields")
+            else [(person.company or "").strip() for person in people]
         )
-        _write_initial(campaigns, campaign, template_subject, template_body)
-        if people and all(not (person.company or "").strip() for person in people):
+        if people and all(not c for c in companies):
             _drop_company_placeholder(db, campaign.id)
         InstantlyCampaignSyncService(db).sync(campaign.id)
 
@@ -3014,6 +758,40 @@ def _template_copy(
     return text_subject, text_body
 
 
+def _apply_person_fields(db, campaign_id, people: list, final_fields: list | None) -> None:
+    """Save, on each person's link to THIS campaign, any name/company that differs from their record.
+    Lead sync reads these, so what the user typed for one person never reaches anyone else."""
+    if not final_fields:
+        return
+    by_email = {str(f.get("email") or "").casefold(): f for f in final_fields}
+    for person in people:
+        final = by_email.get((person.email or "").casefold())
+        if not final:
+            continue
+        link = db.scalar(
+            select(CampaignProspect).where(
+                CampaignProspect.campaign_id == campaign_id, CampaignProspect.prospect_id == person.id
+            )
+        )
+        if link is None:
+            continue
+        first, last, company = (final.get("first_name") or ""), (final.get("last_name") or ""), (final.get("company") or "")
+        # A person who was only a mailbox so far becomes the person the user described.
+        if _mailbox_name(person.email or "", (person.executive_name or "").strip()) and not final.get("first_is_fallback"):
+            person.executive_name = " ".join(x for x in (first, last) if x)
+            db.add(person)
+        if company and not (person.company or "").strip():
+            person.company = company
+            db.add(person)
+        stored_first, stored_last = split_executive_name(person.executive_name or "")
+        stored_company = (person.company or "").strip()
+        link.first_name_override = first if first != stored_first else None
+        link.last_name_override = last if last != stored_last else None
+        link.company_override = company if company != stored_company else None
+        db.add(link)
+    db.commit()
+
+
 def _write_initial(campaigns: CampaignService, campaign, subject: str, body: str) -> None:
     current = campaigns.get_campaign(campaign.id)
     initial = next(
@@ -3150,6 +928,64 @@ def _keep_stated_name(db, prospect: Prospect, stated: str) -> None:
             continue
 
 
+def replace_person_name(
+    *,
+    email: str,
+    first_name: str,
+    last_name: str = "",
+    company: str | None = None,
+) -> None:
+    """Keep a name the user chose for this person from now on."""
+    from sqlalchemy import func, select
+
+    address = (email or "").strip()
+    if "@" not in address:
+        return
+    first = (first_name or "").strip()
+    last = (last_name or "").strip()
+    stated = " ".join(part for part in (first, last) if part)
+    db = SessionLocal()
+    try:
+        prospect = db.scalar(select(Prospect).where(func.lower(Prospect.email) == address.lower()))
+        if prospect is None:
+            return
+        if stated:
+            prospect.executive_name = stated
+        if company is not None and company.strip():
+            prospect.company = company.strip()
+        db.add(prospect)
+        db.commit()
+        if not stated:
+            return
+        first_name, last_name = split_executive_name(stated)
+        lead_ids = [
+            lead_id
+            for lead_id in db.scalars(
+                select(CampaignProspect.instantly_lead_id).where(
+                    CampaignProspect.prospect_id == prospect.id,
+                    CampaignProspect.instantly_lead_id.is_not(None),
+                )
+            ).all()
+            if lead_id
+        ]
+        if not lead_ids:
+            return
+        try:
+            client = InstantlyService(db).get_api_client()
+        except Exception:
+            return
+        for lead_id in lead_ids:
+            try:
+                client.update_lead(
+                    lead_id,
+                    {"first_name": first_name or None, "last_name": last_name or None},
+                )
+            except Exception:
+                continue
+    finally:
+        db.close()
+
+
 def _recipients_fulfill(parsed: dict) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
@@ -3165,6 +1001,12 @@ def _recipients_fulfill(parsed: dict) -> list[str]:
 
 
 def _subject_body(parsed: dict) -> tuple[str, str]:
+    if parsed.get("email_template"):
+        subject = str(parsed.get("email_subject") or "").strip()
+        body = str(parsed.get("email_body") or "").strip()
+        if not subject or not body:
+            raise FulfillError("The approved email is missing a subject or a body.")
+        return subject, body
     draft = str(parsed.get("email_draft") or "").strip()
     if draft.lower().startswith("subject:"):
         first, _, rest = draft.partition("\n")
@@ -3215,7 +1057,7 @@ def _allowed_zones() -> set[str]:
 
 
 ####################################################################################################
-# PART 3 - CAMPAIGN TOOLS (update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved)
+# PART 3 - CAMPAIGN TOOLS (update_selection, show_contacts, show_campaigns, propose_email, approve_move, remove_from_campaign, send_approved)
 ####################################################################################################
 
 # ------------------------------------------------------------------------------------------------
@@ -3228,7 +1070,7 @@ from agno.tools import tool
 
 
 
-def _audit(event: str, ctx, payload: dict, *, status: str = "", **extra) -> None:
+def _audit(event: str, ctx, payload: dict, **extra) -> None:
     """Record the send in the platform audit log. Never lets logging break the send."""
     try:
         from bizos.audit import events as audit
@@ -3238,7 +1080,7 @@ def _audit(event: str, ctx, payload: dict, *, status: str = "", **extra) -> None
             AuditEventType(event),
             ctx=ctx,
             tool="campaign_send_approved",
-            status=status or event,
+            status=event,
             request={
                 "campaign": payload.get("campaign_name"),
                 "recipients": payload.get("email_address_list"),
@@ -3325,10 +1167,20 @@ CAMPAIGN_TOOLS = [
         "type": "function",
         "function": {
             "name": "propose_email",
-            "description": "Build the draft from the committed selection and show it for approval. Requires recipients, campaign and window to be committed.",
+            "description": (
+                "Build the draft from the committed selection and show it as a card for approval. Requires recipients, campaign "
+                "and window to be committed. Call it for a NEW draft or when the user asks for a change. Do not call it to answer "
+                "a question about the draft. If the user edited the draft in the card, the current text is returned to you: build "
+                "on it and pass change_evidence (the user's words asking for the change)."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"subject": {"type": "string"}, "body": {"type": "string"}, "why": _WHY},
+                "properties": {
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                    "change_evidence": {"type": "string", "description": "the user's own words asking to change the existing draft"},
+                    "why": _WHY,
+                },
                 "required": ["subject", "body", "why"],
             },
         },
@@ -3349,6 +1201,68 @@ CAMPAIGN_TOOLS = [
                     "why": _WHY,
                 },
                 "required": ["emails", "approval_evidence", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_from_campaign",
+            "description": (
+                "Take one person out of a campaign. Only if they have not been emailed there yet. The person and "
+                "their history stay. Ask ONE yes/no first; call only after the user's NEXT message says yes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string"},
+                    "campaign": {"type": "string", "description": "campaign name or id"},
+                    "approval_evidence": {"type": "string", "description": "the user's words that count as yes"},
+                    "why": _WHY,
+                },
+                "required": ["email", "campaign", "approval_evidence", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_person_details",
+            "description": (
+                "Save a first name, last name or company the USER wrote for ONE chosen recipient (for example 'his name is "
+                "Shubham Kumar, he works at Acme'). It applies to that person only, never to the whole campaign. Never guess "
+                "details; pass the user's own words as evidence."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string"},
+                    "first_name": {"type": "string"},
+                    "last_name": {"type": "string"},
+                    "company": {"type": "string"},
+                    "evidence": {"type": "string", "description": "the user's own words that gave these details"},
+                    "why": _WHY,
+                },
+                "required": ["email", "evidence", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "choose_email_scope",
+            "description": (
+                "Called with scope 'everyone' after the user says yes to changing the campaign's first email for everyone "
+                "who has not been emailed yet. The bot must never offer or pick 'keep' on its own."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "enum": ["everyone", "keep"]},
+                    "approval_evidence": {"type": "string", "description": "the user's words that chose this"},
+                    "why": _WHY,
+                },
+                "required": ["scope", "approval_evidence", "why"],
             },
         },
     },
@@ -3422,7 +1336,7 @@ def _missing(state: dict) -> list[str]:
     return out
 
 
-def campaign_state_text(state: dict, people_status: list | None = None) -> str:
+def campaign_state_text(state: dict, people_status: list | None = None, fields: list | None = None) -> str:
     view = {
         "people_status": people_status if people_status is not None else "unavailable",
         "moves_user_approved": state.get("moves") or [],
@@ -3435,6 +1349,10 @@ def campaign_state_text(state: dict, people_status: list | None = None) -> str:
         "still_missing": _missing(state),
         "last_shown_to_user_in_tables_in_order": state.get("shown") or {"people": [], "campaigns": []},
         "pending_draft": state.get("draft", {}).get("email_draft") if state.get("draft") else None,
+        "person_details_for_the_email": [
+            {k: v for k, v in f.items() if k != "email"} | {"email": f["email"]} for f in (fields or [])
+        ],
+        "email_scope_decision": state.get("scope") or "",
         "your_previous_turn_explanation": state.get("last_explanation") or "",
     }
     return "Current state:\n" + json.dumps(view, indent=1, default=str)
@@ -3446,11 +1364,358 @@ def campaign_state_text(state: dict, people_status: list | None = None) -> str:
 
 import re
 
+# ---------- the email as a template: blanks, per-person values, who receives it ----------
+# One campaign has ONE first email. It holds blanks ({{firstName}} ...) that each person's own details fill.
+# Words typed outside a blank go to everyone in that campaign. What the user types for one person in the
+# email card ("details") belongs to that person only.
+
+TOKEN_FIRST, TOKEN_LAST, TOKEN_COMPANY = "{{firstName}}", "{{lastName}}", "{{companyName}}"
+FIRST_NAME_FALLBACK = "there"
+_GREETING = r"(?:Hi|Hello|Dear|Hey)"
+_LITERAL_GREETING = re.compile(rf"\b{_GREETING}\s+(?!there\b)([A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)?)\s*[,!]")
+
+
+def clean_field(value: Any) -> str:
+    """A value typed for a blank: one short line, no markup, nothing that could add content to the email."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return re.sub(r"[{}<>\\]", "", text)[:80].strip()
+
+
+def proper_case(value: str) -> str:
+    """A name typed in chat as all-lowercase or all-capitals ("nina", "BROOKS") reads as a name: "Nina", "Brooks"."""
+    text = (value or "").strip()
+    if text and (text == text.lower() or text == text.upper()):
+        return re.sub(r"[A-Za-z]+", lambda m: m.group(0).capitalize(), text)
+    return text
+
+
+def _mailbox_name(email: str, value: str) -> bool:
+    local = (email or "").split("@", 1)[0].strip().casefold()
+    return bool(value) and value.strip().casefold() in {local, (email or "").casefold()}
+
+
+def person_fields(records: dict, state: dict, recipient: dict) -> dict:
+    """What fills the blanks for one recipient, and where each value came from.
+
+    Order: typed by the user (card or chat) > the database > the name given in chat > missing.
+    """
+    email = str(recipient.get("email") or "")
+    typed = (state.get("overrides") or {}).get(email.casefold(), {})
+    known = _find_person(records, email) or {}
+    known_name = str(known.get("name") or "").strip()
+    if _mailbox_name(email, known_name):
+        known_name = ""
+    k_first, k_last = split_executive_name(known_name) if known_name else ("", "")
+    chat_name = str(recipient.get("name") or "").strip()
+    if _mailbox_name(email, chat_name):
+        chat_name = ""
+    c_first, c_last = split_executive_name(chat_name) if chat_name else ("", "")
+    c_first, c_last = proper_case(c_first), proper_case(c_last)
+    out: dict = {"email": email}
+    sources: dict = {}
+    for field, from_db, from_chat in (
+        ("first_name", k_first, c_first),
+        ("last_name", k_last, c_last),
+        ("company", str(known.get("company") or "").strip(), ""),
+    ):
+        if field in typed:
+            out[field], sources[field] = typed[field], "typed"
+        elif from_db:
+            out[field], sources[field] = from_db, "database"
+        elif from_chat:
+            out[field], sources[field] = from_chat, "chat"
+        else:
+            out[field], sources[field] = "", "missing"
+    out["sources"] = sources
+    return out
+
+
+def effective_fields(f: dict) -> dict:
+    """The values that really go out. A missing first name becomes "there" (never a guess)."""
+    return {
+        "email": f["email"],
+        "first_name": f["first_name"] or FIRST_NAME_FALLBACK,
+        "last_name": f["last_name"],
+        "company": f["company"],
+    }
+
+
+_BLANK_FORMS = (
+    (re.compile(r"\{{1,2}\s*first[\s_-]*name\s*\}{1,2}|\[\s*first[\s_-]*name\s*\]|<\s*first[\s_-]*name\s*>", re.I), TOKEN_FIRST),
+    (re.compile(r"\{{1,2}\s*last[\s_-]*name\s*\}{1,2}|\[\s*last[\s_-]*name\s*\]|<\s*last[\s_-]*name\s*>", re.I), TOKEN_LAST),
+    (re.compile(r"\{{1,2}\s*company(?:[\s_-]*name)?\s*\}{1,2}|\[\s*company(?:[\s_-]*name)?\s*\]|<\s*company(?:[\s_-]*name)?\s*>", re.I), TOKEN_COMPANY),
+)
+
+
+def normalize_blanks(text: str) -> str:
+    """Any way of writing a blank ({first name}, {{first_name}}, [First Name], <firstName>) becomes the one blank we use."""
+    out = text or ""
+    for pattern, token in _BLANK_FORMS:
+        out = pattern.sub(token, out)
+    return out
+
+
+def tokenize(text: str, fields: list[dict]) -> str:
+    """Turn the real names/companies a draft contains into blanks, so each person gets their own."""
+    out = normalize_blanks(text)
+    # One greeting that lists several recipients ("Hi Nina and Raj,") becomes ONE blank, so each person is
+    # greeted by their own name and never by the other's.
+    people = []
+    for f in fields:
+        if f["first_name"]:
+            last = rf"(?:\s+(?i:{re.escape(f['last_name'])}))?" if f["last_name"] else ""
+            people.append(rf"(?i:{re.escape(f['first_name'])}){last}")
+    if len(people) >= 2:
+        one = "(?:" + "|".join(sorted(people, key=len, reverse=True)) + ")"
+        out = re.sub(
+            rf"\b(?P<g>{_GREETING})\s+{one}(?:\s*(?:,|&|\band\b)\s*(?:and\s+)?{one})+",
+            lambda m: f"{m.group('g')} {TOKEN_FIRST}",
+            out,
+        )
+    for f in fields:
+        first, last, company = f["first_name"], f["last_name"], f["company"]
+        if first:
+            last_part = rf"(?P<last>\s+(?i:{re.escape(last)}))?" if last else ""
+            out = re.sub(
+                rf"\b(?P<g>{_GREETING})\s+(?i:{re.escape(first)}){last_part}\b",
+                lambda m, last=last: f"{m.group('g')} {TOKEN_FIRST}" + (f" {TOKEN_LAST}" if last and m.group("last") else ""),
+                out,
+            )
+        if company:
+            out = re.sub(rf"(?<!\w){re.escape(company)}(?!\w)", TOKEN_COMPANY, out)
+    return re.sub(rf"\b({_GREETING})\s+there\b", lambda m: f"{m.group(1)} {TOKEN_FIRST}", out, count=1)
+
+
+def render(text: str, f: dict) -> str:
+    e = effective_fields(f)
+    out = (text or "").replace(TOKEN_FIRST, e["first_name"]).replace(TOKEN_LAST, e["last_name"]).replace(TOKEN_COMPANY, e["company"])
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    return re.sub(r"[ \t]+([,.!?:;])", r"\1", out)
+
+
+def literal_greeting_names(text: str) -> list[str]:
+    return [m.group(1) for m in _LITERAL_GREETING.finditer(text or "")]
+
+
+def finalize_template(subject: str, body: str) -> tuple[str, str]:
+    """The wording as stored on the campaign: the assessment link becomes Instantly's placeholder."""
+    from acquisition.config import get_settings
+
+    settings = get_settings()
+    url = (settings.public_base_url or "").strip()
+    holder = settings.assessment_url_placeholder
+    if url:
+        subject, body = subject.replace(url, holder), body.replace(url, holder)
+    return subject, body
+
+
+def waiting_in_campaign(campaign_id: str, exclude: set[str]) -> list[dict]:
+    """People already in this campaign who have not been emailed yet: they will get any changed wording."""
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+    from acquisition.models.prospect import Prospect
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            select(Prospect.executive_name, Prospect.email)
+            .join(CampaignProspect, CampaignProspect.prospect_id == Prospect.id)
+            .where(
+                CampaignProspect.campaign_id == campaign_id,
+                CampaignProspect.outreach_status == OutreachStatus.PENDING,
+            )
+        ).all()
+    except Exception:  # noqa: BLE001
+        return []
+    finally:
+        db.close()
+    return [
+        {"name": name or email, "email": email}
+        for name, email in rows
+        if (email or "").casefold() not in exclude
+    ]
+
+
+def draft_view(records: dict, state: dict) -> dict:
+    """Everything the email card needs: the template, each person's details, what each person will receive,
+    who else gets this wording, and warnings. Built from saved state, never from the model."""
+    d = state.get("draft") or {}
+    if not d:
+        return {}
+    recipients = state.get("recipients") or []
+    fields = [person_fields(records, state, r) for r in recipients]
+    subject, body = d.get("email_subject") or "", d.get("email_body") or ""
+    is_template = bool(d.get("email_template"))
+    previews = [
+        {
+            "email": f["email"],
+            "subject": render(subject, f) if is_template else subject,
+            "body": render(body, f) if is_template else body,
+        }
+        for f in fields
+    ]
+    warnings: list[str] = []
+    if is_template:
+        for f in fields:
+            if not f["first_name"]:
+                warnings.append(f'{f["email"]}: no first name on file. The email will say "Hi there,". Type a name in Details if you know it.')
+        for name in literal_greeting_names(body):
+            warnings.append(
+                f'The greeting says "{name}" as plain text, so everyone who gets this email sees exactly that. '
+                "Put a person's name in Details instead."
+            )
+        if TOKEN_COMPANY in subject + body:
+            for f in fields:
+                if not f["company"]:
+                    warnings.append(f'{f["email"]}: no company on file, so the company part of the email will be empty.')
+    cid = str(state.get("campaign_id") or "")
+    camp = _find_campaign(records, cid, "") if cid else None
+    existing = camp is not None
+    changed, others = False, []
+    if existing and is_template:
+        saved = camp.get("initial_email") or {}
+        t_subject, t_body = finalize_template(subject, body)
+        norm = lambda t: " ".join(str(t or "").split())  # noqa: E731
+        changed = norm(t_subject) != norm(saved.get("subject")) or norm(t_body) != norm(saved.get("body"))
+        if changed:
+            others = waiting_in_campaign(cid, {f["email"].casefold() for f in fields})
+    scope = str(state.get("scope") or "")
+    label = lambda f: " ".join(x for x in (f["first_name"], f["last_name"]) if x) or f["email"]  # noqa: E731
+    return {
+        "draft_id": d.get("id") or "",
+        "template": {"subject": subject, "body": body},
+        "people": fields,
+        "previews": previews,
+        "warnings": warnings,
+        "audience": {
+            "campaign": state.get("campaign_name") or "",
+            "campaign_is_new": not existing,
+            "will_send_now": [label(f) for f in fields],
+            "also_waiting": others,
+            "template_changed": changed,
+            "scope": scope,
+            "scope_needed": bool(existing and changed and others and not scope),
+        },
+    }
+
+
+def refresh_preview(records: dict, state: dict) -> None:
+    """Keep the plain-text preview (the first recipient's view) in step with the template."""
+    d = state.get("draft") or {}
+    fields = [person_fields(records, state, r) for r in state.get("recipients") or []]
+    if not d or not fields:
+        return
+    if d.get("email_template"):
+        d["email_draft"] = f"Subject: {render(d['email_subject'], fields[0])}\n\n{render(d['email_body'], fields[0])}"
+
+
+def edit_draft(ctx: Any, meta: dict, *, subject: str | None = None, body: str | None = None,
+               people: dict | None = None, scope: str | None = None, rendered: bool = False) -> dict:
+    """Apply what the user changed in the email card to the saved state of the latest turn.
+
+    ``subject``/``body`` are the TEMPLATE (blanks visible). ``people`` maps an email to the details the user
+    typed for that person only. ``scope`` is "everyone", "keep", or "" to clear. Returns the new email view.
+    With ``rendered=True`` the text is what ONE person's email looks like (older card): real names are turned
+    back into blanks first, so they cannot reach everyone else.
+    """
+    state = meta.get("state")
+    if not isinstance(state, dict) or not state.get("draft"):
+        raise ValueError("There is no email draft to edit.")
+    records = known_records(ctx)
+    d = state["draft"]
+    if subject is not None or body is not None:
+        new_subject = (subject if subject is not None else d.get("email_subject", "")).strip()
+        new_body = (body if body is not None else d.get("email_body", "")).strip()
+        if not new_subject or not new_body:
+            raise ValueError("The subject and the body cannot be empty.")
+        new_subject, new_body = normalize_blanks(new_subject), normalize_blanks(new_body)
+        if rendered:
+            fields = [person_fields(records, state, r) for r in state.get("recipients") or []]
+            new_subject, new_body = tokenize(new_subject, fields), tokenize(new_body, fields)
+        if (new_subject, new_body) != (d.get("email_subject"), d.get("email_body")) or not d.get("email_template"):
+            d["email_subject"], d["email_body"], d["email_template"] = new_subject, new_body, True
+            d["user_edited"] = True  # the model must not overwrite this by regenerating
+            state.pop("scope", None)  # a changed email needs its own decision
+    recipients = {str(r["email"]).casefold(): r for r in state.get("recipients") or []}
+    for email, values in (people or {}).items():
+        key = str(email).casefold()
+        if key not in recipients:
+            raise ValueError(f"{email} is not one of the recipients.")
+        base_state = {**state, "overrides": {k: v for k, v in (state.get("overrides") or {}).items() if k != key}}
+        base = person_fields(records, base_state, recipients[key])
+        typed = (state.setdefault("overrides", {})).setdefault(key, {})
+        for field in ("first_name", "last_name", "company"):
+            if field not in (values or {}):
+                continue
+            value = clean_field(values[field])
+            if value == base[field]:
+                typed.pop(field, None)  # back to what the database says: not an override
+            else:
+                typed[field] = value
+        if not typed:
+            state["overrides"].pop(key, None)
+    if scope is not None:
+        if scope in ("everyone", "keep"):
+            state["scope"] = scope
+        elif scope == "":
+            state.pop("scope", None)
+        else:
+            raise ValueError('scope must be "everyone" or "keep".')
+    refresh_preview(records, state)
+    view = draft_view(records, state)
+    payload = meta.get("json") if isinstance(meta.get("json"), dict) else {}
+    payload.update(
+        {
+            "email_subject": d["email_subject"],
+            "email_body": d["email_body"],
+            "email_draft": d.get("email_draft") or "",
+            "email_view": view,
+        }
+    )
+    meta["json"], meta["state"] = payload, state
+    return view
+
+
+# ---------- the send gate: the user's latest message must really approve ----------
+# The model decides what counts as approval, but it may not send on a message that plainly is not one.
+
+_APPROVE_WORD = re.compile(
+    r"(?<!\w)(yes|yep|yeah|yup|ok|okay|sure|approve|approved|go ahead|go for it|go|send|ship it|do it|proceed|confirm|"
+    r"confirmed|good|great|perfect|fine|lgtm|sounds good|looks good|correct|right|haan|theek hai|thik hai|kar do|bhej do|bhejo)(?!\w)"
+    r"|\U0001F44D|\u2705",
+    re.I,
+)
+_QUESTION_START = re.compile(
+    r"^\s*(what|where|why|how|when|which|who|whom|is|are|was|were|does|do|did|can|could|should|would|will|show|tell|explain|list|display)\b",
+    re.I,
+)
+_SEND_WORD = re.compile(r"\b(send|approve[ds]?|go ahead|ship|do it|proceed|confirm(ed)?)\b", re.I)
+_HOLD_WORD = re.compile(r"\b(don'?t|do not|never|not yet|wait|hold on|hold off|stop|cancel)\b|^\s*no\b", re.I)
+
+
+def approval_problem(latest: str, evidence: str) -> str:
+    """Empty string when the latest user message can count as approval to send, else why it cannot."""
+    norm = lambda t: " ".join(str(t or "").casefold().split())  # noqa: E731
+    if not norm(latest):
+        return "there is no user message to take approval from"
+    if not norm(evidence) or norm(evidence) not in norm(latest):
+        return "approval_evidence must be the user's own words from their LATEST message"
+    if _HOLD_WORD.search(latest):
+        return "the user's latest message holds back or declines; do not send"
+    if not _APPROVE_WORD.search(latest):
+        return "the user's latest message does not approve sending"
+    if _QUESTION_START.match(latest) and not _SEND_WORD.search(latest):
+        return "the user's latest message is a question, not an approval"
+    return ""
+
+
 _SENT_CLAIM = re.compile(
-    r"send_approved|\b(?:email|message|draft)\b[^.\n]{0,40}\b(?:was|has been|is|been) sent\b"
+    r"\b(?:email|message|draft)\b[^.\n]{0,40}\b(?:was|has been|is|been) sent\b"
     r"|\bcampaign\b[^.\n]{0,40}\b(?:was|has been) created\b|\b(?:i(?:'ve| have)? )?sent (?:the|this|your) email\b",
     re.I,
 )
+#: In the explanation only: "I will call send_approved now" but no call was made.
+_WILL_SEND = re.compile(r"\b(?:will|going to|now|about to)\s+(?:call|use|run|carry out)\s+(?:the\s+)?send_approved\b", re.I)
 
 NOT_SENT_TEXT = (
     "Nothing has been sent yet. The email draft is still waiting. Say \"send it\" and I will send it."
@@ -3475,15 +1740,19 @@ class CampaignSession:
         self.self_check: list[str] = []
         self.errors = 0
         self.asked_similar = False  # the similar-name question is the table the user needs
+        self.card_shown = False  # a NEW email card was produced this turn
         self.user_message = ""  # set by the agent; lets the self-check see what the user asked
         self.user_texts: list[str] = []  # everything the user has written in this chat (for evidence checks)
         self.recipients_committed = False  # recipients committed during this turn
+        self.tried_recipients = False  # the model tried to name recipients this turn (found or not)
         self.started_with_recipients = bool(self.state.get("recipients"))
         # People already explained to the user in an earlier turn. A move can only be approved for these.
         self.offered_before = set(self.state.get("move_offered") or [])
 
     def call(self, name: str, args: dict) -> str:
         why = str(args.pop("why", "") or "")
+        if name == "update_selection" and args.get("recipients"):
+            self.tried_recipients = True
         try:
             logged_args = json.dumps(args, ensure_ascii=False, default=str)[:600]
         except Exception:  # noqa: BLE001
@@ -3497,12 +1766,6 @@ class CampaignSession:
         self.log.append({"tool": name, "args": logged_args, "why": why, "result": result[:300]})
         return result
 
-    def _in_latest_message(self, quote: str) -> bool:
-        """True when ``quote`` is the user's own words in their latest message (case and spacing ignored)."""
-        norm = lambda t: " ".join(str(t or "").casefold().split())  # noqa: E731
-        q = norm(quote)
-        return bool(q) and re.search(rf"(?<!\w){re.escape(q)}(?!\w)", norm(self.user_message)) is not None
-
     def _user_said(self, quote: str) -> bool:
         """True when ``quote`` really is something the user wrote (this turn or earlier)."""
         norm = lambda t: " ".join(str(t or "").casefold().split())  # noqa: E731
@@ -3513,7 +1776,11 @@ class CampaignSession:
         """True when the model says the email was sent/the campaign created, but send_approved never succeeded."""
         if self.sent or not self.state.get("draft"):
             return False
-        return bool(_SENT_CLAIM.search(f"{reply}\n{explanation}"))
+        tried = any(c.get("tool") == "send_approved" for c in self.log)
+        if _SENT_CLAIM.search(reply or ""):
+            return True
+        # Said "I will call send_approved" but never did. (If it was called and failed, the model is reporting that.)
+        return (not tried) and bool(_WILL_SEND.search(explanation or ""))
 
     def problems(self, reply: str = "", explanation: str = "") -> list[str]:
         """Consistency check between the model's turn and the state it just built.
@@ -3539,6 +1806,18 @@ class CampaignSession:
                 "recipient, campaign name or send hours, call update_selection with it now, BEFORE you ask "
                 "your question. If this message is not about emailing people in a campaign, keep your answer "
                 "and say so in the explanation."
+            )
+        if (
+            "recipients" in miss
+            and any(c.get("tool") == "update_selection" for c in self.log)
+            and not self.people_to_show
+            and not any(c.get("tool") in ("show_contacts", "show_campaigns") for c in self.log)
+            and not self.tried_recipients
+        ):
+            out.append(
+                "The user has not said who to email and no contacts table is shown. Call show_contacts now so they can "
+                "pick; do not wait for them to ask for the list. Your message is one short question (include the send "
+                "hours in it if they are also missing)."
             )
         if self.people_to_show and (self.recipients_committed or self.started_with_recipients):
             out.append(
@@ -3626,6 +1905,41 @@ class CampaignSession:
 
     def _invalidate_draft(self) -> None:
         self.state.pop("draft", None)
+        self.state.pop("scope", None)
+
+    def _fields(self) -> list[dict]:
+        return [person_fields(self.records, self.state, r) for r in self.state.get("recipients") or []]
+
+    def _set_person_details(self, email: str = "", first_name=None, last_name=None, company=None, evidence: str = "") -> str:
+        """Save a name/company the user gave in chat for ONE recipient. Only for this person; never the whole campaign."""
+        key = str(email or "").strip().casefold()
+        known = {str(r["email"]).casefold(): r for r in self.state.get("recipients") or []}
+        if key not in known:
+            return "error: that address is not one of the chosen recipients"
+        if not self._user_said(evidence):
+            return json.dumps(
+                {
+                    "error": "details_not_given_by_user",
+                    "instruction": "Use only a name or company the user actually wrote. Pass their own words as evidence, or ask them.",
+                }
+            )
+        typed = self.state.setdefault("overrides", {}).setdefault(key, {})
+        for field, value in (("first_name", first_name), ("last_name", last_name), ("company", company)):
+            if value is not None:
+                typed[field] = clean_field(value)
+        refresh_preview(self.records, self.state)
+        return json.dumps({"ok": True, "details": person_fields(self.records, self.state, known[key])})
+
+    def _choose_email_scope(self, scope: str = "", approval_evidence: str = "") -> str:
+        """Record the user's decision when a changed email would also reach people already waiting in the campaign."""
+        if scope not in ("everyone", "keep"):
+            return 'error: scope must be "everyone" or "keep"'
+        if not self.state.get("draft"):
+            return "error: no draft"
+        if not self._user_said(approval_evidence):
+            return "error: use the user's own words as approval_evidence"
+        self.state["scope"] = scope
+        return json.dumps({"ok": True, "scope": scope})
 
     def _update_selection(self, recipients=None, recipients_mode="replace", campaign_id="", campaign_name="", confirmed_new_campaign=False, window_start="", window_end="", window_evidence="") -> str:
         s = self.state
@@ -3679,9 +1993,11 @@ class CampaignSession:
                             "instruction": (
                                 "Ask the user whether they mean the existing campaign or a new one with the typed name. "
                                 "Existing: update_selection with its campaign_id. New: update_selection again with "
-                                "confirmed_new_campaign=true."
+                                "confirmed_new_campaign=true. If people_status says someone is active in another "
+                                "campaign, put the move into this SAME question so the user answers once."
                             ),
                             "selection": self._sel(),
+                            "people_status": self._status_for_result(),
                         }
                     )
                 new_id_, new_name = "", typed
@@ -3711,6 +2027,21 @@ class CampaignSession:
                 a, b = _clock_campaign(window_start), _clock_campaign(window_end)
                 if not (a and b):
                     return "error: need both window_start and window_end as clock times"
+                try:
+                    if _clock_fulfill(a)[0] >= _clock_fulfill(b)[0]:
+                        raise FulfillError("start not before end")
+                except FulfillError:
+                    return json.dumps(
+                        {
+                            "error": "window_start_not_before_end",
+                            "instruction": (
+                                "The send window must start earlier than it ends within one day (for example 9 am to 5 pm). "
+                                "An overnight window such as 5 pm to 6 am is not supported, and I did not save it. "
+                                "Tell the user this in one sentence and ask for hours that fit inside one day."
+                            ),
+                            "selection": self._sel(),
+                        }
+                    )
                 if [a, b] != s.get("window"):
                     self._invalidate_draft()
                 s["window"] = [a, b]
@@ -3816,7 +2147,7 @@ class CampaignSession:
             }
         )
 
-    def _propose_email(self, subject: str, body: str) -> str:
+    def _propose_email(self, subject: str, body: str, change_evidence: str = "") -> str:
         s = self.state
         miss = _missing(s)
         if miss:
@@ -3830,12 +2161,37 @@ class CampaignSession:
         if not (subject or "").strip() or not (body or "").strip():
             return "error: subject and body required"
         subject, body = subject.strip(), body.strip()
+        fields = self._fields()
+        subject, body = tokenize(subject, fields), tokenize(body, fields)
+        prev, prev_scope = s.get("draft") or {}, s.get("scope")
+        if prev and (prev.get("email_subject"), prev.get("email_body")) == (subject, body):
+            return "ok: this is the draft that is already shown. Do not call propose_email again; answer the user in words."
+        if prev.get("user_edited") and not (change_evidence and self._user_said(change_evidence)):
+            return json.dumps(
+                {
+                    "error": "user_edited_draft",
+                    "current_subject": prev.get("email_subject"),
+                    "current_body": prev.get("email_body"),
+                    "instruction": (
+                        "The user edited this draft themselves in the card. Keep their wording. Call propose_email again only if "
+                        "the user's latest message asks for a change; then build on the current text above and pass "
+                        "change_evidence with their words. For questions about the draft, answer in words."
+                    ),
+                }
+            )
+        self._invalidate_draft()
+        if prev_scope and (prev.get("email_subject"), prev.get("email_body")) == (subject, body):
+            s["scope"] = prev_scope
         s["draft"] = {
+            "id": uuid.uuid4().hex[:10],
             "email_subject": subject,
             "email_body": body,
-            "email_draft": f"Subject: {subject}\n\n{body}",
+            "email_template": True,
+            "email_draft": "",
             "email_from": ", ".join(sending_account_emails()),
         }
+        refresh_preview(self.records, s)
+        self.card_shown = True
         self.people_to_show, self.campaigns_to_show = [], []
         s["shown"] = {"people": [], "campaigns": []}
         return "ok: draft is shown to the user as a card. Ask one short question about it."
@@ -3852,6 +2208,9 @@ class CampaignSession:
             "campaign_schedule_timing": s["window"],
             "move_from": list(s.get("moves") or []),
             "email_from": d["email_from"],
+            "email_template": bool(d.get("email_template")),
+            "email_scope": s.get("scope") or "",
+            "people_fields": [{**effective_fields(f), "first_is_fallback": not f["first_name"]} for f in self._fields()],
             "email_subject": d["email_subject"],
             "email_body": d["email_body"],
             "email_draft": d["email_draft"],
@@ -3886,17 +2245,90 @@ class CampaignSession:
         self._invalidate_draft()
         return json.dumps({"ok": True, "moves_approved_for": s["moves"], "approval_evidence": (approval_evidence or "")[:200]})
 
+    def _remove_from_campaign(self, email="", campaign="", approval_evidence="") -> str:
+        address = str(email or "").strip()
+        raw_campaign = str(campaign or "").strip()
+        if "@" not in address or not raw_campaign:
+            return json.dumps({"error": "Say who to remove and which campaign."})
+        db = SessionLocal()
+        try:
+            try:
+                row = db.get(Campaign, uuid.UUID(raw_campaign))
+            except ValueError:
+                row = db.scalar(select(Campaign).where(func.lower(Campaign.name) == raw_campaign.lower()))
+            if row is None:
+                return json.dumps({"error": f"I could not find a campaign called {raw_campaign}."})
+            statuses = describe_people(db, [address])
+            st = statuses[0] if statuses else None
+            info = next(
+                (link for link in (st.links if st else []) if link.campaign_id == str(row.id)),
+                None,
+            )
+            who = (split_executive_name(st.name)[0] if st and st.name else "") or (st.label if st else address)
+            camp_name = row.name
+            if info is None:
+                return json.dumps({"error": f"{who} is not in {camp_name}."})
+            if info.opted_out:
+                return json.dumps(
+                    {"error": f"{who} unsubscribed or bounced in {camp_name}, so they cannot be removed from it."}
+                )
+            if info.conversation:
+                return json.dumps(
+                    {
+                        "error": (
+                            f"{who} already replied, started the assessment, or booked in {camp_name}, "
+                            "so they cannot be removed from it."
+                        )
+                    }
+                )
+            if info.contacted or info.outreach_status != OutreachStatus.PENDING.value:
+                return json.dumps(
+                    {"error": f"{who} has already been emailed in {camp_name}, so they cannot be removed from it."}
+                )
+            why_not = approval_problem(self.user_message, approval_evidence)
+            if why_not:
+                return json.dumps(
+                    {
+                        "error": "not_approved",
+                        "reason": why_not,
+                        "instruction": (
+                            f"Ask one yes/no, for example: Remove {who} from {camp_name}? They have not been emailed yet. "
+                            "Call remove_from_campaign only after their NEXT message says yes."
+                        ),
+                    }
+                )
+            try:
+                client = InstantlyService(db).get_api_client()
+            except Exception as exc:  # noqa: BLE001
+                return json.dumps({"error": str(exc) or "Could not reach Instantly. Nothing was changed."})
+            try:
+                stop_for_move(db, client, info.link_id)
+            except StopError as exc:
+                return json.dumps({"error": str(exc) or "Instantly did not remove them. Nothing was changed."})
+        finally:
+            db.close()
+        s = self.state
+        kept = [r for r in s.get("recipients") or [] if str(r.get("email") or "").lower() != address.lower()]
+        if kept != (s.get("recipients") or []):
+            s["recipients"] = kept
+            s["moves"] = [e for e in s.get("moves") or [] if e != address.lower()]
+            self._invalidate_draft()
+        return f"Removed {who} from {camp_name}."
+
     def _send_approved(self, approval_evidence: str = "") -> str:
         if not self.state.get("draft"):
             return "error: no draft pending, nothing to send"
-        if not self._in_latest_message(approval_evidence):
-            _audit(
-                "ACTION_FAILED", self.ctx, self._payload(), status="APPROVAL_EVIDENCE_NOT_FOUND",
-                evidence=(approval_evidence or "")[:200],
-            )
-            return (
-                "error: approval_not_found: approval_evidence must be the user's own words copied from their "
-                "latest message. Nothing was sent. Ask the user whether to send the email as shown."
+        why_not = approval_problem(self.user_message, approval_evidence)
+        if why_not:
+            return json.dumps(
+                {
+                    "error": "not_approved",
+                    "reason": why_not,
+                    "instruction": (
+                        "Nothing was sent. Answer what the user actually asked, in words, and ask one short question: "
+                        "send it as is, or change something?"
+                    ),
+                }
             )
         if self.send_block:
             return f"error: {self.send_block}"
@@ -3906,6 +2338,25 @@ class CampaignSession:
         blocked = self._blocked()
         if blocked:
             return blocked
+        view = draft_view(self.records, self.state)
+        audience = view.get("audience") or {}
+        if audience.get("scope_needed"):
+            return json.dumps(
+                {
+                    "error": "needs_scope",
+                    "campaign": audience.get("campaign"),
+                    "also_waiting": [p["name"] for p in audience.get("also_waiting") or []],
+                    "instruction": (
+                        "This email differs from the campaign's saved first email, and these people are in the campaign "
+                        "but have not been emailed yet, so they would get the changed wording too. Tell the user this edit "
+                        "also changes the email for the names in also_waiting, and ask ONE short yes/no question, e.g. "
+                        '"This also changes the email for Gus and Nina. Go ahead?" Do not mention keep or the campaign\'s '
+                        "current email. If they say yes, call choose_email_scope with scope everyone, then send_approved "
+                        "again. If they say no, do not send and do not call choose_email_scope; reply: "
+                        '"Okay, nothing sent. Want to change the wording back to the campaign\'s email, or edit it more?"'
+                    ),
+                }
+            )
         payload = self._payload()
         try:
             outcome = fulfill_approved_email(self.ctx, payload)
@@ -3922,38 +2373,10 @@ class CampaignSession:
 
 
 
-# ---------- policy check ----------
-# Every campaign call goes through guarded_call like any other tool (ToolSpecs in
-# bizos/rbac/registry.py). The effect hands the call to the turn's CampaignSession.
-
-
-def _campaign_effect(tool_name: str) -> Callable:
-    def run(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-        session = scope.campaign_session
-        if session is None:
-            return ConnectorResult.failure("The campaign tools only work inside an admin's chat turn.")
-        text = session.call(tool_name, dict(args))
-        failed = text.startswith("error") or '"error"' in text
-        return ConnectorResult(ok=not failed, summary=text, error=text if failed else None)
-
-    return run
-
-
-for _campaign_tool in CAMPAIGN_TOOLS:
-    effect(_campaign_tool["function"]["name"])(_campaign_effect(_campaign_tool["function"]["name"]))
-
-
 # ---------- Agno wiring ----------
 
-def build_campaign_tools(session: CampaignSession, scope: RunScope) -> list[Callable]:
-    """Agno callables for the campaign tools, all bound to one ``CampaignSession``.
-
-    Each call goes through the policy check. All six stay offered (as before), so a refusal, such as
-    sending in Advise mode, comes back to the model as an explanation it can pass on.
-    """
-    from bizos.tools.base import guarded_call
-
-    bound_scope = dataclasses.replace(scope, campaign_session=session)
+def build_campaign_tools(session: CampaignSession) -> list[Callable]:
+    """Agno callables for the campaign tools, all bound to one ``CampaignSession``."""
     tools: list[Callable] = []
     for spec in CAMPAIGN_TOOLS:
         fn = spec["function"]
@@ -3962,17 +2385,7 @@ def build_campaign_tools(session: CampaignSession, scope: RunScope) -> list[Call
         def _make(tool_name: str, description: str, schema: dict) -> Callable:
             @tool(name=tool_name, description=description)
             def _invoke(**kwargs: Any) -> str:
-                logged = len(session.log)
-                outcome = guarded_call(bound_scope, tool_name, dict(kwargs))
-                if len(session.log) > logged:
-                    return outcome.message  # the session ran: its own result, exactly as before
-                # Stopped before the session ran (policy or a failure); keep the trace complete.
-                text = outcome.agent_text()
-                session.errors += 1
-                session.log.append(
-                    {"tool": tool_name, "args": "", "why": str(kwargs.get("why") or ""), "result": text[:300]}
-                )
-                return text
+                return session.call(tool_name, dict(kwargs))
 
             # Replace Agno's **kwargs schema with the real one.
             _invoke.parameters = schema
@@ -4055,6 +2468,9 @@ TABLES (UI cards)
 - The contacts table appears only if you call show_contacts; the campaigns table only if you call
   show_campaigns. Show one only when the user must choose and you do not yet have the answer. Never show
   contacts after recipients are committed, and never "just in case".
+- If the user has not named anyone to email and no recipient is committed, call show_contacts in that SAME
+  turn (after saving anything they did say, such as the campaign name). Never ask "who?" in words alone and
+  never wait for them to ask to see the list: they cannot choose from people they cannot see.
 - Right after you commit recipients, the next table is the CAMPAIGNS table (unless they already named a
   campaign). Asking "which campaign?" without showing it leaves the user blind.
 - After the user picks a campaign, commit it; do not show the table again.
@@ -4088,20 +2504,58 @@ PEOPLE ALREADY IN A CAMPAIGN (one person = one active campaign)
   suggest handling them personally. Offer to continue without them.
 - refuse_opted_out: they unsubscribed or bounced. Never add them. Say so plainly; offer to continue without.
 - If a tool returns needs_move_approval or a refusal, explain it in plain words, then wait for the user.
+- NEVER ask the same thing twice and never make the user confirm in two steps. Say the move in the question
+  itself, as part of ONE question. If you explain a move without asking yes/no, that wastes a turn: don't.
+- If a name question (similar name) and a move both apply, ask ONE combined question, for example:
+  "Do you mean the existing 'spring' (not 'soring')? Nina is in 'duo', so adding her stops her there. Yes?"
+  When the user then answers yes, or names the campaign, or says "go ahead", "ok" or any agreement, that answers
+  BOTH: commit the campaign (campaign_id) AND call approve_move in that same turn, then continue. Do not
+  ask about the move again. Only if their answer clearly changes the plan (a different campaign, or "no")
+  do you ask again.
+- If you already stated the move in your last message and they agree in any wording, the move is approved.
+
+REMOVING SOMEONE FROM A CAMPAIGN
+- "remove Raj from east" means take that person out of that campaign only. They stay in the workspace; their history stays.
+- Only if they have not been emailed in that campaign. If they were emailed, replied, or booked, say so in plain words and change nothing. Do not call the tool to "try anyway".
+- Ask ONE yes/no first. Only after the user's NEXT message says yes, call remove_from_campaign. Never in the same turn you first ask, never on a vague answer, never choose for them. If they say no, change nothing.
+- After the tool returns, reply in one line with that sentence (for example "Removed Raj from east."). If it returns an error, tell the user that error in plain words; change nothing.
 
 SIMILAR CAMPAIGN NAMES
 - If update_selection returns similar_campaign_name, do not guess. Ask: "Do you mean the existing <similar
   name>, or a new campaign called <typed name>?" Then commit the existing one by campaign_id, or call
   update_selection again with confirmed_new_campaign=true. Do this even if the user already said "new".
+  If someone also needs to be moved, put the move in this same question (see above); one question only.
 
 EMAIL AND SENDING
-- Use the template from the records (email_to_show for a known person, otherwise email_without_company)
-  exactly, except change "Hi there," to "Hi {first name},". Apply edits the user asks for, then propose_email
+- The email card is shown by propose_email, once per new draft. Do NOT call propose_email to answer questions
+  about the draft ("what is the subject?", "is it okay?", "hmm maybe"): answer in one short sentence of words and
+  never paste the email text. Call it again only when the user asks for a change. If the user edited the draft in
+  the card, their wording stays; build any requested change on top of it.
+- For a NEW campaign use the template from the records (email_to_show for a known person, otherwise
+  email_without_company) exactly, except change "Hi there," to "Hi {first name},". For an EXISTING campaign
+  start from that campaign's own initial_email in the records, unchanged, unless the user asks for changes.
+  The platform turns real first names and company names into blanks ({{firstName}}, {{companyName}}), so
+  each person gets their own; you do not need to. Apply edits the user asks for, then propose_email
   again. After propose_email succeeds the UI shows the email card; your message is one short question about
   it (approve as is, or change something). Do not paste the subject or body.
 - Call send_approved only when a draft is pending AND the user's latest message clearly approves it, in any
   wording. Changes requested or ambiguous means do not send; ask. After it returns, confirm in one natural
-  sentence using only what the tool returned.
+  sentence using only what the tool returned. If send_approved returns an error, tell the user that error in plain
+  words and what they can do; never retry blindly and never change the hours or anything else on your own.
+- With several recipients write ONE greeting, "Hi there,". The platform greets each person by their own first
+  name. Never list the people in the greeting ("Hi Nina and Raj,") and never type a placeholder such as
+  {first name} yourself: write plain words only.
+- Names and companies: the card shows each person's details and where they came from. If the user tells you
+  a person's name or company in chat ("his name is Shubham Kumar, he works at Acme"), call set_person_details
+  with their words; it applies to that one person only. Never guess a name or company, and never fill one in
+  from an email address.
+- If send_approved returns needs_scope, the user changed an existing campaign's email and other people in it
+  have not been emailed yet, so they would get the change too. Tell the user this edit also changes the email
+  for the names in also_waiting, and ask ONE short yes/no question, e.g. "This also changes the email for Gus
+  and Nina. Go ahead?" Never offer keep, never mention the campaign's current email as a choice, and never
+  choose for them. If they say yes, call choose_email_scope with everyone, then send_approved again. If they
+  say no, do not send and do not call choose_email_scope; reply: "Okay, nothing sent. Want to change the
+  wording back to the campaign's email, or edit it more?"
 - Never invent people, addresses, campaigns or drafts. The records below are the only truth.
 """
 
@@ -4121,21 +2575,13 @@ def _records_text(records: dict) -> str:
 
 
 def build_prompt(*, ctx, settings, scope, packs, grounded_text: str, session, records: dict) -> str:
-    """The full system prompt for one turn. ``session`` is None when campaigns are not available."""
-    text = agent_instructions.render(
-        ctx=ctx,
-        settings=settings,
-        mode=scope.mode,
-        domain="any — you choose the tools",
-        packs=packs,
-        grounding=grounded_text,
-    )
-    text += "\n" + APPROACH
+    """The campaign system prompt for one turn. ``session`` is None when campaigns are not available."""
+    text = APPROACH
     if session is not None:
         text += "\n" + CAMPAIGN_SECTION
         text += "\n## Campaign records (the only truth for people and campaigns)\n" + _records_text(records)
         text += "\nSending accounts: " + ", ".join(sending_account_emails()) + "\n"
-        text += "\n" + campaign_state_text(session.state, session.status_view())
+        text += "\n" + campaign_state_text(session.state, session.status_view(), session._fields())
     return text
 
 
@@ -4144,7 +2590,7 @@ def build_prompt(*, ctx, settings, scope, packs, grounded_text: str, session, re
 ####################################################################################################
 
 # ------------------------------------------------------------------------------------------------
-# agent  (app/assistant/agent.py) - One Agno agent for the whole workspace: company tasks and outbound campaigns.
+# agent  (app/assistant/agent.py) - Campaign chat turn.
 # ------------------------------------------------------------------------------------------------
 import logging
 import os
@@ -4158,10 +2604,10 @@ from pydantic import BaseModel, Field
 
 from bizos import chat_history
 from bizos import settings as app_settings
+from bizos.actions import store as actions
 from bizos.agents import grounding
 from bizos.agents.claims import enforce_claims
 from bizos.agents.persona import AUTO, enforce_persona
-from bizos.agents.surface import build_unified_tools
 from bizos.domains.packs import DomainPack, enabled_packs, get_pack
 from bizos.tenancy.agnodb import workspace_db
 from bizos.types import ActionStatus
@@ -4199,28 +2645,59 @@ class AssistantTurn(BaseModel):
 # --------------------------------------------------------------------------- model
 
 _effort = {"tried": []}  # effort settings already rejected by the provider, so we stop retrying them
+_api = {"responses": False}  # set when the provider says this model needs /v1/responses (never lowers reasoning)
+
+
+def _truthy(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _effort_candidates() -> list[Optional[str]]:
-    """Reasoning-effort settings to try, in order. ``None`` means do not send the parameter."""
+    """Reasoning-effort settings to try, in order. ``None`` means do not send the parameter.
+
+    By default ONLY the configured setting is used: medium means medium, and a refusal is shown as it is.
+    Set MODEL_REASONING_FALLBACK=on to let the app retry with "none" and then without the parameter.
+    """
     configured = (os.environ.get("MODEL_REASONING_EFFORT") or "").strip().lower() or None
     chain: list[Optional[str]] = [configured]
-    # Some chat models accept function tools only with effort "none"; others reject the parameter.
-    for fallback in ("none", None):
-        if fallback not in chain:
-            chain.append(fallback)
-    return [e for e in chain if e not in _effort["tried"]] or [None]
+    if _truthy("MODEL_REASONING_FALLBACK"):
+        # Some chat models accept function tools only with effort "none"; others reject the parameter.
+        for fallback in ("none", None):
+            if fallback not in chain:
+                chain.append(fallback)
+    return [e for e in chain if e not in _effort["tried"]] or [configured]
+
+
+def _responses_model(**kwargs: Any):
+    """A /v1/responses model that keeps each tool call together with its reasoning item.
+
+    Agno only chains steps through ``previous_response_id`` for model names it knows (o3, o4-mini, gpt-5).
+    For any other model that reasons (gpt-6-luna), it would resend the tool call WITHOUT its reasoning item
+    and the provider refuses ("function_call was provided without its required reasoning item"). Treating
+    the model as a reasoning model makes Agno chain the steps the supported way.
+    """
+    from agno.models.openai import OpenAIResponses
+
+    class _ReasoningResponses(OpenAIResponses):
+        def _using_reasoning_model(self) -> bool:
+            return bool(self.reasoning_effort) or super()._using_reasoning_model()
+
+    return _ReasoningResponses(**kwargs)
 
 
 def _model(effort: Optional[str]):
     mid = app_settings.model_id()
     provider, _, name = mid.partition(":")
     if provider == "openai" and name:
-        from agno.models.openai import OpenAIChat
-
         kwargs: dict[str, Any] = {"id": name}
         if effort:
             kwargs["reasoning_effort"] = effort
+        # MODEL_API=responses uses /v1/responses. Newer models (for example gpt-6-luna) accept function
+        # tools together with reasoning only there; /v1/chat/completions refuses that combination.
+        if _api["responses"] or (os.environ.get("MODEL_API") or "chat").strip().lower() == "responses":
+            return _responses_model(**kwargs)
+        from agno.models.openai import OpenAIChat
+
         return OpenAIChat(**kwargs)
     return mid  # other providers: let Agno resolve "provider:model"
 
@@ -4441,27 +2918,10 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
 
     packs = _packs_for(settings, getattr(body, "domain", AUTO))
     turn = _Turn()
-
-    # The hiring comparison is computed by the platform when the message names a resume and an opening.
     ran_match = False
-    keys = grounding.candidate_match_keys(grounded, message)
     grounded_text = grounded.text
-    if keys:
-        from bizos.tools.base import guarded_call
-
-        outcome = guarded_call(scope, "hr_match_candidate", {"resume_key": keys[0], "opening_key": keys[1]})
-        if outcome.ok:
-            ran_match = True
-            grounded_text += (
-                "\n\n## Structured candidate comparison (computed by the platform)\n"
-                f"{outcome.message}\nResult: {outcome.data}\n"
-                "Present this comparison starting with the verdict in the computed words "
-                "('Likely fit' or 'Weak fit'), then must-haves met and what is missing. "
-                "State that it is assistive only and the hiring decision stays with a human."
-            )
-
-    # ---- tools: every enabled domain, plus the campaign flow for admins
-    tools, tool_domains = build_unified_tools(scope, packs, on_call=turn.calls.append)
+    tools: list[Any] = []
+    tool_domains: dict[str, str] = {}
 
     session: Optional[CampaignSession] = None
     records: dict = {}
@@ -4482,10 +2942,10 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
                     "An admin can change the mode."
                 )
             session = CampaignSession(ctx, records, prior_state, send_block=block)
-            session.log = turn.calls  # one ordered log for ops and campaign calls
+            session.log = turn.calls
             session.user_message = message
             session.user_texts = [m["content"] for m in saved.get("messages") or [] if m["role"] == "user"] + [message]
-            tools = tools + _described(build_campaign_tools(session, scope))
+            tools = _described(build_campaign_tools(session))
 
     def prompt_now() -> str:
         return build_prompt(
@@ -4558,7 +3018,12 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
             _guardrail_audit(ctx, scope, session_id, status, domain=",".join(sorted(grounded.unpurchased)) if status == "PACKAGE_SCOPE_NOTED" else "")
     if session is not None and session.claims_unsent(text, explanation):
         # Last line of defence: never tell the user something was sent when it was not.
-        text = NOT_SENT_TEXT
+        failed = [c for c in session.log if c.get("tool") == "send_approved" and str(c.get("result", "")).startswith("error")]
+        text = (
+            "I could not send it: " + str(failed[-1]["result"]).removeprefix("error:").strip()
+            if failed
+            else NOT_SENT_TEXT
+        )
         turn.guardrail_events.append("FALSE_SEND_CLAIM_CORRECTED")
     if not text:
         raise HTTPException(status_code=502, detail="The assistant returned an empty message")
@@ -4590,37 +3055,58 @@ def _described(functions: list[Any]) -> list[Any]:
     return functions
 
 
+def _needs_responses_api(message: str) -> bool:
+    """The provider said: this model takes tools + reasoning only on /v1/responses."""
+    return "/v1/responses" in (message or "") and not _api["responses"]
+
+
 def _run_agent(
     ctx: Any, settings: Any, session_id: str, tools: list[Any], prompt: str, messages: list[Message], turn: _Turn
 ) -> Any:
-    """Run the Agno agent once. Retries with other reasoning-effort settings only if nothing ran yet."""
+    """Run the Agno agent once.
+
+    If the provider says the model needs /v1/responses, switch to that route and run again with the SAME
+    reasoning effort (nothing was executed, because the request itself was refused). Other reasoning-effort
+    settings are tried only when MODEL_REASONING_FALLBACK=on.
+    """
     last_error = ""
     for effort in _effort_candidates():
-        agent = Agent(
-            name=agent_instructions.assistant_name(settings),
-            id="bizos-assistant",
-            model=_model(effort),
-            user_id=ctx.user_id,
-            session_id=session_id,
-            db=workspace_db(ctx),
-            instructions=prompt,
-            tools=tools,
-            output_schema=AssistantTurn,
-            tool_call_limit=TOOL_CALL_LIMIT,
-            # Conversation context comes from our own per-user chat history (passed in `messages`),
-            # which is also what the user sees; Agno still records the run in the workspace database.
-            add_history_to_context=False,
-            # Tools are built per request and must not be cached across tenants.
-            cache_callables=False,
-            enable_agentic_memory=False,
-            add_memories_to_context=True,
-            telemetry=False,
-            store_events=False,
-        )
-        try:
-            output = agent.run(input=messages)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"Model call failed: {exc}") from exc
+        output = None
+        for _attempt in (1, 2):
+            agent = Agent(
+                name=agent_instructions.assistant_name(settings),
+                id="bizos-assistant",
+                model=_model(effort),
+                user_id=ctx.user_id,
+                session_id=session_id,
+                db=workspace_db(ctx),
+                instructions=prompt,
+                tools=tools,
+                output_schema=AssistantTurn,
+                tool_call_limit=TOOL_CALL_LIMIT,
+                # Conversation context comes from our own per-user chat history (passed in `messages`),
+                # which is also what the user sees; Agno still records the run in the workspace database.
+                add_history_to_context=False,
+                # Tools are built per request and must not be cached across tenants.
+                cache_callables=False,
+                enable_agentic_memory=False,
+                add_memories_to_context=True,
+                telemetry=False,
+                store_events=False,
+            )
+            try:
+                output = agent.run(input=messages)
+            except Exception as exc:  # noqa: BLE001
+                if _needs_responses_api(str(exc)):
+                    log.warning("switching to the Responses API for %s: %s", app_settings.model_id(), exc)
+                    _api["responses"] = True
+                    continue
+                raise HTTPException(status_code=502, detail=f"Model call failed: {exc}") from exc
+            if output.status == RunStatus.error and not output.tools and _needs_responses_api(str(output.content or "")):
+                log.warning("switching to the Responses API for %s: %s", app_settings.model_id(), output.content)
+                _api["responses"] = True
+                continue
+            break
         turn.tool_runs.extend(output.tools or [])
         if output.status != RunStatus.error:
             return output
@@ -4673,6 +3159,8 @@ def _finish(
         "email_subject": d.get("email_subject") or "",
         "email_body": d.get("email_body") or "",
         "email_draft": d.get("email_draft") or "",
+        "email_view": draft_view(session.records, s) if session is not None and d else {},
+        "show_email_card": bool(session is not None and d and session.card_shown),
         "reply_note": text,
         "campaigns_to_show": session.campaigns_to_show if session is not None else [],
         "people_to_show": session.people_to_show if session is not None else [],

@@ -183,7 +183,7 @@ def _names(value: Any) -> list[str]:
 
 
 def _plan_update_user(scope_for, args):
-    from app.assistant.assistant import _find_user
+    from app.assistant.company_tools import _find_user
     from bizos import admin_ops as ops
 
     wants_roles = any(_names(args.get(k)) for k in _ROLE_FIELDS)
