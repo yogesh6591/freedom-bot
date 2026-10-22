@@ -259,6 +259,47 @@ export interface AssistantTraceCall {
   result?: string
 }
 
+export type PersonFieldSource = 'typed' | 'database' | 'chat' | 'missing'
+
+export type EmailCardScope = 'everyone' | 'keep' | ''
+
+export interface EmailViewPerson {
+  email: string
+  first_name: string
+  last_name: string
+  company: string
+  sources: {
+    first_name: PersonFieldSource
+    last_name: PersonFieldSource
+    company: PersonFieldSource
+  }
+}
+
+export interface EmailViewPreview {
+  email: string
+  subject: string
+  body: string
+}
+
+export interface EmailViewAudience {
+  campaign: string
+  campaign_is_new: boolean
+  will_send_now: string[]
+  also_waiting: { name: string; email: string }[]
+  template_changed: boolean
+  scope: EmailCardScope
+  scope_needed: boolean
+}
+
+export interface EmailView {
+  draft_id?: string
+  template?: { subject: string; body: string }
+  people?: EmailViewPerson[]
+  previews?: EmailViewPreview[]
+  warnings?: string[]
+  audience?: EmailViewAudience
+}
+
 export interface AssistantTrace {
   engine?: string
   tool?: string
@@ -275,6 +316,8 @@ export interface AssistantTrace {
   email_subject?: string
   email_body?: string
   email_draft?: string
+  email_view?: EmailView
+  show_email_card?: boolean
   reply_note?: string
   campaigns_to_show?: { name: string; timing: string }[]
   people_to_show?: { name: string; email: string }[]
@@ -304,6 +347,7 @@ export interface ChatSessionSummary {
 }
 
 export interface ChatSessionMessage {
+  id: string
   role: 'user' | 'assistant'
   content: string
   domain: string | null

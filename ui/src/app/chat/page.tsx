@@ -29,11 +29,14 @@ import type {
   ChatContext,
   ChatResponse,
   ChatSessionDetail,
-  ChatSessionSummary
+  ChatSessionSummary,
+  EmailView
 } from '@/lib/types'
 import { Badge, Btn, ErrorNote } from '@/components/common/primitives'
+import { EmailCard } from './EmailCard'
 
 interface Turn {
+  id?: string
   role: 'user' | 'assistant'
   content: string
   emailDraft?: string
@@ -83,6 +86,7 @@ export default function ChatPage() {
 /** Rebuild chat turns from a saved conversation (M01-11). */
 function turnsFrom(detail: ChatSessionDetail): Turn[] {
   return detail.messages.map((m) => ({
+    id: m.id,
     role: m.role === 'user' ? 'user' : 'assistant',
     content: m.content,
     emailDraft: m.meta.json?.email_draft || undefined,
@@ -116,6 +120,140 @@ const CAMPAIGN_FIELDS: { key: keyof AssistantTrace; label: string }[] = [
   { key: 'email_draft', label: 'Email draft' }
 ]
 
+function parseDraftText(
+  trace?: AssistantTrace,
+  emailDraft?: string
+): { subject: string; body: string } {
+  const subject = (trace?.email_subject || '').trim()
+  const body = (trace?.email_body || '').trim()
+  if (subject || body) return { subject, body }
+  const draft = (emailDraft || trace?.email_draft || '').trim()
+  if (!draft) return { subject: '', body: '' }
+  const lines = draft.split('\n')
+  const first = (lines[0] || '').trim()
+  if (first.toLowerCase().startsWith('subject:')) {
+    return {
+      subject: first.slice('subject:'.length).trim(),
+      body: lines.slice(1).join('\n').replace(/^\n/, '').trimStart()
+    }
+  }
+  return { subject: '', body: draft }
+}
+
+function peopleFromShown(
+  shown?: { name: string; email: string }[]
+): EmailView['people'] {
+  return (shown || [])
+    .filter((person) => person.email || person.name)
+    .map((person) => {
+      const parts = (person.name || '').trim().split(/\s+/).filter(Boolean)
+      return {
+        email: person.email || '',
+        first_name: parts[0] || '',
+        last_name: parts.slice(1).join(' '),
+        company: '',
+        sources: {
+          first_name: parts[0] ? 'chat' : 'missing',
+          last_name: parts.length > 1 ? 'chat' : 'missing',
+          company: 'missing'
+        } as const
+      }
+    })
+}
+
+function emailViewFor(trace?: AssistantTrace, emailDraft?: string): EmailView | undefined {
+  const view = trace?.email_view
+  const shownPeople = peopleFromShown(trace?.people_to_show)
+  if (view?.template && (view.template.subject || view.template.body)) {
+    if (view.people?.length || !shownPeople?.length) return view
+    return { ...view, people: shownPeople }
+  }
+  const { subject, body } = parseDraftText(trace, emailDraft)
+  if (!subject && !body) return undefined
+  const emails = [...new Set((trace?.email_address_list || []).filter(Boolean))]
+  const single = (trace?.email_address || '').trim()
+  const recipients = emails.length ? emails : single ? [single] : []
+  return {
+    template: { subject, body },
+    people: shownPeople || [],
+    previews: (recipients.length ? recipients : ['']).map((email) => ({
+      email,
+      subject,
+      body
+    })),
+    warnings: [],
+    audience: {
+      campaign: trace?.campaign_name || '',
+      campaign_is_new: true,
+      will_send_now: recipients,
+      also_waiting: [],
+      template_changed: false,
+      scope: '',
+      scope_needed: false
+    }
+  }
+}
+
+function applyEmailView(turn: Turn, view: EmailView): Turn {
+  const first = view.previews?.[0]
+  const emailDraft = first
+    ? `Subject: ${first.subject}\n\n${first.body}`.trim()
+    : turn.emailDraft
+  return {
+    ...turn,
+    emailDraft,
+    trace: {
+      ...(turn.trace || {}),
+      email_view: {
+        ...view,
+        draft_id: view.draft_id || turn.trace?.email_view?.draft_id
+      },
+      email_subject: view.template?.subject,
+      email_body: view.template?.body,
+      email_draft: emailDraft
+    }
+  }
+}
+
+function previousAssistantDraft(turns: Turn[], index: number): string {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (turns[i].role !== 'assistant') continue
+    return (turns[i].trace?.email_draft || turns[i].emailDraft || '').trim()
+  }
+  return ''
+}
+
+function ownEmailView(turn: Turn, emailDraft?: string): EmailView | undefined {
+  const view = turn.trace?.email_view
+  if (view?.template && (view.template.subject || view.template.body)) return view
+  return emailViewFor(turn.trace, emailDraft)
+}
+
+function emailCardForTurn(
+  turn: Turn,
+  latest: Turn | undefined,
+  previousDraft: string,
+  emailDraft?: string
+): { view: EmailView; editable: boolean } | undefined {
+  const flag = turn.trace?.show_email_card
+  if (flag === false) return undefined
+  const draft = (turn.trace?.email_draft || emailDraft || '').trim()
+  if (flag !== true && !draft) return undefined
+  if (flag !== true && draft === previousDraft) return undefined
+  const own = ownEmailView(turn, emailDraft)
+  if (!own?.template) return undefined
+  const latestView = latest?.trace?.email_view
+  const latestDraft = (latest?.trace?.email_draft || latest?.emailDraft || '').trim()
+  const sameDraft = own.draft_id
+    ? own.draft_id === latestView?.draft_id
+    : Boolean(draft) && draft === latestDraft
+  const live = sameDraft && latest?.trace?.tool !== 'execute'
+  return {
+    view: live && latestView?.template ? latestView : own,
+    editable: Boolean(live)
+  }
+}
+
 function traceValue(value: AssistantTrace[keyof AssistantTrace]): string {
   if (Array.isArray(value)) {
     return value
@@ -129,7 +267,7 @@ function traceValue(value: AssistantTrace[keyof AssistantTrace]): string {
       .filter(Boolean)
       .join(', ')
   }
-  return (value || '').trim()
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function actionLine(item: Pick<ActionRecord, 'title' | 'status' | 'risk_level'> | Partial<ActionRecord>): string {
@@ -232,174 +370,6 @@ function TurnTrace({
         </div>
       )}
     </dl>
-  )
-}
-
-interface MailFields {
-  to: string
-  from: string
-  subject: string
-  body: string
-}
-
-function mailFields(
-  draft: string,
-  saved?: Partial<MailFields>
-): MailFields {
-  const subject = (saved?.subject || '').trim()
-  const body = (saved?.body || '').trim()
-  if (subject || body) {
-    return {
-      to: saved?.to || '',
-      from: saved?.from || '',
-      subject,
-      body: body || draft
-    }
-  }
-  const lines = draft.split('\n')
-  const first = (lines[0] || '').trim()
-  const prefix = 'subject:'
-  if (first.toLowerCase().startsWith(prefix)) {
-    return {
-      to: saved?.to || '',
-      from: saved?.from || '',
-      subject: first.slice(prefix.length).trim(),
-      body: lines.slice(1).join('\n').trim()
-    }
-  }
-  return {
-    to: saved?.to || '',
-    from: saved?.from || '',
-    subject: '',
-    body: draft
-  }
-}
-
-function EmailDraftCard({
-  draft,
-  to,
-  fromName,
-  subject,
-  body,
-  onSave
-}: {
-  draft: string
-  to: string
-  fromName: string
-  subject?: string
-  body?: string
-  onSave: (next: MailFields) => Promise<void>
-}) {
-  const shown = mailFields(draft, { to, from: fromName, subject, body })
-  const [editing, setEditing] = useState(false)
-  const [fields, setFields] = useState(shown)
-  const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (!editing) {
-      setFields(mailFields(draft, { to, from: fromName, subject, body }))
-    }
-  }, [draft, to, fromName, subject, body, editing])
-
-  async function save() {
-    const next = {
-      to: fields.to.trim(),
-      from: fields.from.trim(),
-      subject: fields.subject.trim(),
-      body: fields.body.trim()
-    }
-    if (!next.body || saving) return
-    setSaving(true)
-    try {
-      await onSave(next)
-      setEditing(false)
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <article className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]">
-      <div className="flex items-center justify-between px-3 pt-3">
-        <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
-        {editing ? (
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              className="text-[13px] font-medium text-[#5f6368]"
-              onClick={() => {
-                setFields(shown)
-                setEditing(false)
-              }}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="text-[13px] font-medium text-[#1a73e8]"
-              onClick={() => void save()}
-              disabled={saving}
-            >
-              Save
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#5f6368] hover:bg-[#f1f3f4]"
-            aria-label="Edit email"
-            onClick={() => setEditing(true)}
-          >
-            <Pencil size={16} aria-hidden />
-          </button>
-        )}
-      </div>
-      <div className="px-4 pb-1">
-        {(
-          [
-            ['to', 'To'],
-            ['from', 'From'],
-            ['subject', 'Subject']
-          ] as const
-        ).map(([key, label]) => (
-          <label
-            key={key}
-            className="flex items-center gap-3 border-b border-[#f1f3f4] py-2.5"
-          >
-            <span className="w-16 shrink-0 text-[13px] text-[#5f6368]">{label}</span>
-            {editing ? (
-              <input
-                value={fields[key]}
-                onChange={(event) =>
-                  setFields((current) => ({ ...current, [key]: event.target.value }))
-                }
-                className="w-full border-0 bg-transparent text-[14px] text-[#202124] outline-none"
-                aria-label={label}
-              />
-            ) : (
-              <span className="min-w-0 break-words text-[14px] text-[#202124]">
-                {shown[key] || '—'}
-              </span>
-            )}
-          </label>
-        ))}
-        {editing ? (
-          <textarea
-            value={fields.body}
-            onChange={(event) =>
-              setFields((current) => ({ ...current, body: event.target.value }))
-            }
-            rows={12}
-            aria-label="Body"
-            className="mt-3 w-full resize-y border-0 bg-transparent py-3 text-[14px] leading-6 text-[#202124] outline-none"
-          />
-        ) : (
-          <p className="whitespace-pre-wrap py-4 text-[14px] leading-6 text-[#202124]">
-            {shown.body}
-          </p>
-        )}
-      </div>
-    </article>
   )
 }
 
@@ -506,6 +476,49 @@ function AssistantMessage({
   )
 }
 
+function laterActionHappened(turns: Turn[], fromIndex: number): boolean {
+  for (const turn of turns.slice(fromIndex + 1)) {
+    if (turn.role !== 'assistant') continue
+    const log = turn.trace?.tool_log ?? []
+    if (
+      log.some(
+        (call) =>
+          call.tool === 'send_approved' &&
+          String(call.result || '').startsWith('sent:')
+      )
+    ) {
+      return true
+    }
+    const wrote = (turn.response?.tool_activity ?? []).some((item) => item.ok)
+    const actions = [
+      ...(turn.response?.actions ?? []),
+      ...(turn.response?.awaiting_approval ?? []),
+      ...(turn.response?.drafts ?? [])
+    ]
+    if (wrote && actions.length > 0) return true
+  }
+  return false
+}
+
+function assistantTurnFrom(data: ChatResponse & { response?: string }): Turn {
+  const content = data.content || data.response || ''
+  return {
+    role: 'assistant',
+    content,
+    emailDraft: data.email_draft || undefined,
+    note: spokenNote(content, data.email_draft, data.trace?.reply_note),
+    trace: data.trace,
+    response: { ...data, content }
+  }
+}
+
+function withMessageIds(turns: Turn[], detail: ChatSessionDetail): Turn[] {
+  return turns.map((turn, index) => ({
+    ...turn,
+    id: detail.messages[index]?.id ?? turn.id
+  }))
+}
+
 function whenLabel(iso: string | null): string {
   if (!iso) return ''
   const date = new Date(iso)
@@ -531,6 +544,8 @@ function ChatView() {
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
   const [sessionId, setSessionId] = useState<string | undefined>()
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [developer, setDeveloper] = useState(false)
@@ -664,7 +679,20 @@ function ChatView() {
     setSessionId(undefined)
     setTurns([])
     setError(null)
+    setEditingId(null)
+    setEditText('')
     remember(undefined)
+  }
+
+  async function attachMessageIds(id: string, nextTurns: Turn[]) {
+    try {
+      const detail = await api.get<ChatSessionDetail>(
+        `/api/chat/sessions/${encodeURIComponent(id)}`
+      )
+      setTurns(withMessageIds(nextTurns, detail))
+    } catch {
+      setTurns(nextTurns)
+    }
   }
 
   useEffect(() => {
@@ -677,37 +705,6 @@ function ChatView() {
     el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
   }, [turns, busy])
 
-  async function saveDraft(index: number, next: MailFields) {
-    if (!sessionId) return
-    const emailDraft = `Subject: ${next.subject}\n\n${next.body}`.trim()
-    await api.post('/api/chat/email-draft', {
-      session_id: sessionId,
-      email_draft: emailDraft,
-      email_subject: next.subject,
-      email_body: next.body,
-      email_from: next.from,
-      email_address: next.to
-    })
-    setTurns((prev) =>
-      prev.map((turn, i) =>
-        i === index
-          ? {
-              ...turn,
-              emailDraft,
-              trace: {
-                ...(turn.trace || {}),
-                email_draft: emailDraft,
-                email_subject: next.subject,
-                email_body: next.body,
-                email_from: next.from,
-                email_address: next.to
-              }
-            }
-          : turn
-      )
-    )
-  }
-
   async function send(event: React.FormEvent) {
     event.preventDefault()
     const message = input.trim()
@@ -716,26 +713,56 @@ function ChatView() {
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setBusy(true)
     setError(null)
+    setEditingId(null)
     setTurns((prev) => [...prev, { role: 'user', content: message }])
     try {
       const data = await api.post<ChatResponse & { response?: string }>(
         '/api/chat',
         { message, session_id: sessionId }
       )
-      const content = data.content || data.response || ''
       setSessionId(data.session_id)
       remember(data.session_id)
-      setTurns((prev) => [
-        ...prev,
-        {
-          role: 'assistant',
-          content,
-          emailDraft: data.email_draft || undefined,
-          note: spokenNote(content, data.email_draft, data.trace?.reply_note),
-          trace: data.trace,
-          response: { ...data, content }
-        }
-      ])
+      const nextTurns = [...turns, { role: 'user' as const, content: message }, assistantTurnFrom(data)]
+      setTurns(nextTurns)
+      await attachMessageIds(data.session_id, nextTurns)
+      void refreshContext()
+      void loadHistory()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Chat failed')
+    } finally {
+      setBusy(false)
+      inputRef.current?.focus()
+    }
+  }
+
+  async function saveEdit(index: number) {
+    if (!sessionId || busy) return
+    const turn = turns[index]
+    const message = editText.trim()
+    if (!turn?.id || turn.role !== 'user' || !message || message === turn.content) return
+    if (laterActionHappened(turns, index)) {
+      const ok = window.confirm(
+        'An action (email sent / record created) already happened after this point. Editing will NOT undo it. Continue?'
+      )
+      if (!ok) return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await api.post<ChatResponse & { response?: string }>(
+        `/api/chat/sessions/${encodeURIComponent(sessionId)}/edit`,
+        { message_id: turn.id, message }
+      )
+      const nextTurns = [
+        ...turns.slice(0, index),
+        { role: 'user' as const, content: message },
+        assistantTurnFrom(data)
+      ]
+      setSessionId(data.session_id)
+      remember(data.session_id)
+      setTurns(nextTurns)
+      setEditingId(null)
+      await attachMessageIds(data.session_id, nextTurns)
       void refreshContext()
       void loadHistory()
     } catch (err) {
@@ -747,6 +774,10 @@ function ChatView() {
   }
 
   const alerts = context?.inefficiency_alerts ?? []
+  const lastAssistantIndex = turns.reduce(
+    (found, item, i) => (item.role === 'assistant' ? i : found),
+    -1
+  )
   const suggestions = [
     {
       question: 'Summarize our current priorities',
@@ -1033,39 +1064,125 @@ function ChatView() {
               <div className="flex flex-col gap-4 pb-2">
                 {turns.map((turn, index) =>
                   turn.role === 'user' ? (
-                    <div key={index} className="flex justify-end">
-                      <p className="assistant-user-bubble w-fit max-w-[min(80%,28rem)] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7">
-                        {turn.content}
-                      </p>
+                    <div
+                      key={turn.id || index}
+                      className="group flex items-end justify-end gap-1.5"
+                    >
+                      {turn.id && !busy && editingId !== turn.id ? (
+                        <button
+                          type="button"
+                          aria-label="Edit message"
+                          title="Edit message"
+                          className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-background-elevated hover:text-primary"
+                          onClick={() => {
+                            setEditingId(turn.id as string)
+                            setEditText(turn.content)
+                          }}
+                        >
+                          <Pencil size={14} aria-hidden />
+                        </button>
+                      ) : null}
+                      {editingId === turn.id ? (
+                        <div className="w-fit max-w-[min(80%,28rem)]">
+                          <textarea
+                            value={editText}
+                            onChange={(event) => setEditText(event.target.value)}
+                            rows={Math.min(8, Math.max(2, editText.split('\n').length))}
+                            aria-label="Edit message"
+                            className="assistant-user-bubble w-full min-w-[16rem] resize-y rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7 outline-none"
+                          />
+                          <div className="mt-1.5 flex justify-end gap-2">
+                            <button
+                              type="button"
+                              className="rounded-full px-3 py-1 text-[12px] font-medium text-secondary hover:text-primary"
+                              onClick={() => {
+                                setEditingId(null)
+                                setEditText('')
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-full bg-brand px-3 py-1 text-[12px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+                              disabled={
+                                !editText.trim() || editText.trim() === turn.content.trim()
+                              }
+                              onClick={() => void saveEdit(index)}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="assistant-user-bubble w-fit max-w-[min(80%,28rem)] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7">
+                          {turn.content}
+                        </p>
+                      )}
                     </div>
                   ) : (
+                    (() => {
+                      const latest =
+                        lastAssistantIndex >= 0 ? turns[lastAssistantIndex] : undefined
+                      const card = emailCardForTurn(
+                        turn,
+                        latest,
+                        previousAssistantDraft(turns, index),
+                        turn.emailDraft
+                      )
+                      const note = spokenNote(
+                        turn.content,
+                        turn.emailDraft,
+                        turn.note
+                      )
+                      return (
                     <div key={index} className="flex flex-col items-start gap-2">
-                      {turn.emailDraft && turn.trace?.tool !== 'execute' ? (
-                        <EmailDraftCard
-                          draft={turn.emailDraft}
-                          to={
-                            turn.trace?.email_address ||
-                            (turn.trace?.email_address_list || []).join(', ')
+                      {card ? (
+                        <EmailCard
+                          view={card.view}
+                          sessionId={sessionId || ''}
+                          editable={Boolean(sessionId) && card.editable}
+                          onView={(next) =>
+                            setTurns((prev) => {
+                              const last = prev.reduce(
+                                (found, item, i) =>
+                                  item.role === 'assistant' ? i : found,
+                                -1
+                              )
+                              const lastTurn = last >= 0 ? prev[last] : undefined
+                              const ownId = turn.trace?.email_view?.draft_id
+                              const ownDraft = (
+                                turn.trace?.email_draft ||
+                                turn.emailDraft ||
+                                ''
+                              ).trim()
+                              const lastDraft = (
+                                lastTurn?.trace?.email_draft ||
+                                lastTurn?.emailDraft ||
+                                ''
+                              ).trim()
+                              const sameDraft = ownId
+                                ? ownId === lastTurn?.trace?.email_view?.draft_id
+                                : Boolean(ownDraft) && ownDraft === lastDraft
+                              const target =
+                                sameDraft && lastTurn?.trace?.tool !== 'execute'
+                                  ? last
+                                  : index
+                              return prev.map((item, i) =>
+                                i === target ? applyEmailView(item, next) : item
+                              )
+                            })
                           }
-                          fromName={(() => {
-                            const accounts = (context?.sending_accounts || []).filter(Boolean)
-                            const saved = (turn.trace?.email_from || '').trim()
-                            if (accounts.length && !saved.includes('@')) return accounts.join(', ')
-                            return saved || accounts.join(', ')
-                          })()}
-                          subject={turn.trace?.email_subject}
-                          body={turn.trace?.email_body}
-                          onSave={(next) => saveDraft(index, next)}
                         />
                       ) : null}
-                      {spokenNote(turn.content, turn.emailDraft, turn.note) ? (
-                        turn.emailDraft && turn.trace?.tool !== 'execute' ? (
+                      {note ? (
+                        card ? (
                           <p className="assistant-bot-bubble w-fit max-w-[min(100%,36rem)] whitespace-pre-wrap break-words rounded-2xl rounded-tl-md px-4 py-3 text-[15px] leading-7 text-primary">
-                            {spokenNote(turn.content, turn.emailDraft, turn.note)}
+                            {note}
                           </p>
                         ) : (
                           <AssistantMessage
-                            text={spokenNote(turn.content, turn.emailDraft, turn.note)}
+                            text={note}
                             campaigns={turn.trace?.campaigns_to_show}
                             people={turn.trace?.people_to_show}
                           />
@@ -1075,6 +1192,8 @@ function ChatView() {
                         <TurnTrace trace={turn.trace} response={turn.response} />
                       ) : null}
                     </div>
+                      )
+                    })()
                   )
                 )}
               </div>

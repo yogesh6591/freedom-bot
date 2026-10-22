@@ -1307,6 +1307,8 @@ _SETUP_FIELDS = (
 @effect("admin_apply_setup")
 def admin_apply_setup(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Apply first-client setup. Fields left out keep their current values."""
+    if not any(args.get(k) for k in _SETUP_FIELDS):
+        return ConnectorResult.failure("Nothing to apply. Tell me what to set up.")
     from bizos.onboarding import get_profile
 
     settings = _settings(scope)
@@ -2626,11 +2628,28 @@ def check_people(emails: list[str]) -> list[PersonStatus]:
         db.close()
 
 
-def stop_for_move(db: Session, client, link_id) -> None:
-    """Stop one person in their old campaign. Keeps history, deletes nothing.
+def _instantly_lead_id(client, link) -> str:
+    """The lead's id in Instantly: the saved one, else look it up by campaign and email."""
+    if link.instantly_lead_id:
+        return str(link.instantly_lead_id)
+    email = (link.prospect.email if link.prospect else "") or ""
+    cid = link.campaign.instantly_campaign_id if link.campaign else ""
+    if not (email and cid):
+        return ""
+    data = client.list_leads({"campaign": cid, "search": email, "limit": 20})
+    for item in data.get("items") or []:
+        if str(item.get("email") or "").lower() == email.lower():
+            return str(item.get("id") or "")
+    return ""
 
-    Instantly first, then local: if Instantly fails, local state is untouched and the person
-    is still (correctly) shown as active there.
+
+def stop_for_move(db: Session, client, link_id) -> None:
+    """Take one person out of their old campaign so they appear only in the new one.
+
+    Instantly first: the lead is deleted from the old campaign (not labelled "Not interested"),
+    which also cancels anything still scheduled for them there. Only after that succeeds is the
+    local link removed. If Instantly fails, nothing local changes and the person is still
+    (correctly) shown as active there. The person, their other campaigns and the audit log stay.
     """
     link = db.scalar(
         select(CampaignProspect)
@@ -2640,12 +2659,23 @@ def stop_for_move(db: Session, client, link_id) -> None:
     if link is None:
         return
     try:
-        stop_instantly_lead_outreach(client, campaign=link.campaign, link=link)
+        lead_id = _instantly_lead_id(client, link)
+        if lead_id:
+            try:
+                client._request("DELETE", f"/leads/{lead_id}", json={})
+            except InstantlyError as exc:
+                if getattr(exc, "status_code", None) != 404:  # 404 = already gone
+                    raise
     except InstantlyError as exc:
-        raise StopError(str(exc) or "Instantly did not accept the stop request.") from exc
-    link.outreach_status = OutreachStatus.STOPPED
-    db.add(link)
-    db.commit()
+        raise StopError(str(exc) or "Instantly did not accept the request to remove the lead.") from exc
+    try:
+        db.delete(link)
+        db.commit()
+    except Exception:  # noqa: BLE001  - could not remove locally: keep the record, but make it inactive
+        db.rollback()
+        link.outreach_status = OutreachStatus.STOPPED
+        db.add(link)
+        db.commit()
 
 # ------------------------------------------------------------------------------------------------
 # fulfill  (app/assistant/fulfill.py) - Create the approved campaign and hand the email to Instantly.
@@ -2749,8 +2779,20 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
         CampaignActivationService(db).save_sending_accounts(campaign.id, accounts)
         prospects = ProspectService(db)
         people = []
+        fields_by_email = {
+            str(row.get("email") or "").strip().lower(): row
+            for row in parsed.get("people_fields") or []
+        }
         for email in recipients:
-            person = _person(db, prospects, email, stated_name)
+            row = fields_by_email.get(email.lower()) or {}
+            first = str(row.get("first_name") or "").strip()
+            last = str(row.get("last_name") or "").strip()
+            if row.get("first_is_fallback"):
+                first = ""
+            own_name = " ".join(part for part in (first, last) if part)
+            if not own_name and len(recipients) == 1:
+                own_name = stated_name
+            person = _person(db, prospects, email, own_name)
             people.append(person)
             if person.approval_status != ProspectApprovalStatus.APPROVED:
                 prospects.bulk_approve([person.id])
@@ -2761,15 +2803,26 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
                 if "already attached" in exc.message:
                     continue
                 raise FulfillError(exc.message, campaign_id=campaign_id) from exc
-        template_subject, template_body = _template_copy(
-            subject,
-            body,
-            people,
-            assessment_url=(campaigns.settings.public_base_url or "").strip(),
-            placeholder=campaigns.settings.assessment_url_placeholder,
+        _apply_person_fields(db, campaign.id, people, parsed.get("people_fields"))
+        if parsed.get("email_template"):
+            template_subject, template_body = finalize_template(subject, body)
+        else:
+            template_subject, template_body = _template_copy(
+                subject,
+                body,
+                people,
+                assessment_url=(campaigns.settings.public_base_url or "").strip(),
+                placeholder=campaigns.settings.assessment_url_placeholder,
+            )
+        keep_saved_email = parsed.get("email_scope") == "keep" and not progress.created_here
+        if not keep_saved_email:
+            _write_initial(campaigns, campaign, template_subject, template_body)
+        companies = (
+            [str(f.get("company") or "").strip() for f in parsed.get("people_fields") or []]
+            if parsed.get("people_fields")
+            else [(person.company or "").strip() for person in people]
         )
-        _write_initial(campaigns, campaign, template_subject, template_body)
-        if people and all(not (person.company or "").strip() for person in people):
+        if people and all(not c for c in companies):
             _drop_company_placeholder(db, campaign.id)
         InstantlyCampaignSyncService(db).sync(campaign.id)
 
@@ -2949,6 +3002,40 @@ def _template_copy(
     return text_subject, text_body
 
 
+def _apply_person_fields(db, campaign_id, people: list, final_fields: list | None) -> None:
+    """Save, on each person's link to THIS campaign, any name/company that differs from their record.
+    Lead sync reads these, so what the user typed for one person never reaches anyone else."""
+    if not final_fields:
+        return
+    by_email = {str(f.get("email") or "").casefold(): f for f in final_fields}
+    for person in people:
+        final = by_email.get((person.email or "").casefold())
+        if not final:
+            continue
+        link = db.scalar(
+            select(CampaignProspect).where(
+                CampaignProspect.campaign_id == campaign_id, CampaignProspect.prospect_id == person.id
+            )
+        )
+        if link is None:
+            continue
+        first, last, company = (final.get("first_name") or ""), (final.get("last_name") or ""), (final.get("company") or "")
+        # A person who was only a mailbox so far becomes the person the user described.
+        if _mailbox_name(person.email or "", (person.executive_name or "").strip()) and not final.get("first_is_fallback"):
+            person.executive_name = " ".join(x for x in (first, last) if x)
+            db.add(person)
+        if company and not (person.company or "").strip():
+            person.company = company
+            db.add(person)
+        stored_first, stored_last = split_executive_name(person.executive_name or "")
+        stored_company = (person.company or "").strip()
+        link.first_name_override = first if first != stored_first else None
+        link.last_name_override = last if last != stored_last else None
+        link.company_override = company if company != stored_company else None
+        db.add(link)
+    db.commit()
+
+
 def _write_initial(campaigns: CampaignService, campaign, subject: str, body: str) -> None:
     current = campaigns.get_campaign(campaign.id)
     initial = next(
@@ -3085,6 +3172,64 @@ def _keep_stated_name(db, prospect: Prospect, stated: str) -> None:
             continue
 
 
+def replace_person_name(
+    *,
+    email: str,
+    first_name: str,
+    last_name: str = "",
+    company: str | None = None,
+) -> None:
+    """Keep a name the user chose for this person from now on."""
+    from sqlalchemy import func, select
+
+    address = (email or "").strip()
+    if "@" not in address:
+        return
+    first = (first_name or "").strip()
+    last = (last_name or "").strip()
+    stated = " ".join(part for part in (first, last) if part)
+    db = SessionLocal()
+    try:
+        prospect = db.scalar(select(Prospect).where(func.lower(Prospect.email) == address.lower()))
+        if prospect is None:
+            return
+        if stated:
+            prospect.executive_name = stated
+        if company is not None and company.strip():
+            prospect.company = company.strip()
+        db.add(prospect)
+        db.commit()
+        if not stated:
+            return
+        first_name, last_name = split_executive_name(stated)
+        lead_ids = [
+            lead_id
+            for lead_id in db.scalars(
+                select(CampaignProspect.instantly_lead_id).where(
+                    CampaignProspect.prospect_id == prospect.id,
+                    CampaignProspect.instantly_lead_id.is_not(None),
+                )
+            ).all()
+            if lead_id
+        ]
+        if not lead_ids:
+            return
+        try:
+            client = InstantlyService(db).get_api_client()
+        except Exception:
+            return
+        for lead_id in lead_ids:
+            try:
+                client.update_lead(
+                    lead_id,
+                    {"first_name": first_name or None, "last_name": last_name or None},
+                )
+            except Exception:
+                continue
+    finally:
+        db.close()
+
+
 def _recipients_fulfill(parsed: dict) -> list[str]:
     found: list[str] = []
     seen: set[str] = set()
@@ -3100,6 +3245,12 @@ def _recipients_fulfill(parsed: dict) -> list[str]:
 
 
 def _subject_body(parsed: dict) -> tuple[str, str]:
+    if parsed.get("email_template"):
+        subject = str(parsed.get("email_subject") or "").strip()
+        body = str(parsed.get("email_body") or "").strip()
+        if not subject or not body:
+            raise FulfillError("The approved email is missing a subject or a body.")
+        return subject, body
     draft = str(parsed.get("email_draft") or "").strip()
     if draft.lower().startswith("subject:"):
         first, _, rest = draft.partition("\n")
@@ -3150,7 +3301,7 @@ def _allowed_zones() -> set[str]:
 
 
 ####################################################################################################
-# PART 3 - CAMPAIGN TOOLS (update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved)
+# PART 3 - CAMPAIGN TOOLS (update_selection, show_contacts, show_campaigns, propose_email, approve_move, remove_from_campaign, send_approved)
 ####################################################################################################
 
 # ------------------------------------------------------------------------------------------------
@@ -3260,10 +3411,20 @@ CAMPAIGN_TOOLS = [
         "type": "function",
         "function": {
             "name": "propose_email",
-            "description": "Build the draft from the committed selection and show it for approval. Requires recipients, campaign and window to be committed.",
+            "description": (
+                "Build the draft from the committed selection and show it as a card for approval. Requires recipients, campaign "
+                "and window to be committed. Call it for a NEW draft or when the user asks for a change. Do not call it to answer "
+                "a question about the draft. If the user edited the draft in the card, the current text is returned to you: build "
+                "on it and pass change_evidence (the user's words asking for the change)."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"subject": {"type": "string"}, "body": {"type": "string"}, "why": _WHY},
+                "properties": {
+                    "subject": {"type": "string"},
+                    "body": {"type": "string"},
+                    "change_evidence": {"type": "string", "description": "the user's own words asking to change the existing draft"},
+                    "why": _WHY,
+                },
                 "required": ["subject", "body", "why"],
             },
         },
@@ -3284,6 +3445,68 @@ CAMPAIGN_TOOLS = [
                     "why": _WHY,
                 },
                 "required": ["emails", "approval_evidence", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_from_campaign",
+            "description": (
+                "Take one person out of a campaign. Only if they have not been emailed there yet. The person and "
+                "their history stay. Ask ONE yes/no first; call only after the user's NEXT message says yes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string"},
+                    "campaign": {"type": "string", "description": "campaign name or id"},
+                    "approval_evidence": {"type": "string", "description": "the user's words that count as yes"},
+                    "why": _WHY,
+                },
+                "required": ["email", "campaign", "approval_evidence", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_person_details",
+            "description": (
+                "Save a first name, last name or company the USER wrote for ONE chosen recipient (for example 'his name is "
+                "Shubham Kumar, he works at Acme'). It applies to that person only, never to the whole campaign. Never guess "
+                "details; pass the user's own words as evidence."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string"},
+                    "first_name": {"type": "string"},
+                    "last_name": {"type": "string"},
+                    "company": {"type": "string"},
+                    "evidence": {"type": "string", "description": "the user's own words that gave these details"},
+                    "why": _WHY,
+                },
+                "required": ["email", "evidence", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "choose_email_scope",
+            "description": (
+                "Called with scope 'everyone' after the user says yes to changing the campaign's first email for everyone "
+                "who has not been emailed yet. The bot must never offer or pick 'keep' on its own."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "scope": {"type": "string", "enum": ["everyone", "keep"]},
+                    "approval_evidence": {"type": "string", "description": "the user's words that chose this"},
+                    "why": _WHY,
+                },
+                "required": ["scope", "approval_evidence", "why"],
             },
         },
     },
@@ -3357,7 +3580,7 @@ def _missing(state: dict) -> list[str]:
     return out
 
 
-def campaign_state_text(state: dict, people_status: list | None = None) -> str:
+def campaign_state_text(state: dict, people_status: list | None = None, fields: list | None = None) -> str:
     view = {
         "people_status": people_status if people_status is not None else "unavailable",
         "moves_user_approved": state.get("moves") or [],
@@ -3370,6 +3593,10 @@ def campaign_state_text(state: dict, people_status: list | None = None) -> str:
         "still_missing": _missing(state),
         "last_shown_to_user_in_tables_in_order": state.get("shown") or {"people": [], "campaigns": []},
         "pending_draft": state.get("draft", {}).get("email_draft") if state.get("draft") else None,
+        "person_details_for_the_email": [
+            {k: v for k, v in f.items() if k != "email"} | {"email": f["email"]} for f in (fields or [])
+        ],
+        "email_scope_decision": state.get("scope") or "",
         "your_previous_turn_explanation": state.get("last_explanation") or "",
     }
     return "Current state:\n" + json.dumps(view, indent=1, default=str)
@@ -3381,11 +3608,358 @@ def campaign_state_text(state: dict, people_status: list | None = None) -> str:
 
 import re
 
+# ---------- the email as a template: blanks, per-person values, who receives it ----------
+# One campaign has ONE first email. It holds blanks ({{firstName}} ...) that each person's own details fill.
+# Words typed outside a blank go to everyone in that campaign. What the user types for one person in the
+# email card ("details") belongs to that person only.
+
+TOKEN_FIRST, TOKEN_LAST, TOKEN_COMPANY = "{{firstName}}", "{{lastName}}", "{{companyName}}"
+FIRST_NAME_FALLBACK = "there"
+_GREETING = r"(?:Hi|Hello|Dear|Hey)"
+_LITERAL_GREETING = re.compile(rf"\b{_GREETING}\s+(?!there\b)([A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)?)\s*[,!]")
+
+
+def clean_field(value: Any) -> str:
+    """A value typed for a blank: one short line, no markup, nothing that could add content to the email."""
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    return re.sub(r"[{}<>\\]", "", text)[:80].strip()
+
+
+def proper_case(value: str) -> str:
+    """A name typed in chat as all-lowercase or all-capitals ("nina", "BROOKS") reads as a name: "Nina", "Brooks"."""
+    text = (value or "").strip()
+    if text and (text == text.lower() or text == text.upper()):
+        return re.sub(r"[A-Za-z]+", lambda m: m.group(0).capitalize(), text)
+    return text
+
+
+def _mailbox_name(email: str, value: str) -> bool:
+    local = (email or "").split("@", 1)[0].strip().casefold()
+    return bool(value) and value.strip().casefold() in {local, (email or "").casefold()}
+
+
+def person_fields(records: dict, state: dict, recipient: dict) -> dict:
+    """What fills the blanks for one recipient, and where each value came from.
+
+    Order: typed by the user (card or chat) > the database > the name given in chat > missing.
+    """
+    email = str(recipient.get("email") or "")
+    typed = (state.get("overrides") or {}).get(email.casefold(), {})
+    known = _find_person(records, email) or {}
+    known_name = str(known.get("name") or "").strip()
+    if _mailbox_name(email, known_name):
+        known_name = ""
+    k_first, k_last = split_executive_name(known_name) if known_name else ("", "")
+    chat_name = str(recipient.get("name") or "").strip()
+    if _mailbox_name(email, chat_name):
+        chat_name = ""
+    c_first, c_last = split_executive_name(chat_name) if chat_name else ("", "")
+    c_first, c_last = proper_case(c_first), proper_case(c_last)
+    out: dict = {"email": email}
+    sources: dict = {}
+    for field, from_db, from_chat in (
+        ("first_name", k_first, c_first),
+        ("last_name", k_last, c_last),
+        ("company", str(known.get("company") or "").strip(), ""),
+    ):
+        if field in typed:
+            out[field], sources[field] = typed[field], "typed"
+        elif from_db:
+            out[field], sources[field] = from_db, "database"
+        elif from_chat:
+            out[field], sources[field] = from_chat, "chat"
+        else:
+            out[field], sources[field] = "", "missing"
+    out["sources"] = sources
+    return out
+
+
+def effective_fields(f: dict) -> dict:
+    """The values that really go out. A missing first name becomes "there" (never a guess)."""
+    return {
+        "email": f["email"],
+        "first_name": f["first_name"] or FIRST_NAME_FALLBACK,
+        "last_name": f["last_name"],
+        "company": f["company"],
+    }
+
+
+_BLANK_FORMS = (
+    (re.compile(r"\{{1,2}\s*first[\s_-]*name\s*\}{1,2}|\[\s*first[\s_-]*name\s*\]|<\s*first[\s_-]*name\s*>", re.I), TOKEN_FIRST),
+    (re.compile(r"\{{1,2}\s*last[\s_-]*name\s*\}{1,2}|\[\s*last[\s_-]*name\s*\]|<\s*last[\s_-]*name\s*>", re.I), TOKEN_LAST),
+    (re.compile(r"\{{1,2}\s*company(?:[\s_-]*name)?\s*\}{1,2}|\[\s*company(?:[\s_-]*name)?\s*\]|<\s*company(?:[\s_-]*name)?\s*>", re.I), TOKEN_COMPANY),
+)
+
+
+def normalize_blanks(text: str) -> str:
+    """Any way of writing a blank ({first name}, {{first_name}}, [First Name], <firstName>) becomes the one blank we use."""
+    out = text or ""
+    for pattern, token in _BLANK_FORMS:
+        out = pattern.sub(token, out)
+    return out
+
+
+def tokenize(text: str, fields: list[dict]) -> str:
+    """Turn the real names/companies a draft contains into blanks, so each person gets their own."""
+    out = normalize_blanks(text)
+    # One greeting that lists several recipients ("Hi Nina and Raj,") becomes ONE blank, so each person is
+    # greeted by their own name and never by the other's.
+    people = []
+    for f in fields:
+        if f["first_name"]:
+            last = rf"(?:\s+(?i:{re.escape(f['last_name'])}))?" if f["last_name"] else ""
+            people.append(rf"(?i:{re.escape(f['first_name'])}){last}")
+    if len(people) >= 2:
+        one = "(?:" + "|".join(sorted(people, key=len, reverse=True)) + ")"
+        out = re.sub(
+            rf"\b(?P<g>{_GREETING})\s+{one}(?:\s*(?:,|&|\band\b)\s*(?:and\s+)?{one})+",
+            lambda m: f"{m.group('g')} {TOKEN_FIRST}",
+            out,
+        )
+    for f in fields:
+        first, last, company = f["first_name"], f["last_name"], f["company"]
+        if first:
+            last_part = rf"(?P<last>\s+(?i:{re.escape(last)}))?" if last else ""
+            out = re.sub(
+                rf"\b(?P<g>{_GREETING})\s+(?i:{re.escape(first)}){last_part}\b",
+                lambda m, last=last: f"{m.group('g')} {TOKEN_FIRST}" + (f" {TOKEN_LAST}" if last and m.group("last") else ""),
+                out,
+            )
+        if company:
+            out = re.sub(rf"(?<!\w){re.escape(company)}(?!\w)", TOKEN_COMPANY, out)
+    return re.sub(rf"\b({_GREETING})\s+there\b", lambda m: f"{m.group(1)} {TOKEN_FIRST}", out, count=1)
+
+
+def render(text: str, f: dict) -> str:
+    e = effective_fields(f)
+    out = (text or "").replace(TOKEN_FIRST, e["first_name"]).replace(TOKEN_LAST, e["last_name"]).replace(TOKEN_COMPANY, e["company"])
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    return re.sub(r"[ \t]+([,.!?:;])", r"\1", out)
+
+
+def literal_greeting_names(text: str) -> list[str]:
+    return [m.group(1) for m in _LITERAL_GREETING.finditer(text or "")]
+
+
+def finalize_template(subject: str, body: str) -> tuple[str, str]:
+    """The wording as stored on the campaign: the assessment link becomes Instantly's placeholder."""
+    from acquisition.config import get_settings
+
+    settings = get_settings()
+    url = (settings.public_base_url or "").strip()
+    holder = settings.assessment_url_placeholder
+    if url:
+        subject, body = subject.replace(url, holder), body.replace(url, holder)
+    return subject, body
+
+
+def waiting_in_campaign(campaign_id: str, exclude: set[str]) -> list[dict]:
+    """People already in this campaign who have not been emailed yet: they will get any changed wording."""
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+    from acquisition.models.prospect import Prospect
+
+    db = SessionLocal()
+    try:
+        rows = db.execute(
+            select(Prospect.executive_name, Prospect.email)
+            .join(CampaignProspect, CampaignProspect.prospect_id == Prospect.id)
+            .where(
+                CampaignProspect.campaign_id == campaign_id,
+                CampaignProspect.outreach_status == OutreachStatus.PENDING,
+            )
+        ).all()
+    except Exception:  # noqa: BLE001
+        return []
+    finally:
+        db.close()
+    return [
+        {"name": name or email, "email": email}
+        for name, email in rows
+        if (email or "").casefold() not in exclude
+    ]
+
+
+def draft_view(records: dict, state: dict) -> dict:
+    """Everything the email card needs: the template, each person's details, what each person will receive,
+    who else gets this wording, and warnings. Built from saved state, never from the model."""
+    d = state.get("draft") or {}
+    if not d:
+        return {}
+    recipients = state.get("recipients") or []
+    fields = [person_fields(records, state, r) for r in recipients]
+    subject, body = d.get("email_subject") or "", d.get("email_body") or ""
+    is_template = bool(d.get("email_template"))
+    previews = [
+        {
+            "email": f["email"],
+            "subject": render(subject, f) if is_template else subject,
+            "body": render(body, f) if is_template else body,
+        }
+        for f in fields
+    ]
+    warnings: list[str] = []
+    if is_template:
+        for f in fields:
+            if not f["first_name"]:
+                warnings.append(f'{f["email"]}: no first name on file. The email will say "Hi there,". Type a name in Details if you know it.')
+        for name in literal_greeting_names(body):
+            warnings.append(
+                f'The greeting says "{name}" as plain text, so everyone who gets this email sees exactly that. '
+                "Put a person's name in Details instead."
+            )
+        if TOKEN_COMPANY in subject + body:
+            for f in fields:
+                if not f["company"]:
+                    warnings.append(f'{f["email"]}: no company on file, so the company part of the email will be empty.')
+    cid = str(state.get("campaign_id") or "")
+    camp = _find_campaign(records, cid, "") if cid else None
+    existing = camp is not None
+    changed, others = False, []
+    if existing and is_template:
+        saved = camp.get("initial_email") or {}
+        t_subject, t_body = finalize_template(subject, body)
+        norm = lambda t: " ".join(str(t or "").split())  # noqa: E731
+        changed = norm(t_subject) != norm(saved.get("subject")) or norm(t_body) != norm(saved.get("body"))
+        if changed:
+            others = waiting_in_campaign(cid, {f["email"].casefold() for f in fields})
+    scope = str(state.get("scope") or "")
+    label = lambda f: " ".join(x for x in (f["first_name"], f["last_name"]) if x) or f["email"]  # noqa: E731
+    return {
+        "draft_id": d.get("id") or "",
+        "template": {"subject": subject, "body": body},
+        "people": fields,
+        "previews": previews,
+        "warnings": warnings,
+        "audience": {
+            "campaign": state.get("campaign_name") or "",
+            "campaign_is_new": not existing,
+            "will_send_now": [label(f) for f in fields],
+            "also_waiting": others,
+            "template_changed": changed,
+            "scope": scope,
+            "scope_needed": bool(existing and changed and others and not scope),
+        },
+    }
+
+
+def refresh_preview(records: dict, state: dict) -> None:
+    """Keep the plain-text preview (the first recipient's view) in step with the template."""
+    d = state.get("draft") or {}
+    fields = [person_fields(records, state, r) for r in state.get("recipients") or []]
+    if not d or not fields:
+        return
+    if d.get("email_template"):
+        d["email_draft"] = f"Subject: {render(d['email_subject'], fields[0])}\n\n{render(d['email_body'], fields[0])}"
+
+
+def edit_draft(ctx: Any, meta: dict, *, subject: str | None = None, body: str | None = None,
+               people: dict | None = None, scope: str | None = None, rendered: bool = False) -> dict:
+    """Apply what the user changed in the email card to the saved state of the latest turn.
+
+    ``subject``/``body`` are the TEMPLATE (blanks visible). ``people`` maps an email to the details the user
+    typed for that person only. ``scope`` is "everyone", "keep", or "" to clear. Returns the new email view.
+    With ``rendered=True`` the text is what ONE person's email looks like (older card): real names are turned
+    back into blanks first, so they cannot reach everyone else.
+    """
+    state = meta.get("state")
+    if not isinstance(state, dict) or not state.get("draft"):
+        raise ValueError("There is no email draft to edit.")
+    records = known_records(ctx)
+    d = state["draft"]
+    if subject is not None or body is not None:
+        new_subject = (subject if subject is not None else d.get("email_subject", "")).strip()
+        new_body = (body if body is not None else d.get("email_body", "")).strip()
+        if not new_subject or not new_body:
+            raise ValueError("The subject and the body cannot be empty.")
+        new_subject, new_body = normalize_blanks(new_subject), normalize_blanks(new_body)
+        if rendered:
+            fields = [person_fields(records, state, r) for r in state.get("recipients") or []]
+            new_subject, new_body = tokenize(new_subject, fields), tokenize(new_body, fields)
+        if (new_subject, new_body) != (d.get("email_subject"), d.get("email_body")) or not d.get("email_template"):
+            d["email_subject"], d["email_body"], d["email_template"] = new_subject, new_body, True
+            d["user_edited"] = True  # the model must not overwrite this by regenerating
+            state.pop("scope", None)  # a changed email needs its own decision
+    recipients = {str(r["email"]).casefold(): r for r in state.get("recipients") or []}
+    for email, values in (people or {}).items():
+        key = str(email).casefold()
+        if key not in recipients:
+            raise ValueError(f"{email} is not one of the recipients.")
+        base_state = {**state, "overrides": {k: v for k, v in (state.get("overrides") or {}).items() if k != key}}
+        base = person_fields(records, base_state, recipients[key])
+        typed = (state.setdefault("overrides", {})).setdefault(key, {})
+        for field in ("first_name", "last_name", "company"):
+            if field not in (values or {}):
+                continue
+            value = clean_field(values[field])
+            if value == base[field]:
+                typed.pop(field, None)  # back to what the database says: not an override
+            else:
+                typed[field] = value
+        if not typed:
+            state["overrides"].pop(key, None)
+    if scope is not None:
+        if scope in ("everyone", "keep"):
+            state["scope"] = scope
+        elif scope == "":
+            state.pop("scope", None)
+        else:
+            raise ValueError('scope must be "everyone" or "keep".')
+    refresh_preview(records, state)
+    view = draft_view(records, state)
+    payload = meta.get("json") if isinstance(meta.get("json"), dict) else {}
+    payload.update(
+        {
+            "email_subject": d["email_subject"],
+            "email_body": d["email_body"],
+            "email_draft": d.get("email_draft") or "",
+            "email_view": view,
+        }
+    )
+    meta["json"], meta["state"] = payload, state
+    return view
+
+
+# ---------- the send gate: the user's latest message must really approve ----------
+# The model decides what counts as approval, but it may not send on a message that plainly is not one.
+
+_APPROVE_WORD = re.compile(
+    r"(?<!\w)(yes|yep|yeah|yup|ok|okay|sure|approve|approved|go ahead|go for it|go|send|ship it|do it|proceed|confirm|"
+    r"confirmed|good|great|perfect|fine|lgtm|sounds good|looks good|correct|right|haan|theek hai|thik hai|kar do|bhej do|bhejo)(?!\w)"
+    r"|\U0001F44D|\u2705",
+    re.I,
+)
+_QUESTION_START = re.compile(
+    r"^\s*(what|where|why|how|when|which|who|whom|is|are|was|were|does|do|did|can|could|should|would|will|show|tell|explain|list|display)\b",
+    re.I,
+)
+_SEND_WORD = re.compile(r"\b(send|approve[ds]?|go ahead|ship|do it|proceed|confirm(ed)?)\b", re.I)
+_HOLD_WORD = re.compile(r"\b(don'?t|do not|never|not yet|wait|hold on|hold off|stop|cancel)\b|^\s*no\b", re.I)
+
+
+def approval_problem(latest: str, evidence: str) -> str:
+    """Empty string when the latest user message can count as approval to send, else why it cannot."""
+    norm = lambda t: " ".join(str(t or "").casefold().split())  # noqa: E731
+    if not norm(latest):
+        return "there is no user message to take approval from"
+    if not norm(evidence) or norm(evidence) not in norm(latest):
+        return "approval_evidence must be the user's own words from their LATEST message"
+    if _HOLD_WORD.search(latest):
+        return "the user's latest message holds back or declines; do not send"
+    if not _APPROVE_WORD.search(latest):
+        return "the user's latest message does not approve sending"
+    if _QUESTION_START.match(latest) and not _SEND_WORD.search(latest):
+        return "the user's latest message is a question, not an approval"
+    return ""
+
+
 _SENT_CLAIM = re.compile(
-    r"send_approved|\b(?:email|message|draft)\b[^.\n]{0,40}\b(?:was|has been|is|been) sent\b"
+    r"\b(?:email|message|draft)\b[^.\n]{0,40}\b(?:was|has been|is|been) sent\b"
     r"|\bcampaign\b[^.\n]{0,40}\b(?:was|has been) created\b|\b(?:i(?:'ve| have)? )?sent (?:the|this|your) email\b",
     re.I,
 )
+#: In the explanation only: "I will call send_approved now" but no call was made.
+_WILL_SEND = re.compile(r"\b(?:will|going to|now|about to)\s+(?:call|use|run|carry out)\s+(?:the\s+)?send_approved\b", re.I)
 
 NOT_SENT_TEXT = (
     "Nothing has been sent yet. The email draft is still waiting. Say \"send it\" and I will send it."
@@ -3410,15 +3984,19 @@ class CampaignSession:
         self.self_check: list[str] = []
         self.errors = 0
         self.asked_similar = False  # the similar-name question is the table the user needs
+        self.card_shown = False  # a NEW email card was produced this turn
         self.user_message = ""  # set by the agent; lets the self-check see what the user asked
         self.user_texts: list[str] = []  # everything the user has written in this chat (for evidence checks)
         self.recipients_committed = False  # recipients committed during this turn
+        self.tried_recipients = False  # the model tried to name recipients this turn (found or not)
         self.started_with_recipients = bool(self.state.get("recipients"))
         # People already explained to the user in an earlier turn. A move can only be approved for these.
         self.offered_before = set(self.state.get("move_offered") or [])
 
     def call(self, name: str, args: dict) -> str:
         why = str(args.pop("why", "") or "")
+        if name == "update_selection" and args.get("recipients"):
+            self.tried_recipients = True
         try:
             logged_args = json.dumps(args, ensure_ascii=False, default=str)[:600]
         except Exception:  # noqa: BLE001
@@ -3442,7 +4020,11 @@ class CampaignSession:
         """True when the model says the email was sent/the campaign created, but send_approved never succeeded."""
         if self.sent or not self.state.get("draft"):
             return False
-        return bool(_SENT_CLAIM.search(f"{reply}\n{explanation}"))
+        tried = any(c.get("tool") == "send_approved" for c in self.log)
+        if _SENT_CLAIM.search(reply or ""):
+            return True
+        # Said "I will call send_approved" but never did. (If it was called and failed, the model is reporting that.)
+        return (not tried) and bool(_WILL_SEND.search(explanation or ""))
 
     def problems(self, reply: str = "", explanation: str = "") -> list[str]:
         """Consistency check between the model's turn and the state it just built.
@@ -3468,6 +4050,18 @@ class CampaignSession:
                 "recipient, campaign name or send hours, call update_selection with it now, BEFORE you ask "
                 "your question. If this message is not about emailing people in a campaign, keep your answer "
                 "and say so in the explanation."
+            )
+        if (
+            "recipients" in miss
+            and any(c.get("tool") == "update_selection" for c in self.log)
+            and not self.people_to_show
+            and not any(c.get("tool") in ("show_contacts", "show_campaigns") for c in self.log)
+            and not self.tried_recipients
+        ):
+            out.append(
+                "The user has not said who to email and no contacts table is shown. Call show_contacts now so they can "
+                "pick; do not wait for them to ask for the list. Your message is one short question (include the send "
+                "hours in it if they are also missing)."
             )
         if self.people_to_show and (self.recipients_committed or self.started_with_recipients):
             out.append(
@@ -3555,6 +4149,41 @@ class CampaignSession:
 
     def _invalidate_draft(self) -> None:
         self.state.pop("draft", None)
+        self.state.pop("scope", None)
+
+    def _fields(self) -> list[dict]:
+        return [person_fields(self.records, self.state, r) for r in self.state.get("recipients") or []]
+
+    def _set_person_details(self, email: str = "", first_name=None, last_name=None, company=None, evidence: str = "") -> str:
+        """Save a name/company the user gave in chat for ONE recipient. Only for this person; never the whole campaign."""
+        key = str(email or "").strip().casefold()
+        known = {str(r["email"]).casefold(): r for r in self.state.get("recipients") or []}
+        if key not in known:
+            return "error: that address is not one of the chosen recipients"
+        if not self._user_said(evidence):
+            return json.dumps(
+                {
+                    "error": "details_not_given_by_user",
+                    "instruction": "Use only a name or company the user actually wrote. Pass their own words as evidence, or ask them.",
+                }
+            )
+        typed = self.state.setdefault("overrides", {}).setdefault(key, {})
+        for field, value in (("first_name", first_name), ("last_name", last_name), ("company", company)):
+            if value is not None:
+                typed[field] = clean_field(value)
+        refresh_preview(self.records, self.state)
+        return json.dumps({"ok": True, "details": person_fields(self.records, self.state, known[key])})
+
+    def _choose_email_scope(self, scope: str = "", approval_evidence: str = "") -> str:
+        """Record the user's decision when a changed email would also reach people already waiting in the campaign."""
+        if scope not in ("everyone", "keep"):
+            return 'error: scope must be "everyone" or "keep"'
+        if not self.state.get("draft"):
+            return "error: no draft"
+        if not self._user_said(approval_evidence):
+            return "error: use the user's own words as approval_evidence"
+        self.state["scope"] = scope
+        return json.dumps({"ok": True, "scope": scope})
 
     def _update_selection(self, recipients=None, recipients_mode="replace", campaign_id="", campaign_name="", confirmed_new_campaign=False, window_start="", window_end="", window_evidence="") -> str:
         s = self.state
@@ -3608,9 +4237,11 @@ class CampaignSession:
                             "instruction": (
                                 "Ask the user whether they mean the existing campaign or a new one with the typed name. "
                                 "Existing: update_selection with its campaign_id. New: update_selection again with "
-                                "confirmed_new_campaign=true."
+                                "confirmed_new_campaign=true. If people_status says someone is active in another "
+                                "campaign, put the move into this SAME question so the user answers once."
                             ),
                             "selection": self._sel(),
+                            "people_status": self._status_for_result(),
                         }
                     )
                 new_id_, new_name = "", typed
@@ -3640,6 +4271,21 @@ class CampaignSession:
                 a, b = _clock_campaign(window_start), _clock_campaign(window_end)
                 if not (a and b):
                     return "error: need both window_start and window_end as clock times"
+                try:
+                    if _clock_fulfill(a)[0] >= _clock_fulfill(b)[0]:
+                        raise FulfillError("start not before end")
+                except FulfillError:
+                    return json.dumps(
+                        {
+                            "error": "window_start_not_before_end",
+                            "instruction": (
+                                "The send window must start earlier than it ends within one day (for example 9 am to 5 pm). "
+                                "An overnight window such as 5 pm to 6 am is not supported, and I did not save it. "
+                                "Tell the user this in one sentence and ask for hours that fit inside one day."
+                            ),
+                            "selection": self._sel(),
+                        }
+                    )
                 if [a, b] != s.get("window"):
                     self._invalidate_draft()
                 s["window"] = [a, b]
@@ -3745,7 +4391,7 @@ class CampaignSession:
             }
         )
 
-    def _propose_email(self, subject: str, body: str) -> str:
+    def _propose_email(self, subject: str, body: str, change_evidence: str = "") -> str:
         s = self.state
         miss = _missing(s)
         if miss:
@@ -3759,12 +4405,37 @@ class CampaignSession:
         if not (subject or "").strip() or not (body or "").strip():
             return "error: subject and body required"
         subject, body = subject.strip(), body.strip()
+        fields = self._fields()
+        subject, body = tokenize(subject, fields), tokenize(body, fields)
+        prev, prev_scope = s.get("draft") or {}, s.get("scope")
+        if prev and (prev.get("email_subject"), prev.get("email_body")) == (subject, body):
+            return "ok: this is the draft that is already shown. Do not call propose_email again; answer the user in words."
+        if prev.get("user_edited") and not (change_evidence and self._user_said(change_evidence)):
+            return json.dumps(
+                {
+                    "error": "user_edited_draft",
+                    "current_subject": prev.get("email_subject"),
+                    "current_body": prev.get("email_body"),
+                    "instruction": (
+                        "The user edited this draft themselves in the card. Keep their wording. Call propose_email again only if "
+                        "the user's latest message asks for a change; then build on the current text above and pass "
+                        "change_evidence with their words. For questions about the draft, answer in words."
+                    ),
+                }
+            )
+        self._invalidate_draft()
+        if prev_scope and (prev.get("email_subject"), prev.get("email_body")) == (subject, body):
+            s["scope"] = prev_scope
         s["draft"] = {
+            "id": uuid.uuid4().hex[:10],
             "email_subject": subject,
             "email_body": body,
-            "email_draft": f"Subject: {subject}\n\n{body}",
+            "email_template": True,
+            "email_draft": "",
             "email_from": ", ".join(sending_account_emails()),
         }
+        refresh_preview(self.records, s)
+        self.card_shown = True
         self.people_to_show, self.campaigns_to_show = [], []
         s["shown"] = {"people": [], "campaigns": []}
         return "ok: draft is shown to the user as a card. Ask one short question about it."
@@ -3781,6 +4452,9 @@ class CampaignSession:
             "campaign_schedule_timing": s["window"],
             "move_from": list(s.get("moves") or []),
             "email_from": d["email_from"],
+            "email_template": bool(d.get("email_template")),
+            "email_scope": s.get("scope") or "",
+            "people_fields": [{**effective_fields(f), "first_is_fallback": not f["first_name"]} for f in self._fields()],
             "email_subject": d["email_subject"],
             "email_body": d["email_body"],
             "email_draft": d["email_draft"],
@@ -3815,9 +4489,91 @@ class CampaignSession:
         self._invalidate_draft()
         return json.dumps({"ok": True, "moves_approved_for": s["moves"], "approval_evidence": (approval_evidence or "")[:200]})
 
+    def _remove_from_campaign(self, email="", campaign="", approval_evidence="") -> str:
+        address = str(email or "").strip()
+        raw_campaign = str(campaign or "").strip()
+        if "@" not in address or not raw_campaign:
+            return json.dumps({"error": "Say who to remove and which campaign."})
+        db = SessionLocal()
+        try:
+            try:
+                row = db.get(Campaign, uuid.UUID(raw_campaign))
+            except ValueError:
+                row = db.scalar(select(Campaign).where(func.lower(Campaign.name) == raw_campaign.lower()))
+            if row is None:
+                return json.dumps({"error": f"I could not find a campaign called {raw_campaign}."})
+            statuses = describe_people(db, [address])
+            st = statuses[0] if statuses else None
+            info = next(
+                (link for link in (st.links if st else []) if link.campaign_id == str(row.id)),
+                None,
+            )
+            who = (split_executive_name(st.name)[0] if st and st.name else "") or (st.label if st else address)
+            camp_name = row.name
+            if info is None:
+                return json.dumps({"error": f"{who} is not in {camp_name}."})
+            if info.opted_out:
+                return json.dumps(
+                    {"error": f"{who} unsubscribed or bounced in {camp_name}, so they cannot be removed from it."}
+                )
+            if info.conversation:
+                return json.dumps(
+                    {
+                        "error": (
+                            f"{who} already replied, started the assessment, or booked in {camp_name}, "
+                            "so they cannot be removed from it."
+                        )
+                    }
+                )
+            if info.contacted or info.outreach_status != OutreachStatus.PENDING.value:
+                return json.dumps(
+                    {"error": f"{who} has already been emailed in {camp_name}, so they cannot be removed from it."}
+                )
+            why_not = approval_problem(self.user_message, approval_evidence)
+            if why_not:
+                return json.dumps(
+                    {
+                        "error": "not_approved",
+                        "reason": why_not,
+                        "instruction": (
+                            f"Ask one yes/no, for example: Remove {who} from {camp_name}? They have not been emailed yet. "
+                            "Call remove_from_campaign only after their NEXT message says yes."
+                        ),
+                    }
+                )
+            try:
+                client = InstantlyService(db).get_api_client()
+            except Exception as exc:  # noqa: BLE001
+                return json.dumps({"error": str(exc) or "Could not reach Instantly. Nothing was changed."})
+            try:
+                stop_for_move(db, client, info.link_id)
+            except StopError as exc:
+                return json.dumps({"error": str(exc) or "Instantly did not remove them. Nothing was changed."})
+        finally:
+            db.close()
+        s = self.state
+        kept = [r for r in s.get("recipients") or [] if str(r.get("email") or "").lower() != address.lower()]
+        if kept != (s.get("recipients") or []):
+            s["recipients"] = kept
+            s["moves"] = [e for e in s.get("moves") or [] if e != address.lower()]
+            self._invalidate_draft()
+        return f"Removed {who} from {camp_name}."
+
     def _send_approved(self, approval_evidence: str = "") -> str:
         if not self.state.get("draft"):
             return "error: no draft pending, nothing to send"
+        why_not = approval_problem(self.user_message, approval_evidence)
+        if why_not:
+            return json.dumps(
+                {
+                    "error": "not_approved",
+                    "reason": why_not,
+                    "instruction": (
+                        "Nothing was sent. Answer what the user actually asked, in words, and ask one short question: "
+                        "send it as is, or change something?"
+                    ),
+                }
+            )
         if self.send_block:
             return f"error: {self.send_block}"
         conflict = self._conflict()
@@ -3826,6 +4582,25 @@ class CampaignSession:
         blocked = self._blocked()
         if blocked:
             return blocked
+        view = draft_view(self.records, self.state)
+        audience = view.get("audience") or {}
+        if audience.get("scope_needed"):
+            return json.dumps(
+                {
+                    "error": "needs_scope",
+                    "campaign": audience.get("campaign"),
+                    "also_waiting": [p["name"] for p in audience.get("also_waiting") or []],
+                    "instruction": (
+                        "This email differs from the campaign's saved first email, and these people are in the campaign "
+                        "but have not been emailed yet, so they would get the changed wording too. Tell the user this edit "
+                        "also changes the email for the names in also_waiting, and ask ONE short yes/no question, e.g. "
+                        '"This also changes the email for Gus and Nina. Go ahead?" Do not mention keep or the campaign\'s '
+                        "current email. If they say yes, call choose_email_scope with scope everyone, then send_approved "
+                        "again. If they say no, do not send and do not call choose_email_scope; reply: "
+                        '"Okay, nothing sent. Want to change the wording back to the campaign\'s email, or edit it more?"'
+                    ),
+                }
+            )
         payload = self._payload()
         try:
             outcome = fulfill_approved_email(self.ctx, payload)
@@ -3937,6 +4712,9 @@ TABLES (UI cards)
 - The contacts table appears only if you call show_contacts; the campaigns table only if you call
   show_campaigns. Show one only when the user must choose and you do not yet have the answer. Never show
   contacts after recipients are committed, and never "just in case".
+- If the user has not named anyone to email and no recipient is committed, call show_contacts in that SAME
+  turn (after saving anything they did say, such as the campaign name). Never ask "who?" in words alone and
+  never wait for them to ask to see the list: they cannot choose from people they cannot see.
 - Right after you commit recipients, the next table is the CAMPAIGNS table (unless they already named a
   campaign). Asking "which campaign?" without showing it leaves the user blind.
 - After the user picks a campaign, commit it; do not show the table again.
@@ -3970,20 +4748,58 @@ PEOPLE ALREADY IN A CAMPAIGN (one person = one active campaign)
   suggest handling them personally. Offer to continue without them.
 - refuse_opted_out: they unsubscribed or bounced. Never add them. Say so plainly; offer to continue without.
 - If a tool returns needs_move_approval or a refusal, explain it in plain words, then wait for the user.
+- NEVER ask the same thing twice and never make the user confirm in two steps. Say the move in the question
+  itself, as part of ONE question. If you explain a move without asking yes/no, that wastes a turn: don't.
+- If a name question (similar name) and a move both apply, ask ONE combined question, for example:
+  "Do you mean the existing 'spring' (not 'soring')? Nina is in 'duo', so adding her stops her there. Yes?"
+  When the user then answers yes, or names the campaign, or says "go ahead", "ok" or any agreement, that answers
+  BOTH: commit the campaign (campaign_id) AND call approve_move in that same turn, then continue. Do not
+  ask about the move again. Only if their answer clearly changes the plan (a different campaign, or "no")
+  do you ask again.
+- If you already stated the move in your last message and they agree in any wording, the move is approved.
+
+REMOVING SOMEONE FROM A CAMPAIGN
+- "remove Raj from east" means take that person out of that campaign only. They stay in the workspace; their history stays.
+- Only if they have not been emailed in that campaign. If they were emailed, replied, or booked, say so in plain words and change nothing. Do not call the tool to "try anyway".
+- Ask ONE yes/no first. Only after the user's NEXT message says yes, call remove_from_campaign. Never in the same turn you first ask, never on a vague answer, never choose for them. If they say no, change nothing.
+- After the tool returns, reply in one line with that sentence (for example "Removed Raj from east."). If it returns an error, tell the user that error in plain words; change nothing.
 
 SIMILAR CAMPAIGN NAMES
 - If update_selection returns similar_campaign_name, do not guess. Ask: "Do you mean the existing <similar
   name>, or a new campaign called <typed name>?" Then commit the existing one by campaign_id, or call
   update_selection again with confirmed_new_campaign=true. Do this even if the user already said "new".
+  If someone also needs to be moved, put the move in this same question (see above); one question only.
 
 EMAIL AND SENDING
-- Use the template from the records (email_to_show for a known person, otherwise email_without_company)
-  exactly, except change "Hi there," to "Hi {first name},". Apply edits the user asks for, then propose_email
+- The email card is shown by propose_email, once per new draft. Do NOT call propose_email to answer questions
+  about the draft ("what is the subject?", "is it okay?", "hmm maybe"): answer in one short sentence of words and
+  never paste the email text. Call it again only when the user asks for a change. If the user edited the draft in
+  the card, their wording stays; build any requested change on top of it.
+- For a NEW campaign use the template from the records (email_to_show for a known person, otherwise
+  email_without_company) exactly, except change "Hi there," to "Hi {first name},". For an EXISTING campaign
+  start from that campaign's own initial_email in the records, unchanged, unless the user asks for changes.
+  The platform turns real first names and company names into blanks ({{firstName}}, {{companyName}}), so
+  each person gets their own; you do not need to. Apply edits the user asks for, then propose_email
   again. After propose_email succeeds the UI shows the email card; your message is one short question about
   it (approve as is, or change something). Do not paste the subject or body.
 - Call send_approved only when a draft is pending AND the user's latest message clearly approves it, in any
   wording. Changes requested or ambiguous means do not send; ask. After it returns, confirm in one natural
-  sentence using only what the tool returned.
+  sentence using only what the tool returned. If send_approved returns an error, tell the user that error in plain
+  words and what they can do; never retry blindly and never change the hours or anything else on your own.
+- With several recipients write ONE greeting, "Hi there,". The platform greets each person by their own first
+  name. Never list the people in the greeting ("Hi Nina and Raj,") and never type a placeholder such as
+  {first name} yourself: write plain words only.
+- Names and companies: the card shows each person's details and where they came from. If the user tells you
+  a person's name or company in chat ("his name is Shubham Kumar, he works at Acme"), call set_person_details
+  with their words; it applies to that one person only. Never guess a name or company, and never fill one in
+  from an email address.
+- If send_approved returns needs_scope, the user changed an existing campaign's email and other people in it
+  have not been emailed yet, so they would get the change too. Tell the user this edit also changes the email
+  for the names in also_waiting, and ask ONE short yes/no question, e.g. "This also changes the email for Gus
+  and Nina. Go ahead?" Never offer keep, never mention the campaign's current email as a choice, and never
+  choose for them. If they say yes, call choose_email_scope with everyone, then send_approved again. If they
+  say no, do not send and do not call choose_email_scope; reply: "Okay, nothing sent. Want to change the
+  wording back to the campaign's email, or edit it more?"
 - Never invent people, addresses, campaigns or drafts. The records below are the only truth.
 """
 
@@ -4017,7 +4833,7 @@ def build_prompt(*, ctx, settings, scope, packs, grounded_text: str, session, re
         text += "\n" + CAMPAIGN_SECTION
         text += "\n## Campaign records (the only truth for people and campaigns)\n" + _records_text(records)
         text += "\nSending accounts: " + ", ".join(sending_account_emails()) + "\n"
-        text += "\n" + campaign_state_text(session.state, session.status_view())
+        text += "\n" + campaign_state_text(session.state, session.status_view(), session._fields())
     return text
 
 
@@ -4081,28 +4897,59 @@ class AssistantTurn(BaseModel):
 # --------------------------------------------------------------------------- model
 
 _effort = {"tried": []}  # effort settings already rejected by the provider, so we stop retrying them
+_api = {"responses": False}  # set when the provider says this model needs /v1/responses (never lowers reasoning)
+
+
+def _truthy(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 def _effort_candidates() -> list[Optional[str]]:
-    """Reasoning-effort settings to try, in order. ``None`` means do not send the parameter."""
+    """Reasoning-effort settings to try, in order. ``None`` means do not send the parameter.
+
+    By default ONLY the configured setting is used: medium means medium, and a refusal is shown as it is.
+    Set MODEL_REASONING_FALLBACK=on to let the app retry with "none" and then without the parameter.
+    """
     configured = (os.environ.get("MODEL_REASONING_EFFORT") or "").strip().lower() or None
     chain: list[Optional[str]] = [configured]
-    # Some chat models accept function tools only with effort "none"; others reject the parameter.
-    for fallback in ("none", None):
-        if fallback not in chain:
-            chain.append(fallback)
-    return [e for e in chain if e not in _effort["tried"]] or [None]
+    if _truthy("MODEL_REASONING_FALLBACK"):
+        # Some chat models accept function tools only with effort "none"; others reject the parameter.
+        for fallback in ("none", None):
+            if fallback not in chain:
+                chain.append(fallback)
+    return [e for e in chain if e not in _effort["tried"]] or [configured]
+
+
+def _responses_model(**kwargs: Any):
+    """A /v1/responses model that keeps each tool call together with its reasoning item.
+
+    Agno only chains steps through ``previous_response_id`` for model names it knows (o3, o4-mini, gpt-5).
+    For any other model that reasons (gpt-6-luna), it would resend the tool call WITHOUT its reasoning item
+    and the provider refuses ("function_call was provided without its required reasoning item"). Treating
+    the model as a reasoning model makes Agno chain the steps the supported way.
+    """
+    from agno.models.openai import OpenAIResponses
+
+    class _ReasoningResponses(OpenAIResponses):
+        def _using_reasoning_model(self) -> bool:
+            return bool(self.reasoning_effort) or super()._using_reasoning_model()
+
+    return _ReasoningResponses(**kwargs)
 
 
 def _model(effort: Optional[str]):
     mid = app_settings.model_id()
     provider, _, name = mid.partition(":")
     if provider == "openai" and name:
-        from agno.models.openai import OpenAIChat
-
         kwargs: dict[str, Any] = {"id": name}
         if effort:
             kwargs["reasoning_effort"] = effort
+        # MODEL_API=responses uses /v1/responses. Newer models (for example gpt-6-luna) accept function
+        # tools together with reasoning only there; /v1/chat/completions refuses that combination.
+        if _api["responses"] or (os.environ.get("MODEL_API") or "chat").strip().lower() == "responses":
+            return _responses_model(**kwargs)
+        from agno.models.openai import OpenAIChat
+
         return OpenAIChat(**kwargs)
     return mid  # other providers: let Agno resolve "provider:model"
 
@@ -4440,7 +5287,12 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
             _guardrail_audit(ctx, scope, session_id, status, domain=",".join(sorted(grounded.unpurchased)) if status == "PACKAGE_SCOPE_NOTED" else "")
     if session is not None and session.claims_unsent(text, explanation):
         # Last line of defence: never tell the user something was sent when it was not.
-        text = NOT_SENT_TEXT
+        failed = [c for c in session.log if c.get("tool") == "send_approved" and str(c.get("result", "")).startswith("error")]
+        text = (
+            "I could not send it: " + str(failed[-1]["result"]).removeprefix("error:").strip()
+            if failed
+            else NOT_SENT_TEXT
+        )
         turn.guardrail_events.append("FALSE_SEND_CLAIM_CORRECTED")
     if not text:
         raise HTTPException(status_code=502, detail="The assistant returned an empty message")
@@ -4472,37 +5324,58 @@ def _described(functions: list[Any]) -> list[Any]:
     return functions
 
 
+def _needs_responses_api(message: str) -> bool:
+    """The provider said: this model takes tools + reasoning only on /v1/responses."""
+    return "/v1/responses" in (message or "") and not _api["responses"]
+
+
 def _run_agent(
     ctx: Any, settings: Any, session_id: str, tools: list[Any], prompt: str, messages: list[Message], turn: _Turn
 ) -> Any:
-    """Run the Agno agent once. Retries with other reasoning-effort settings only if nothing ran yet."""
+    """Run the Agno agent once.
+
+    If the provider says the model needs /v1/responses, switch to that route and run again with the SAME
+    reasoning effort (nothing was executed, because the request itself was refused). Other reasoning-effort
+    settings are tried only when MODEL_REASONING_FALLBACK=on.
+    """
     last_error = ""
     for effort in _effort_candidates():
-        agent = Agent(
-            name=agent_instructions.assistant_name(settings),
-            id="bizos-assistant",
-            model=_model(effort),
-            user_id=ctx.user_id,
-            session_id=session_id,
-            db=workspace_db(ctx),
-            instructions=prompt,
-            tools=tools,
-            output_schema=AssistantTurn,
-            tool_call_limit=TOOL_CALL_LIMIT,
-            # Conversation context comes from our own per-user chat history (passed in `messages`),
-            # which is also what the user sees; Agno still records the run in the workspace database.
-            add_history_to_context=False,
-            # Tools are built per request and must not be cached across tenants.
-            cache_callables=False,
-            enable_agentic_memory=False,
-            add_memories_to_context=True,
-            telemetry=False,
-            store_events=False,
-        )
-        try:
-            output = agent.run(input=messages)
-        except Exception as exc:  # noqa: BLE001
-            raise HTTPException(status_code=502, detail=f"Model call failed: {exc}") from exc
+        output = None
+        for _attempt in (1, 2):
+            agent = Agent(
+                name=agent_instructions.assistant_name(settings),
+                id="bizos-assistant",
+                model=_model(effort),
+                user_id=ctx.user_id,
+                session_id=session_id,
+                db=workspace_db(ctx),
+                instructions=prompt,
+                tools=tools,
+                output_schema=AssistantTurn,
+                tool_call_limit=TOOL_CALL_LIMIT,
+                # Conversation context comes from our own per-user chat history (passed in `messages`),
+                # which is also what the user sees; Agno still records the run in the workspace database.
+                add_history_to_context=False,
+                # Tools are built per request and must not be cached across tenants.
+                cache_callables=False,
+                enable_agentic_memory=False,
+                add_memories_to_context=True,
+                telemetry=False,
+                store_events=False,
+            )
+            try:
+                output = agent.run(input=messages)
+            except Exception as exc:  # noqa: BLE001
+                if _needs_responses_api(str(exc)):
+                    log.warning("switching to the Responses API for %s: %s", app_settings.model_id(), exc)
+                    _api["responses"] = True
+                    continue
+                raise HTTPException(status_code=502, detail=f"Model call failed: {exc}") from exc
+            if output.status == RunStatus.error and not output.tools and _needs_responses_api(str(output.content or "")):
+                log.warning("switching to the Responses API for %s: %s", app_settings.model_id(), output.content)
+                _api["responses"] = True
+                continue
+            break
         turn.tool_runs.extend(output.tools or [])
         if output.status != RunStatus.error:
             return output
@@ -4555,6 +5428,8 @@ def _finish(
         "email_subject": d.get("email_subject") or "",
         "email_body": d.get("email_body") or "",
         "email_draft": d.get("email_draft") or "",
+        "email_view": draft_view(session.records, s) if session is not None and d else {},
+        "show_email_card": bool(session is not None and d and session.card_shown),
         "reply_note": text,
         "campaigns_to_show": session.campaigns_to_show if session is not None else [],
         "people_to_show": session.people_to_show if session is not None else [],

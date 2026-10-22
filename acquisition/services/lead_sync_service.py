@@ -215,6 +215,11 @@ class LeadSyncService:
             link.assessment_token = generate_assessment_token()
         assessment_url = build_assessment_url(link.assessment_token, settings=self.settings)
         first_name, last_name = split_executive_name(prospect.executive_name)
+        # What the user typed in the email card for this campaign wins over the prospect record.
+        if link.first_name_override is not None:
+            first_name = link.first_name_override
+        if link.last_name_override is not None:
+            last_name = link.last_name_override
 
         custom_variables: dict[str, str] = {"assessment_url": assessment_url}
         if extra_custom_variables:
@@ -223,6 +228,8 @@ class LeadSyncService:
                     custom_variables[str(key)] = str(value)
 
         company = _company_for_lead(prospect.company, prospect.email)
+        if link.company_override is not None:
+            company = link.company_override
         payload: dict = {
             "email": prospect.email,
             "first_name": first_name or None,
