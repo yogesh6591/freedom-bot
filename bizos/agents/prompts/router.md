@@ -39,7 +39,8 @@ Do not clarify when:
 - Who may use a tool, or whether a tool needs approval → admin_permissions, not that tool's own domain.
 - Turning a whole domain pack on or off for the workspace → admin_setup.
 - Emailing one or a few named people → email. Campaigns, bulk outreach, "selected contacts" → campaign.
-- Remembering or correcting company facts, SOPs or decisions → memory.
+- Remembering or correcting company facts, SOPs or decisions → memory. "Remember that Acme renews in
+  March" is a fact for everyone → memory; "add/log a note on Acme (or Raj, or a deal)" → crm.
 - Policy questions → the domain that owns the policy, plus memory when unsure: discounts, refunds,
   credits and payment terms → finance; legal clauses and contract terms, brand voice and tone,
   strategy priorities → ops. Never memory alone for these.
@@ -73,6 +74,9 @@ Do not clarify when:
 
 "Remember that Acme renews in March"
 → {"domains":["memory"],"kind":"task","entities":{"company":"Acme","fact":"renews in March"},"clarify":null}
+
+"Log a note on the Acme deal: renewal confirmed for March"
+→ {"domains":["crm"],"kind":"task","entities":{"deal":"Acme","note":"renewal confirmed for March"},"clarify":null}
 
 "What's our refund policy on annual plans?"
 → {"domains":["finance","memory"],"kind":"question","entities":{"topic":"refund policy, annual plans"},"clarify":null}

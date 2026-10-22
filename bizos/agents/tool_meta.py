@@ -184,9 +184,8 @@ TOOL_META: dict[str, AgentMeta] = {
     "memory_add": M("memory", d("""
         Record something new in company memory: a fact, an SOP (step-by-step procedure) or a decision
         and its approver.
-        Use when: "remember our support email is help@ourco.in", "save these steps as our onboarding
-        SOP", "log that we dropped the starter plan".
-        Don't use: a note on one person, company or deal -> crm_create_note; a wrong value ->
+        Use when: "remember that Acme renews in March", "save these steps as our onboarding SOP".
+        Don't use: "add a note on" a person, company or deal -> crm_create_note; a wrong value ->
         memory_correct; sources disagree -> memory_escalate_conflict.
         Effect: saved as a new item, or a new version of an existing key. {gate}
     """), suggested_prior=("memory_search",)),
@@ -251,7 +250,7 @@ TOOL_META: dict[str, AgentMeta] = {
     """)),
     "crm_create_note": M("crm", d("""
         Add a note to a CRM contact or deal.
-        Use when: any note about one person, company or deal - "note on Raj: wants quarterly billing",
+        Use when: "add a note on Raj: wants quarterly billing", "log a note on the Acme deal",
         "Acme deal pe note daal do ki pricing bheji".
         Don't use: a follow-up with a due date -> crm_create_task; a BizOS problem -> support_create_ticket;
         a fact for the whole company -> memory_add.

@@ -5,7 +5,7 @@
 - Find before you change: crm_search_contacts, crm_search_companies or crm_search_deals, then use the ID.
 - Contact email for emailing or inviting: take it from crm_search_contacts results.
 - crm_get_contact only when the search result has no email address.
-- A note about one person, company or deal: crm_create_note.
+- "Add/log a note on" a person, company or deal: crm_create_note.
 - One contact, one field: crm_update_contact_field. Several named contacts (for example everyone at
   one company): search, then crm_update_contact_field once per contact.
 - crm_bulk_update_contacts only filters by lifecycle stage. Use it only when the user means a whole
@@ -44,7 +44,7 @@
 - If the user corrects a stored fact, use memory_correct. If two sources disagree and it is unclear
   which is right, use memory_escalate_conflict (it always needs approval).
 - memory_add kind: "decision" for decisions, "sop" for procedures, "fact" for everything else.
-- memory_add is for facts about the whole company, never a note about one person or company.
+- memory_add is for facts for everyone ("remember that Acme renews in March"), never "add a note on X".
 
 ## approvals
 - Find the action_id with approvals_list or approvals_get first.

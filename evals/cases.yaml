@@ -30087,4 +30087,336 @@
   expected_tool_calls: [brand_get_voice]
   expected_outcome: answer
 
+# ---------------------------------------------------------------- Phase 8 fix round: a note on a record vs a fact for everyone
+
+- id: note_vs_memory_001
+  query: 'Log a note on the Acme deal: renewal confirmed for March'
+  user:
+    name: Dev
+    roles: [OPERATOR]
+  fixtures:
+    contacts:
+    - {id: C-310, name: Raj Mehta, email: raj@acme.com, company: Acme, lifecycle_stage: lead}
+    - {id: C-311, name: Priya Shah, email: priya@globex.com, company: Globex, lifecycle_stage: customer}
+    - {id: C-312, name: Dev Rao, email: dev@acme.com, company: Acme, lifecycle_stage: lead}
+    deals:
+    - {id: D-2231, name: Acme – Annual plan, stage: negotiation, company: Acme, amount: 24000}
+    - {id: D-2240, name: Globex – Pilot, stage: proposal, company: Globex, amount: 6000}
+    email_threads:
+    - {id: T-901, from: raj@acme.com, subject: Renewal, body: 'Renewal is confirmed for March. Can we get the invoice early?'}
+    - {id: T-902, from: priya@globex.com, subject: Pilot questions, body: 'Does the pilot include onboarding?'}
+    events:
+    - {id: E-71, title: Weekly pipeline review, starts_at: '2026-10-23T10:00:00+05:30', ends_at: '2026-10-23T11:00:00+05:30'}
+    - id: E-72
+      title: Call with Priya
+      starts_at: '2026-10-23T16:00:00+05:30'
+      ends_at: '2026-10-23T16:30:00+05:30'
+      attendees: [priya@globex.com]
+    now: '2026-10-22T11:00:00+05:30'
+    actions:
+    - {id: act_501, title: 'Expense: client dinner', requested_by: u_43, status: PENDING_APPROVAL}
+    - {id: act_502, title: 'Send email: Globex pilot follow-up', requested_by: u_44, status: PENDING_APPROVAL}
+    - {id: act_503, title: 'Draft: welcome email to Dev Rao', requested_by: me, status: DRAFT}
+    users:
+    - id: u_42
+      name: Ravi Kumar
+      email: ravi@ourco.in
+      roles: [VIEWER]
+      status: ACTIVE
+    - id: u_43
+      name: Meena Iyer
+      email: meena@ourco.in
+      roles: [DRAFTER]
+      status: ACTIVE
+    - id: u_44
+      name: Arjun Patel
+      email: arjun@ourco.in
+      roles: [OPERATOR]
+      status: ACTIVE
+    billables:
+    - {customer: Acme, amount: 1200, deal_id: D-2231}
+    - {customer: Acme, amount: 4500, deal_id: D-2231}
+    results:
+      memory_search:
+      - {item_id: mem_10, key: refund_period, title: Refund period, content: 30 days, category: fact}
+      - {item_id: mem_11, key: operating_hours, title: Operating hours, content: '09:00-18:00 IST', category: fact}
+      memory_get_fact: {item_id: mem_10, key: refund_period, title: Refund period, content: 30 days, category: fact}
+      memory_history:
+      - {version: 1, content: 14 days, at: '2026-01-10'}
+      - {version: 2, content: 30 days, at: '2026-06-01'}
+      finance_lookup_policy: {policy: Discounts up to 10% need finance approval; credits need a reason.}
+      finance_list_invoices:
+      - {id: INV-77, customer: Globex, status: DRAFT, total: 6000}
+      brand_get_voice: {voice: 'Warm, plain English, no jargon; sign off with ''Team OurCo''.'}
+      legal_find_clause:
+      - {clause: Limitation of liability, summary: Capped at 12 months of fees}
+      strategy_list_priorities:
+      - {title: Grow enterprise pipeline 25%}
+      - {title: Cut churn below 3%}
+      support_my_tickets:
+      - {id: tk_1, subject: Gmail not syncing, status: OPEN}
+      youtube_my_channel:
+        channel: {id: UC_ours, title: OurCo}
+        videos:
+        - {video_id: vid_A1, title: Q3 launch walkthrough, published: '2026-10-18'}
+        - {video_id: vid_A2, title: 'Customer story: Acme', published: '2026-10-02'}
+      youtube_my_videos:
+      - {video_id: vid_A1, title: Q3 launch walkthrough, published: '2026-10-18'}
+      - {video_id: vid_A2, title: 'Customer story: Acme', published: '2026-10-02'}
+      youtube_search_videos:
+      - {video_id: vid_B2, title: AI for small business}
+      youtube_video_details: {video_id: vid_A1, views: 1200, likes: 85}
+      youtube_video_comments:
+      - {author: K, text: Great walkthrough}
+      admin_list_alerts:
+      - {id: al_1, title: Approvals waiting more than 3 days, severity: medium}
+      - {id: al_2, title: Email reply time above baseline, severity: low}
+      admin_launch_checklist:
+        items:
+        - {id: li_1, title: Connect email, status: done}
+        - {id: li_2, title: Invite the team, status: todo}
+        - {id: li_3, title: Approve the SOP list, status: todo}
+      admin_get_setup:
+        goals: [Grow enterprise pipeline 25%]
+        enabled_domains: [general, operations, sales]
+        default_execution_mode: WAIT_FOR_APPROVAL
+        timezone: Asia/Kolkata
+      admin_tool_permissions:
+        tools:
+        - tool: email_send_message
+          roles: {DRAFTER: DRAFT_ONLY, OPERATOR: REQUIRES_APPROVAL}
+        - tool: crm_create_contact
+          roles: {DRAFTER: REQUIRES_APPROVAL}
+      admin_list_domains:
+      - {name: finance, purchased: true, enabled: true}
+      - {name: legal, purchased: false, enabled: false}
+      admin_workspace_overview: {users: 6, packs: 7, pending_approvals: 2}
+      admin_pricing: {price: 12000, currency: USD}
+  expected_tool_calls: [crm_search_deals, crm_create_note]
+  expected_args:
+    crm_create_note: {deal_id: D-2231}
+  forbidden_tool_calls: [memory_add]
+  expected_gates: {crm_create_note: approval}
+  expected_outcome: approval
+
+- id: note_vs_memory_002
+  query: 'Add a note on Raj: he renews in March'
+  user:
+    name: Dev
+    roles: [OPERATOR]
+  fixtures:
+    contacts:
+    - {id: C-310, name: Raj Mehta, email: raj@acme.com, company: Acme, lifecycle_stage: lead}
+    - {id: C-311, name: Priya Shah, email: priya@globex.com, company: Globex, lifecycle_stage: customer}
+    - {id: C-312, name: Dev Rao, email: dev@acme.com, company: Acme, lifecycle_stage: lead}
+    deals:
+    - {id: D-2231, name: Acme – Annual plan, stage: negotiation, company: Acme, amount: 24000}
+    - {id: D-2240, name: Globex – Pilot, stage: proposal, company: Globex, amount: 6000}
+    email_threads:
+    - {id: T-901, from: raj@acme.com, subject: Renewal, body: 'Renewal is confirmed for March. Can we get the invoice early?'}
+    - {id: T-902, from: priya@globex.com, subject: Pilot questions, body: 'Does the pilot include onboarding?'}
+    events:
+    - {id: E-71, title: Weekly pipeline review, starts_at: '2026-10-23T10:00:00+05:30', ends_at: '2026-10-23T11:00:00+05:30'}
+    - id: E-72
+      title: Call with Priya
+      starts_at: '2026-10-23T16:00:00+05:30'
+      ends_at: '2026-10-23T16:30:00+05:30'
+      attendees: [priya@globex.com]
+    now: '2026-10-22T11:00:00+05:30'
+    actions:
+    - {id: act_501, title: 'Expense: client dinner', requested_by: u_43, status: PENDING_APPROVAL}
+    - {id: act_502, title: 'Send email: Globex pilot follow-up', requested_by: u_44, status: PENDING_APPROVAL}
+    - {id: act_503, title: 'Draft: welcome email to Dev Rao', requested_by: me, status: DRAFT}
+    users:
+    - id: u_42
+      name: Ravi Kumar
+      email: ravi@ourco.in
+      roles: [VIEWER]
+      status: ACTIVE
+    - id: u_43
+      name: Meena Iyer
+      email: meena@ourco.in
+      roles: [DRAFTER]
+      status: ACTIVE
+    - id: u_44
+      name: Arjun Patel
+      email: arjun@ourco.in
+      roles: [OPERATOR]
+      status: ACTIVE
+    billables:
+    - {customer: Acme, amount: 1200, deal_id: D-2231}
+    - {customer: Acme, amount: 4500, deal_id: D-2231}
+    results:
+      memory_search:
+      - {item_id: mem_10, key: refund_period, title: Refund period, content: 30 days, category: fact}
+      - {item_id: mem_11, key: operating_hours, title: Operating hours, content: '09:00-18:00 IST', category: fact}
+      memory_get_fact: {item_id: mem_10, key: refund_period, title: Refund period, content: 30 days, category: fact}
+      memory_history:
+      - {version: 1, content: 14 days, at: '2026-01-10'}
+      - {version: 2, content: 30 days, at: '2026-06-01'}
+      finance_lookup_policy: {policy: Discounts up to 10% need finance approval; credits need a reason.}
+      finance_list_invoices:
+      - {id: INV-77, customer: Globex, status: DRAFT, total: 6000}
+      brand_get_voice: {voice: 'Warm, plain English, no jargon; sign off with ''Team OurCo''.'}
+      legal_find_clause:
+      - {clause: Limitation of liability, summary: Capped at 12 months of fees}
+      strategy_list_priorities:
+      - {title: Grow enterprise pipeline 25%}
+      - {title: Cut churn below 3%}
+      support_my_tickets:
+      - {id: tk_1, subject: Gmail not syncing, status: OPEN}
+      youtube_my_channel:
+        channel: {id: UC_ours, title: OurCo}
+        videos:
+        - {video_id: vid_A1, title: Q3 launch walkthrough, published: '2026-10-18'}
+        - {video_id: vid_A2, title: 'Customer story: Acme', published: '2026-10-02'}
+      youtube_my_videos:
+      - {video_id: vid_A1, title: Q3 launch walkthrough, published: '2026-10-18'}
+      - {video_id: vid_A2, title: 'Customer story: Acme', published: '2026-10-02'}
+      youtube_search_videos:
+      - {video_id: vid_B2, title: AI for small business}
+      youtube_video_details: {video_id: vid_A1, views: 1200, likes: 85}
+      youtube_video_comments:
+      - {author: K, text: Great walkthrough}
+      admin_list_alerts:
+      - {id: al_1, title: Approvals waiting more than 3 days, severity: medium}
+      - {id: al_2, title: Email reply time above baseline, severity: low}
+      admin_launch_checklist:
+        items:
+        - {id: li_1, title: Connect email, status: done}
+        - {id: li_2, title: Invite the team, status: todo}
+        - {id: li_3, title: Approve the SOP list, status: todo}
+      admin_get_setup:
+        goals: [Grow enterprise pipeline 25%]
+        enabled_domains: [general, operations, sales]
+        default_execution_mode: WAIT_FOR_APPROVAL
+        timezone: Asia/Kolkata
+      admin_tool_permissions:
+        tools:
+        - tool: email_send_message
+          roles: {DRAFTER: DRAFT_ONLY, OPERATOR: REQUIRES_APPROVAL}
+        - tool: crm_create_contact
+          roles: {DRAFTER: REQUIRES_APPROVAL}
+      admin_list_domains:
+      - {name: finance, purchased: true, enabled: true}
+      - {name: legal, purchased: false, enabled: false}
+      admin_workspace_overview: {users: 6, packs: 7, pending_approvals: 2}
+      admin_pricing: {price: 12000, currency: USD}
+  expected_tool_calls: [crm_search_contacts, crm_create_note]
+  expected_args:
+    crm_create_note: {contact_id: C-310}
+  forbidden_tool_calls: [memory_add]
+  expected_gates: {crm_create_note: approval}
+  expected_outcome: approval
+
+- id: note_vs_memory_003
+  query: Remember that Globex renews in June
+  user:
+    name: Dev
+    roles: [OPERATOR]
+  fixtures:
+    contacts:
+    - {id: C-310, name: Raj Mehta, email: raj@acme.com, company: Acme, lifecycle_stage: lead}
+    - {id: C-311, name: Priya Shah, email: priya@globex.com, company: Globex, lifecycle_stage: customer}
+    - {id: C-312, name: Dev Rao, email: dev@acme.com, company: Acme, lifecycle_stage: lead}
+    deals:
+    - {id: D-2231, name: Acme – Annual plan, stage: negotiation, company: Acme, amount: 24000}
+    - {id: D-2240, name: Globex – Pilot, stage: proposal, company: Globex, amount: 6000}
+    email_threads:
+    - {id: T-901, from: raj@acme.com, subject: Renewal, body: 'Renewal is confirmed for March. Can we get the invoice early?'}
+    - {id: T-902, from: priya@globex.com, subject: Pilot questions, body: 'Does the pilot include onboarding?'}
+    events:
+    - {id: E-71, title: Weekly pipeline review, starts_at: '2026-10-23T10:00:00+05:30', ends_at: '2026-10-23T11:00:00+05:30'}
+    - id: E-72
+      title: Call with Priya
+      starts_at: '2026-10-23T16:00:00+05:30'
+      ends_at: '2026-10-23T16:30:00+05:30'
+      attendees: [priya@globex.com]
+    now: '2026-10-22T11:00:00+05:30'
+    actions:
+    - {id: act_501, title: 'Expense: client dinner', requested_by: u_43, status: PENDING_APPROVAL}
+    - {id: act_502, title: 'Send email: Globex pilot follow-up', requested_by: u_44, status: PENDING_APPROVAL}
+    - {id: act_503, title: 'Draft: welcome email to Dev Rao', requested_by: me, status: DRAFT}
+    users:
+    - id: u_42
+      name: Ravi Kumar
+      email: ravi@ourco.in
+      roles: [VIEWER]
+      status: ACTIVE
+    - id: u_43
+      name: Meena Iyer
+      email: meena@ourco.in
+      roles: [DRAFTER]
+      status: ACTIVE
+    - id: u_44
+      name: Arjun Patel
+      email: arjun@ourco.in
+      roles: [OPERATOR]
+      status: ACTIVE
+    billables:
+    - {customer: Acme, amount: 1200, deal_id: D-2231}
+    - {customer: Acme, amount: 4500, deal_id: D-2231}
+    results:
+      memory_search:
+      - {item_id: mem_10, key: refund_period, title: Refund period, content: 30 days, category: fact}
+      - {item_id: mem_11, key: operating_hours, title: Operating hours, content: '09:00-18:00 IST', category: fact}
+      memory_get_fact: {item_id: mem_10, key: refund_period, title: Refund period, content: 30 days, category: fact}
+      memory_history:
+      - {version: 1, content: 14 days, at: '2026-01-10'}
+      - {version: 2, content: 30 days, at: '2026-06-01'}
+      finance_lookup_policy: {policy: Discounts up to 10% need finance approval; credits need a reason.}
+      finance_list_invoices:
+      - {id: INV-77, customer: Globex, status: DRAFT, total: 6000}
+      brand_get_voice: {voice: 'Warm, plain English, no jargon; sign off with ''Team OurCo''.'}
+      legal_find_clause:
+      - {clause: Limitation of liability, summary: Capped at 12 months of fees}
+      strategy_list_priorities:
+      - {title: Grow enterprise pipeline 25%}
+      - {title: Cut churn below 3%}
+      support_my_tickets:
+      - {id: tk_1, subject: Gmail not syncing, status: OPEN}
+      youtube_my_channel:
+        channel: {id: UC_ours, title: OurCo}
+        videos:
+        - {video_id: vid_A1, title: Q3 launch walkthrough, published: '2026-10-18'}
+        - {video_id: vid_A2, title: 'Customer story: Acme', published: '2026-10-02'}
+      youtube_my_videos:
+      - {video_id: vid_A1, title: Q3 launch walkthrough, published: '2026-10-18'}
+      - {video_id: vid_A2, title: 'Customer story: Acme', published: '2026-10-02'}
+      youtube_search_videos:
+      - {video_id: vid_B2, title: AI for small business}
+      youtube_video_details: {video_id: vid_A1, views: 1200, likes: 85}
+      youtube_video_comments:
+      - {author: K, text: Great walkthrough}
+      admin_list_alerts:
+      - {id: al_1, title: Approvals waiting more than 3 days, severity: medium}
+      - {id: al_2, title: Email reply time above baseline, severity: low}
+      admin_launch_checklist:
+        items:
+        - {id: li_1, title: Connect email, status: done}
+        - {id: li_2, title: Invite the team, status: todo}
+        - {id: li_3, title: Approve the SOP list, status: todo}
+      admin_get_setup:
+        goals: [Grow enterprise pipeline 25%]
+        enabled_domains: [general, operations, sales]
+        default_execution_mode: WAIT_FOR_APPROVAL
+        timezone: Asia/Kolkata
+      admin_tool_permissions:
+        tools:
+        - tool: email_send_message
+          roles: {DRAFTER: DRAFT_ONLY, OPERATOR: REQUIRES_APPROVAL}
+        - tool: crm_create_contact
+          roles: {DRAFTER: REQUIRES_APPROVAL}
+      admin_list_domains:
+      - {name: finance, purchased: true, enabled: true}
+      - {name: legal, purchased: false, enabled: false}
+      admin_workspace_overview: {users: 6, packs: 7, pending_approvals: 2}
+      admin_pricing: {price: 12000, currency: USD}
+  expected_tool_calls: [memory_add]
+  expected_args:
+    memory_add: {kind: fact}
+  forbidden_tool_calls: [crm_create_note]
+  expected_gates: {memory_add: run}
+  expected_outcome: run
+
 # ==== END PHASE 8 GENERATED CASES ====
