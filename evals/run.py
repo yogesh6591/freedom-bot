@@ -134,7 +134,23 @@ def cleanup_workspaces() -> int:
     left = [c for c in control.list_clients() if c.slug.startswith("teval")]
     for client in left:
         drop_workspace(client)
-    return len(left)
+    return len(left) + drop_orphan_schemas()
+
+
+def drop_orphan_schemas() -> int:
+    """Eval schemas whose client row is already gone (a run killed between the two steps)."""
+    from sqlalchemy import text
+
+    from bizos import settings as app_settings
+    from bizos.tenancy.registry import registry, validate_identifier
+
+    engine = registry.engine(app_settings.shared_workspace_database(), "public")
+    with engine.begin() as conn:
+        names = [r[0] for r in conn.execute(text(
+            "SELECT schema_name FROM information_schema.schemata WHERE schema_name LIKE 'ws\\_teval%'"))]
+        for name in names:
+            conn.execute(text(f'DROP SCHEMA IF EXISTS "{validate_identifier(name)}" CASCADE'))
+    return len(names)
 
 
 def settings_for(client, case: dict):
