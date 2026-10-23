@@ -8,7 +8,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useDebug } from '@/lib/debug'
+import { useDebug, useShowAcquisition } from '@/lib/debug'
 import { useEffect, useRef, useState } from 'react'
 import {
   BookOpenText,
@@ -54,7 +54,8 @@ type NavItem = {
 
 /**
  * Demo switch: true hides the acquisition pages tagged `demoHidden` (Overview, Prospects, Campaigns,
- * Assessments, Engine & AI, Buyer Journey). Set to false to bring them back. The pages still work by URL.
+ * Assessments, Engine & AI, Buyer Journey) unless an admin turns on "Acquisition pages" in the sidebar.
+ * Set to false to always show them. The pages still work by URL.
  */
 const DEMO_HIDE_ACQUISITION = true
 
@@ -135,6 +136,43 @@ const AREA_LABEL: Record<string, string> = {
   strategy: 'Strategy'
 }
 
+/** A small on/off row for the sidebar footer (Debug, Acquisition pages). */
+function SidebarSwitch({
+  label,
+  icon: Icon,
+  on,
+  onChange,
+  title
+}: {
+  label: string
+  icon: LucideIcon
+  on: boolean
+  onChange: (next: boolean) => void
+  title: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={() => onChange(!on)}
+      title={title}
+      className="mb-2 flex w-full items-center gap-2 rounded-lg border border-border bg-background-elevated px-3 py-2 text-[12px] font-semibold text-secondary hover:text-primary"
+    >
+      <Icon size={14} aria-hidden />
+      <span className="flex-1 text-left">{label}</span>
+      <span
+        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${on ? 'bg-brand' : 'bg-border'}`}
+        aria-hidden
+      >
+        <span
+          className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${on ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+        />
+      </span>
+    </button>
+  )
+}
+
 function accessLabel(me: Me): string {
   if (me.user.primary_role === 'ADMIN' || me.user.roles.includes('ADMIN'))
     return 'Administrator'
@@ -148,6 +186,7 @@ function accessLabel(me: Me): string {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { me, loading, hasRole, logout } = useSession()
   const [debug, setDebug] = useDebug()
+  const [showAcquisition, setShowAcquisition] = useShowAcquisition()
   const pathname = usePathname()
   const router = useRouter()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -241,7 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const accessibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
-      DEMO_HIDE_ACQUISITION && item.demoHidden
+      DEMO_HIDE_ACQUISITION && item.demoHidden && !showAcquisition
         ? false
         : item.platformOwner
         ? Boolean(me.user.is_platform_owner)
@@ -385,25 +424,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="shrink-0 border-t border-border px-4 pb-4 pt-4">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={debug}
-            onClick={() => setDebug(!debug)}
+          <SidebarSwitch
+            label="Debug"
+            icon={Bug}
+            on={debug}
+            onChange={setDebug}
             title="Show which tools the assistant called"
-            className="mb-3 flex w-full items-center gap-2 rounded-lg border border-border bg-background-elevated px-3 py-2 text-[12px] font-semibold text-secondary hover:text-primary"
-          >
-            <Bug size={14} aria-hidden />
-            <span className="flex-1 text-left">Debug</span>
-            <span
-              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${debug ? 'bg-brand' : 'bg-border'}`}
-              aria-hidden
-            >
-              <span
-                className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${debug ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-              />
-            </span>
-          </button>
+          />
+          {DEMO_HIDE_ACQUISITION && hasRole('ADMIN') && (
+            <SidebarSwitch
+              label="Acquisition pages"
+              icon={Megaphone}
+              on={showAcquisition}
+              onChange={setShowAcquisition}
+              title="Show Overview, Prospects, Campaigns, Assessments, Engine & AI and Buyer Journey"
+            />
+          )}
           {(!me.client.allow_phi || !me.client.allow_card_data) && (
             <div className="mb-4 rounded-lg border border-border bg-background-elevated px-3 py-2.5">
               <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-secondary">

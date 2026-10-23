@@ -1,46 +1,59 @@
 'use client'
 
 /**
- * Debug mode: a per-browser switch (sidebar) that makes the chat show which tools each reply called.
- * Stored in localStorage and broadcast with a window event so every open component updates at once.
+ * Per-browser sidebar switches, stored in localStorage and broadcast with a window event so every open
+ * component updates at once.
+ *
+ * - Debug: the chat shows which tools each reply called.
+ * - Acquisition pages: shows the acquisition links the demo hides (see DEMO_HIDE_ACQUISITION in AppShell).
  */
 
 import { useCallback, useEffect, useState } from 'react'
 
-const KEY = 'bizos:debug'
-const EVENT = 'bizos:debug-changed'
+const EVENT = 'bizos:switch-changed'
 
-function read(): boolean {
+function read(key: string): boolean {
   try {
-    return localStorage.getItem(KEY) === 'on'
+    return localStorage.getItem(key) === 'on'
   } catch {
     return false
   }
 }
 
-export function useDebug(): [boolean, (next: boolean) => void] {
+function useStoredSwitch(key: string): [boolean, (next: boolean) => void] {
   const [on, setOn] = useState(false)
 
   useEffect(() => {
-    setOn(read())
-    const sync = () => setOn(read())
+    setOn(read(key))
+    const sync = () => setOn(read(key))
     window.addEventListener(EVENT, sync)
     window.addEventListener('storage', sync)
     return () => {
       window.removeEventListener(EVENT, sync)
       window.removeEventListener('storage', sync)
     }
-  }, [])
+  }, [key])
 
-  const set = useCallback((next: boolean) => {
-    try {
-      localStorage.setItem(KEY, next ? 'on' : 'off')
-    } catch {
-      /* storage blocked: still switch for this page */
-    }
-    setOn(next)
-    window.dispatchEvent(new Event(EVENT))
-  }, [])
+  const set = useCallback(
+    (next: boolean) => {
+      try {
+        localStorage.setItem(key, next ? 'on' : 'off')
+      } catch {
+        /* storage blocked: still switch for this page */
+      }
+      setOn(next)
+      window.dispatchEvent(new Event(EVENT))
+    },
+    [key]
+  )
 
   return [on, set]
+}
+
+export function useDebug(): [boolean, (next: boolean) => void] {
+  return useStoredSwitch('bizos:debug')
+}
+
+export function useShowAcquisition(): [boolean, (next: boolean) => void] {
+  return useStoredSwitch('bizos:show-acquisition')
 }
