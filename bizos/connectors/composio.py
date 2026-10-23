@@ -55,6 +55,11 @@ TOOLKITS: dict[str, dict[str, str]] = {
         "name": "YouTube",
         "description": "Search YouTube and check your channel, videos and comments.",
     },
+    "hubspot": {
+        "category": "crm",
+        "name": "HubSpot",
+        "description": "Use your HubSpot CRM: contacts, companies, deals, notes and tasks.",
+    },
 }
 
 _STATUS_TTL = 30.0
@@ -931,8 +936,364 @@ class ComposioYouTubeConnector(_ComposioIdentity, Connector):
         )
 
 
+# ---------------------------------------------------------------------------
+# HubSpot (CRM)
+# ---------------------------------------------------------------------------
+
+#: Our contact fields -> HubSpot contact properties.
+_HS_CONTACT_FIELDS = {
+    "first_name": "firstname", "last_name": "lastname", "email": "email", "phone": "phone",
+    "company": "company", "title": "jobtitle", "owner": "hubspot_owner_id", "lifecycle": "lifecyclestage",
+}
+_HS_CONTACT_PROPS = list(_HS_CONTACT_FIELDS.values()) + ["hs_lead_status", "lastmodifieddate"]
+_HS_DEAL_PROPS = ["dealname", "dealstage", "amount", "closedate", "pipeline", "hubspot_owner_id"]
+_HS_COMPANY_PROPS = ["name", "domain", "industry", "city", "country"]
+#: Common stage words -> HubSpot's default sales pipeline stage ids. Anything else is passed through as given
+#: (a custom pipeline's own stage id).
+_HS_STAGES = {
+    "new": "appointmentscheduled", "appointment": "appointmentscheduled", "qualified": "qualifiedtobuy",
+    "proposal": "presentationscheduled", "presentation": "presentationscheduled",
+    "decision": "decisionmakerboughtin", "negotiation": "contractsent", "contract": "contractsent",
+    "won": "closedwon", "closed won": "closedwon", "lost": "closedlost", "closed lost": "closedlost",
+}
+#: HubSpot association type ids (HUBSPOT_DEFINED) for a note or task linked to a contact or deal.
+_HS_ASSOC = {("note", "contact"): 202, ("note", "deal"): 214, ("task", "contact"): 204, ("task", "deal"): 216}
+
+
+def _hs_unwrap(data: Any) -> Any:
+    if isinstance(data, dict) and isinstance(data.get("response_data"), (dict, list)):
+        return data["response_data"]
+    return data
+
+
+def _hs_results(data: Any) -> list[dict[str, Any]]:
+    data = _hs_unwrap(data)
+    if isinstance(data, list):
+        return [r for r in data if isinstance(r, dict)]
+    if isinstance(data, dict):
+        for key in ("results", "contacts", "deals", "companies", "items", "data"):
+            if isinstance(data.get(key), list):
+                return [r for r in data[key] if isinstance(r, dict)]
+    return []
+
+
+def _hs_props(record: dict[str, Any]) -> dict[str, Any]:
+    props = record.get("properties")
+    return props if isinstance(props, dict) else record
+
+
+def _hs_contact(record: dict[str, Any]) -> dict[str, Any]:
+    p = _hs_props(record)
+    return {
+        "id": str(record.get("id") or p.get("hs_object_id") or ""),
+        "first_name": p.get("firstname") or "", "last_name": p.get("lastname") or "",
+        "email": p.get("email"), "phone": p.get("phone"), "company": p.get("company"),
+        "title": p.get("jobtitle"), "lifecycle": p.get("lifecyclestage"), "lead_status": p.get("hs_lead_status"),
+        "owner": p.get("hubspot_owner_id"), "source": "hubspot",
+    }
+
+
+def _hs_deal(record: dict[str, Any]) -> dict[str, Any]:
+    p = _hs_props(record)
+    try:
+        amount = float(p.get("amount")) if p.get("amount") not in (None, "") else None
+    except (TypeError, ValueError):
+        amount = None
+    return {"id": str(record.get("id") or p.get("hs_object_id") or ""), "name": p.get("dealname"),
+            "stage": p.get("dealstage"), "amount": amount, "close_date": p.get("closedate"),
+            "pipeline": p.get("pipeline"), "owner": p.get("hubspot_owner_id"), "source": "hubspot"}
+
+
+def _hs_company(record: dict[str, Any]) -> dict[str, Any]:
+    p = _hs_props(record)
+    return {"id": str(record.get("id") or p.get("hs_object_id") or ""), "name": p.get("name"),
+            "domain": p.get("domain"), "industry": p.get("industry"), "city": p.get("city"),
+            "country": p.get("country"), "source": "hubspot"}
+
+
+def _hs_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class ComposioHubSpotConnector(_ComposioIdentity, Connector):
+    """The user's own HubSpot CRM, with the same methods as the workspace CRM (bizos/connectors/mock_crm.py)."""
+
+    category = "crm"
+    provider = "composio_hubspot"
+    toolkit = "hubspot"
+
+    def _run(self, action: str, arguments: dict[str, Any]) -> Any:
+        return execute(self.owner, self.toolkit, action, arguments)
+
+    def _search(self, action: str, *, query: str = "", filters: Optional[list[dict]] = None,
+                properties: list[str], limit: int) -> tuple[list[dict[str, Any]], int]:
+        args: dict[str, Any] = {"limit": max(1, min(int(limit or 20), 100)), "properties": properties}
+        if query:
+            args["query"] = query
+        if filters:
+            args["filterGroups"] = [{"filters": filters}]
+        data = self._run(action, args)
+        rows = _hs_results(data)
+        inner = _hs_unwrap(data)
+        total = inner.get("total") if isinstance(inner, dict) and isinstance(inner.get("total"), int) else len(rows)
+        return rows, total
+
+    def health(self) -> ConnectorResult:
+        try:
+            self._search("HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", properties=["email"], limit=1)
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        return ConnectorResult(ok=True, summary="hubspot connected")
+
+    # -- reads --------------------------------------------------------------
+
+    def search_contacts(self, query: str = "", *, lifecycle: Optional[str] = None, limit: int = 20) -> ConnectorResult:
+        filters = [{"propertyName": "lifecyclestage", "operator": "EQ", "value": lifecycle}] if lifecycle else None
+        try:
+            rows, _ = self._search("HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", query=query, filters=filters,
+                                   properties=_HS_CONTACT_PROPS, limit=limit)
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        records = [_hs_contact(r) for r in rows]
+        return ConnectorResult(ok=True, data=records, summary=f"{len(records)} HubSpot contact(s) found",
+                               metadata={"provider": self.provider})
+
+    def _contact_id(self, contact_id: str) -> Optional[str]:
+        """A HubSpot contact id, also accepting an email address."""
+        ref = (contact_id or "").strip()
+        if "@" not in ref:
+            return ref or None
+        rows, _ = self._search("HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA",
+                               filters=[{"propertyName": "email", "operator": "EQ", "value": ref}],
+                               properties=["email"], limit=1)
+        return str(rows[0].get("id")) if rows else None
+
+    def get_contact(self, contact_id: str) -> ConnectorResult:
+        try:
+            cid = self._contact_id(contact_id)
+            if not cid:
+                return ConnectorResult.failure(f"No HubSpot contact matching {contact_id!r}")
+            record = _hs_unwrap(self._run("HUBSPOT_READ_CONTACT", {"contactId": cid, "properties": _HS_CONTACT_PROPS}))
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        if not isinstance(record, dict) or not (record.get("id") or record.get("properties")):
+            return ConnectorResult.failure(f"No HubSpot contact matching {contact_id!r}")
+        contact = _hs_contact(record)
+        notes: list[dict[str, Any]] = []
+        try:
+            for n in _hs_results(self._run("HUBSPOT_LIST_CONTACT_NOTES", {"contact_id": cid, "limit": 20})):
+                p = _hs_props(n)
+                notes.append({"id": str(n.get("id") or ""), "body": p.get("hs_note_body") or p.get("body") or "",
+                              "created_at": p.get("hs_timestamp") or p.get("hs_createdate")})
+        except ConnectorError as exc:
+            log_warning(f"HubSpot notes for contact {cid} unavailable: {exc}")
+        safe_notes, findings = wrap_many(notes, source="crm_note", text_field="body")
+        contact["notes"] = safe_notes
+        name = f"{contact['first_name']} {contact['last_name']}".strip()
+        return ConnectorResult(ok=True, data=contact, summary=f"{name} ({contact.get('email') or 'no email'})",
+                               untrusted_findings=findings, metadata={"provider": self.provider})
+
+    def search_companies(self, query: str = "", *, limit: int = 20) -> ConnectorResult:
+        try:
+            rows, _ = self._search("HUBSPOT_SEARCH_COMPANIES", query=query, properties=_HS_COMPANY_PROPS, limit=limit)
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        records = [_hs_company(r) for r in rows]
+        return ConnectorResult(ok=True, data=records, summary=f"{len(records)} HubSpot company/companies",
+                               metadata={"provider": self.provider})
+
+    def search_deals(self, *, stage: Optional[str] = None, owner: Optional[str] = None, limit: int = 50) -> ConnectorResult:
+        filters = []
+        if stage:
+            filters.append({"propertyName": "dealstage", "operator": "EQ", "value": _HS_STAGES.get(stage.strip().lower(), stage)})
+        if owner and str(owner).isdigit():
+            filters.append({"propertyName": "hubspot_owner_id", "operator": "EQ", "value": str(owner)})
+        try:
+            rows, _ = self._search("HUBSPOT_SEARCH_DEALS", filters=filters or None, properties=_HS_DEAL_PROPS, limit=limit)
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        records = [_hs_deal(r) for r in rows]
+        return ConnectorResult(ok=True, data=records, summary=f"{len(records)} HubSpot deal(s)",
+                               metadata={"provider": self.provider})
+
+    def pipeline_summary(self) -> ConnectorResult:
+        listed = self.search_deals(limit=100)
+        if not listed.ok:
+            return listed
+        by_stage: dict[str, dict[str, Any]] = {}
+        for deal in listed.data:
+            s = by_stage.setdefault(str(deal["stage"]), {"stage": deal["stage"], "deals": 0, "total": 0.0})
+            s["deals"] += 1
+            s["total"] += deal["amount"] or 0.0
+        stages = sorted(by_stage.values(), key=lambda s: s["total"], reverse=True)
+        total = sum(s["total"] for s in stages)
+        return ConnectorResult(
+            ok=True, data={"stages": stages, "total_value": total, "deals_counted": len(listed.data)},
+            summary=f"{len(listed.data)} HubSpot deals worth {total:,.2f} across {len(stages)} stages",
+            metadata={"provider": self.provider},
+        )
+
+    def count_contacts(self, *, lifecycle: Optional[str] = None) -> int:
+        filters = [{"propertyName": "lifecyclestage", "operator": "EQ", "value": lifecycle}] if lifecycle else None
+        try:
+            _, total = self._search("HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", filters=filters, properties=["email"], limit=1)
+        except ConnectorError:
+            return 0
+        return int(total)
+
+    def find_duplicate(self, email: str) -> ConnectorResult:
+        try:
+            cid = self._contact_id(email) if email else None
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        return ConnectorResult(ok=True, data={"id": cid} if cid else None,
+                               summary="duplicate found" if cid else "no duplicate")
+
+    # -- writes -------------------------------------------------------------
+
+    def _associations(self, kind: str, contact_id: Optional[str], deal_id: Optional[str]) -> list[dict[str, Any]]:
+        out = []
+        for target, ref in (("contact", contact_id), ("deal", deal_id)):
+            if ref:
+                out.append({"to": {"id": str(ref)},
+                            "types": [{"associationCategory": "HUBSPOT_DEFINED",
+                                       "associationTypeId": _HS_ASSOC[(kind, target)]}]})
+        return out
+
+    def create_note(self, *, body: str, contact_id: Optional[str] = None, deal_id: Optional[str] = None) -> ConnectorResult:
+        args: dict[str, Any] = {"hs_note_body": body, "hs_timestamp": _hs_now()}
+        assoc = self._associations("note", contact_id, deal_id)
+        if assoc:
+            args["associations"] = assoc
+        try:
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_NOTE", args))
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        note_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
+        return ConnectorResult(ok=True, data={"id": note_id}, summary=f"HubSpot note {note_id or ''} created".replace("  ", " "),
+                               metadata={"provider": self.provider})
+
+    def create_task(self, *, title: str, body: str = "", contact_id: Optional[str] = None, deal_id: Optional[str] = None,
+                    assignee: Optional[str] = None, due_at: Optional[str] = None) -> ConnectorResult:
+        args: dict[str, Any] = {"hs_task_subject": title, "hs_task_body": body or "", "hs_task_status": "NOT_STARTED",
+                                "hs_task_type": "TODO", "hs_timestamp": due_at or _hs_now()}
+        if assignee and str(assignee).isdigit():
+            args["hubspot_owner_id"] = str(assignee)
+        assoc = self._associations("task", contact_id, deal_id)
+        if assoc:
+            args["associations"] = assoc
+        try:
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_TASK", args))
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        task_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
+        return ConnectorResult(ok=True, data={"id": task_id}, summary=f"HubSpot task '{title}' created",
+                               metadata={"provider": self.provider})
+
+    def _update_contact(self, contact_id: str, properties: dict[str, Any]) -> ConnectorResult:
+        try:
+            cid = self._contact_id(contact_id)
+            if not cid:
+                return ConnectorResult.failure(f"No HubSpot contact matching {contact_id!r}")
+            self._run("HUBSPOT_UPDATE_CONTACT", {"contactId": cid, "properties": properties})
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        return ConnectorResult(ok=True, data={"id": cid, **properties}, summary="HubSpot contact updated",
+                               metadata={"provider": self.provider})
+
+    def tag_lead(self, contact_id: str, *, add_tags: Optional[list[str]] = None, remove_tags: Optional[list[str]] = None,
+                 lifecycle: Optional[str] = None) -> ConnectorResult:
+        """HubSpot has no contact tags: the lifecycle stage is set on the contact and the tags are recorded as a note."""
+        changed = []
+        if lifecycle:
+            result = self._update_contact(contact_id, {"lifecyclestage": lifecycle})
+            if not result.ok:
+                return result
+            changed.append(f"lifecycle {lifecycle}")
+        if add_tags or remove_tags:
+            parts = ([f"added {', '.join(add_tags)}"] if add_tags else []) + ([f"removed {', '.join(remove_tags)}"] if remove_tags else [])
+            try:
+                cid = self._contact_id(contact_id)
+            except ConnectorError as exc:
+                return ConnectorResult.failure(str(exc))
+            note = self.create_note(body=f"Tags {'; '.join(parts)}.", contact_id=cid)
+            if not note.ok:
+                return note
+            changed.append("tags recorded as a HubSpot note (HubSpot has no contact tags)")
+        if not changed:
+            return ConnectorResult.failure("Say which tags to add or remove, or which lifecycle stage to set.")
+        return ConnectorResult(ok=True, data={"id": contact_id, "tags_added": add_tags or [], "tags_removed": remove_tags or [],
+                                              "lifecycle": lifecycle}, summary="; ".join(changed),
+                               metadata={"provider": self.provider})
+
+    def update_contact_field(self, contact_id: str, *, field: str, value: Any) -> ConnectorResult:
+        prop = _HS_CONTACT_FIELDS.get(field)
+        if prop is None:
+            return ConnectorResult.failure(f"{field!r} is not an updatable contact field. Allowed: {sorted(_HS_CONTACT_FIELDS)}")
+        result = self._update_contact(contact_id, {prop: value})
+        if result.ok:
+            result.data = {"id": result.data["id"], field: value}
+            result.summary = f"HubSpot contact {field} set to {value!r}"
+        return result
+
+    def create_contact(self, *, first_name: str, last_name: str = "", email: Optional[str] = None, company: Optional[str] = None,
+                       title: Optional[str] = None, lifecycle: str = "lead", tags: Optional[list[str]] = None,
+                       properties: Optional[dict[str, Any]] = None) -> ConnectorResult:
+        args = {k: v for k, v in {"firstname": first_name, "lastname": last_name, "email": (email or "").lower() or None,
+                                  "company": company, "jobtitle": title, "lifecyclestage": lifecycle}.items() if v}
+        try:
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_CONTACT", args))
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        contact_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
+        return ConnectorResult(ok=True, data={"id": contact_id}, summary=f"HubSpot contact {first_name} {last_name} created".strip(),
+                               metadata={"provider": self.provider})
+
+    def update_deal_stage(self, deal_id: str, *, stage: str) -> ConnectorResult:
+        hs_stage = _HS_STAGES.get((stage or "").strip().lower(), stage)
+        try:
+            self._run("HUBSPOT_UPDATE_DEAL", {"dealId": str(deal_id), "properties": {"dealstage": hs_stage}})
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        return ConnectorResult(ok=True, data={"id": deal_id, "stage": hs_stage}, summary=f"HubSpot deal moved to {hs_stage}",
+                               metadata={"provider": self.provider})
+
+    def bulk_update_contacts(self, *, lifecycle_filter: Optional[str], field: str, value: Any) -> ConnectorResult:
+        prop = _HS_CONTACT_FIELDS.get(field)
+        if prop is None:
+            return ConnectorResult.failure(f"{field!r} is not an updatable contact field")
+        filters = [{"propertyName": "lifecyclestage", "operator": "EQ", "value": lifecycle_filter}] if lifecycle_filter else None
+        try:
+            rows, _ = self._search("HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA", filters=filters, properties=["email"], limit=100)
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        updated, failed = 0, 0
+        for row in rows:
+            try:
+                self._run("HUBSPOT_UPDATE_CONTACT", {"contactId": str(row.get("id")), "properties": {prop: value}})
+                updated += 1
+            except ConnectorError:
+                failed += 1
+        return ConnectorResult(ok=failed == 0, data={"updated": updated, "failed": failed},
+                               summary=f"{updated} HubSpot contact(s) updated" + (f", {failed} failed" if failed else ""),
+                               metadata={"provider": self.provider})
+
+    def delete_record(self, *, record_type: str, record_id: str) -> ConnectorResult:
+        actions = {"contact": ("HUBSPOT_ARCHIVE_CONTACT", "contactId"), "deal": ("HUBSPOT_REMOVE_DEAL", "dealId")}
+        if record_type not in actions:
+            return ConnectorResult.failure(f"Deleting a HubSpot {record_type} is not supported here; only contacts and deals.")
+        action, key = actions[record_type]
+        try:
+            self._run(action, {key: str(record_id)})
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        return ConnectorResult(ok=True, data={"deleted": 1}, summary=f"HubSpot {record_type} {record_id} archived",
+                               metadata={"provider": self.provider})
+
+
 CONNECTORS = {
     "gmail": ComposioGmailConnector,
     "googlecalendar": ComposioCalendarConnector,
     "youtube": ComposioYouTubeConnector,
+    "hubspot": ComposioHubSpotConnector,
 }

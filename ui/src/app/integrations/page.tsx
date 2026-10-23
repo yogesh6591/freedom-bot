@@ -3,7 +3,7 @@
 /** Per-user Gmail / Google Calendar connections (Composio). */
 
 import { useCallback, useEffect, useState } from 'react'
-import { CalendarDays, Mail, Youtube } from 'lucide-react'
+import { Building2, CalendarDays, Mail, Youtube } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
 import { api } from '@/lib/api'
 import {
@@ -30,12 +30,18 @@ interface ComposioStatus {
 }
 
 const ICONS: Record<string, typeof Mail> = {
+  hubspot: Building2,
   gmail: Mail,
   googlecalendar: CalendarDays,
   youtube: Youtube
 }
 
 const EXAMPLES: Record<string, string[]> = {
+  hubspot: [
+    'Find contacts at Contoso',
+    'Add a note on John Baker: wants quarterly billing',
+    'Move the Contoso pilot deal to negotiation'
+  ],
   gmail: [
     'Show my latest emails',
     'Any unread emails from this week?',
