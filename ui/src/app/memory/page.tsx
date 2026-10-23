@@ -29,12 +29,198 @@ import {
   timestamp
 } from '@/components/common/primitives'
 
-const TABS = ['FACT', 'SOP', 'DECISION', 'CORRECTION'] as const
+const TABS = ['FACT', 'SOP', 'DECISION', 'CORRECTION', 'DOCUMENT'] as const
 const TAB_LABEL: Record<string, string> = {
   FACT: 'Facts',
   SOP: 'SOPs',
   DECISION: 'Decisions',
-  CORRECTION: 'Corrections'
+  CORRECTION: 'Corrections',
+  DOCUMENT: 'Documents'
+}
+
+const AREAS = ['', 'finance', 'hr', 'salary', 'legal', 'exec', 'ops'] as const
+const AREA_LABEL: Record<string, string> = {
+  '': 'Everyone in the workspace',
+  finance: 'Finance access only',
+  hr: 'HR access only',
+  salary: 'Salary access only',
+  legal: 'Legal access only',
+  exec: 'Executive access only',
+  ops: 'Operations access only'
+}
+
+interface KnowledgeDocument {
+  document_id: string
+  title: string
+  filename: string | null
+  parts: number
+  access_area: string | null
+  uploaded_by: string
+  uploaded_at: string | null
+}
+
+/** Uploaded knowledge-base files: admins upload and remove; everyone sees the ones their access allows. */
+function DocumentsPanel({
+  isAdmin,
+  onError
+}: {
+  isAdmin: boolean
+  onError: (message: string | null) => void
+}) {
+  const [docs, setDocs] = useState<KnowledgeDocument[]>([])
+  const [loading, setLoading] = useState(true)
+  const [file, setFile] = useState<File | null>(null)
+  const [title, setTitle] = useState('')
+  const [area, setArea] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    try {
+      const data = await api.get<{ items: KnowledgeDocument[] }>('/api/memory/documents')
+      setDocs(data.items)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not load documents')
+    } finally {
+      setLoading(false)
+    }
+  }, [onError])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  async function upload() {
+    if (!file) return
+    setBusy(true)
+    setNotice(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('title', title)
+      form.append('access_area', area)
+      const result = await api.upload<{ title: string; parts: number }>('/api/memory/documents', form)
+      setNotice(`Added “${result.title}” (${result.parts} part${result.parts === 1 ? '' : 's'}).`)
+      setFile(null)
+      setTitle('')
+      onError(null)
+      await load()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function remove(doc: KnowledgeDocument) {
+    if (!window.confirm(`Remove “${doc.title}” from the knowledge base?`)) return
+    try {
+      await api.post(`/api/memory/documents/${doc.document_id}/archive`)
+      await load()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Could not remove')
+    }
+  }
+
+  return (
+    <>
+      {isAdmin && (
+        <Panel
+          title="Upload a document"
+          description="PDF, .txt or .md, up to 10 MB. The assistant answers from it for everyone who has the access you choose."
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <Field label="File">
+              <input
+                type="file"
+                accept=".pdf,.txt,.md"
+                className={inputClass}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </Field>
+            <Field label="Title (optional)">
+              <input
+                className={inputClass}
+                value={title}
+                placeholder="Defaults to the file name"
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </Field>
+            <Field label="Who can see it">
+              <select className={inputClass} value={area} onChange={(e) => setArea(e.target.value)}>
+                {AREAS.map((a) => (
+                  <option key={a} value={a}>
+                    {AREA_LABEL[a]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <div className="mt-3 flex items-center gap-3">
+            <Btn onClick={() => void upload()} loading={busy} disabled={!file || busy}>
+              Upload
+            </Btn>
+            {notice && <span className="text-sm text-muted">{notice}</span>}
+          </div>
+        </Panel>
+      )}
+      <Panel>
+        {loading ? (
+          <LoadingBlock rows={4} />
+        ) : (
+          <DataTable
+            rows={docs}
+            empty="No documents uploaded yet."
+            columns={[
+              {
+                key: 'title',
+                header: 'Document',
+                render: (doc) => (
+                  <div>
+                    <div className="font-geist text-primary">{doc.title}</div>
+                    <div className="font-dmmono text-[10px] text-muted">{doc.filename}</div>
+                  </div>
+                )
+              },
+              {
+                key: 'access',
+                header: 'Who can see it',
+                render: (doc) => (
+                  <Badge tone={doc.access_area ? 'warn' : 'good'}>
+                    {AREA_LABEL[doc.access_area ?? ''] ?? doc.access_area}
+                  </Badge>
+                )
+              },
+              {
+                key: 'parts',
+                header: 'Parts',
+                render: (doc) => <span className="text-muted">{doc.parts}</span>
+              },
+              {
+                key: 'uploaded',
+                header: 'Uploaded',
+                render: (doc) => <span className="text-muted">{timestamp(doc.uploaded_at)}</span>
+              },
+              ...(isAdmin
+                ? [
+                    {
+                      key: 'remove',
+                      header: '',
+                      render: (doc: KnowledgeDocument) => (
+                        <Btn size="sm" variant="secondary" onClick={() => void remove(doc)}>
+                          Remove
+                        </Btn>
+                      )
+                    }
+                  ]
+                : [])
+            ]}
+          />
+        )}
+      </Panel>
+    </>
+  )
 }
 
 export default function MemoryPage() {
@@ -185,6 +371,9 @@ function MemoryView() {
         </Panel>
       )}
 
+      {tab === 'DOCUMENT' ? (
+        <DocumentsPanel isAdmin={hasRole('ADMIN')} onError={setError} />
+      ) : (
       <Panel>
         {loading ? (
           <LoadingBlock rows={5} />
@@ -270,6 +459,7 @@ function MemoryView() {
           />
         )}
       </Panel>
+      )}
 
       {selected && (
         <MemoryDetail

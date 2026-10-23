@@ -98,7 +98,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "memory_search": _obj(
         {
             "query": _s("Search text"),
-            "categories": _arr("Optional FACT|SOP|DECISION|CORRECTION filters"),
+            "categories": _arr("Optional FACT|SOP|DECISION|CORRECTION|DOCUMENT filters (DOCUMENT = uploaded knowledge-base files)"),
             "limit": _i("Max hits"),
             "domain": _s("Optional domain filter"),
             "authoritative_only": {

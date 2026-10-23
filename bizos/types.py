@@ -206,6 +206,8 @@ class MemoryCategory(StrEnum):
     SOP = "SOP"
     DECISION = "DECISION"
     CORRECTION = "CORRECTION"
+    #: A part of an uploaded knowledge-base document (PDF or text), searchable like any memory item.
+    DOCUMENT = "DOCUMENT"
 
 
 class MemoryStatus(StrEnum):

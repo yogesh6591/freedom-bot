@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
-from app.api.deps import bound, client_settings, current_context, require_approver, require_drafter
+from app.api.deps import bound, client_settings, current_context, require_admin, require_approver, require_drafter
 from bizos.control.models import ClientSettings
+from bizos.memory import documents
 from bizos.memory import store as memory
 from bizos.tenancy.context import TenantContext
 from bizos.types import ApprovalStatus, MemoryCategory, Role, SourceType
@@ -84,6 +85,43 @@ def list_conflicts(ctx: TenantContext = Depends(current_context)) -> dict[str, A
     with bound(ctx):
         items = memory.find_conflicts(ctx=ctx)
         return {"items": items, "count": len(items)}
+
+
+@router.get("/documents")
+def list_documents(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """Uploaded knowledge-base documents this user can see (one row per document)."""
+    with bound(ctx):
+        return {"items": documents.list_documents(ctx=ctx)}
+
+
+@router.post("/documents", status_code=201)
+async def upload_document(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    access_area: str = Form(""),
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Admin only: add a PDF or text file to the knowledge base, visible to everyone or to one data area."""
+    data = await file.read(documents.MAX_BYTES + 1)
+    with bound(ctx):
+        try:
+            return documents.upload(title=title, filename=file.filename or "document", data=data,
+                                    access_area=access_area or None, settings=settings, ctx=ctx)
+        except documents.DocumentError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.post("/documents/{document_id}/archive")
+def archive_document(document_id: str, ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
+    """Admin only: remove a document from the knowledge base (its parts are archived, history kept)."""
+    with bound(ctx):
+        archived = documents.archive_document(document_id, reason="Removed by an admin", ctx=ctx)
+    if not archived:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"document_id": document_id, "parts_archived": archived}
 
 
 @router.get("/{item_id}")

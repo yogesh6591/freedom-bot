@@ -4,6 +4,8 @@ agno==3.0.9
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 python-multipart==0.0.20
+# Knowledge-base uploads: text from PDF files.
+pypdf==5.4.0
 sqlalchemy==2.0.36
 psycopg[binary]==3.2.3
 # composio 0.19+ needs pydantic>=2.11.9; keep under 3.0 for FastAPI.
