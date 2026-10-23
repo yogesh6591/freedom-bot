@@ -162,12 +162,13 @@ def executor_model() -> Any:
     """The executor's model: EXECUTOR_MODEL_ID when set (e.g. a stronger model), else MODEL_ID.
 
     The router has its own setting (ROUTER_MODEL_ID), so the two can differ.
+    Default path uses the same model and reasoning effort as the campaign assistant.
     """
-    from app.assistant.assistant import _model
+    from app.assistant.assistant import _effort_candidates, _model
 
     mid = (os.environ.get("EXECUTOR_MODEL_ID") or "").strip()
     if not mid:
-        return _model(None)
+        return _model(_effort_candidates()[0])
     provider, _, name = mid.partition(":")
     if provider == "openai" and name:
         from agno.models.openai import OpenAIChat
