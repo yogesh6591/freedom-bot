@@ -28,6 +28,7 @@ outside `AGENT_PIPELINE_V2` loads.
 | `d33c8de` | New `ComposioHubSpotConnector`: when a user connects HubSpot in Composio, CRM tools read and write HubSpot instead of the workspace CRM. Every call still goes through the guard and policy check; gates are unchanged. |
 | `0b9b089` | Admins can upload PDF, text or markdown documents (`/api/memory/documents`, admin only). Text is stored as approved memory with category DOCUMENT and the chosen access area, so the existing area rules decide who can see it. No tool or gate change. |
 | `4ece7d8` | approvals_list no longer fails when a finance_draft_invoice is pending: it imported the deleted bizos/tools/domains.py. Bug fix only; visibility and gates are unchanged. Test: tests/test_approvals_list_invoice.py. |
+| `b31df1b` | HubSpot searches follow HubSpot's paging cursor (100 per page, up to 2,000 records), so pipeline counts cover every deal instead of the first 100. Search results report HubSpot's total, a partial read says so, and full stage labels ("Appointment Scheduled") map to HubSpot's stage ids. Reads only; no gate or permission change. Test: tests/test_hubspot_paging.py (mocked). |
 
 Already on `cepoch/club-freedom` before this work, and not part of it: `fe5b089`, `6afd759`.
 
