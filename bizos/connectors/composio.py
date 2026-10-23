@@ -955,7 +955,14 @@ _HS_STAGES = {
     "proposal": "presentationscheduled", "presentation": "presentationscheduled",
     "decision": "decisionmakerboughtin", "negotiation": "contractsent", "contract": "contractsent",
     "won": "closedwon", "closed won": "closedwon", "lost": "closedlost", "closed lost": "closedlost",
+    # HubSpot's own stage labels, as users read them on the deal board.
+    "appointment scheduled": "appointmentscheduled", "qualified to buy": "qualifiedtobuy",
+    "presentation scheduled": "presentationscheduled", "decision maker bought-in": "decisionmakerboughtin",
+    "decision maker bought in": "decisionmakerboughtin", "contract sent": "contractsent",
 }
+#: HubSpot returns at most 100 records per search; counts page on until this many have been read.
+_HS_PAGE = 100
+_HS_MAX_ROWS = 2000
 #: HubSpot association type ids (HUBSPOT_DEFINED) for a note or task linked to a contact or deal.
 _HS_ASSOC = {("note", "contact"): 202, ("note", "deal"): 214, ("task", "contact"): 204, ("task", "deal"): 216}
 
@@ -975,6 +982,14 @@ def _hs_results(data: Any) -> list[dict[str, Any]]:
             if isinstance(data.get(key), list):
                 return [r for r in data[key] if isinstance(r, dict)]
     return []
+
+
+def _hs_next_after(data: Any) -> Optional[str]:
+    """HubSpot's cursor for the next page of a search (``paging.next.after``), if there is one."""
+    paging = data.get("paging") if isinstance(data, dict) else None
+    nxt = paging.get("next") if isinstance(paging, dict) else None
+    after = nxt.get("after") if isinstance(nxt, dict) else None
+    return str(after) if after not in (None, "") else None
 
 
 def _hs_props(record: dict[str, Any]) -> dict[str, Any]:
@@ -1027,16 +1042,37 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
 
     def _search(self, action: str, *, query: str = "", filters: Optional[list[dict]] = None,
                 properties: list[str], limit: int) -> tuple[list[dict[str, Any]], int]:
-        args: dict[str, Any] = {"limit": max(1, min(int(limit or 20), 100)), "properties": properties}
+        """Up to ``limit`` records, following HubSpot's ``after`` cursor past its 100-per-page cap.
+
+        Returns the rows and HubSpot's own total, so callers can tell a partial list from a full one.
+        A later page that fails ends the paging; the rows read so far are kept.
+        """
+        wanted = max(1, min(int(limit or 20), _HS_MAX_ROWS))
+        args: dict[str, Any] = {"limit": min(wanted, _HS_PAGE), "properties": properties}
         if query:
             args["query"] = query
         if filters:
             args["filterGroups"] = [{"filters": filters}]
-        data = self._run(action, args)
-        rows = _hs_results(data)
-        inner = _hs_unwrap(data)
-        total = inner.get("total") if isinstance(inner, dict) and isinstance(inner.get("total"), int) else len(rows)
-        return rows, total
+        rows: list[dict[str, Any]] = []
+        total: Optional[int] = None
+        while True:
+            try:
+                data = self._run(action, args)
+            except ConnectorError:
+                if not rows:
+                    raise
+                break
+            page = _hs_results(data)
+            rows += page
+            inner = _hs_unwrap(data)
+            if total is None and isinstance(inner, dict) and isinstance(inner.get("total"), int):
+                total = inner["total"]
+            after = _hs_next_after(inner)
+            if not page or not after or len(rows) >= wanted:
+                break
+            args = {**args, "after": after, "limit": min(wanted - len(rows), _HS_PAGE)}
+        rows = rows[:wanted]
+        return rows, total if total is not None else len(rows)
 
     def health(self) -> ConnectorResult:
         try:
@@ -1109,17 +1145,22 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
         if owner and str(owner).isdigit():
             filters.append({"propertyName": "hubspot_owner_id", "operator": "EQ", "value": str(owner)})
         try:
-            rows, _ = self._search("HUBSPOT_SEARCH_DEALS", filters=filters or None, properties=_HS_DEAL_PROPS, limit=limit)
+            rows, total = self._search("HUBSPOT_SEARCH_DEALS", filters=filters or None, properties=_HS_DEAL_PROPS,
+                                       limit=limit)
         except ConnectorError as exc:
             return ConnectorResult.failure(str(exc))
         records = [_hs_deal(r) for r in rows]
-        return ConnectorResult(ok=True, data=records, summary=f"{len(records)} HubSpot deal(s)",
-                               metadata={"provider": self.provider})
+        summary = f"{len(records)} HubSpot deal(s)"
+        if total > len(records):
+            summary = f"Showing {len(records)} of {total} HubSpot deal(s); the total count is {total}"
+        return ConnectorResult(ok=True, data=records, summary=summary,
+                               metadata={"provider": self.provider, "total": total})
 
     def pipeline_summary(self) -> ConnectorResult:
-        listed = self.search_deals(limit=100)
+        listed = self.search_deals(limit=_HS_MAX_ROWS)
         if not listed.ok:
             return listed
+        total_deals = int(listed.metadata.get("total") or len(listed.data))
         by_stage: dict[str, dict[str, Any]] = {}
         for deal in listed.data:
             s = by_stage.setdefault(str(deal["stage"]), {"stage": deal["stage"], "deals": 0, "total": 0.0})
@@ -1128,8 +1169,12 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
         stages = sorted(by_stage.values(), key=lambda s: s["total"], reverse=True)
         total = sum(s["total"] for s in stages)
         return ConnectorResult(
-            ok=True, data={"stages": stages, "total_value": total, "deals_counted": len(listed.data)},
-            summary=f"{len(listed.data)} HubSpot deals worth {total:,.2f} across {len(stages)} stages",
+            ok=True,
+            data={"stages": stages, "total_value": total, "deals_counted": len(listed.data),
+                  "deals_in_hubspot": total_deals},
+            summary=(f"{len(listed.data)} HubSpot deals worth {total:,.2f} across {len(stages)} stages"
+                     + (f" (only {len(listed.data)} of {total_deals} could be read; counts are partial)"
+                        if total_deals > len(listed.data) else "")),
             metadata={"provider": self.provider},
         )
 
