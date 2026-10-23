@@ -27,6 +27,7 @@ outside `AGENT_PIPELINE_V2` loads.
 | `c0ff029` | compose.yaml loads `.env` into the api container (optional file) and mounts a writable `composio-cache` volume; the Dockerfile creates `/app/.composio-cache` owned by the app user. No permission change. |
 | `d33c8de` | New `ComposioHubSpotConnector`: when a user connects HubSpot in Composio, CRM tools read and write HubSpot instead of the workspace CRM. Every call still goes through the guard and policy check; gates are unchanged. |
 | `0b9b089` | Admins can upload PDF, text or markdown documents (`/api/memory/documents`, admin only). Text is stored as approved memory with category DOCUMENT and the chosen access area, so the existing area rules decide who can see it. No tool or gate change. |
+| `4ece7d8` | approvals_list no longer fails when a finance_draft_invoice is pending: it imported the deleted bizos/tools/domains.py. Bug fix only; visibility and gates are unchanged. Test: tests/test_approvals_list_invoice.py. |
 
 Already on `cepoch/club-freedom` before this work, and not part of it: `fe5b089`, `6afd759`.
 
