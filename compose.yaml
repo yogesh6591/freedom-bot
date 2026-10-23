@@ -35,6 +35,13 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Integrations (Composio: Gmail, Google Calendar, YouTube) read their keys straight from .env, as in
+    # ai-automation-saas. Optional, so the stack still starts without a .env file.
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - composio-cache:/app/.composio-cache
     environment:
       RUNTIME_ENV: ${RUNTIME_ENV:-dev}
       DB_HOST: db
@@ -51,7 +58,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
       AGENTOS_URL: ${AGENTOS_URL:-http://127.0.0.1:8001}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+      # COMPOSIO_API_KEY comes from .env (env_file above); an empty default here would override it.
+      COMPOSIO_CACHE_DIR: /app/.composio-cache
       # FB-043: shared secret for the checkout/contract sale webhook.
       SALE_WEBHOOK_SECRET: ${SALE_WEBHOOK_SECRET:-}
       MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
@@ -93,3 +101,4 @@ services:
 
 volumes:
   bizos-db:
+  composio-cache:

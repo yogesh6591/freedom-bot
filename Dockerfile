@@ -23,7 +23,7 @@ COPY acquisition_alembic.ini ./acquisition_alembic.ini
 COPY scripts ./scripts
 
 # Run as a non-root user: the process needs no privileges on the container.
-RUN useradd --create-home --uid 10001 bizos && chown -R bizos:bizos /app
+RUN useradd --create-home --uid 10001 bizos && mkdir -p /app/.composio-cache && chown -R bizos:bizos /app
 USER bizos
 
 EXPOSE 8000
