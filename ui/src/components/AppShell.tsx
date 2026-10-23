@@ -8,6 +8,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
+import { useDebug } from '@/lib/debug'
 import { useEffect, useRef, useState } from 'react'
 import {
   BookOpenText,
@@ -30,7 +31,8 @@ import {
   Unplug,
   Users,
   X,
-  type LucideIcon
+  type LucideIcon,
+  Bug,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Btn } from '@/components/common/primitives'
@@ -137,6 +139,7 @@ function accessLabel(me: Me): string {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { me, loading, hasRole, logout } = useSession()
+  const [debug, setDebug] = useDebug()
   const pathname = usePathname()
   const router = useRouter()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -372,6 +375,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="shrink-0 border-t border-border px-4 pb-4 pt-4">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={debug}
+            onClick={() => setDebug(!debug)}
+            title="Show which tools the assistant called"
+            className="mb-3 flex w-full items-center gap-2 rounded-lg border border-border bg-background-elevated px-3 py-2 text-[12px] font-semibold text-secondary hover:text-primary"
+          >
+            <Bug size={14} aria-hidden />
+            <span className="flex-1 text-left">Debug</span>
+            <span
+              className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${debug ? 'bg-brand' : 'bg-border'}`}
+              aria-hidden
+            >
+              <span
+                className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${debug ? 'translate-x-3.5' : 'translate-x-0.5'}`}
+              />
+            </span>
+          </button>
           {(!me.client.allow_phi || !me.client.allow_card_data) && (
             <div className="mb-4 rounded-lg border border-border bg-background-elevated px-3 py-2.5">
               <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-secondary">

@@ -35,6 +35,7 @@ import type {
 } from '@/lib/types'
 import { Badge, Btn, ErrorNote } from '@/components/common/primitives'
 import { EmailCard } from './EmailCard'
+import { useDebug } from '@/lib/debug'
 
 interface Turn {
   id?: string
@@ -300,6 +301,27 @@ function TraceRow({
   )
 }
 
+/** Debug mode (sidebar switch): the tools this reply called, in order, with whether each succeeded. */
+function ToolsCalled({ activity }: { activity: { tool: string; ok: boolean }[] }) {
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-border bg-background px-2.5 py-1.5 font-dmmono text-[11px] text-muted">
+      <span className="font-geist font-semibold uppercase tracking-wide">Tools called</span>
+      {activity.length === 0 ? (
+        <span>none</span>
+      ) : (
+        activity.map((item, i) => (
+          <span
+            key={`${item.tool}-${i}`}
+            className={`rounded px-1.5 py-0.5 ${item.ok === false ? 'bg-red-500/10 text-red-600' : 'bg-emerald-500/10 text-emerald-700'}`}
+          >
+            {item.tool} {item.ok === false ? '✗' : '✓'}
+          </span>
+        ))
+      )}
+    </div>
+  )
+}
+
 function TurnTrace({
   trace,
   response
@@ -551,6 +573,7 @@ function ChatView() {
   const [sessionId, setSessionId] = useState<string | undefined>()
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [developer, setDeveloper] = useState(false)
+  const [debug] = useDebug()
   const [acquisition, setAcquisition] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -1230,6 +1253,9 @@ function ChatView() {
                             people={turn.trace?.people_to_show}
                           />
                         )
+                      ) : null}
+                      {debug && turn.response ? (
+                        <ToolsCalled activity={turn.response.tool_activity ?? []} />
                       ) : null}
                       {developer && turn.trace ? (
                         <TurnTrace trace={turn.trace} response={turn.response} />
