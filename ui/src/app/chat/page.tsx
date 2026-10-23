@@ -350,6 +350,7 @@ function TurnTrace({
       <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
         Developer
       </div>
+      <TraceRow label="Engine" value={(trace.engine || '').trim() || '—'} />
       <TraceRow label="Tool" value={lastTool} tool />
       <TraceRow label="Explanation" value={traceValue(trace.explanation) || '—'} />
       <TraceRow label="Domain" value={(response?.domain || '').trim() || '—'} />

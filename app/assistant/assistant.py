@@ -3139,7 +3139,8 @@ def _finish(
     s = session.state if session is not None else {}
     d = s.get("draft") or {}
     recipients = [r["email"] for r in s.get("recipients") or []]
-    domain = _response_domain(turn, tool_domains)
+    pinned = (getattr(body, "domain", AUTO) or AUTO).strip().lower()
+    domain = pinned if pinned not in (AUTO, "") else _response_domain(turn, tool_domains)
     awaiting = [a for a in new_actions if a["status"] == str(ActionStatus.PENDING_APPROVAL)]
     drafts = [a for a in new_actions if a["status"] == str(ActionStatus.DRAFT)]
 
