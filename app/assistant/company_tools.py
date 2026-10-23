@@ -828,8 +828,6 @@ def _render_approvals(action: Action, scope: RunScope, names: dict[str, str]) ->
         entry["result"] = action.result.get("summary") if isinstance(action.result, dict) else action.result
     customer = (action.payload or {}).get("customer")
     if action.tool == "finance_draft_invoice" and customer:
-        from bizos.tools.domains import finance_list_pending_billables
-
         entry["customer"] = customer
         if action.status == ActionStatus.PENDING_APPROVAL:
             listed = finance_list_pending_billables(scope, {"customer": customer})
