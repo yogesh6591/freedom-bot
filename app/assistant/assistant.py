@@ -2929,23 +2929,29 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
     if campaign_allowed:
         try:
             records = known_records(ctx)
-        except Exception as exc:  # noqa: BLE001 - acquisition database unreachable: no campaign tools this turn
+        except Exception as exc:  # noqa: BLE001 - still attach campaign tools; they report the error
             log.warning("campaign records unavailable: %s: %s", type(exc).__name__, exc)
-            records = {}
-        if records:
-            from bizos.types import ExecutionMode
+            records = {
+                "sender_name": "",
+                "sender_accounts": [],
+                "assessment_url": "",
+                "email_without_company": {"subject": "", "body": ""},
+                "campaigns": [],
+                "people": [],
+            }
+        from bizos.types import ExecutionMode
 
-            block = ""
-            if scope.mode == ExecutionMode.ADVISE:
-                block = (
-                    "this workspace is in Advise mode, so emails can be drafted here but not sent. "
-                    "An admin can change the mode."
-                )
-            session = CampaignSession(ctx, records, prior_state, send_block=block)
-            session.log = turn.calls
-            session.user_message = message
-            session.user_texts = [m["content"] for m in saved.get("messages") or [] if m["role"] == "user"] + [message]
-            tools = _described(build_campaign_tools(session))
+        block = ""
+        if scope.mode == ExecutionMode.ADVISE:
+            block = (
+                "this workspace is in Advise mode, so emails can be drafted here but not sent. "
+                "An admin can change the mode."
+            )
+        session = CampaignSession(ctx, records, prior_state, send_block=block)
+        session.log = turn.calls
+        session.user_message = message
+        session.user_texts = [m["content"] for m in saved.get("messages") or [] if m["role"] == "user"] + [message]
+        tools = _described(build_campaign_tools(session))
 
     def prompt_now() -> str:
         return build_prompt(
