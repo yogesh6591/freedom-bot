@@ -65,6 +65,21 @@ def test_bad_password_is_rejected(app_client, client_a):
     assert response.json()["detail"] == "Invalid credentials"
 
 
+def test_login_malformed_email_is_invalid_credentials(app_client, client_a):
+    """A value that is not an email is the same 401 as a wrong password.
+
+    FastAPI used to 422 with a list of objects, which the login page rendered as
+    red ``[object Object]`` instead of a sign-in error.
+    """
+    response = app_client.post(
+        "/api/auth/login",
+        json={"email": "not-an-email", "password": "wrong", "client_slug": client_a.slug},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid credentials"
+    assert isinstance(response.json()["detail"], str)
+
+
 def test_unauthenticated_requests_are_rejected():
     """A caller with neither a bearer token nor a session cookie gets 401.
 

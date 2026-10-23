@@ -72,10 +72,7 @@ async function request<T>(
   const data = text ? safeJson(text) : null
 
   if (!response.ok) {
-    const detail =
-      (data && typeof data === 'object' && 'detail' in data
-        ? String((data as { detail: unknown }).detail)
-        : null) ?? `Request failed (${response.status})`
+    const detail = readErrorDetail(data, response.status)
     if (response.status === 409 && detail === WORKSPACE_CHANGED && typeof window !== 'undefined') {
       window.dispatchEvent(new Event(WORKSPACE_CHANGED_EVENT))
       throw new ApiError(
@@ -94,6 +91,30 @@ function safeJson(text: string): unknown {
   } catch {
     return { detail: text }
   }
+}
+
+/** FastAPI `detail` may be a string, a list of `{ msg }` items, or another object. */
+function readErrorDetail(data: unknown, status: number): string {
+  const fallback = `Request failed (${status})`
+  if (data == null) return fallback
+  if (typeof data !== 'object') return String(data).trim() || fallback
+  if (!('detail' in data)) return fallback
+  return flattenDetail((data as { detail: unknown }).detail) || fallback
+}
+
+function flattenDetail(detail: unknown): string {
+  if (typeof detail === 'string') return detail.trim()
+  if (typeof detail === 'number' || typeof detail === 'boolean') return String(detail)
+  if (Array.isArray(detail)) {
+    return detail.map(flattenDetail).filter(Boolean).join('. ')
+  }
+  if (detail && typeof detail === 'object') {
+    const rec = detail as Record<string, unknown>
+    if (typeof rec.msg === 'string' && rec.msg.trim()) return rec.msg.trim()
+    if (typeof rec.message === 'string' && rec.message.trim()) return rec.message.trim()
+    if (typeof rec.detail === 'string' && rec.detail.trim()) return rec.detail.trim()
+  }
+  return ''
 }
 
 export const api = {

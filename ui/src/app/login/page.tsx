@@ -11,7 +11,7 @@ import {
   MessageSquareText,
   ShieldCheck
 } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import { useSession } from '@/components/SessionProvider'
 import { announceSessionChange, takeNotice } from '@/lib/sessionSync'
 import { BrandMark } from '@/components/BrandMark'
@@ -41,6 +41,16 @@ const CAPABILITIES = [
     description: 'Approval checkpoints before actions.'
   }
 ] as const
+
+function signInError(err: unknown): string {
+  if (err instanceof ApiError && err.status >= 500) {
+    return 'Sign in is unavailable right now. Try again in a moment.'
+  }
+  if (err instanceof TypeError) {
+    return 'Could not reach FreedomBot. Check your connection and try again.'
+  }
+  return 'Could not sign in. Check your email and password.'
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -72,7 +82,7 @@ export default function LoginPage() {
       announceSessionChange()
       router.replace('/chat')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign in failed')
+      setError(signInError(err))
     } finally {
       setBusy(false)
     }
@@ -173,7 +183,7 @@ export default function LoginPage() {
             </div>
           )}
 
-          <form onSubmit={submit} className="mt-8 space-y-5" noValidate>
+          <form onSubmit={submit} className="mt-8 space-y-5">
             <Field label="Work email" htmlFor="login-email">
               <input
                 id="login-email"

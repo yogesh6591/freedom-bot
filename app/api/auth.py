@@ -19,7 +19,7 @@ import json
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.api.deps import SESSION_COOKIE, current_context
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1, max_length=320)
     password: str = Field(min_length=1, max_length=512)
     #: Required only when the same email exists at more than one client.
     client_slug: Optional[str] = None
