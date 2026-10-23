@@ -48,7 +48,15 @@ type NavItem = {
   icon: LucideIcon
   roles?: Role[]
   platformOwner?: boolean
+  /** Hidden while DEMO_HIDE_ACQUISITION is true. */
+  demoHidden?: boolean
 }
+
+/**
+ * Demo switch: true hides the acquisition pages tagged `demoHidden` (Overview, Prospects, Campaigns,
+ * Assessments, Engine & AI, Buyer Journey). Set to false to bring them back. The pages still work by URL.
+ */
+const DEMO_HIDE_ACQUISITION = true
 
 type NavGroup = { label: string; items: NavItem[] }
 
@@ -65,22 +73,22 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Acquisition',
     items: [
-      { href: '/acquisition/overview', label: 'Overview', icon: Send, roles: ['ADMIN'] },
-      { href: '/acquisition/prospects', label: 'Prospects', icon: Users, roles: ['ADMIN'] }
+      { href: '/acquisition/overview', label: 'Overview', icon: Send, roles: ['ADMIN'], demoHidden: true },
+      { href: '/acquisition/prospects', label: 'Prospects', icon: Users, roles: ['ADMIN'], demoHidden: true }
     ]
   },
   {
     label: 'Outreach',
     items: [
-      { href: '/acquisition/campaigns', label: 'Campaigns', icon: Megaphone, roles: ['ADMIN'] },
-      { href: '/acquisition/assessments', label: 'Assessments', icon: MessagesSquare, roles: ['ADMIN'] }
+      { href: '/acquisition/campaigns', label: 'Campaigns', icon: Megaphone, roles: ['ADMIN'], demoHidden: true },
+      { href: '/acquisition/assessments', label: 'Assessments', icon: MessagesSquare, roles: ['ADMIN'], demoHidden: true }
     ]
   },
   {
     label: 'Settings',
     items: [
-      { href: '/acquisition/settings/ai', label: 'Engine & AI', icon: Sparkles, roles: ['ADMIN'] },
-      { href: '/acquisition/settings/journey', label: 'Buyer Journey', icon: Route, roles: ['ADMIN'] },
+      { href: '/acquisition/settings/ai', label: 'Engine & AI', icon: Sparkles, roles: ['ADMIN'], demoHidden: true },
+      { href: '/acquisition/settings/journey', label: 'Buyer Journey', icon: Route, roles: ['ADMIN'], demoHidden: true },
       { href: '/acquisition/integrations', label: 'Integrations', icon: Unplug, roles: ['ADMIN'] }
     ]
   },
@@ -233,7 +241,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const accessibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
-      item.platformOwner
+      DEMO_HIDE_ACQUISITION && item.demoHidden
+        ? false
+        : item.platformOwner
         ? Boolean(me.user.is_platform_owner)
         : !item.roles || hasRole(...item.roles)
     )
