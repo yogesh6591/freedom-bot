@@ -264,7 +264,7 @@ def _seed_crm(conn: Any, today: Any) -> dict[str, int]:
 
     added = {"companies": 0, "contacts": 0, "deals": 0, "notes": 0, "tasks": 0}
     company_id: dict[str, str] = {
-        r.name: r.id for r in conn.execute(text("SELECT id, name FROM crm_companies WHERE deleted_at IS NULL"))
+        r.name: r.id for r in conn.execute(text("SELECT id, name FROM crm_companies"))
     }
     for name, domain, industry, size in COMPANIES:
         if name not in company_id:
@@ -285,7 +285,7 @@ def _seed_crm(conn: Any, today: Any) -> dict[str, int]:
             conn.execute(
                 text(
                     "UPDATE crm_contacts SET first_name=:f, last_name=:l, company=:c, title=:t, lifecycle=:lc, "
-                    "tags=:g, phone=:p, owner='sales@acme', deleted_at=NULL WHERE lower(email)=lower(:e)"
+                    "tags=:g, phone=:p, owner='sales@acme' WHERE lower(email)=lower(:e)"
                 ),
                 {"f": first, "l": last, "c": company, "t": title, "lc": lifecycle, "g": tags, "p": phone, "e": email},
             )
@@ -308,7 +308,7 @@ def _seed_crm(conn: Any, today: Any) -> dict[str, int]:
     ):
         conn.execute(
             text(
-                "UPDATE crm_contacts SET title=:t, lifecycle=:lc, tags=:g, owner='sales@acme', deleted_at=NULL "
+                "UPDATE crm_contacts SET title=:t, lifecycle=:lc, tags=:g, owner='sales@acme' "
                 "WHERE lower(email)=:e"
             ),
             {"t": title, "lc": lifecycle, "g": tags, "e": email},
@@ -320,7 +320,7 @@ def _seed_crm(conn: Any, today: Any) -> dict[str, int]:
                   "a": amount, "cd": today + timedelta(days=close_in)}
         if name in deals:
             conn.execute(
-                text("UPDATE crm_deals SET stage=:s, amount=:a, close_date=:cd, deleted_at=NULL, updated_at=NOW() "
+                text("UPDATE crm_deals SET stage=:s, amount=:a, close_date=:cd, updated_at=NOW() "
                      "WHERE name=:n"), params)
             continue
         conn.execute(
@@ -334,7 +334,7 @@ def _seed_crm(conn: Any, today: Any) -> dict[str, int]:
     # The original demo deals back to their bootstrap stages.
     for name, stage in (("Northwind expansion", "proposal"), ("Contoso pilot", "new"),
                         ("Contoso rollout", "negotiation")):
-        conn.execute(text("UPDATE crm_deals SET stage=:s, deleted_at=NULL WHERE name=:n"), {"s": stage, "n": name})
+        conn.execute(text("UPDATE crm_deals SET stage=:s WHERE name=:n"), {"s": stage, "n": name})
 
     for email, body in NOTES:
         cid = contact_id.get(email.lower())
