@@ -9,7 +9,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useDebug, useShowAcquisition } from '@/lib/debug'
-import { usePanel } from '@/lib/panel'
+import { adminUnlocked, isHomePath } from '@/lib/panel'
 import { SidebarSwitch } from '@/components/SidebarSwitch'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -67,7 +67,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Workspace',
     items: [
-      { href: '/chat', label: 'Assistant', icon: MessageSquareText },
+      { href: '/admin/chat', label: 'Assistant', icon: MessageSquareText },
       { href: '/memory', label: 'Memory', icon: BookOpenText },
       { href: '/approvals', label: 'Approvals', icon: CheckCircle2 },
       { href: '/integrations', label: 'Integrations', icon: Plug }
@@ -111,7 +111,7 @@ const NAV_GROUPS: NavGroup[] = [
         roles: ['APPROVER', 'OPERATOR', 'ADMIN']
       },
       {
-        href: '/admin',
+        href: '/admin/settings',
         label: 'Administration',
         icon: Settings2,
         roles: ['ADMIN']
@@ -152,10 +152,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { me, loading, hasRole, logout } = useSession()
   const [debug, setDebug] = useDebug()
   const [showAcquisition, setShowAcquisition] = useShowAcquisition()
-  // Chat-only screen when signed in from home; every page when signed in from /admin (lib/panel.ts).
-  const panel = usePanel()
-  const chatOnly = panel === 'chat'
   const pathname = usePathname()
+  // /chat is the home screen; every other page is the admin panel, unlocked by signing in at /admin.
+  const chatOnly = isHomePath(pathname)
+  const [adminOk, setAdminOk] = useState<boolean | null>(null)
   const router = useRouter()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const sidebarRef = useRef<HTMLElement>(null)
@@ -165,14 +165,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [locationQuery, setLocationQuery] = useState('')
 
   useEffect(() => {
-    if (!loading && !me) router.replace(pathname.startsWith('/admin') ? '/login?panel=full' : '/login')
-  }, [loading, me, router, pathname])
-  // Chat home shows only the assistant. /admin asks for the password again and opens every page.
+    if (!loading && !me) router.replace(chatOnly ? '/' : '/admin')
+  }, [loading, me, router, chatOnly])
   useEffect(() => {
-    if (!me || panel !== 'chat') return
-    if (pathname === '/chat' || pathname.startsWith('/chat/')) return
-    router.replace(pathname.startsWith('/admin') ? '/login?panel=full' : '/chat')
-  }, [me, panel, pathname, router])
+    if (me) setAdminOk(adminUnlocked(me.user.id))
+  }, [me, pathname])
+  // Admin pages need the admin sign-in; a home sign-in alone does not open them.
+  useEffect(() => {
+    if (me && !chatOnly && adminOk === false) router.replace('/admin')
+  }, [me, chatOnly, adminOk, router])
   useEffect(() => setNotice(takeNotice()), [])
   useEffect(() => {
     setAcquirePath(null)
@@ -243,7 +244,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     )
   }
-  if (!me || panel === null) return null
+  if (!me || (!chatOnly && adminOk !== true)) return null
   // Chat home: the chat page draws its own sidebar (conversations, Debug, account), full screen.
   if (chatOnly) {
     return (
@@ -255,7 +256,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
 
-  const isChat = pathname === '/chat' || pathname.startsWith('/chat/')
+  const isChat = pathname === '/admin/chat' || pathname.startsWith('/admin/chat/')
   const isAcquisition = pathname === '/acquisition' || pathname.startsWith('/acquisition/')
   const navPath = isAcquisition && acquirePath ? acquirePath.split('?')[0] : pathname
   const navQuery = isAcquisition && acquirePath?.includes('?')
@@ -313,7 +314,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         <div className="flex h-[88px] shrink-0 items-center justify-between border-b border-border px-5">
           <Link
-            href="/chat"
+            href="/admin/chat"
             onClick={() => setMobileNavOpen(false)}
             className="flex min-h-11 min-w-0 items-center gap-3 rounded-lg focus-visible:outline-offset-4"
             aria-label="FreedomBot — assistant"
