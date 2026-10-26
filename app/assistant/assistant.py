@@ -841,18 +841,26 @@ def _template_copy(
     placeholder: str,
 ) -> tuple[str, str]:
     """Keep the approved wording. Swap the preview's name and company for Instantly fields."""
-    text_subject = subject
-    text_body = body
-    for person in people:
-        first, _last = split_executive_name(person.executive_name or "")
-        company = (person.company or "").strip()
-        if first:
-            text_body = text_body.replace(f"Hi {first},", "Hi {{firstName}},")
-        if company:
-            text_subject = text_subject.replace(company, "{{companyName}}")
-            text_body = text_body.replace(company, "{{companyName}}")
-    if assessment_url:
+    def _swap(chunk: str) -> str:
+        out = chunk
+        for person in people:
+            first, _last = split_executive_name(person.executive_name or "")
+            company = (person.company or "").strip()
+            if first:
+                out = out.replace(f"Hi {first},", "Hi {{firstName}},")
+            if company:
+                out = out.replace(company, "{{companyName}}")
+        return out
+
+    text_subject = _map_unprotected(subject, _swap)
+    text_body = _map_unprotected(body, _swap)
+    if has_assessment_link(text_subject) or (assessment_url and assessment_url in (subject or "")):
+        text_subject = keep_assessment_link(text_subject)
+    elif assessment_url:
         text_subject = text_subject.replace(assessment_url, placeholder)
+    if has_assessment_link(text_body) or (assessment_url and assessment_url in (body or "")):
+        text_body = keep_assessment_link(text_body)
+    elif assessment_url:
         text_body = text_body.replace(assessment_url, placeholder)
     if "Hi there," in text_body:
         text_body = text_body.replace("Hi there,", "Hi {{firstName}},", 1)
@@ -1482,9 +1490,11 @@ import re
 # email card ("details") belongs to that person only.
 
 TOKEN_FIRST, TOKEN_LAST, TOKEN_COMPANY = "{{firstName}}", "{{lastName}}", "{{companyName}}"
+TOKEN_ASSESS = "{{assessment_url}}"
 FIRST_NAME_FALLBACK = "there"
 _GREETING = r"(?:Hi|Hello|Dear|Hey)"
 _LITERAL_GREETING = re.compile(rf"\b{_GREETING}\s+(?!there\b)([A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)?)\s*[,!]")
+_PROTECTED_LINK = re.compile(r"(https?://\S+|\{+\s*assessment[\s_-]*url\s*\}+)", re.I)
 
 
 def clean_field(value: Any) -> str:
@@ -1567,40 +1577,88 @@ def normalize_blanks(text: str) -> str:
     return out
 
 
+def _assessment_settings() -> tuple[str, str]:
+    from acquisition.config import get_settings
+
+    settings = get_settings()
+    holder = (settings.assessment_url_placeholder or TOKEN_ASSESS).strip() or TOKEN_ASSESS
+    base = (settings.public_base_url or "").strip().rstrip("/")
+    return holder, base
+
+
+def has_assessment_link(text: str) -> bool:
+    holder, base = _assessment_settings()
+    blob = text or ""
+    if holder and holder in blob:
+        return True
+    if re.search(r"\{+\s*assessment[\s_-]*url\s*\}+", blob, re.I):
+        return True
+    return bool(base and base in blob)
+
+
+def keep_assessment_link(text: str) -> str:
+    """Keep the assessment link as Instantly's placeholder. Never drop it while framing names."""
+    holder, base = _assessment_settings()
+    out = text or ""
+    if base:
+        out = re.sub(rf"{re.escape(base)}(?:/a/\S+)?", holder, out)
+    out = re.sub(r"\{+\s*assessment[\s_-]*url\s*\}+", holder, out, flags=re.I)
+    if holder not in out:
+        out = f"{out.rstrip()}\n\n{holder}"
+    return out
+
+
+def _map_unprotected(text: str, transform) -> str:
+    bits = _PROTECTED_LINK.split(text or "")
+    return "".join(bit if i % 2 else transform(bit) for i, bit in enumerate(bits))
+
+
 def tokenize(text: str, fields: list[dict]) -> str:
     """Turn the real names/companies a draft contains into blanks, so each person gets their own."""
-    out = normalize_blanks(text)
-    # One greeting that lists several recipients ("Hi Nina and Raj,") becomes ONE blank, so each person is
-    # greeted by their own name and never by the other's.
-    people = []
-    for f in fields:
-        if f["first_name"]:
-            last = rf"(?:\s+(?i:{re.escape(f['last_name'])}))?" if f["last_name"] else ""
-            people.append(rf"(?i:{re.escape(f['first_name'])}){last}")
-    if len(people) >= 2:
-        one = "(?:" + "|".join(sorted(people, key=len, reverse=True)) + ")"
-        out = re.sub(
-            rf"\b(?P<g>{_GREETING})\s+{one}(?:\s*(?:,|&|\band\b)\s*(?:and\s+)?{one})+",
-            lambda m: f"{m.group('g')} {TOKEN_FIRST}",
-            out,
-        )
-    for f in fields:
-        first, last, company = f["first_name"], f["last_name"], f["company"]
-        if first:
-            last_part = rf"(?P<last>\s+(?i:{re.escape(last)}))?" if last else ""
+    original = text or ""
+    keep_link = has_assessment_link(original)
+
+    def _names(chunk: str) -> str:
+        out = normalize_blanks(chunk)
+        # One greeting that lists several recipients ("Hi Nina and Raj,") becomes ONE blank, so each person is
+        # greeted by their own name and never by the other's.
+        people = []
+        for f in fields:
+            if f["first_name"]:
+                last = rf"(?:\s+(?i:{re.escape(f['last_name'])}))?" if f["last_name"] else ""
+                people.append(rf"(?i:{re.escape(f['first_name'])}){last}")
+        if len(people) >= 2:
+            one = "(?:" + "|".join(sorted(people, key=len, reverse=True)) + ")"
             out = re.sub(
-                rf"\b(?P<g>{_GREETING})\s+(?i:{re.escape(first)}){last_part}\b",
-                lambda m, last=last: f"{m.group('g')} {TOKEN_FIRST}" + (f" {TOKEN_LAST}" if last and m.group("last") else ""),
+                rf"\b(?P<g>{_GREETING})\s+{one}(?:\s*(?:,|&|\band\b)\s*(?:and\s+)?{one})+",
+                lambda m: f"{m.group('g')} {TOKEN_FIRST}",
                 out,
             )
-        if company:
-            out = re.sub(rf"(?<!\w){re.escape(company)}(?!\w)", TOKEN_COMPANY, out)
-    return re.sub(rf"\b({_GREETING})\s+there\b", lambda m: f"{m.group(1)} {TOKEN_FIRST}", out, count=1)
+        for f in fields:
+            first, last, company = f["first_name"], f["last_name"], f["company"]
+            if first:
+                last_part = rf"(?P<last>\s+(?i:{re.escape(last)}))?" if last else ""
+                out = re.sub(
+                    rf"\b(?P<g>{_GREETING})\s+(?i:{re.escape(first)}){last_part}\b",
+                    lambda m, last=last: f"{m.group('g')} {TOKEN_FIRST}" + (f" {TOKEN_LAST}" if last and m.group("last") else ""),
+                    out,
+                )
+            if company:
+                out = re.sub(rf"(?<!\w){re.escape(company)}(?!\w)", TOKEN_COMPANY, out)
+        return re.sub(rf"\b({_GREETING})\s+there\b", lambda m: f"{m.group(1)} {TOKEN_FIRST}", out, count=1)
+
+    framed = _map_unprotected(original, _names)
+    if keep_link:
+        return keep_assessment_link(framed)
+    return framed
 
 
 def render(text: str, f: dict) -> str:
     e = effective_fields(f)
+    holder, base = _assessment_settings()
     out = (text or "").replace(TOKEN_FIRST, e["first_name"]).replace(TOKEN_LAST, e["last_name"]).replace(TOKEN_COMPANY, e["company"])
+    if holder:
+        out = out.replace(holder, base or holder)
     out = re.sub(r"[ \t]{2,}", " ", out)
     return re.sub(r"[ \t]+([,.!?:;])", r"\1", out)
 
@@ -1611,13 +1669,10 @@ def literal_greeting_names(text: str) -> list[str]:
 
 def finalize_template(subject: str, body: str) -> tuple[str, str]:
     """The wording as stored on the campaign: the assessment link becomes Instantly's placeholder."""
-    from acquisition.config import get_settings
-
-    settings = get_settings()
-    url = (settings.public_base_url or "").strip()
-    holder = settings.assessment_url_placeholder
-    if url:
-        subject, body = subject.replace(url, holder), body.replace(url, holder)
+    if has_assessment_link(subject):
+        subject = keep_assessment_link(subject)
+    if has_assessment_link(body):
+        body = keep_assessment_link(body)
     return subject, body
 
 
@@ -1696,6 +1751,7 @@ def draft_view(records: dict, state: dict) -> dict:
     return {
         "draft_id": d.get("id") or "",
         "template": {"subject": subject, "body": body},
+        "assessment_url": (records.get("assessment_url") or "").strip(),
         "people": fields,
         "previews": previews,
         "warnings": warnings,
@@ -2365,6 +2421,9 @@ class CampaignSession:
         subject, body = subject.strip(), body.strip()
         fields = self._fields()
         subject, body = tokenize(subject, fields), tokenize(body, fields)
+        # Campaign first emails keep the assessment CTA even if the model omitted the URL
+        # (it is told not to type name placeholders, and often drops this one too).
+        body = keep_assessment_link(body)
         prev, prev_scope = s.get("draft") or {}, s.get("scope")
         if prev and (prev.get("email_subject"), prev.get("email_body")) == (subject, body):
             return "ok: this is the draft that is already shown. Do not call propose_email again; answer the user in words."
@@ -2802,7 +2861,9 @@ EMAIL AND SENDING
   email_without_company) exactly, except change "Hi there," to "Hi {first name},". For an EXISTING campaign
   start from that campaign's own initial_email in the records, unchanged, unless the user asks for changes.
   The platform turns real first names and company names into blanks ({{firstName}}, {{companyName}}), so
-  each person gets their own; you do not need to. Apply edits the user asks for, then propose_email
+  each person gets their own; you do not need to. Keep the assessment URL from the template (the real
+  link in the records, or {{assessment_url}} if the campaign's email already uses that blank). That is
+  not a name placeholder — never omit it. Apply edits the user asks for, then propose_email
   again. After propose_email succeeds the UI shows the email card; your message is one short question about
   it (approve as is, or change something). Do not paste the subject or body.
 - Call send_approved only when a draft is pending AND the user's latest message clearly approves it, in any
@@ -2810,8 +2871,8 @@ EMAIL AND SENDING
   sentence using only what the tool returned. If send_approved returns an error, tell the user that error in plain
   words and what they can do; never retry blindly and never change the hours or anything else on your own.
 - With several recipients write ONE greeting, "Hi there,". The platform greets each person by their own first
-  name. Never list the people in the greeting ("Hi Nina and Raj,") and never type a placeholder such as
-  {first name} yourself: write plain words only.
+  name. Never list the people in the greeting ("Hi Nina and Raj,") and never type a name placeholder such as
+  {first name} yourself: write the greeting in plain words. Do keep the assessment URL from the template.
 - Names and companies: the card shows each person's details and where they came from. If the user tells you
   a person's name or company in chat ("his name is Shubham Kumar, he works at Acme"), call set_person_details
   with their words; it applies to that one person only. Never guess a name or company, and never fill one in

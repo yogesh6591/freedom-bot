@@ -69,6 +69,8 @@ def ai_settings_page(request: Request, db: Session = Depends(get_db)) -> HTMLRes
         DEFAULT_ASSESSMENT_SYSTEM_PROMPT,
         DEFAULT_QUALIFICATION_SYSTEM_PROMPT,
     )
+    from acquisition.services.apollo_client import apollo_key_configured
+    from acquisition.services.pdl_client import pdl_key_configured
     from acquisition.services.openai_service import OpenAIService
     from acquisition.services.prospecting_rules_service import get_prospecting_rules
 
@@ -92,6 +94,8 @@ def ai_settings_page(request: Request, db: Session = Depends(get_db)) -> HTMLRes
             "settings": row,
             "provider_configured": provider_ok,
             "prospecting": get_prospecting_rules().to_dict(),
+            "apollo_configured": apollo_key_configured(),
+            "pdl_configured": pdl_key_configured(),
             "flash": request.query_params.get("flash"),
         },
     )

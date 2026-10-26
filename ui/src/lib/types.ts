@@ -294,6 +294,7 @@ export interface EmailViewAudience {
 export interface EmailView {
   draft_id?: string
   template?: { subject: string; body: string }
+  assessment_url?: string
   people?: EmailViewPerson[]
   previews?: EmailViewPreview[]
   warnings?: string[]

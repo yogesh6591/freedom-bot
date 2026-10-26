@@ -7,7 +7,6 @@ import {
   useState,
   type ReactNode
 } from 'react'
-import { Pencil } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import type { EmailCardScope, EmailView, EmailViewPerson } from '@/lib/types'
 import {
@@ -22,8 +21,10 @@ import {
 const TOKEN_FIRST = '{{firstName}}'
 const TOKEN_LAST = '{{lastName}}'
 const TOKEN_COMPANY = '{{companyName}}'
-const TOKEN_SPLIT = /(\{\{(?:firstName|lastName|companyName)\}\})/g
-const KNOWN_TOKENS = new Set([TOKEN_FIRST, TOKEN_LAST, TOKEN_COMPANY])
+const TOKEN_ASSESS = '{{assessment_url}}'
+const TOKEN_SPLIT = /(\{\{(?:firstName|lastName|companyName|assessment_url)\}\})/g
+const KNOWN_TOKENS = new Set([TOKEN_FIRST, TOKEN_LAST, TOKEN_COMPANY, TOKEN_ASSESS])
+const KEEP_LINK = /(https?:\/\/[^\s]+|\{+\s*assessment[_-]?url\s*\}+)/gi
 
 type NameKey = 'first' | 'last' | 'company'
 type Names = Record<NameKey, string>
@@ -165,8 +166,45 @@ function replaceOutsideTokens(
     .join('')
 }
 
+function isProtectedLink(part: string): boolean {
+  return /^https?:\/\//i.test(part) || /^\{+\s*assessment[_-]?url\s*\}+$/i.test(part)
+}
+
+function hasAssessmentLink(text: string, base = ''): boolean {
+  const blob = text || ''
+  if (/\{+\s*assessment[_-]?url\s*\}+/i.test(blob)) return true
+  const root = (base || '').replace(/\/$/, '')
+  return Boolean(root && blob.includes(root))
+}
+
+function keepAssessmentLink(text: string, base = ''): string {
+  let out = text || ''
+  const root = (base || '').replace(/\/$/, '')
+  if (root) {
+    out = out.replace(new RegExp(`${escapeRegExp(root)}(?:/a/\\S+)?`, 'g'), TOKEN_ASSESS)
+  }
+  out = out.replace(/\{+\s*assessment[_-]?url\s*\}+/gi, TOKEN_ASSESS)
+  if (!out.includes(TOKEN_ASSESS)) {
+    out = `${out.replace(/\s+$/, '')}\n\n${TOKEN_ASSESS}`
+  }
+  return out
+}
+
+function mapUnprotected(text: string, transform: (chunk: string) => string): string {
+  return (text || '')
+    .split(KEEP_LINK)
+    .map((part) => (isProtectedLink(part) ? part : transform(part)))
+    .join('')
+}
+
 /** Shared text never contains a real name — blanks fill in per person after save. */
-function tokenizeText(text: string, people: EmailViewPerson[]): string {
+function tokenizeText(text: string, people: EmailViewPerson[], assessmentUrl = ''): string {
+  const keepLink = hasAssessmentLink(text, assessmentUrl) || Boolean((assessmentUrl || '').trim())
+  const framed = mapUnprotected(text || '', (chunk) => tokenizeNames(chunk, people))
+  return keepLink ? keepAssessmentLink(framed, assessmentUrl) : framed
+}
+
+function tokenizeNames(text: string, people: EmailViewPerson[]): string {
   let out = text || ''
   for (const person of people) {
     const first = person.first_name.trim()
@@ -244,10 +282,11 @@ function applyNames(person: EmailViewPerson | undefined, names: Names): EmailVie
   }
 }
 
-function fillText(text: string, person?: EmailViewPerson): string {
+function fillText(text: string, person?: EmailViewPerson, assessmentUrl = ''): string {
   const first = (person?.first_name || '').trim() || 'there'
   const last = (person?.last_name || '').trim()
   const company = (person?.company || '').trim()
+  const link = (assessmentUrl || '').trim() || TOKEN_ASSESS
   return (text || '')
     .split(TOKEN_FIRST)
     .join(first)
@@ -255,6 +294,8 @@ function fillText(text: string, person?: EmailViewPerson): string {
     .join(last)
     .split(TOKEN_COMPANY)
     .join(company)
+    .split(TOKEN_ASSESS)
+    .join(link)
     .replace(/[ \t]{2,}/g, ' ')
     .replace(/[ \t]+([,.!?:;])/g, '$1')
 }
@@ -431,6 +472,7 @@ function TokenField({
   onChange,
   onNames,
   multiline = false,
+  assessmentUrl = '',
   'aria-label': ariaLabel
 }: {
   value: string
@@ -439,6 +481,7 @@ function TokenField({
   onChange: (next: string) => void
   onNames: (key: NameKey, next: string) => void
   multiline?: boolean
+  assessmentUrl?: string
   'aria-label': string
 }) {
   const parts = (value || '').split(TOKEN_SPLIT)
@@ -482,6 +525,17 @@ function TokenField({
             />
           )
         }
+        if (part === TOKEN_ASSESS) {
+          return (
+            <span
+              key={`${part}-${index}`}
+              contentEditable={false}
+              className="break-all text-[#1a73e8]"
+            >
+              {assessmentUrl.trim() || TOKEN_ASSESS}
+            </span>
+          )
+        }
         return (
           <EditableText
             key={`text-${index}`}
@@ -523,8 +577,9 @@ export function EmailCard({
 }) {
   const template = view.template
   const blanks = peopleForBlanks(view)
-  const sharedSubject = tokenizeText(template?.subject ?? '', blanks)
-  const sharedBody = tokenizeText(template?.body ?? '', blanks)
+  const assessmentUrl = (view.assessment_url || '').trim()
+  const sharedSubject = tokenizeText(template?.subject ?? '', blanks, assessmentUrl)
+  const sharedBody = tokenizeText(template?.body ?? '', blanks, assessmentUrl)
   const previews = view.previews ?? []
   const audience = view.audience
   const warnings = (view.warnings ?? []).filter((warning) => !isGreetingPlainTextWarning(warning))
@@ -589,8 +644,8 @@ export function EmailCard({
           company: 'missing'
         }
       }
-  const shownSubject = fillText(sharedSubject, fillPerson)
-  const shownBody = fillText(sharedBody, fillPerson)
+  const shownSubject = fillText(sharedSubject, fillPerson, assessmentUrl)
+  const shownBody = fillText(sharedBody, fillPerson, assessmentUrl)
   const waitingNames = uniqueKeepOrder(
     (audience?.also_waiting ?? []).map((person) => person.name)
   ).join(', ')
@@ -687,8 +742,8 @@ export function EmailCard({
         }
         return {
           ...item,
-          subject: fillText(nextSubject, person),
-          body: fillText(nextBody, person)
+          subject: fillText(nextSubject, person, view.assessment_url),
+          body: fillText(nextBody, person, view.assessment_url)
         }
       })
     }
@@ -793,38 +848,8 @@ export function EmailCard({
   return (
     <>
     <article className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]">
-      <div className="flex items-center justify-between px-3 pt-3">
+      <div className="flex items-center px-3 pt-3">
         <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
-        {editing ? (
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="button"
-              className="text-[13px] font-medium text-[#5f6368]"
-              onClick={cancel}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="text-[13px] font-medium text-[#1a73e8] disabled:opacity-40"
-              onClick={requestSave}
-              disabled={!canSave}
-            >
-              Save
-            </button>
-          </div>
-        ) : editable ? (
-          <button
-            type="button"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#5f6368] hover:bg-[#f1f3f4]"
-            aria-label="Edit email"
-            onClick={openEditor}
-          >
-            <Pencil size={16} aria-hidden />
-          </button>
-        ) : (
-          <span className="h-8 w-8" />
-        )}
       </div>
 
       <MailRow label="To">
@@ -869,6 +894,7 @@ export function EmailCard({
             originalNames={originalNames}
             onChange={setSubject}
             onNames={updateNames}
+            assessmentUrl={assessmentUrl}
             aria-label="Subject"
           />
         ) : (
@@ -884,6 +910,7 @@ export function EmailCard({
           onChange={setBody}
           onNames={updateNames}
           multiline
+          assessmentUrl={assessmentUrl}
           aria-label="Body"
         />
       ) : (

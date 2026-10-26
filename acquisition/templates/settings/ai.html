@@ -192,6 +192,29 @@
       </label>
     </div>
 
+    <div class="acq-setting-group" id="pr-test-search">
+      <div class="acq-setting-group-head">
+        <div>
+          <h3>Test search</h3>
+          <p>One people search from the saved rules. Nothing is saved, and emails are not requested.</p>
+        </div>
+      </div>
+      <div class="pr-test-row">
+        <label class="acq-field">
+          <span class="acq-field-label">Category</span>
+          <select id="pr-test-category"></select>
+          <small>Keywords from this category only, so four categories are not combined into one query.</small>
+        </label>
+        <div class="pr-test-actions">
+          <button type="button" class="btn btn-secondary" id="pr-test-search-btn">{% if apollo_configured %}Test search{% else %}Apollo key not set{% endif %}</button>
+          <button type="button" class="btn btn-secondary" id="pr-test-pdl-btn">{% if pdl_configured %}PDL test search{% else %}PDL key not set{% endif %}</button>
+        </div>
+      </div>
+      <p class="pr-test-credit-warn">Uses up to 5 of 100 free credits.</p>
+      <div id="pr-test-search-result" class="pr-test-result" hidden></div>
+      <div id="pr-test-pdl-result" class="pr-test-result" hidden></div>
+    </div>
+
     <div class="form-actions acq-save-row pr-actions">
       <button type="button" class="btn btn-primary" id="pr-save">Save</button>
       <button type="button" class="btn btn-secondary" id="pr-history-btn">History</button>
@@ -397,7 +420,10 @@
       card.querySelector("[data-cat-priority]").value = cat.priority || 1;
       if (!Array.isArray(cat.keywords)) cat.keywords = [];
       renderChips(card.querySelector("[data-cat-keywords]"), cat.keywords);
-      card.querySelector("[data-cat-name]").addEventListener("input", function (ev) { cat.name = ev.target.value; });
+      card.querySelector("[data-cat-name]").addEventListener("input", function (ev) {
+        cat.name = ev.target.value;
+        fillTestCategory();
+      });
       card.querySelector("[data-cat-priority]").addEventListener("input", function (ev) { cat.priority = ev.target.value; });
       card.querySelector("[data-cat-remove]").addEventListener("click", function () {
         state.categories.splice(i, 1);
@@ -405,6 +431,24 @@
       });
       box.appendChild(card);
     });
+    fillTestCategory();
+  }
+  function fillTestCategory() {
+    var sel = document.getElementById("pr-test-category");
+    if (!sel) return;
+    var current = sel.value;
+    sel.innerHTML = "";
+    (state.categories || []).forEach(function (cat) {
+      var name = (cat.name || "").trim();
+      if (!name) return;
+      var opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+    if (current && Array.prototype.some.call(sel.options, function (o) { return o.value === current; })) {
+      sel.value = current;
+    }
   }
   function apply(data) {
     state = data;
@@ -452,8 +496,15 @@
       pause_if_bounce_rate_percent: document.getElementById("pr-bounce").value
     };
   }
+  function apiUrl(path) {
+    var here = (location.pathname || "").replace(/\/+$/, "") || "/";
+    var marker = "/settings/ai";
+    var prefix = here.slice(-marker.length) === marker ? here.slice(0, -marker.length) : "";
+    if (path.indexOf(prefix) === 0 && prefix) return path;
+    return prefix + path;
+  }
   function send(method, url, body) {
-    return fetch(url, {
+    return fetch(apiUrl(url), {
       method: method,
       credentials: "same-origin",
       headers: {
@@ -463,7 +514,16 @@
       },
       body: JSON.stringify(body)
     }).then(function (res) {
-      return res.json().then(function (data) {
+      return res.text().then(function (text) {
+        try {
+          var data = text ? JSON.parse(text) : {};
+        } catch (err) {
+          var fail = new Error(res.status + " not JSON");
+          fail.status = res.status;
+          fail.notJson = true;
+          throw fail;
+        }
+        if (typeof data !== "object" || data === null) data = {};
         data._status = res.status;
         return data;
       });
@@ -493,7 +553,7 @@
   });
   var dialog = document.getElementById("pr-history-dialog");
   document.getElementById("pr-history-btn").addEventListener("click", function () {
-    fetch("/settings/ai/prospecting-rules/history", { credentials: "same-origin", headers: { Accept: "application/json" } })
+    fetch(apiUrl("/settings/ai/prospecting-rules/history"), { credentials: "same-origin", headers: { Accept: "application/json" } })
       .then(function (res) { return res.json(); })
       .then(function (data) {
         var list = document.getElementById("pr-history-list");
@@ -533,6 +593,111 @@
     if (dialog.close) dialog.close();
     else dialog.removeAttribute("open");
   });
+  var apolloConfigured = {{ (apollo_configured or false) | tojson }};
+  var pdlConfigured = {{ (pdl_configured or false) | tojson }};
+  var testBtn = document.getElementById("pr-test-search-btn");
+  var testOut = document.getElementById("pr-test-search-result");
+  var pdlBtn = document.getElementById("pr-test-pdl-btn");
+  var pdlOut = document.getElementById("pr-test-pdl-result");
+  if (testBtn && !apolloConfigured) {
+    testBtn.disabled = true;
+    testBtn.textContent = "Apollo key not set";
+  }
+  if (pdlBtn && !pdlConfigured) {
+    pdlBtn.disabled = true;
+    pdlBtn.textContent = "PDL key not set";
+  }
+  function showBox(el, html, isError) {
+    if (!el) return;
+    el.hidden = !html;
+    el.classList.toggle("is-error", !!isError);
+    el.innerHTML = html || "";
+  }
+  function esc(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function resultRows(data) {
+    return (data.results || []).map(function (row) {
+      return "<tr><td>" + esc(row.company || "—") + "</td><td>" + esc(row.website || "—") +
+        "</td><td>" + esc(row.name || "—") + "</td><td>" + esc(row.title || "—") +
+        "</td><td>" + esc(row.location || "—") + "</td></tr>";
+    }).join("");
+  }
+  function peopleTable(rows) {
+    return rows
+      ? "<table class=\"pr-test-table\"><thead><tr><th>Company</th><th>Website</th><th>Person</th><th>Title</th><th>Location</th></tr></thead><tbody>" +
+        rows + "</tbody></table>"
+      : "<p>No people left after exclusions.</p>";
+  }
+  function startSearch(out, configured, missing, request, render) {
+    if (!configured) {
+      showBox(out, "<p>" + esc(missing) + "</p>", true);
+      return;
+    }
+    showBox(out, "<p>Searching…</p>", false);
+    request().then(function (data) {
+      if (data.error) {
+        showBox(out, "<p>" + esc(data.error) + "</p>", true);
+        return;
+      }
+      showBox(out, render(data), false);
+    }).catch(function (err) {
+      var status = err && err.status != null ? String(err.status) : "";
+      var msg = "Could not search. Try again.";
+      if (err && err.notJson) msg = (status ? status + " " : "") + "not JSON";
+      showBox(out, "<p>" + esc(msg) + "</p>", true);
+    });
+  }
+  function selectedCategory() {
+    return (document.getElementById("pr-test-category") || {}).value || "";
+  }
+  if (testBtn) {
+    testBtn.addEventListener("click", function () {
+      startSearch(testOut, apolloConfigured, "Apollo key not set", function () {
+        return send("POST", "/settings/ai/prospecting-rules/test-search", { category: selectedCategory() });
+      }, function (data) {
+    var cat = data.category || {};
+    var filters = data.filters || {};
+    var keywords = (cat.keywords || []).map(esc).join(", ") || "(none)";
+    return "<p><strong>Apollo</strong><br><strong>Category:</strong> " + esc(cat.name || "—") +
+      "<br><strong>Keywords:</strong> " + keywords +
+      "<br><strong>Titles:</strong> " + esc((filters.person_titles || []).join(", ") || "—") +
+      "<br><strong>Location:</strong> " + esc((filters.person_locations || []).join(", ") || "—") +
+      "<br><strong>Employees:</strong> " + esc((filters.organization_num_employees_ranges || []).join(", ") || "—") +
+      (filters.revenue_range_min != null
+        ? "<br><strong>Revenue:</strong> " + esc(filters.revenue_range_min) + "–" + esc(filters.revenue_range_max)
+        : "<br><strong>Revenue:</strong> not used (soft)") +
+      "<br><strong>Total matches:</strong> " + esc(data.total_matches) +
+      "<br><strong>Dropped by exclusions:</strong> " + esc(data.dropped_by_exclusions) + "</p>" +
+      peopleTable(resultRows(data));
+      });
+    });
+  }
+  if (pdlBtn) {
+    pdlBtn.addEventListener("click", function () {
+      startSearch(pdlOut, pdlConfigured, "PDL key not set", function () {
+        return send("POST", "/settings/ai/prospecting-rules/test-search-pdl", { category: selectedCategory() });
+      }, function (data) {
+    var cat = data.category || {};
+    var filters = data.filters || {};
+    var keywords = (cat.keywords || []).map(esc).join(", ") || "(none)";
+    var skipped = (data.not_applied || []).map(esc).join("; ") || "(none)";
+    return "<p><strong>People Data Labs</strong> — Uses up to 5 of 100 free credits." +
+      "<br><strong>Category:</strong> " + esc(cat.name || "—") +
+      "<br><strong>Keywords:</strong> " + keywords +
+      "<br><strong>Titles:</strong> " + esc((filters.titles || []).join(", ") || "—") +
+      "<br><strong>Seniority levels:</strong> " + esc((filters.job_title_levels || []).join(", ") || "—") +
+      "<br><strong>Location:</strong> " + esc(filters.location_country || "united states") +
+      "<br><strong>Employees:</strong> " + esc((filters.job_company_size || []).join(", ") || "—") +
+      "<br><strong>Revenue:</strong> " + esc((filters.job_company_inferred_revenue || []).join(", ") || "not used (soft)") +
+      "<br><strong>Could not apply:</strong> " + skipped +
+      "<br><strong>Total matches:</strong> " + esc(data.total_matches) +
+      "<br><strong>Dropped by exclusions:</strong> " + esc(data.dropped_by_exclusions) + "</p>" +
+      peopleTable(resultRows(data));
+      });
+    });
+  }
   apply(state);
 })();
 </script>

@@ -10,6 +10,16 @@ from sqlalchemy.orm import Session
 
 from acquisition.auth.admin import require_admin_html_request
 from acquisition.db.session import get_db
+from acquisition.services.apollo_client import (
+    ApolloConfigError,
+    ApolloError,
+    search_people,
+)
+from acquisition.services.pdl_client import (
+    PDLConfigError,
+    PDLError,
+    search_people as pdl_search_people,
+)
 from acquisition.services.prospecting_rules_service import (
     ProspectingRulesError,
     ProspectingRulesService,
@@ -115,3 +125,64 @@ async def post_reset(request: Request, db: Session = Depends(get_db)) -> JSONRes
     except ProspectingRulesError as exc:
         return _error(exc.messages)
     return JSONResponse(saved.to_dict())
+
+
+@router.post("/settings/ai/prospecting-rules/test-search")
+async def post_test_search(request: Request, db: Session = Depends(get_db)) -> JSONResponse:
+    """One people-search page from the saved rules. Does not save prospects."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    if body is None:
+        body = {}
+    if body and not isinstance(body, dict):
+        return _error(["The request must be a JSON object."])
+    category = str((body or {}).get("category") or "").strip() or None
+    rules = ProspectingRulesService(db).current()
+    try:
+        result = search_people(rules, page=1, per_page=10, category_name=category)
+    except ApolloConfigError as exc:
+        return _error([exc.message], status_code=400)
+    except ApolloError as exc:
+        return _error([exc.message], status_code=exc.status_code or 502)
+    return JSONResponse(
+        {
+            "total_matches": result.total_matches,
+            "dropped_by_exclusions": result.dropped_by_exclusions,
+            "category": {"name": result.category_name, "keywords": result.category_keywords},
+            "filters": result.filters,
+            "results": [person.to_dict() for person in result.people[:5]],
+        }
+    )
+
+
+@router.post("/settings/ai/prospecting-rules/test-search-pdl")
+async def post_test_search_pdl(request: Request, db: Session = Depends(get_db)) -> JSONResponse:
+    """One PDL person-search page (size=5) from the saved rules. Does not save prospects."""
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        body = {}
+    if body is None:
+        body = {}
+    if body and not isinstance(body, dict):
+        return _error(["The request must be a JSON object."])
+    category = str((body or {}).get("category") or "").strip() or None
+    rules = ProspectingRulesService(db).current()
+    try:
+        result = pdl_search_people(rules, category_name=category)
+    except PDLConfigError as exc:
+        return _error([exc.message], status_code=400)
+    except PDLError as exc:
+        return _error([exc.message], status_code=exc.status_code or 502)
+    return JSONResponse(
+        {
+            "total_matches": result.total_matches,
+            "dropped_by_exclusions": result.dropped_by_exclusions,
+            "category": {"name": result.category_name, "keywords": result.category_keywords},
+            "filters": result.filters,
+            "not_applied": result.not_applied,
+            "results": [person.to_dict() for person in result.people[:5]],
+        }
+    )

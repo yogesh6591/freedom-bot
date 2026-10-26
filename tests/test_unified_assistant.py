@@ -1265,6 +1265,23 @@ def test_draft_is_a_template_with_each_persons_own_details(fake_model, acq, clie
     assert {p["sources"]["first_name"] for p in view["people"]} == {"database"}
 
 
+def test_framing_keeps_the_assessment_link_even_if_the_model_omits_it(fake_model, acq, client_scratch, ctx_factory):
+    from app.assistant.assistant import TOKEN_ASSESS
+
+    ctx = ctx_factory(client_scratch, "admin")
+    out = _draft_for(
+        ctx,
+        client_scratch.settings,
+        [{"email": "raj@acme.example.com"}],
+        body="Hi Raj,\n\nWould you be open to a short free assessment for Acme?\n\nBest,\nJeanne",
+    )
+    view = out["trace"]["email_view"]
+    assert TOKEN_ASSESS in view["template"]["body"]
+    link = (view.get("assessment_url") or "").strip()
+    assert link
+    assert link in view["previews"][0]["body"]
+
+
 def test_unknown_person_uses_the_chat_name_or_there_and_warns(fake_model, acq, client_scratch, ctx_factory):
     ctx = ctx_factory(client_scratch, "admin")
     out = _draft_for(ctx, client_scratch.settings, [
@@ -1782,6 +1799,47 @@ def test_edit_keeps_history_when_the_model_fails(fake_model, acq, client_scratch
     after = chat_history.get_session(ctx, sid)
     assert [m["id"] for m in after["messages"]] == [m["id"] for m in original["messages"]]
     assert [m["content"] for m in after["messages"]] == ["hello", "hi"]
+
+
+def test_edit_replays_campaign_chat_through_the_campaign_assistant(
+    fake_model, acq, client_scratch, ctx_factory, http, monkeypatch
+):
+    """domain=auto + v2 on still replays a campaign thread through assistant.reply."""
+    monkeypatch.setenv("AGENT_PIPELINE_V2", "1")
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "update_selection",
+            recipients=[{"email": "nina@acme.example.com"}],
+            campaign_name="Fresh",
+            confirmed_new_campaign=True,
+            window_start="9 am",
+            window_end="5 pm",
+            window_evidence="9 am to 5 pm",
+            why="x",
+        ),
+        call("propose_email", subject="s", body="b", why="x"),
+        final("Here's the email. Approve it?"),
+    ]
+    t1 = ask(ctx, client_scratch.settings, "email Nina in Fresh, 9 am to 5 pm")
+    first_id = chat_history.get_session(ctx, t1["session_id"])["messages"][0]["id"]
+
+    REQUESTS.clear()
+    SCRIPT[:] = [final("Who should this go to?")]
+    admin = _token(http, client_scratch, "admin")
+    r = http.post(
+        f"/api/chat/sessions/{t1['session_id']}/edit",
+        json={"message_id": first_id, "message": "I want to email someone", "domain": "auto"},
+        headers=admin,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["content"] == "Who should this go to?"
+    assert body["trace"]["engine"] == "agno"
+    assert "update_selection" in tool_names(REQUESTS[0])
+    after = chat_history.get_session(ctx, t1["session_id"])
+    assert not after["messages"][-1]["meta"]["state"].get("recipients")
+    assert not after["messages"][-1]["meta"]["state"].get("window")
 
 
 def test_edit_first_message_starts_with_empty_state(fake_model, acq, client_scratch, ctx_factory, http):

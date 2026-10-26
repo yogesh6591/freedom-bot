@@ -1159,9 +1159,44 @@
   background: var(--surface-2);
 }
 .pr-history-item small { display: block; color: var(--muted); font-size: 12px; margin-top: 0.15rem; }
+.pr-test-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: end;
+}
+.pr-test-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.pr-test-credit-warn {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.pr-test-result {
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.pr-test-result.is-error { border-color: rgba(220, 80, 80, 0.45); }
+.pr-test-table { width: 100%; border-collapse: collapse; margin-top: 0.65rem; font-size: 13px; }
+.pr-test-table th, .pr-test-table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
 @media (max-width: 700px) {
   .pr-category { grid-template-columns: 1fr; }
   .pr-history-item { flex-direction: column; align-items: flex-start; }
+  .pr-test-row { grid-template-columns: 1fr; }
 }
 
 /* Sources panel on Engine & AI */

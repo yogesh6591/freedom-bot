@@ -243,6 +243,39 @@ def _engine() -> str:
     return os.environ.get("ASSISTANT_ENGINE", "unified").strip().lower()
 
 
+def _is_campaign_conversation(saved: dict[str, Any]) -> bool:
+    """True when this thread was handled by the campaign assistant (``assistant.reply``).
+
+    v2 ops turns store ``engine: agno-v2``. Campaign turns store ``engine: agno`` and/or
+    ``domain: acquisition``. Edit/replay looks at the saved thread, including the tail
+    about to be replaced, so a first-message edit still stays on the campaign path.
+    """
+    for message in saved.get("messages") or []:
+        if (message.get("domain") or "").strip().lower() == "acquisition":
+            return True
+        meta = message.get("meta") or {}
+        if isinstance(meta, dict) and meta.get("engine") == "agno":
+            return True
+    return False
+
+
+def _edit_chat_request(body: EditMessageRequest, ctx: TenantContext, session_id: str) -> ChatRequest:
+    """Same ChatRequest a new turn would send, with the campaign pin restored from history.
+
+    The UI may post ``domain=auto``. Campaign chats still have to hit ``assistant.reply``
+    so replay loads the saved selection/draft state instead of the v2 ops pipeline.
+    """
+    domain = (body.domain or AUTO).strip().lower() or AUTO
+    if domain == AUTO and ctx.is_admin:
+        try:
+            saved = chat_history.get_session(ctx, session_id)
+        except chat_history.SessionNotFound:
+            saved = {"messages": []}
+        if _is_campaign_conversation(saved):
+            domain = "acquisition"
+    return ChatRequest(message=body.message, session_id=session_id, domain=domain)
+
+
 def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings) -> dict[str, Any]:
     """Pick the assistant for this turn.
 
@@ -663,9 +696,7 @@ def edit_message(
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
         except chat_history.NotUserMessage as exc:
             raise HTTPException(status_code=400, detail="Only user messages can be edited") from exc
-        request = ChatRequest(
-            message=body.message, session_id=session_id, domain=body.domain or AUTO
-        )
+        request = _edit_chat_request(body, ctx, session_id)
         with chat_history.excluding_messages(ids):
             response = _dispatch(request, ctx, settings)
         chat_history.delete_messages(ctx, session_id, ids)
