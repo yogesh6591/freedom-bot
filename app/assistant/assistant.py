@@ -352,7 +352,7 @@ def describe_people(db: Session, emails: list[str]) -> list[PersonStatus]:
                 sync_status=link.sync_status.value,
                 active=active,
                 contacted=link.outreach_status == OutreachStatus.ACTIVE,
-                conversation=active and _in_conversation(link, link.id in reply_link_ids),
+                conversation=_in_conversation(link, link.id in reply_link_ids),
                 opted_out=opted_out,
             )
             status.links.append(info)
@@ -443,7 +443,13 @@ from pydantic import ValidationError
 
 from acquisition.db.session import SessionLocal
 from acquisition.integrations.instantly.timezones import normalize_instantly_timezone
-from acquisition.models.campaign import Campaign, CampaignProspect, InstantlyRuntimeStatus, MessageType
+from acquisition.models.campaign import (
+    Campaign,
+    CampaignProspect,
+    InstantlyRuntimeStatus,
+    LeadSyncStatus,
+    MessageType,
+)
 from acquisition.models.prospect import ApprovalStatus as ProspectApprovalStatus, Prospect
 from acquisition.schemas.campaign import CampaignCreate, CampaignMessageUpdate, CampaignUpdate
 from acquisition.schemas.prospect import ProspectCreate
@@ -473,6 +479,7 @@ class FulfillError(Exception):
 class FulfillResult:
     campaign_id: str
     message: str
+    prior_emails: tuple = ()
 
 
 @dataclass(slots=True)
@@ -482,7 +489,9 @@ class _Progress:
     campaign_id: str = ""
     created_here: bool = False
     attached_now: list = field(default_factory=list)  # prospect ids attached during this call
+    reused: list = field(default_factory=list)  # STOPPED links reactivated this call (never detach these)
     stopped: list[str] = field(default_factory=list)  # people stopped in their old campaign
+    prior_emails: list = field(default_factory=list)
 
 
 def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
@@ -499,6 +508,7 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
     if not accounts:
         raise FulfillError("Instantly has no sending account, so the email cannot be sent.")
     move_from = {str(item or "").strip().lower() for item in parsed.get("move_from") or []}
+    readds = {str(item or "").strip().lower() for item in parsed.get("readds") or []}
 
     sender = (getattr(ctx, "display_name", None) or "").strip()
     db = SessionLocal()
@@ -510,7 +520,7 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
         requested = str(parsed.get("campaign_id") or "").strip()
 
         # Preflight: decide everything that can be decided BEFORE writing anything.
-        to_stop = _preflight(db, recipients, requested, move_from)
+        to_stop = _preflight(db, recipients, requested, move_from, readds)
 
         campaign, progress.created_here = _campaign(db, campaigns, requested, name=name, sender=sender)
         campaign_id = progress.campaign_id = str(campaign.id)
@@ -552,6 +562,32 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
             people.append(person)
             if person.approval_status != ProspectApprovalStatus.APPROVED:
                 prospects.bulk_approve([person.id])
+            existing = db.scalar(
+                select(CampaignProspect).where(
+                    CampaignProspect.campaign_id == campaign.id,
+                    CampaignProspect.prospect_id == person.id,
+                )
+            )
+            if existing is not None and existing.outreach_status == OutreachStatus.STOPPED:
+                if email.strip().lower() not in readds:
+                    raise FulfillError(
+                        f"{email} was stopped in this campaign. Confirm with the user before adding them back.",
+                        campaign_id=campaign_id,
+                    )
+                progress.reused.append(_snapshot_link(existing))
+                if existing.last_activity_at is not None:
+                    progress.prior_emails.append(
+                        {
+                            "email": email,
+                            "campaign_id": campaign.id,
+                            "first_emailed_at": existing.last_activity_at.isoformat(),
+                            "instantly_lead_id": existing.instantly_lead_id,
+                        }
+                    )
+                _reactivate_stopped_link(existing)
+                db.add(existing)
+                db.commit()
+                continue
             try:
                 campaigns.attach_prospect(campaign.id, person.id)
                 progress.attached_now.append(person.id)
@@ -596,6 +632,7 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
             return FulfillResult(
                 campaign_id=campaign_id,
                 message=f"The {name} campaign is already created and this email is already set to send.{moved_note}",
+                prior_emails=tuple(progress.prior_emails),
             )
         CampaignActivationService(db).activate(campaign.id, confirm=True)
     except FulfillError as exc:
@@ -625,10 +662,11 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
     return FulfillResult(
         campaign_id=campaign_id,
         message=f"Created the {name} campaign and sent this email.{moved_note}",
+        prior_emails=tuple(progress.prior_emails),
     )
 
 
-def _preflight(db, recipients: list[str], requested: str, move_from: set[str]) -> list:
+def _preflight(db, recipients: list[str], requested: str, move_from: set[str], readds: set[str]) -> list:
     """Refuse or plan every recipient before anything is written. Returns the old links to stop."""
     to_stop: list = []
     for status in describe_people(db, recipients):
@@ -637,6 +675,23 @@ def _preflight(db, recipients: list[str], requested: str, move_from: set[str]) -
             raise FulfillError(
                 f"{label} unsubscribed or bounced earlier, so they cannot be added to any campaign."
             )
+        same_stopped = [
+            link
+            for link in status.links
+            if link.outreach_status == OutreachStatus.STOPPED.value and requested and link.campaign_id == requested
+        ]
+        if same_stopped:
+            info = same_stopped[0]
+            if info.conversation:
+                raise FulfillError(
+                    f"{label} already replied, started the assessment, or booked in {info.campaign_name or 'this campaign'}, "
+                    "so they cannot be added back."
+                )
+            if status.email.strip().lower() not in readds:
+                raise FulfillError(
+                    f"{label} was stopped in {info.campaign_name or 'this campaign'} earlier. "
+                    "Confirm with the user before adding them back."
+                )
         elsewhere = [link for link in status.blocking if link.campaign_id != requested]
         if any(link.conversation for link in elsewhere):
             raise FulfillError(
@@ -688,12 +743,58 @@ def _with_note(message: str, progress: _Progress) -> str:
     return message
 
 
+def _snapshot_link(link: CampaignProspect) -> dict:
+    return {
+        "link_id": link.id,
+        "outreach_status": link.outreach_status,
+        "instantly_lead_id": link.instantly_lead_id,
+        "sync_status": link.sync_status,
+        "last_activity_at": link.last_activity_at,
+        "last_synced_at": link.last_synced_at,
+        "sync_error": link.sync_error,
+    }
+
+
+def _reactivate_stopped_link(link: CampaignProspect) -> None:
+    """Clear Instantly marks so the next send recreates the lead. Keep last_activity_at (first emailed)."""
+    link.outreach_status = OutreachStatus.PENDING
+    link.instantly_lead_id = None
+    link.sync_status = LeadSyncStatus.NOT_SYNCED
+    link.last_synced_at = None
+    link.sync_error = None
+
+
+def _restore_reused_links(db, progress: _Progress) -> None:
+    """Put reactivated STOPPED links back, including Instantly marks. Never detach them."""
+    if not progress.reused:
+        return
+    try:
+        for snap in progress.reused:
+            link = db.get(CampaignProspect, snap["link_id"])
+            if link is None:
+                continue
+            link.outreach_status = snap["outreach_status"]
+            link.instantly_lead_id = snap["instantly_lead_id"]
+            link.sync_status = snap["sync_status"]
+            link.last_activity_at = snap["last_activity_at"]
+            link.last_synced_at = snap["last_synced_at"]
+            link.sync_error = snap["sync_error"]
+            db.add(link)
+        db.commit()
+    except Exception:  # noqa: BLE001
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _undo(db, progress: _Progress) -> None:
     """Best effort: leave no empty campaign or half-attached people behind."""
     try:
         db.rollback()
     except Exception:  # noqa: BLE001
         pass
+    _restore_reused_links(db, progress)
     if not progress.campaign_id:
         return
     try:
@@ -1085,6 +1186,7 @@ def _audit(event: str, ctx, payload: dict, **extra) -> None:
                 "campaign": payload.get("campaign_name"),
                 "recipients": payload.get("email_address_list"),
                 "moved_from_other_campaigns": payload.get("move_from") or [],
+                "readded_to_this_campaign": payload.get("readds") or [],
                 "subject": payload.get("email_subject"),
             },
             result={k: v for k, v in extra.items() if v},
@@ -1190,8 +1292,9 @@ CAMPAIGN_TOOLS = [
         "function": {
             "name": "approve_move",
             "description": (
-                "Record that the user said yes to stopping these people in their other campaign and adding them to the new one. "
-                "Only after you explained it and the user's LATEST message clearly agrees. Refused if you had not told them yet."
+                "Record that the user said yes to stopping these people in their other campaign, or to adding them back "
+                "after they were stopped in this one. Only after you explained it and the user's LATEST message clearly "
+                "agrees. Refused if you had not told them yet."
             ),
             "parameters": {
                 "type": "object",
@@ -1209,8 +1312,11 @@ CAMPAIGN_TOOLS = [
         "function": {
             "name": "remove_from_campaign",
             "description": (
-                "Take one person out of a campaign. Only if they have not been emailed there yet. The person and "
-                "their history stay. Ask ONE yes/no first; call only after the user's NEXT message says yes."
+                "Take one person out of a campaign. If they have not been emailed, ask one yes/no and remove. "
+                "If they were already emailed, say plainly that the email is already sent and cannot be taken back, "
+                "and that removing them only stops their follow-ups; ask ONE yes/no. If they replied, booked, "
+                "unsubscribed or bounced, say so and change nothing. The person and their history stay. "
+                "Ask ONE yes/no first; call only after the user's NEXT message says yes."
             ),
             "parameters": {
                 "type": "object",
@@ -1336,10 +1442,16 @@ def _missing(state: dict) -> list[str]:
     return out
 
 
+def _keep_approvals(state: dict, keep: set[str]) -> None:
+    state["moves"] = [email for email in state.get("moves") or [] if email in keep]
+    state["readds"] = [email for email in state.get("readds") or [] if email in keep]
+
+
 def campaign_state_text(state: dict, people_status: list | None = None, fields: list | None = None) -> str:
     view = {
         "people_status": people_status if people_status is not None else "unavailable",
         "moves_user_approved": state.get("moves") or [],
+        "readds_user_approved": state.get("readds") or [],
         "committed_selection": {
             "recipients": state.get("recipients") or [],
             "campaign_id": state.get("campaign_id") or "",
@@ -1850,8 +1962,39 @@ class CampaignSession:
         found = self._assess()
         return None if found is None else [st.as_dict() for st in found]
 
-    def _gate(self, statuses) -> tuple[list[str], list]:
-        """(refusals, people who still need a move approval) for the committed campaign."""
+    def _link_is_committed_campaign(self, link) -> bool:
+        cid = (self.state.get("campaign_id") or "").strip()
+        cname = (self.state.get("campaign_name") or "").strip()
+        if not cid and not cname:
+            return False
+        return (cid and link.campaign_id == cid) or (
+            (not cid) and cname and link.campaign_name.casefold() == cname.casefold()
+        )
+
+    def _stopped_in_committed(self, st):
+        return [
+            link
+            for link in st.links
+            if link.outreach_status == OutreachStatus.STOPPED.value and self._link_is_committed_campaign(link)
+        ]
+
+    def _readd_candidates(self, statuses) -> list:
+        approved = {str(email).lower() for email in self.state.get("readds") or []}
+        out = []
+        for st in statuses:
+            if st.email.strip().lower() in approved:
+                continue
+            stopped = self._stopped_in_committed(st)
+            if not stopped:
+                continue
+            info = stopped[0]
+            if info.opted_out or info.conversation:
+                continue
+            out.append(st)
+        return out
+
+    def _gate(self, statuses) -> tuple[list[str], list, list]:
+        """(refusals, people who still need a move approval, people who still need a re-add approval)."""
         cid = self.state.get("campaign_id") or ""
         approved = {str(e).lower() for e in self.state.get("moves") or []}
         refusals: list[str] = []
@@ -1859,6 +2002,14 @@ class CampaignSession:
         for st in statuses:
             if any(link.opted_out for link in st.links):
                 refusals.append(f"{st.label} unsubscribed or bounced earlier. Never add them to any campaign.")
+                continue
+            stopped = self._stopped_in_committed(st)
+            if stopped and (stopped[0].conversation or stopped[0].opted_out):
+                camp = stopped[0].campaign_name or self.state.get("campaign_name") or "this campaign"
+                refusals.append(
+                    f"{st.label} already replied, started the assessment, or booked in {camp}. "
+                    "Do not add them back; suggest handling them personally."
+                )
                 continue
             elsewhere = [link for link in st.blocking if link.campaign_id != cid]
             if any(link.conversation for link in elsewhere):
@@ -1868,14 +2019,14 @@ class CampaignSession:
                 )
             elif elsewhere and st.email.lower() not in approved:
                 needs.append(st)
-        return refusals, needs
+        return refusals, needs, self._readd_candidates(statuses)
 
     def _blocked(self) -> str:
         """Empty string when the selection may go forward, else a JSON error for the model."""
         statuses = self._assess()
         if statuses is None:
             return json.dumps({"error": "Could not check who is already in a campaign. Tell the user and try again."})
-        refusals, needs = self._gate(statuses)
+        refusals, needs, readds = self._gate(statuses)
         if refusals:
             return json.dumps(
                 {
@@ -1886,6 +2037,45 @@ class CampaignSession:
             )
         if needs:
             self._mark_offered(needs)
+        if readds:
+            self._mark_offered(readds)
+        if needs and readds:
+            return json.dumps(
+                {
+                    "error": "needs_move_approval",
+                    "needs_readd_approval": True,
+                    "people": [st.as_dict() for st in needs],
+                    "readd": [st.as_dict() for st in readds],
+                    "instruction": (
+                        "Ask ONE combined yes/no: say where each move person is (adding them here stops them there) "
+                        "AND that each re-add person was stopped in this campaign earlier, so adding them back sends "
+                        "the whole email sequence again, including the first email. "
+                        "Call approve_move only after their NEXT message says yes."
+                    ),
+                }
+            )
+        if readds:
+            questions = []
+            for st in readds:
+                who = (split_executive_name(st.name)[0] if st.name else "") or st.label
+                stopped = self._stopped_in_committed(st)
+                camp = (stopped[0].campaign_name if stopped else "") or self.state.get("campaign_name") or "this campaign"
+                questions.append(
+                    f"{who} was stopped in {camp} earlier. If I add them again they get the whole email "
+                    "sequence again, including the first email. Add them back?"
+                )
+            return json.dumps(
+                {
+                    "error": "needs_readd_approval",
+                    "people": [st.as_dict() for st in readds],
+                    "question": questions[0] if len(questions) == 1 else questions,
+                    "instruction": (
+                        "Ask this exact yes/no (or one combined question if several people). "
+                        "Call approve_move only after their NEXT message says yes. If they say no, change nothing."
+                    ),
+                }
+            )
+        if needs:
             return json.dumps(
                 {
                     "error": "needs_move_approval",
@@ -1967,8 +2157,7 @@ class CampaignSession:
             if rows != s.get("recipients"):
                 self._invalidate_draft()
             s["recipients"] = rows
-            keep = {r["email"].lower() for r in rows}
-            s["moves"] = [e for e in s.get("moves") or [] if e in keep]
+            _keep_approvals(s, {r["email"].lower() for r in rows})
             self.recipients_committed = True
             self.people_to_show = []
             s.setdefault("shown", {})["people"] = []
@@ -1994,7 +2183,8 @@ class CampaignSession:
                                 "Ask the user whether they mean the existing campaign or a new one with the typed name. "
                                 "Existing: update_selection with its campaign_id. New: update_selection again with "
                                 "confirmed_new_campaign=true. If people_status says someone is active in another "
-                                "campaign, put the move into this SAME question so the user answers once."
+                                "campaign or was stopped in this one, put the move or re-add into this SAME question "
+                                "so the user answers once."
                             ),
                             "selection": self._sel(),
                             "people_status": self._status_for_result(),
@@ -2065,8 +2255,20 @@ class CampaignSession:
         statuses = self._assess()
         if statuses is None:
             return "unavailable: tell the user you could not check existing campaigns"
+        readd = {st.email.lower() for st in self._readd_candidates(statuses)}
         self._mark_offered([st for st in statuses if st.tier.startswith("move_")])
-        return [st.as_dict() for st in statuses]
+        self._mark_offered([st for st in statuses if st.email.lower() in readd])
+        rows = []
+        for st in statuses:
+            row = st.as_dict()
+            if st.email.lower() in readd:
+                row["tier"] = "readd_stopped"
+                row["what_to_do"] = (
+                    "Was stopped in this campaign earlier. Ask one yes/no: adding them back sends the whole "
+                    "email sequence again, including the first email. If yes, call approve_move on the next turn."
+                )
+            rows.append(row)
+        return rows
 
     def _similar_names(self, typed: str) -> list[str]:
         key = typed.casefold()
@@ -2124,7 +2326,7 @@ class CampaignSession:
         statuses = self._assess()
         if statuses is None:
             return json.dumps({"error": "Could not check who is already in a campaign. Tell the user and try again."})
-        refusals, _needs = self._gate(statuses)
+        refusals, _needs, _readds = self._gate(statuses)
         if refusals:
             return json.dumps({"error": "refused_person", "reasons": refusals})
         blocked: set[str] = set()
@@ -2207,6 +2409,7 @@ class CampaignSession:
             "campaign_name": s["campaign_name"],
             "campaign_schedule_timing": s["window"],
             "move_from": list(s.get("moves") or []),
+            "readds": list(s.get("readds") or []),
             "email_from": d["email_from"],
             "email_template": bool(d.get("email_template")),
             "email_scope": s.get("scope") or "",
@@ -2223,15 +2426,29 @@ class CampaignSession:
         if statuses is None:
             return json.dumps({"error": "Could not check who is already in a campaign. Tell the user and try again."})
         by_email = {st.email.lower(): st for st in statuses}
-        accepted, problems = [], []
+        accepted, readds_accepted, problems = [], [], []
         for raw in emails or []:
             key = str(raw or "").strip().lower()
             st = by_email.get(key)
             if st is None:
                 problems.append(f"{raw}: not one of the chosen recipients")
-            elif st.tier in ("refuse_opted_out", "refuse_conversation"):
+                continue
+            if st.tier in ("refuse_opted_out", "refuse_conversation"):
                 problems.append(f"{st.label}: cannot be moved ({st.tier})")
-            elif not st.tier.startswith("move_"):
+                continue
+            stopped = self._stopped_in_committed(st)
+            if stopped:
+                info = stopped[0]
+                if info.conversation or info.opted_out:
+                    problems.append(f"{st.label}: already replied, started the assessment, or booked, so they cannot be added back")
+                elif key not in self.offered_before:
+                    problems.append(
+                        f"{st.label}: you have not explained this to the user in an earlier turn. Explain it, ask, and wait for their answer."
+                    )
+                else:
+                    readds_accepted.append(key)
+                continue
+            if not st.tier.startswith("move_"):
                 problems.append(f"{st.label}: nothing to move, they are not active in another campaign")
             elif key not in self.offered_before:
                 problems.append(
@@ -2242,8 +2459,16 @@ class CampaignSession:
         if problems:
             return json.dumps({"error": "move_not_approved", "problems": problems, "recorded": []})
         s["moves"] = sorted(set(s.get("moves") or []) | set(accepted))
+        s["readds"] = sorted(set(s.get("readds") or []) | set(readds_accepted))
         self._invalidate_draft()
-        return json.dumps({"ok": True, "moves_approved_for": s["moves"], "approval_evidence": (approval_evidence or "")[:200]})
+        return json.dumps(
+            {
+                "ok": True,
+                "moves_approved_for": s["moves"],
+                "readds_approved_for": s["readds"],
+                "approval_evidence": (approval_evidence or "")[:200],
+            }
+        )
 
     def _remove_from_campaign(self, email="", campaign="", approval_evidence="") -> str:
         address = str(email or "").strip()
@@ -2281,39 +2506,67 @@ class CampaignSession:
                         )
                     }
                 )
-            if info.contacted or info.outreach_status != OutreachStatus.PENDING.value:
-                return json.dumps(
-                    {"error": f"{who} has already been emailed in {camp_name}, so they cannot be removed from it."}
-                )
+            if info.outreach_status == OutreachStatus.STOPPED.value:
+                return json.dumps({"error": f"{who} is already stopped in {camp_name}."})
+            already_emailed = info.contacted or info.outreach_status != OutreachStatus.PENDING.value
             why_not = approval_problem(self.user_message, approval_evidence)
             if why_not:
-                return json.dumps(
-                    {
-                        "error": "not_approved",
-                        "reason": why_not,
-                        "instruction": (
-                            f"Ask one yes/no, for example: Remove {who} from {camp_name}? They have not been emailed yet. "
-                            "Call remove_from_campaign only after their NEXT message says yes."
-                        ),
-                    }
-                )
+                if already_emailed:
+                    instruction = (
+                        f"{who} already got the email in {camp_name}. Removing them cannot unsend it, but it stops their follow-ups "
+                        f"there. Ask ONE yes/no, for example: Stop follow-ups for {who} in {camp_name}? Call remove_from_campaign "
+                        "only after their NEXT message says yes."
+                    )
+                else:
+                    instruction = (
+                        f"Ask one yes/no, for example: Remove {who} from {camp_name}? They have not been emailed yet. "
+                        "Call remove_from_campaign only after their NEXT message says yes."
+                    )
+                return json.dumps({"error": "not_approved", "reason": why_not, "instruction": instruction})
             try:
                 client = InstantlyService(db).get_api_client()
             except Exception as exc:  # noqa: BLE001
                 return json.dumps({"error": str(exc) or "Could not reach Instantly. Nothing was changed."})
-            try:
-                stop_for_move(db, client, info.link_id)
-            except StopError as exc:
-                return json.dumps({"error": str(exc) or "Instantly did not remove them. Nothing was changed."})
+            if already_emailed:
+                link_row = db.scalar(
+                    select(CampaignProspect)
+                    .options(selectinload(CampaignProspect.campaign), selectinload(CampaignProspect.prospect))
+                    .where(CampaignProspect.id == info.link_id)
+                )
+                if link_row is None:
+                    return json.dumps({"error": f"{who} is not in {camp_name}."})
+                try:
+                    lead_id = _instantly_lead_id(client, link_row)
+                    if lead_id:
+                        try:
+                            client._request("DELETE", f"/leads/{lead_id}", json={})
+                        except InstantlyError as exc:
+                            if getattr(exc, "status_code", None) != 404:
+                                raise
+                except InstantlyError as exc:
+                    return json.dumps({"error": str(exc) or "Instantly did not remove them. Nothing was changed."})
+                link_row.outreach_status = OutreachStatus.STOPPED
+                db.add(link_row)
+                db.commit()
+                done = (
+                    f"Stopped follow-ups for {who} in {camp_name}. "
+                    "The email already sent cannot be taken back."
+                )
+            else:
+                try:
+                    stop_for_move(db, client, info.link_id)
+                except StopError as exc:
+                    return json.dumps({"error": str(exc) or "Instantly did not remove them. Nothing was changed."})
+                done = f"Removed {who} from {camp_name}."
         finally:
             db.close()
         s = self.state
         kept = [r for r in s.get("recipients") or [] if str(r.get("email") or "").lower() != address.lower()]
         if kept != (s.get("recipients") or []):
             s["recipients"] = kept
-            s["moves"] = [e for e in s.get("moves") or [] if e != address.lower()]
+            _keep_approvals(s, {str(r.get("email") or "").lower() for r in kept})
             self._invalidate_draft()
-        return f"Removed {who} from {camp_name}."
+        return done
 
     def _send_approved(self, approval_evidence: str = "") -> str:
         if not self.state.get("draft"):
@@ -2367,7 +2620,14 @@ class CampaignSession:
             return f"error: {exc}"
         self.sent = True
         self.state["campaign_id"] = outcome.campaign_id
-        _audit("ACTION_EXECUTED", self.ctx, payload, result=outcome.message[:300], evidence=approval_evidence)
+        _audit(
+            "ACTION_EXECUTED",
+            self.ctx,
+            payload,
+            result=outcome.message[:300],
+            evidence=approval_evidence,
+            prior_emails=list(outcome.prior_emails),
+        )
         return f"sent: {outcome.message}"
 
 
@@ -2500,23 +2760,30 @@ PEOPLE ALREADY IN A CAMPAIGN (one person = one active campaign)
   plainly where they are and that adding them here means stopping them there (their history stays). Ask ONE
   clear yes/no. Only after the user's NEXT message says yes, call approve_move. Never in the same turn you
   first ask, never on a vague answer. If they say no, offer to drop that person or choose differently.
+- readd_stopped / needs_readd_approval: they were stopped in THIS campaign earlier (for example after
+  remove_from_campaign). Do not add them yet. Say they were stopped here, and that adding them again sends
+  the whole email sequence again, including the first email. Ask ONE yes/no, for example: "<who> was stopped
+  in <campaign> earlier. If I add them again they get the whole email sequence again, including the first
+  email. Add them back?" Only after the user's NEXT message says yes, call approve_move. If they say no,
+  change nothing. If they stopped themselves (replied stop / unsubscribe), a tool returns a refusal: keep it.
 - refuse_conversation: they replied, started the assessment or booked. Do not move or add them; say so and
   suggest handling them personally. Offer to continue without them.
 - refuse_opted_out: they unsubscribed or bounced. Never add them. Say so plainly; offer to continue without.
-- If a tool returns needs_move_approval or a refusal, explain it in plain words, then wait for the user.
-- NEVER ask the same thing twice and never make the user confirm in two steps. Say the move in the question
-  itself, as part of ONE question. If you explain a move without asking yes/no, that wastes a turn: don't.
-- If a name question (similar name) and a move both apply, ask ONE combined question, for example:
-  "Do you mean the existing 'spring' (not 'soring')? Nina is in 'duo', so adding her stops her there. Yes?"
+- If a tool returns needs_move_approval, needs_readd_approval or a refusal, explain it in plain words, then wait for the user.
+- NEVER ask the same thing twice and never make the user confirm in two steps. Say the move or re-add in the
+  question itself, as part of ONE question. If you explain a move or re-add without asking yes/no, that wastes a turn: don't.
+- If a name question (similar name), a move and a re-add apply together, ask ONE combined question, for example:
+  "Do you mean the existing 'spring' (not 'soring')? Nina is in 'duo', so adding her stops her there. Raj was
+  stopped in spring earlier; adding him back sends the whole sequence again, including the first email. Yes?"
   When the user then answers yes, or names the campaign, or says "go ahead", "ok" or any agreement, that answers
-  BOTH: commit the campaign (campaign_id) AND call approve_move in that same turn, then continue. Do not
-  ask about the move again. Only if their answer clearly changes the plan (a different campaign, or "no")
+  ALL of them: commit the campaign (campaign_id) AND call approve_move in that same turn, then continue. Do not
+  ask about the move or re-add again. Only if their answer clearly changes the plan (a different campaign, or "no")
   do you ask again.
-- If you already stated the move in your last message and they agree in any wording, the move is approved.
+- If you already stated the move or re-add in your last message and they agree in any wording, it is approved.
 
 REMOVING SOMEONE FROM A CAMPAIGN
 - "remove Raj from east" means take that person out of that campaign only. They stay in the workspace; their history stays.
-- Only if they have not been emailed in that campaign. If they were emailed, replied, or booked, say so in plain words and change nothing. Do not call the tool to "try anyway".
+- If they have not been emailed, ask one yes/no and remove. If they were already emailed, say plainly that the email is already sent and cannot be taken back, and that removing them only stops their follow-ups; ask ONE yes/no. If they replied, booked, unsubscribed or bounced, say so and change nothing.
 - Ask ONE yes/no first. Only after the user's NEXT message says yes, call remove_from_campaign. Never in the same turn you first ask, never on a vague answer, never choose for them. If they say no, change nothing.
 - After the tool returns, reply in one line with that sentence (for example "Removed Raj from east."). If it returns an error, tell the user that error in plain words; change nothing.
 
@@ -2524,7 +2791,7 @@ SIMILAR CAMPAIGN NAMES
 - If update_selection returns similar_campaign_name, do not guess. Ask: "Do you mean the existing <similar
   name>, or a new campaign called <typed name>?" Then commit the existing one by campaign_id, or call
   update_selection again with confirmed_new_campaign=true. Do this even if the user already said "new".
-  If someone also needs to be moved, put the move in this same question (see above); one question only.
+  If someone also needs to be moved or added back, put that in this same question (see above); one question only.
 
 EMAIL AND SENDING
 - The email card is shown by propose_email, once per new draft. Do NOT call propose_email to answer questions

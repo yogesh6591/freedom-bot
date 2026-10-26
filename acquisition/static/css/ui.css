@@ -525,6 +525,7 @@ input[type="file"] { color: var(--text-2); font-size: 13px; }
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
 .prospect-tab:hover, .camp-tab:hover, .ad-tabs a:hover, .ad-tabs button:hover, .journey-subnav a:hover, .tabbar a:hover, .tabbar button:hover { color: var(--text); background: var(--surface-2); }
+.tabbar button[hidden], .tabbar [hidden] { display: none !important; }
 .prospect-tab.is-active, .camp-tab.is-active, .camp-tab.active, .ad-tabs .is-active, .ad-tabs .active, .journey-subnav a.active, .journey-subnav a.is-active,
 .tabbar .is-active, .tabbar [aria-selected="true"] {
   color: var(--text);

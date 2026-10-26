@@ -118,16 +118,18 @@ def acq():
     from acquisition.db.session import SessionLocal, engine
     from acquisition.models.campaign import (
         Campaign,
+        CampaignMessage,
         CampaignProspect,
         InstantlyRuntimeStatus,
         OutreachStatus,
     )
     from acquisition.models.prospect import ApprovalStatus, Prospect
+    from acquisition.models.replies import ReplyConversation, ReplyMessage
 
     # Hard stop: never wipe a database that is not the throwaway test one.
     assert engine.url.database == TEST_DB_NAME, f"refusing to wipe {engine.url.database!r}"
     db = SessionLocal()
-    for model in (CampaignProspect, Campaign, Prospect):
+    for model in (ReplyMessage, ReplyConversation, CampaignProspect, CampaignMessage, Campaign, Prospect):
         db.query(model).delete()
     db.commit()
 
@@ -564,30 +566,52 @@ def test_if_instantly_refuses_nothing_changes_locally(acq):
     db.close()
 
 
-def _east_raj(lead_id="L-raj"):
+def _east_raj(
+    lead_id="L-raj",
+    outreach=None,
+    email="raj@acme.example.com",
+    campaign_name="east",
+    **link_fields,
+):
     from acquisition.db.session import SessionLocal
-    from acquisition.models.campaign import Campaign, CampaignProspect, OutreachStatus
+    from acquisition.models.campaign import (
+        Campaign,
+        CampaignMessage,
+        CampaignProspect,
+        MessageType,
+        OutreachStatus,
+    )
     from acquisition.models.prospect import ApprovalStatus, Prospect
 
     db = SessionLocal()
     raj = Prospect(
         company="Acme",
         executive_name="Raj Mehta",
-        email="raj@acme.example.com",
+        email=email,
         approval_status=ApprovalStatus.APPROVED,
     )
-    east = Campaign(name="east", sender_name="Me", instantly_campaign_id="ic-east")
+    east = Campaign(name=campaign_name, sender_name="Me", instantly_campaign_id="ic-east")
     db.add_all([raj, east])
     db.commit()
+    db.add(
+        CampaignMessage(
+            campaign_id=east.id,
+            sequence_order=0,
+            message_type=MessageType.INITIAL,
+            subject="Hi",
+            body="Hi there,",
+        )
+    )
     link = CampaignProspect(
         campaign_id=east.id,
         prospect_id=raj.id,
-        outreach_status=OutreachStatus.PENDING,
+        outreach_status=outreach if outreach is not None else OutreachStatus.PENDING,
         instantly_lead_id=lead_id,
+        **link_fields,
     )
     db.add(link)
     db.commit()
-    ids = {"east": east.id, "raj": raj.id, "link": link.id}
+    ids = {"east": east.id, "raj": raj.id, "link": link.id, "email": email, "campaign": campaign_name}
     db.close()
     return ids
 
@@ -629,28 +653,512 @@ def test_remove_from_campaign_drops_a_person_who_has_not_been_emailed(
     db.close()
 
 
-def test_remove_from_campaign_refuses_someone_already_emailed(fake_model, acq, client_scratch, ctx_factory):
+def test_remove_from_campaign_stops_followups_when_already_emailed(
+    fake_model, acq, client_scratch, ctx_factory, monkeypatch
+):
     from acquisition.db.session import SessionLocal
-    from acquisition.models.campaign import CampaignProspect
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
     from acquisition.models.prospect import Prospect
+    from app.assistant import assistant as agent
 
+    ids = _east_raj(outreach=OutreachStatus.ACTIVE)
+    client = _FakeInstantly()
+    monkeypatch.setattr(agent.InstantlyService, "get_api_client", lambda self: client)
     ctx = ctx_factory(client_scratch, "admin")
     SCRIPT[:] = [
         call(
             "remove_from_campaign",
-            email="ethan@acme.example.com",
-            campaign="snowflak",
+            email="raj@acme.example.com",
+            campaign="east",
             approval_evidence="yes",
             why="User said yes.",
         ),
-        final("Ethan has already been emailed in snowflak, so they cannot be removed from it."),
+        final("Stopped follow-ups for Raj in east. The email already sent cannot be taken back."),
     ]
-    out = ask(ctx, client_scratch.settings, "yes, remove Ethan from snowflak")
+    out = ask(ctx, client_scratch.settings, "yes")
     result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
-    assert "already been emailed" in result
+    assert result == "Stopped follow-ups for Raj in east. The email already sent cannot be taken back."
+    assert "sent" in result.lower()
+    assert [c[:2] for c in client.calls].count(("DELETE", "/leads/L-raj")) == 1
     db = SessionLocal()
-    ethan = db.query(Prospect).filter(Prospect.email == "ethan@acme.example.com").one()
-    assert db.query(CampaignProspect).filter(CampaignProspect.prospect_id == ethan.id).count() == 1
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.STOPPED
+    assert db.get(Prospect, ids["raj"]).executive_name == "Raj Mehta"
+    db.close()
+
+
+def test_remove_from_campaign_asks_before_stopping_followups(fake_model, acq, client_scratch, ctx_factory):
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+
+    ids = _east_raj(outreach=OutreachStatus.ACTIVE)
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "remove_from_campaign",
+            email="raj@acme.example.com",
+            campaign="east",
+            approval_evidence="remove Raj from east",
+            why="User asked to remove Raj.",
+        ),
+        final("Raj already got the email in east. Stop follow-ups for Raj in east?"),
+    ]
+    out = ask(ctx, client_scratch.settings, "remove Raj from east")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
+    assert "not_approved" in result
+    assert "Stop follow-ups for Raj in east" in result
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.ACTIVE
+    db.close()
+
+
+def test_remove_from_campaign_leaves_emailed_link_if_instantly_fails(
+    fake_model, acq, client_scratch, ctx_factory, monkeypatch
+):
+    from acquisition.db.session import SessionLocal
+    from acquisition.integrations.instantly.errors import InstantlyProviderError
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+    from app.assistant import assistant as agent
+
+    ids = _east_raj(outreach=OutreachStatus.ACTIVE)
+    client = _FakeInstantly(fail_with=InstantlyProviderError("boom", status_code=500))
+    monkeypatch.setattr(agent.InstantlyService, "get_api_client", lambda self: client)
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "remove_from_campaign",
+            email="raj@acme.example.com",
+            campaign="east",
+            approval_evidence="yes",
+            why="User said yes.",
+        ),
+        final("Instantly did not remove them. Nothing was changed."),
+    ]
+    out = ask(ctx, client_scratch.settings, "yes")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
+    assert "boom" in result
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.ACTIVE
+    db.close()
+
+
+def test_remove_from_campaign_refuses_replied_or_booked(
+    fake_model, acq, client_scratch, ctx_factory, monkeypatch
+):
+    from datetime import datetime, timezone
+
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+    from app.assistant import assistant as agent
+
+    client = _FakeInstantly()
+    monkeypatch.setattr(agent.InstantlyService, "get_api_client", lambda self: client)
+    ctx = ctx_factory(client_scratch, "admin")
+
+    replied = _east_raj(lead_id="L-replied", outreach=OutreachStatus.REPLIED)
+    SCRIPT[:] = [
+        call(
+            "remove_from_campaign",
+            email="raj@acme.example.com",
+            campaign="east",
+            approval_evidence="yes",
+            why="User said yes.",
+        ),
+        final("Raj already replied in east, so they cannot be removed from it."),
+    ]
+    out = ask(ctx, client_scratch.settings, "yes")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
+    assert "already replied" in result
+    assert client.calls == []
+    db = SessionLocal()
+    assert db.get(CampaignProspect, replied["link"]).outreach_status == OutreachStatus.REPLIED
+    db.close()
+
+    booked = _east_raj(
+        lead_id="L-booked",
+        email="raj.booked@acme.example.com",
+        campaign_name="east-booked",
+        outreach=OutreachStatus.PENDING,
+        booked_at=datetime.now(timezone.utc),
+    )
+    SCRIPT[:] = [
+        call(
+            "remove_from_campaign",
+            email=booked["email"],
+            campaign=booked["campaign"],
+            approval_evidence="yes",
+            why="User said yes.",
+        ),
+        final("Raj already booked in east-booked, so they cannot be removed from it."),
+    ]
+    out = ask(ctx, client_scratch.settings, "yes")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
+    assert "booked" in result
+    db = SessionLocal()
+    assert db.get(CampaignProspect, booked["link"]) is not None
+    db.close()
+
+
+def test_remove_from_campaign_refuses_unsubscribed_or_bounced(
+    fake_model, acq, client_scratch, ctx_factory, monkeypatch
+):
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+    from app.assistant import assistant as agent
+
+    client = _FakeInstantly()
+    monkeypatch.setattr(agent.InstantlyService, "get_api_client", lambda self: client)
+    ctx = ctx_factory(client_scratch, "admin")
+    ids = _east_raj(outreach=OutreachStatus.UNSUBSCRIBED)
+    SCRIPT[:] = [
+        call(
+            "remove_from_campaign",
+            email="raj@acme.example.com",
+            campaign="east",
+            approval_evidence="yes",
+            why="User said yes.",
+        ),
+        final("Raj unsubscribed or bounced in east, so they cannot be removed from it."),
+    ]
+    out = ask(ctx, client_scratch.settings, "yes")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
+    assert "unsubscribed or bounced" in result
+    assert client.calls == []
+    db = SessionLocal()
+    assert db.get(CampaignProspect, ids["link"]).outreach_status == OutreachStatus.UNSUBSCRIBED
+    db.close()
+
+    bounced = _east_raj(
+        lead_id="L-bounce",
+        email="raj.bounced@acme.example.com",
+        campaign_name="east-bounced",
+        outreach=OutreachStatus.BOUNCED,
+    )
+    SCRIPT[:] = [
+        call(
+            "remove_from_campaign",
+            email=bounced["email"],
+            campaign=bounced["campaign"],
+            approval_evidence="yes",
+            why="User said yes.",
+        ),
+        final("Raj unsubscribed or bounced in east-bounced, so they cannot be removed from it."),
+    ]
+    out = ask(ctx, client_scratch.settings, "yes")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
+    assert "unsubscribed or bounced" in result
+    db = SessionLocal()
+    assert db.get(CampaignProspect, bounced["link"]).outreach_status == OutreachStatus.BOUNCED
+    db.close()
+
+
+def test_remove_from_campaign_already_stopped_changes_nothing(
+    fake_model, acq, client_scratch, ctx_factory, monkeypatch
+):
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+    from app.assistant import assistant as agent
+
+    ids = _east_raj(outreach=OutreachStatus.STOPPED)
+    client = _FakeInstantly()
+    monkeypatch.setattr(agent.InstantlyService, "get_api_client", lambda self: client)
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "remove_from_campaign",
+            email="raj@acme.example.com",
+            campaign="east",
+            approval_evidence="yes",
+            why="User said yes.",
+        ),
+        final("Raj is already stopped in east."),
+    ]
+    out = ask(ctx, client_scratch.settings, "yes")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "remove_from_campaign"][0]
+    assert json.loads(result)["error"] == "Raj is already stopped in east."
+    assert client.calls == []
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.STOPPED
+    db.close()
+
+
+def _mock_instantly_send(monkeypatch, *, synced=1):
+    from acquisition.services.lead_sync_service import LeadSyncResult
+    from app.assistant import assistant as agent
+
+    monkeypatch.setattr(agent, "sending_account_emails", lambda db=None: ["me@example.com"])
+    monkeypatch.setattr(agent.InstantlyCampaignSyncService, "sync", lambda self, cid: None)
+    monkeypatch.setattr(
+        agent.LeadSyncService,
+        "sync_campaign_leads",
+        lambda self, cid: LeadSyncResult(campaign_id=cid, synced=synced, failed=0, skipped=0, message="ok"),
+    )
+    monkeypatch.setattr(agent.CampaignActivationService, "activate", lambda self, cid, confirm=True: None)
+
+
+def test_readd_asks_before_changing_anything(fake_model, acq, client_scratch, ctx_factory):
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+
+    ids = _east_raj(outreach=OutreachStatus.STOPPED)
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "update_selection",
+            recipients=[{"email": "raj@acme.example.com"}],
+            campaign_id=str(ids["east"]),
+            why="User asked to add Raj back to east.",
+        ),
+        call("propose_email", subject="Hi", body="Hi Raj", why="Selection is committed."),
+        final("Raj was stopped in east earlier. If I add them again they get the whole email sequence again, including the first email. Add them back?"),
+    ]
+    out = ask(ctx, client_scratch.settings, "add Raj back to east")
+    results = {c["tool"]: c["result"] for c in out["trace"]["tool_log"]}
+    assert '"ok": true' in results["update_selection"]
+    assert "raj@acme.example.com" in results["update_selection"]
+    assert "needs_readd_approval" in results["propose_email"]
+    assert not out["trace"]["email_draft"]
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.STOPPED
+    db.close()
+
+
+def test_readd_yes_reuses_the_same_link(fake_model, acq, client_scratch, ctx_factory, monkeypatch):
+    from datetime import datetime, timezone
+
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+
+    first_sent = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+    ids = _east_raj(outreach=OutreachStatus.STOPPED, last_activity_at=first_sent)
+    _mock_instantly_send(monkeypatch)
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "update_selection",
+            recipients=[{"email": "raj@acme.example.com"}],
+            campaign_id=str(ids["east"]),
+            why="User asked to add Raj back to east.",
+        ),
+        call("propose_email", subject="Hi", body="Hi Raj", why="Selection is committed."),
+        final("Raj was stopped in east earlier. Add them back?"),
+    ]
+    t1 = ask(ctx, client_scratch.settings, "add Raj back to east")
+    sid = t1["session_id"]
+    SCRIPT[:] = [
+        call("approve_move", emails=["raj@acme.example.com"], approval_evidence="yes", why="User said yes."),
+        call("propose_email", subject="Hi", body="Hi Raj", why="Re-add approved."),
+        final("Here's the email. Approve it as is, or change something?"),
+    ]
+    t2 = ask(ctx, client_scratch.settings, "yes add him back", session_id=sid)
+    approve = [c["result"] for c in t2["trace"]["tool_log"] if c["tool"] == "approve_move"][0]
+    assert "readds_approved_for" in approve
+    assert "raj@acme.example.com" in approve
+    assert t2["trace"]["email_draft"]
+    SCRIPT[:] = [
+        call("send_approved", approval_evidence="send it", why="User approved the email."),
+        final("Sent."),
+    ]
+    t3 = ask(ctx, client_scratch.settings, "send it", session_id=sid)
+    send = [c["result"] for c in t3["trace"]["tool_log"] if c["tool"] == "send_approved"][0]
+    assert send.startswith("sent:"), send
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.PENDING
+    assert link.last_activity_at == first_sent
+    n = (
+        db.query(CampaignProspect)
+        .filter(CampaignProspect.campaign_id == ids["east"], CampaignProspect.prospect_id == ids["raj"])
+        .count()
+    )
+    assert n == 1
+    db.close()
+
+
+def test_readd_no_changes_nothing(fake_model, acq, client_scratch, ctx_factory):
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+
+    ids = _east_raj(outreach=OutreachStatus.STOPPED)
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "update_selection",
+            recipients=[{"email": "raj@acme.example.com"}],
+            campaign_id=str(ids["east"]),
+            why="User asked to add Raj back to east.",
+        ),
+        call("propose_email", subject="Hi", body="Hi Raj", why="Selection is committed."),
+        final("Raj was stopped in east earlier. Add them back?"),
+    ]
+    t1 = ask(ctx, client_scratch.settings, "add Raj back to east")
+    sid = t1["session_id"]
+    SCRIPT[:] = [
+        call("propose_email", subject="Hi", body="Hi Raj", why="User said no; do not approve."),
+        final("Okay, I won't add Raj back."),
+    ]
+    t2 = ask(ctx, client_scratch.settings, "no don't add him", session_id=sid)
+    propose = [c["result"] for c in t2["trace"]["tool_log"] if c["tool"] == "propose_email"][0]
+    assert "needs_readd_approval" in propose
+    assert "approve_move" not in [c["tool"] for c in t2["trace"]["tool_log"]]
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.STOPPED
+    db.close()
+
+
+def test_readd_refuses_person_who_replied_stop(fake_model, acq, client_scratch, ctx_factory):
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus, ReplyAIStatus
+    from acquisition.models.replies import ReplyConversation
+
+    ids = _east_raj(outreach=OutreachStatus.STOPPED)
+    db = SessionLocal()
+    db.add(
+        ReplyConversation(
+            campaign_prospect_id=ids["link"],
+            status=ReplyAIStatus.STOPPED,
+            latest_incoming_snippet="please stop",
+        )
+    )
+    db.commit()
+    db.close()
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "update_selection",
+            recipients=[{"email": "raj@acme.example.com"}],
+            campaign_id=str(ids["east"]),
+            why="User asked to add Raj back to east.",
+        ),
+        call("propose_email", subject="Hi", body="Hi Raj", why="Selection is committed."),
+        call(
+            "approve_move",
+            emails=["raj@acme.example.com"],
+            approval_evidence="yes",
+            why="Should be refused.",
+        ),
+        final("Raj already replied in east, so I can't add them back."),
+    ]
+    out = ask(ctx, client_scratch.settings, "add Raj back to east")
+    results = {c["tool"]: c["result"] for c in out["trace"]["tool_log"]}
+    assert "refused_person" in results["propose_email"]
+    assert "needs_readd_approval" not in results["propose_email"]
+    assert "move_not_approved" in results["approve_move"]
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.STOPPED
+    db.close()
+
+
+def test_readd_restores_stopped_if_instantly_fails(fake_model, acq, client_scratch, ctx_factory, monkeypatch):
+    from datetime import datetime, timezone
+
+    import pytest
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import CampaignProspect, OutreachStatus
+    from app.assistant.assistant import FulfillError, fulfill_approved_email
+
+    first_sent = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
+    ids = _east_raj(outreach=OutreachStatus.STOPPED, last_activity_at=first_sent, lead_id="L-old")
+    _mock_instantly_send(monkeypatch, synced=0)
+    ctx = ctx_factory(client_scratch, "admin")
+    with pytest.raises(FulfillError):
+        fulfill_approved_email(
+            ctx,
+            {
+                "campaign_id": str(ids["east"]),
+                "campaign_name": "east",
+                "email_address_list": ["raj@acme.example.com"],
+                "readds": ["raj@acme.example.com"],
+                "email_subject": "Hi",
+                "email_body": "Hi Raj",
+                "email_template": True,
+                "campaign_schedule_timing": ["9:00 am", "5:00 pm"],
+            },
+        )
+    db = SessionLocal()
+    link = db.get(CampaignProspect, ids["link"])
+    assert link is not None
+    assert link.outreach_status == OutreachStatus.STOPPED
+    assert link.instantly_lead_id == "L-old"
+    assert link.last_activity_at == first_sent
+    n = (
+        db.query(CampaignProspect)
+        .filter(CampaignProspect.campaign_id == ids["east"], CampaignProspect.prospect_id == ids["raj"])
+        .count()
+    )
+    assert n == 1
+    db.close()
+
+
+def test_never_stopped_person_does_not_need_readd_approval(fake_model, acq, client_scratch, ctx_factory):
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "update_selection",
+            recipients=[{"email": "nina@acme.example.com"}],
+            campaign_name="Fresh",
+            confirmed_new_campaign=True,
+            window_start="9 am",
+            window_end="5 pm",
+            window_evidence="9 am to 5 pm",
+            why="User named Nina and a new campaign.",
+        ),
+        call("propose_email", subject="Hi", body="Hi Nina", why="All set."),
+        final("Here's the email. Approve it as is, or change something?"),
+    ]
+    out = ask(ctx, client_scratch.settings, "email Nina in Fresh, 9 am to 5 pm")
+    results = {c["tool"]: c["result"] for c in out["trace"]["tool_log"]}
+    assert "needs_readd_approval" not in results["propose_email"]
+    assert results["propose_email"].startswith("ok:")
+    assert out["trace"]["email_draft"]
+
+
+def test_update_selection_allows_stopped_person_in_a_different_campaign(
+    fake_model, acq, client_scratch, ctx_factory
+):
+    from acquisition.db.session import SessionLocal
+    from acquisition.models.campaign import Campaign, CampaignProspect, OutreachStatus
+
+    ids = _east_raj(outreach=OutreachStatus.STOPPED)
+    db = SessionLocal()
+    west = Campaign(name="west", sender_name="Me", instantly_campaign_id="ic-west")
+    db.add(west)
+    db.commit()
+    west_id = str(west.id)
+    db.close()
+    ctx = ctx_factory(client_scratch, "admin")
+    SCRIPT[:] = [
+        call(
+            "update_selection",
+            recipients=[{"email": "raj@acme.example.com"}],
+            campaign_id=west_id,
+            why="User asked to add Raj to west.",
+        ),
+        final("Raj is on west."),
+    ]
+    out = ask(ctx, client_scratch.settings, "add Raj to west")
+    result = [c["result"] for c in out["trace"]["tool_log"] if c["tool"] == "update_selection"][0]
+    assert '"ok": true' in result
+    assert "raj@acme.example.com" in result
+    assert '"campaign": "west"' in result
+    db = SessionLocal()
+    east_link = db.get(CampaignProspect, ids["link"])
+    assert east_link is not None
+    assert east_link.outreach_status == OutreachStatus.STOPPED
     db.close()
 
 

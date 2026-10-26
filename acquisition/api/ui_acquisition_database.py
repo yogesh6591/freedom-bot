@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
-from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Form, Request, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
@@ -18,8 +16,6 @@ from acquisition.auth.admin import (
     require_admin_html_request,
 )
 from acquisition.db.session import get_db
-from acquisition.services.acquisition_learning_service import AcquisitionLearningService
-from acquisition.services.icp_settings_service import IcpSettingsService
 from acquisition.services.prospect_database_service import (
     ProspectDatabaseFilters,
     ProspectDatabaseService,
@@ -158,51 +154,10 @@ def acquisition_database_detail(
     response_model=None,
     dependencies=[Depends(require_admin_html_request)],
 )
-def learning_config_save(
-    learning_enabled: Annotated[str | None, Form()] = None,
-    learning_min_sample_size: Annotated[str, Form()] = "25",
-    learning_max_adjustment: Annotated[str, Form()] = "8",
-    learning_model: Annotated[str, Form()] = "gpt-4o-mini",
-    db: Session = Depends(get_db),
-):
-    try:
-        min_n = int((learning_min_sample_size or "25").strip() or "25")
-    except ValueError:
-        min_n = 25
-    try:
-        max_adj = float((learning_max_adjustment or "8").strip() or "8")
-    except ValueError:
-        max_adj = 8.0
-    from acquisition.services.ai_outcome_learning_service import ALLOWED_MODELS
-
-    model = (learning_model or "gpt-4o-mini").strip() or "gpt-4o-mini"
-    if model not in ALLOWED_MODELS:
-        model = "gpt-4o-mini"
-    IcpSettingsService(db).update(
-        learning_enabled=learning_enabled == "true",
-        learning_min_sample_size=min_n,
-        learning_max_adjustment=max_adj,
-        learning_model=model,
-    )
-    return RedirectResponse(
-        url="/settings/ai?flash=learning_saved",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
-
-
 @router.post(
     "/settings/ai/learning-recompute",
     response_model=None,
     dependencies=[Depends(require_admin_html_request)],
 )
-def learning_recompute(db: Session = Depends(get_db)):
-    result = AcquisitionLearningService(db).refresh_all_prospect_adjustments()
-    summary = (
-        f"updated={result.get('updated')} "
-        f"openai_calls={result.get('openai_calls')} "
-        f"profile_v={result.get('learning_profile_version')}"
-    )
-    return RedirectResponse(
-        url=f"/settings/ai?flash=learning_recomputed&summary={quote(summary)}",
-        status_code=status.HTTP_303_SEE_OTHER,
-    )
+def learning_retired():
+    return RedirectResponse(url="/settings/ai?flash=engine_retired", status_code=status.HTTP_303_SEE_OTHER)

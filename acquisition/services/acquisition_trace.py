@@ -111,17 +111,7 @@ def _emit(section: str, message: str = "", **fields: Any) -> None:
     logger.info("\n".join(lines))
 
 
-def _forward_live(section: str, lines: list[str]) -> None:
-    try:
-        from acquisition.services import live_trace
-
-        live_trace.from_acq_block(section, lines)
-    except Exception:  # noqa: BLE001 — never break business logic
-        pass
-
-
 def emit_block(section: str, lines: list[str]) -> None:
-    _forward_live(section, lines)
     if not is_acquisition_trace_enabled():
         return
     _ensure_trace_logger()
@@ -130,9 +120,7 @@ def emit_block(section: str, lines: list[str]) -> None:
 
 
 def trace_icp(icp: dict[str, Any]) -> None:
-    from acquisition.services import live_trace
-
-    if not is_acquisition_trace_enabled() and not live_trace.is_active():
+    if not is_acquisition_trace_enabled():
         return
     geo = icp.get("geography") or {}
     revenue = icp.get("revenue") or {}

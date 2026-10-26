@@ -16,6 +16,8 @@
     <div class="flash">Public research + scoring completed. No Instantly activation.</div>
   {% elif flash == 'research_failed' %}
     <div class="flash flash-error">Research failed; existing prospect data was left unchanged.</div>
+  {% elif flash == 'engine_retired' %}
+    <div class="flash">The old discovery engine is retired. Use Prospecting rules.</div>
   {% endif %}
 {% endblock %}
 
@@ -53,11 +55,6 @@
       <button class="btn btn-primary" type="submit">Save Changes</button>
       <a class="btn btn-ghost" href="/prospects">Cancel</a>
     </div>
-  </form>
-
-  <form method="post" action="/prospects/{{ prospect.id }}/research" class="mt-6">
-    <button class="btn btn-secondary" type="submit">Research + score (public sources)</button>
-    <p class="muted small">Updates structured fields + evidence, then runs ProspectScoringService. Does not send to Instantly.</p>
   </form>
 
   <form method="post" action="/prospects/{{ prospect.id }}/delete" class="mt-6" onsubmit="return confirm('Delete this prospect permanently?');">

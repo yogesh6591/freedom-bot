@@ -40,6 +40,7 @@ from acquisition.models.prospect import (
     Prospect,
     ProspectResearchSource,
 )
+from acquisition.models.prospecting import ProspectingRulesRow, ProspectingRulesVersion
 from acquisition.models.replies import ProviderEvent, ReplyConversation, ReplyMessage
 from acquisition.models.settings import AIReplySettings
 
@@ -79,6 +80,8 @@ __all__ = [
     "MessageType",
     "OutreachStatus",
     "Prospect",
+    "ProspectingRulesRow",
+    "ProspectingRulesVersion",
     "ProspectResearchSource",
     "ProviderEvent",
     "PurchaseOutcome",

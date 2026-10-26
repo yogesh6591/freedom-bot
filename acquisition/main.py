@@ -25,6 +25,7 @@ from acquisition.api import ui_campaigns as ui_campaign_routes
 from acquisition.api import ui_integrations as ui_integrations_routes
 from acquisition.api import ui_journey as ui_journey_routes
 from acquisition.api import ui_outbound as ui_outbound_routes
+from acquisition.api import ui_prospecting as ui_prospecting_routes
 from acquisition.auth.admin import AdminAuthError, assert_admin_auth_config, install_admin_exception_handlers
 from acquisition.config import api_docs_url_kwargs, get_settings, is_non_production_environment
 from acquisition.db.session import check_database_connection
@@ -42,22 +43,7 @@ _docs = api_docs_url_kwargs(settings.environment)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import asyncio
-
-    task = None
-    if settings.autonomous_scheduler_inprocess:
-        from acquisition.services.autonomous_scheduler import autonomous_scheduler_loop
-
-        task = asyncio.create_task(autonomous_scheduler_loop(settings))
-    try:
-        yield
-    finally:
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+    yield
 
 
 app = FastAPI(
@@ -115,6 +101,7 @@ app.include_router(ui_routes.router)
 app.include_router(ui_campaign_routes.router)
 app.include_router(ui_integrations_routes.router)
 app.include_router(ui_outbound_routes.router)
+app.include_router(ui_prospecting_routes.router)
 app.include_router(ui_assessment_routes.router)
 app.include_router(ui_journey_routes.router)
 app.include_router(ui_acquisition_database_routes.router)
@@ -137,44 +124,15 @@ def health():
             },
         )
 
-    payload: dict = {
+    return {
         "status": "healthy",
         "service": settings.app_name,
         "database": "connected",
         "autonomous": {
-            "scheduler_inprocess": bool(settings.autonomous_scheduler_inprocess),
-            "scheduler_approach": "cli_loop_or_optional_inprocess",
+            "retired": True,
+            "scheduler_inprocess": False,
         },
     }
-    try:
-        from acquisition.db.session import SessionLocal
-        from acquisition.services.autonomous_automation_service import AutonomousAutomationService
-
-        with SessionLocal() as db:
-            ops = AutonomousAutomationService(db, settings=settings).operational_status()
-        # Never include secrets; strip provider message verbosity if needed.
-        payload["autonomous"].update(
-            {
-                "engine_enabled": ops.get("engine_enabled"),
-                "discovery_enabled": ops.get("discovery_enabled"),
-                "autonomous_outreach_enabled": ops.get("autonomous_outreach_enabled"),
-                "capacity_state": (ops.get("capacity") or {}).get("state"),
-                "provider_name": (ops.get("provider") or {}).get("provider_name"),
-                "provider_configured": (ops.get("provider") or {}).get("configured"),
-                "provider_mode": ops.get("provider_mode"),
-                "provider_safe_for_production": ops.get("provider_safe_for_production"),
-                "last_discovery_status": (ops.get("last_discovery") or {}).get("status"),
-                "last_discovery_at": (ops.get("last_discovery") or {}).get("completed_at"),
-                "last_successful_live_discovery": ops.get("last_successful_live_discovery"),
-                "last_activation_status": (ops.get("last_activation") or {}).get("status"),
-                "last_activation_at": (ops.get("last_activation") or {}).get("completed_at"),
-                "last_discovery_error": (ops.get("last_discovery") or {}).get("error_summary"),
-                "last_activation_error": (ops.get("last_activation") or {}).get("error_summary"),
-            }
-        )
-    except Exception as exc:  # noqa: BLE001
-        payload["autonomous"]["status_error"] = exc.__class__.__name__
-    return payload
 
 
 # Outermost: rewrite links only when mounted under FreedomBot core.

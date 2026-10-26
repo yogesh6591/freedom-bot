@@ -13,12 +13,15 @@ from acquisition.config import Settings, get_settings
 from acquisition.models.campaign import CampaignProspect, OutreachStatus, PurchaseOutcome
 from acquisition.models.prospect import AcquisitionStatus, Prospect
 from acquisition.models.replies import ReplyConversation
-from acquisition.services.icp_settings_service import IcpSettingsService
 from acquisition.services.outreach_conflict_service import (
     find_active_outreach_conflict,
     normalize_outreach_email,
 )
 from acquisition.services.prospect_identity import is_placeholder_email
+from acquisition.services.prospecting_rules_service import (
+    ProspectingRulesService,
+    get_prospecting_rules,
+)
 
 
 @dataclass(slots=True)
@@ -48,7 +51,6 @@ class ProspectPriorityQueueService:
     def __init__(self, db: Session, *, settings: Settings | None = None) -> None:
         self.db = db
         self.settings = settings or get_settings()
-        self.icp = IcpSettingsService(db)
 
     def evaluate_eligibility(self, prospect: Prospect) -> QueueEligibility:
         reasons: list[str] = []
@@ -100,12 +102,6 @@ class ProspectPriorityQueueService:
     def build_activation_queue(self, *, limit: int | None = None) -> dict[str, Any]:
         """Return ranked eligible prospects + skipped with reasons."""
         cap = self._effective_limit(limit)
-        learning_on = bool(self.icp.as_dict().get("learning_enabled"))
-        learning_svc = None
-        if learning_on:
-            from acquisition.services.acquisition_learning_service import AcquisitionLearningService
-
-            learning_svc = AcquisitionLearningService(self.db, settings=self.settings)
         rows = list(
             self.db.scalars(
                 select(Prospect)
@@ -118,35 +114,18 @@ class ProspectPriorityQueueService:
         for prospect in rows:
             verdict = self.evaluate_eligibility(prospect)
             base_priority = float(prospect.priority_score or 0.0)
-            use_effective = bool(
-                learning_svc and learning_svc.has_valid_ai_adjustment(prospect)
-            )
-            effective = (
-                float(prospect.effective_priority_score)
-                if use_effective and prospect.effective_priority_score is not None
-                else base_priority
-            )
             entry = QueueEntry(
                 prospect_id=prospect.id,
                 company=prospect.company,
                 email=prospect.email,
-                priority_score=effective,
+                priority_score=base_priority,
                 fit_score=prospect.fit_score,
                 timing_score=prospect.timing_score,
                 reachability_score=prospect.reachability_score,
                 acquisition_status=(
                     prospect.acquisition_status.value if prospect.acquisition_status else ""
                 ),
-                inclusion_reasons=list(verdict.reasons)
-                + (
-                    [
-                        f"base_priority={base_priority:.1f}",
-                        f"effective_priority={effective:.1f}",
-                        f"learning_adjustment={float(prospect.learning_adjustment or 0):+.1f}",
-                    ]
-                    if use_effective
-                    else []
-                ),
+                inclusion_reasons=list(verdict.reasons),
                 exclusion_reasons=list(verdict.exclusion_reasons),
             )
             if verdict.eligible:
@@ -154,7 +133,6 @@ class ProspectPriorityQueueService:
             else:
                 skipped.append(entry)
 
-        # Rank by effective priority when valid AI learning exists; else base priority.
         included.sort(
             key=lambda e: (
                 e.priority_score,
@@ -178,12 +156,21 @@ class ProspectPriorityQueueService:
             "skipped_count": len(skipped),
         }
 
+    def _rules(self):
+        try:
+            return ProspectingRulesService(self.db).current()
+        except Exception:  # noqa: BLE001
+            return get_prospecting_rules()
+
     def _effective_limit(self, limit: int | None) -> int:
-        icp = self.icp.as_dict()
-        configured = int(icp.get("activation_batch_limit") or 5)
+        rules = self._rules()
         hard = int(self.settings.activation_batch_hard_max or 25)
-        requested = configured if limit is None else int(limit)
-        return max(1, min(requested, hard))
+        if limit is not None:
+            return max(0, min(int(limit), hard))
+        if not rules.outreach_enabled:
+            return 0
+        configured = int(rules.outreach_daily_cap or 0)
+        return max(0, min(configured, hard))
 
     def _is_customer(self, prospect: Prospect) -> bool:
         email = normalize_outreach_email(prospect.email)

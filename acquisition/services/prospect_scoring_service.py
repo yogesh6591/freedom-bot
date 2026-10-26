@@ -1,7 +1,7 @@
-"""Deterministic V1 prospect scoring for autonomous acquisition.
+"""Deterministic prospect scoring.
 
-Operates only on structured data present on the Prospect (+ ICP settings).
-Does not invent research. Future research engines call the same service.
+Operates only on structured data present on the Prospect plus Prospecting rules.
+Does not invent research.
 """
 
 from __future__ import annotations
@@ -13,7 +13,11 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from acquisition.models.prospect import AcquisitionStatus, Prospect
-from acquisition.services.icp_settings_service import IcpSettingsService
+from acquisition.services.prospecting_rules_service import (
+    ProspectingRules,
+    ProspectingRulesService,
+    get_prospecting_rules,
+)
 
 from acquisition.services import acquisition_trace as acq_trace
 
@@ -42,6 +46,73 @@ _TIMING_KEYWORDS = (
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, value))
+
+
+DEFAULT_SCORE_WEIGHTS: dict[str, Any] = {
+    "fit": 0.45,
+    "timing": 0.25,
+    "reachability": 0.30,
+    "ready_for_outreach_min_priority": 55,
+    "ready_for_outreach_min_reachability": 40,
+    "allow_generic_inbox": False,
+    "outreach_channel": "email",
+}
+
+
+def _load_rules(db: Session) -> ProspectingRules:
+    try:
+        return ProspectingRulesService(db).current()
+    except Exception:  # noqa: BLE001
+        return get_prospecting_rules()
+
+
+def _dollars_to_millions(value: int) -> float:
+    return float(value) / 1_000_000.0
+
+
+def _targeting_cfg(rules: ProspectingRules) -> dict[str, Any]:
+    country = (rules.country or "").strip() or "United States"
+    nationwide = country.casefold() in {"united states", "usa", "us"}
+    keywords: list[str] = []
+    names: list[str] = []
+    for cat in rules.categories or []:
+        if cat.name:
+            names.append(cat.name)
+        keywords.extend(str(k) for k in (cat.keywords or []) if k)
+    return {
+        "geography": {
+            "countries": [country],
+            "nationwide": nationwide,
+            "states": [],
+            "cities": [],
+        },
+        "revenue": {
+            "primary_min_millions": _dollars_to_millions(rules.revenue_min),
+            "primary_max_millions": _dollars_to_millions(rules.revenue_max),
+            "sweet_spot_min_millions": _dollars_to_millions(rules.revenue_sweet_min),
+            "sweet_spot_max_millions": _dollars_to_millions(rules.revenue_sweet_max),
+            "allow_strong_fit_outside_band": bool(rules.revenue_is_soft),
+        },
+        "buyer_titles": list(rules.titles or []),
+        "priority_categories": names,
+        "fit_themes": keywords,
+        "excluded_categories": list(rules.exclusions or []),
+        "score_weights": dict(DEFAULT_SCORE_WEIGHTS),
+        "employees_min": int(rules.employees_min),
+        "employees_max": int(rules.employees_max),
+        "require_verified_email": bool(rules.require_verified_email),
+    }
+
+
+def _parse_headcount(band: str | None) -> float | None:
+    if not band:
+        return None
+    nums = [float(m.group(1)) for m in re.finditer(r"(\d+(?:\.\d+)?)", str(band).replace(",", ""))]
+    if not nums:
+        return None
+    if len(nums) == 1:
+        return nums[0]
+    return (nums[0] + nums[1]) / 2.0
 
 
 def _parse_revenue_millions(band: str | None) -> float | None:
@@ -80,10 +151,10 @@ def _text_blob(prospect: Prospect) -> str:
 class ProspectScoringService:
     def __init__(self, db: Session) -> None:
         self.db = db
-        self.icp = IcpSettingsService(db)
 
     def score_prospect(self, prospect: Prospect, *, persist: bool = True) -> dict[str, Any]:
-        cfg = self.icp.as_dict()
+        rules = _load_rules(self.db)
+        cfg = _targeting_cfg(rules)
         fit = self._score_fit(prospect, cfg)
         timing = self._score_timing(prospect, cfg)
         reach = self._score_reachability(prospect, cfg)
@@ -163,6 +234,12 @@ class ProspectScoringService:
             status = AcquisitionStatus.UNREACHABLE
         elif priority >= ready_min_priority and reach["score"] >= ready_min_reach:
             status = AcquisitionStatus.READY_FOR_OUTREACH
+            if cfg.get("require_verified_email") and conf_label not in {
+                "high",
+                "validated",
+                "verified",
+            }:
+                status = AcquisitionStatus.SCORED
         elif fit["score"] < 35 and confidence < 40:
             status = AcquisitionStatus.NEEDS_MORE_RESEARCH
         else:
@@ -200,41 +277,18 @@ class ProspectScoringService:
             prospect.scored_at = datetime.now(timezone.utc)
             # Do not downgrade approval; only advance acquisition_status when scoring.
             prospect.acquisition_status = status
+            prospect.effective_priority_score = round(priority, 2)
             self.db.add(prospect)
             self.db.commit()
             self.db.refresh(prospect)
+        else:
+            prospect.effective_priority_score = round(priority, 2)
 
-        # Apply a bounded learning adjustment without overwriting the base Priority Score.
-        from acquisition.services.acquisition_learning_service import AcquisitionLearningService
-
-        learning = AcquisitionLearningService(self.db).apply_learning_to_prospect(
-            prospect, persist=persist
-        )
-        result["learning"] = learning
         result["effective_priority"] = {
-            "score": learning["effective_priority_score"],
-            "adjustment": learning["learning_adjustment"],
-            "reasons": learning["reasons"],
-            "confidence": learning.get("confidence"),
-            "model": learning.get("model"),
+            "score": round(priority, 2),
+            "adjustment": 0.0,
+            "reasons": [],
         }
-        if not persist:
-            # Still expose computed values on the in-memory prospect.
-            prospect.learning_adjustment = float(learning["learning_adjustment"])
-            prospect.learning_adjustment_reasons = list(learning["reasons"])
-            prospect.effective_priority_score = float(learning["effective_priority_score"])
-            if learning.get("confidence") is not None:
-                prospect.learning_confidence = float(learning["confidence"])
-            prospect.learning_model = learning.get("model")
-            prospect.learning_profile_version = learning.get("learning_profile_version")
-            prospect.learning_prompt_version = learning.get("prompt_version")
-            if learning.get("historical_sample_size") is not None:
-                prospect.learning_historical_sample_size = int(
-                    learning["historical_sample_size"]
-                )
-            patterns = learning.get("matched_patterns") or learning.get("supporting_patterns")
-            if patterns is not None:
-                prospect.learning_matched_patterns = list(patterns)
 
         return result
 
@@ -324,6 +378,21 @@ class ProspectScoringService:
             reasons.append("Title present but not clear highest-authority match")
         else:
             reasons.append("Decision-maker title unknown (not disqualifying)")
+
+        headcount = _parse_headcount(prospect.headcount_band)
+        emp_min = int(cfg.get("employees_min") or 0)
+        emp_max = int(cfg.get("employees_max") or 0)
+        if headcount is None:
+            reasons.append("Headcount unknown (not disqualifying)")
+        elif emp_min or emp_max:
+            hi = emp_max if emp_max else headcount
+            lo = emp_min
+            if lo <= headcount <= hi:
+                score += 10
+                reasons.append(f"Headcount ~{headcount:.0f} in range")
+            else:
+                score -= 8
+                reasons.append(f"Headcount ~{headcount:.0f} outside {lo}–{hi}")
 
         # Priority categories boost
         for cat in cfg.get("priority_categories") or []:

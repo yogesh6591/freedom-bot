@@ -536,20 +536,9 @@ def prospect_delete(
 @router.post("/prospects/{prospect_id}/research")
 def prospect_research_and_score(
     prospect_id: uuid.UUID,
-    db: Session = Depends(get_db),
 ) -> RedirectResponse:
-    """Admin/dev: re-research one prospect and score. No Instantly push."""
-    from acquisition.services.acquisition_orchestration_service import AcquisitionOrchestrationService
-
-    try:
-        result = AcquisitionOrchestrationService(db).research_and_score_prospect(prospect_id)
-    except ProspectNotFoundError:
-        return RedirectResponse(
-            url="/prospects?tab=inbox&flash=not_found",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-    flash = "researched" if result.get("ok") else "research_failed"
+    """Old-engine research path is retired."""
     return RedirectResponse(
-        url=f"/prospects/{prospect_id}?flash={flash}",
+        url=f"/prospects/{prospect_id}?flash=engine_retired",
         status_code=status.HTTP_303_SEE_OTHER,
     )

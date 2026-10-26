@@ -1,9 +1,7 @@
-"""Configurable ICP + autonomous engine settings singleton."""
+"""Read-only access to the retired icp_settings row. The table is kept; nothing writes it."""
 
 from __future__ import annotations
 
-import json
-import uuid
 from copy import deepcopy
 from typing import Any
 
@@ -73,12 +71,9 @@ DEFAULT_SCORE_WEIGHTS: dict[str, Any] = {
     "reachability": 0.30,
     "ready_for_outreach_min_priority": 55,
     "ready_for_outreach_min_reachability": 40,
-    # Email outreach: whether info@/hello@/etc. counts as a ready contact path.
     "allow_generic_inbox": False,
     "outreach_channel": "email",
 }
-
-_BOOL_TRUE = {"1", "true", "yes", "on"}
 
 
 def default_icp_payload() -> dict[str, Any]:
@@ -91,134 +86,47 @@ def default_icp_payload() -> dict[str, Any]:
         "excluded_categories": list(DEFAULT_EXCLUDED_CATEGORIES),
         "score_weights": deepcopy(DEFAULT_SCORE_WEIGHTS),
         "notes": (
-            "V1 ICP for JeanneCAIO / FreedomBot autonomous acquisition. "
-            "US nationwide; not restricted to Chicago. Editable without code changes."
+            "Retired ICP row. Targeting now lives in Prospecting rules. "
+            "This table is not written."
         ),
     }
-
-
-def _as_bool(value: Any, default: bool = False) -> bool:
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    return str(value).strip().lower() in _BOOL_TRUE
 
 
 class IcpSettingsService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def get_or_create(self) -> IcpSettings:
-        row = self.db.get(IcpSettings, 1)
-        if row is not None:
-            return row
-        defaults = default_icp_payload()
-        row = IcpSettings(
-            id=1,
-            **{k: defaults[k] for k in defaults if k != "notes"},
-            notes=defaults["notes"],
-        )
-        self.db.add(row)
-        self.db.commit()
-        self.db.refresh(row)
-        return row
-
-    def update(self, **fields: Any) -> IcpSettings:
-        row = self.get_or_create()
-        allowed = {
-            "geography",
-            "revenue",
-            "buyer_titles",
-            "fit_themes",
-            "priority_categories",
-            "excluded_categories",
-            "score_weights",
-            "notes",
-            "autonomous_campaign_id",
-            "activation_batch_limit",
-            "engine_enabled",
-            "discovery_enabled",
-            "discovery_cycle_limit",
-            "discovery_interval_minutes",
-            "discovery_sources",
-            "autonomous_outreach_enabled",
-            "activation_interval_minutes",
-            "capacity_mode",
-            "capacity_upcoming_meetings_reduced_at",
-            "capacity_upcoming_meetings_paused_at",
-            "capacity_reduced_activation_limit",
-            "allow_mock_discovery_in_production",
-            "learning_enabled",
-            "learning_min_sample_size",
-            "learning_max_adjustment",
-            "learning_metrics_json",
-            "learning_recomputed_at",
-            "learning_profile_version",
-            "learning_model",
-        }
-        for key, value in fields.items():
-            if key not in allowed:
-                continue
-            if key in {"buyer_titles", "fit_themes", "priority_categories", "excluded_categories"}:
-                if isinstance(value, str):
-                    value = [line.strip() for line in value.splitlines() if line.strip()]
-            if key in {"geography", "revenue", "score_weights"} and isinstance(value, str):
-                value = json.loads(value)
-            if key == "autonomous_campaign_id":
-                if value in (None, "", "none"):
-                    value = None
-                elif isinstance(value, str):
-                    value = uuid.UUID(value)
-            if key in {
-                "activation_batch_limit",
-                "discovery_cycle_limit",
-                "discovery_interval_minutes",
-                "activation_interval_minutes",
-                "capacity_upcoming_meetings_reduced_at",
-                "capacity_upcoming_meetings_paused_at",
-                "capacity_reduced_activation_limit",
-                "learning_min_sample_size",
-            }:
-                value = max(0, int(value or 0))
-                if key.endswith("_limit") or key.endswith("_minutes"):
-                    value = max(1, value) if "interval" in key or "batch" in key or "cycle" in key or "reduced_activation" in key else value
-                if key == "capacity_reduced_activation_limit":
-                    value = max(0, int(value))
-                if key in {"discovery_cycle_limit", "activation_batch_limit"}:
-                    value = max(1, int(value or 5))
-                if "interval_minutes" in key:
-                    value = max(1, int(value or 1440))
-                if key == "learning_min_sample_size":
-                    value = max(1, min(500, int(value or 25)))
-            if key == "learning_max_adjustment":
-                value = max(0.0, min(25.0, float(value or 8)))
-            if key == "learning_profile_version":
-                value = max(0, int(value or 0))
-            if key == "learning_model":
-                from acquisition.services.ai_outcome_learning_service import ALLOWED_MODELS
-
-                text = str(value or "gpt-4o-mini").strip() or "gpt-4o-mini"
-                value = text if text in ALLOWED_MODELS else "gpt-4o-mini"
-            if key in {
-                "engine_enabled",
-                "discovery_enabled",
-                "autonomous_outreach_enabled",
-                "allow_mock_discovery_in_production",
-                "learning_enabled",
-            }:
-                value = _as_bool(value, default=False)
-            if key == "capacity_mode":
-                mode = str(value or "auto").strip().lower()
-                value = mode if mode in {"auto", "normal", "reduced", "paused"} else "auto"
-            setattr(row, key, value)
-        self.db.add(row)
-        self.db.commit()
-        self.db.refresh(row)
-        return row
+    def get(self) -> IcpSettings | None:
+        return self.db.get(IcpSettings, 1)
 
     def as_dict(self) -> dict[str, Any]:
-        row = self.get_or_create()
+        row = self.get()
+        if row is None:
+            defaults = default_icp_payload()
+            return {
+                **defaults,
+                "autonomous_campaign_id": None,
+                "activation_batch_limit": 5,
+                "engine_enabled": False,
+                "discovery_enabled": False,
+                "discovery_cycle_limit": 5,
+                "discovery_interval_minutes": 1440,
+                "autonomous_outreach_enabled": False,
+                "activation_interval_minutes": 1440,
+                "capacity_mode": "auto",
+                "capacity_upcoming_meetings_reduced_at": 5,
+                "capacity_upcoming_meetings_paused_at": 10,
+                "capacity_reduced_activation_limit": 2,
+                "allow_mock_discovery_in_production": False,
+                "learning_enabled": False,
+                "learning_min_sample_size": 25,
+                "learning_max_adjustment": 8.0,
+                "learning_metrics_json": None,
+                "learning_recomputed_at": None,
+                "learning_profile_version": 0,
+                "learning_model": "gpt-4o-mini",
+                "updated_at": None,
+            }
         return {
             "geography": row.geography or deepcopy(DEFAULT_GEOGRAPHY),
             "revenue": row.revenue or deepcopy(DEFAULT_REVENUE),
@@ -232,7 +140,6 @@ class IcpSettingsService:
                 str(row.autonomous_campaign_id) if row.autonomous_campaign_id else None
             ),
             "activation_batch_limit": int(row.activation_batch_limit or 5),
-            # Legacy master flag is derived from the two production controls.
             "engine_enabled": bool(row.discovery_enabled or row.autonomous_outreach_enabled),
             "discovery_enabled": bool(row.discovery_enabled),
             "discovery_cycle_limit": int(row.discovery_cycle_limit or 5),
