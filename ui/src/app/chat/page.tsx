@@ -25,10 +25,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
+  Plug,
   Plus,
   Search,
+  Settings,
   ShieldCheck,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
 import { api, ApiError } from '@/lib/api'
@@ -48,6 +51,7 @@ import { useDebug } from '@/lib/debug'
 import { usePanel } from '@/lib/panel'
 import { BrandMark } from '@/components/BrandMark'
 import { SidebarSwitch } from '@/components/SidebarSwitch'
+import { IntegrationsView } from '@/components/IntegrationsView'
 
 interface Turn {
   id?: string
@@ -602,6 +606,8 @@ function ChatView() {
   const chatHome = usePanel() === 'chat'
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [historyQuery, setHistoryQuery] = useState('')
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [integrationsOpen, setIntegrationsOpen] = useState(false)
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
   const storageKey = me ? `bizos:chat:${me.client.id}:${me.user.id}` : null
@@ -757,6 +763,22 @@ function ChatView() {
       setSidebarOpen(true)
     }
   }, [])
+
+  // Back from a Composio sign-in (?connected=<toolkit>): reopen Integrations so the new connection shows.
+  useEffect(() => {
+    if (chatHome && new URLSearchParams(window.location.search).has('connected')) setIntegrationsOpen(true)
+  }, [chatHome])
+
+  useEffect(() => {
+    if (!settingsOpen && !integrationsOpen) return
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      setSettingsOpen(false)
+      setIntegrationsOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [settingsOpen, integrationsOpen])
 
   function toggleSidebar() {
     setSidebarOpen((open) => {
@@ -1076,7 +1098,7 @@ function ChatView() {
               onChange={setDebug}
               title="Show which tools the assistant called"
             />
-            <div className="mt-2 flex items-center gap-2.5">
+            <div className="relative mt-2 flex items-center gap-2.5">
               <div
                 className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white"
                 aria-hidden
@@ -1086,6 +1108,54 @@ function ChatView() {
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-semibold text-primary">{me?.user.display_name}</p>
                 <p className="truncate text-[11px] text-muted">{me?.client.company_name}</p>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  className={`inline-flex h-9 w-9 items-center justify-center rounded-lg hover:bg-background-elevated hover:text-primary ${
+                    settingsOpen ? 'bg-background-elevated text-primary' : 'text-muted'
+                  }`}
+                  title="Settings"
+                  aria-label="Settings"
+                  aria-haspopup="menu"
+                  aria-expanded={settingsOpen}
+                  onClick={() => setSettingsOpen((open) => !open)}
+                >
+                  <Settings size={16} />
+                </button>
+                {settingsOpen && (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Close settings"
+                      className="fixed inset-0 z-40 cursor-default"
+                      onClick={() => setSettingsOpen(false)}
+                    />
+                    <div
+                      role="menu"
+                      className="absolute bottom-12 left-0 right-0 z-50 rounded-xl border border-border bg-background-secondary p-1.5 shadow-lift"
+                    >
+                      <p className="px-2.5 pb-1 pt-1.5 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted">
+                        Settings
+                      </p>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-primary hover:bg-background-elevated"
+                        onClick={() => {
+                          setSettingsOpen(false)
+                          setIntegrationsOpen(true)
+                        }}
+                      >
+                        <Plug size={15} className="text-brand" aria-hidden />
+                        <span className="min-w-0">
+                          <span className="block font-medium">Integrations</span>
+                          <span className="block text-[11px] text-muted">Gmail, Calendar, YouTube, HubSpot</span>
+                        </span>
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
               <button
                 type="button"
@@ -1634,6 +1704,44 @@ function ChatView() {
           </div>
         </div>
       </section>
+
+      {chatHome && integrationsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close integrations"
+            className="absolute inset-0 bg-[#06070d]/55 backdrop-blur-sm"
+            onClick={() => setIntegrationsOpen(false)}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Integrations"
+            className="relative flex max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-lift"
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/10 text-brand">
+                <Plug size={17} aria-hidden />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold text-primary">Integrations</p>
+                <p className="text-[12px] text-muted">Your own accounts, connected through Composio</p>
+              </div>
+              <button
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
+                aria-label="Close"
+                onClick={() => setIntegrationsOpen(false)}
+              >
+                <X size={17} />
+              </button>
+            </div>
+            <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-5">
+              <IntegrationsView callbackPath="/chat" compact />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
