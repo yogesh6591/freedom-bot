@@ -54,11 +54,6 @@ export function useDebug(): [boolean, (next: boolean) => void] {
   return useStoredSwitch('bizos:debug')
 }
 
-/** The Acquisition pages switch, read synchronously (for redirects that cannot wait a render). */
-export function readShowAcquisition(): boolean {
-  return read('bizos:show-acquisition')
-}
-
 export function useShowAcquisition(): [boolean, (next: boolean) => void] {
   return useStoredSwitch('bizos:show-acquisition')
 }

@@ -13,9 +13,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowUp,
+  Bug,
   ChevronDown,
   ChevronUp,
   History,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
   ShieldCheck,
@@ -36,6 +40,9 @@ import type {
 import { Badge, Btn, ErrorNote } from '@/components/common/primitives'
 import { EmailCard } from './EmailCard'
 import { useDebug } from '@/lib/debug'
+import { usePanel } from '@/lib/panel'
+import { BrandMark } from '@/components/BrandMark'
+import { SidebarSwitch } from '@/components/SidebarSwitch'
 
 interface Turn {
   id?: string
@@ -555,8 +562,11 @@ function whenLabel(iso: string | null): string {
 }
 
 function ChatView() {
-  const { me, hasRole } = useSession()
+  const { me, hasRole, logout } = useSession()
   const canAcquire = hasRole('ADMIN')
+  // Home chat (signed in from home, lib/panel.ts): conversations in a sidebar and nothing but the chat.
+  const chatHome = usePanel() === 'chat'
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
   const storageKey = me ? `bizos:chat:${me.client.id}:${me.user.id}` : null
@@ -574,7 +584,7 @@ function ChatView() {
   const [sessionId, setSessionId] = useState<string | undefined>()
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [developer, setDeveloper] = useState(false)
-  const [debug] = useDebug()
+  const [debug, setDebug] = useDebug()
   const [acquisition, setAcquisition] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -703,6 +713,26 @@ function ChatView() {
     } catch (err) {
       setHistoryError(err instanceof Error ? err.message : 'Could not delete the conversation')
     }
+  }
+
+  useEffect(() => {
+    try {
+      setSidebarOpen(localStorage.getItem('bizos:chat:sidebar') !== 'closed')
+    } catch {
+      setSidebarOpen(true)
+    }
+  }, [])
+
+  function toggleSidebar() {
+    setSidebarOpen((open) => {
+      const next = !open
+      try {
+        localStorage.setItem('bizos:chat:sidebar', next ? 'open' : 'closed')
+      } catch {
+        /* storage blocked: still toggles for this page */
+      }
+      return next
+    })
   }
 
   function startNewConversation() {
@@ -840,9 +870,128 @@ function ChatView() {
     }
   ]
 
+  const conversationList = (
+    <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-3">
+      {historyError && <ErrorNote>{historyError}</ErrorNote>}
+      {!historyError && history.length === 0 && (
+        <p className="px-3 py-6 text-center text-[12px] leading-6 text-muted">
+          Your conversations will appear here once you begin.
+        </p>
+      )}
+      <div className="space-y-1">
+        {history.map((item) => (
+          <div
+            key={item.session_id}
+            className={`flex items-stretch rounded-lg transition-colors ${
+              item.session_id === sessionId
+                ? 'border border-purple-200 bg-purple-50'
+                : 'border border-transparent hover:bg-background-elevated'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => void openSession(item.session_id)}
+              aria-current={
+                item.session_id === sessionId ? 'true' : undefined
+              }
+              className="min-w-0 flex-1 rounded-lg px-3 py-3 text-left focus-visible:outline-brand"
+            >
+              <span
+                className={`block truncate text-[12px] font-semibold ${item.session_id === sessionId ? 'text-brand' : 'text-primary'}`}
+              >
+                {item.title || 'Untitled conversation'}
+              </span>
+              <span className="mt-1 block text-[11px] text-muted">
+                {whenLabel(item.updated_at)}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="mr-1 flex w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:text-red-600 focus-visible:outline-brand"
+              aria-label={`Delete ${item.title || 'conversation'}`}
+              title="Delete conversation"
+              onClick={() => void deleteConversation(item.session_id)}
+            >
+              <Trash2 size={15} aria-hidden />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  const initials = (me?.user.display_name?.trim() || 'U')
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('')
+    .toUpperCase()
+
   return (
     <div className="assistant-stage relative flex h-full min-h-0 flex-1 overflow-hidden">
-      {historyOpen && (
+      {chatHome && sidebarOpen && (
+        <aside
+          aria-label="Conversations"
+          className="flex w-[280px] shrink-0 flex-col border-r border-border bg-background-secondary"
+        >
+          <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-4">
+            <BrandMark className="h-8 w-8" />
+            <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-primary">FreedomBot</span>
+            <button
+              type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-border text-secondary hover:border-purple-300 hover:text-brand"
+              title="New conversation"
+              aria-label="New conversation"
+              onClick={() => {
+                startNewConversation()
+                inputRef.current?.focus()
+              }}
+            >
+              <Plus size={17} />
+            </button>
+            <button
+              type="button"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
+              title="Hide conversations"
+              aria-label="Hide conversations"
+              onClick={toggleSidebar}
+            >
+              <PanelLeftClose size={17} />
+            </button>
+          </div>
+          {conversationList}
+          <div className="shrink-0 border-t border-border px-4 pb-4 pt-3">
+            <SidebarSwitch
+              label="Debug"
+              icon={Bug}
+              on={debug}
+              onChange={setDebug}
+              title="Show which tools the assistant called"
+            />
+            <div className="mt-2 flex items-center gap-2.5">
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white"
+                aria-hidden
+              >
+                {initials}
+              </div>
+              <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-primary">
+                {me?.user.display_name}
+              </p>
+              <button
+                type="button"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
+                title="Sign out"
+                aria-label="Sign out"
+                onClick={() => void logout()}
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          </div>
+        </aside>
+      )}
+      {!chatHome && historyOpen && (
         <button
           type="button"
           aria-label="Close conversations"
@@ -850,6 +999,7 @@ function ChatView() {
           onClick={() => setHistoryOpen(false)}
         />
       )}
+      {!chatHome && (
       <aside
         id="chat-conversations-panel"
         aria-label="Conversation history"
@@ -879,53 +1029,7 @@ function ChatView() {
             <Plus size={17} />
           </button>
         </div>
-        <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-3">
-          {historyError && <ErrorNote>{historyError}</ErrorNote>}
-          {!historyError && history.length === 0 && (
-            <p className="px-3 py-6 text-center text-[12px] leading-6 text-muted">
-              Your conversations will appear here once you begin.
-            </p>
-          )}
-          <div className="space-y-1">
-            {history.map((item) => (
-              <div
-                key={item.session_id}
-                className={`flex items-stretch rounded-lg transition-colors ${
-                  item.session_id === sessionId
-                    ? 'border border-purple-200 bg-purple-50'
-                    : 'border border-transparent hover:bg-background-elevated'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => void openSession(item.session_id)}
-                  aria-current={
-                    item.session_id === sessionId ? 'true' : undefined
-                  }
-                  className="min-w-0 flex-1 rounded-lg px-3 py-3 text-left focus-visible:outline-brand"
-                >
-                  <span
-                    className={`block truncate text-[12px] font-semibold ${item.session_id === sessionId ? 'text-brand' : 'text-primary'}`}
-                  >
-                    {item.title || 'Untitled conversation'}
-                  </span>
-                  <span className="mt-1 block text-[11px] text-muted">
-                    {whenLabel(item.updated_at)}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="mr-1 flex w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:text-red-600 focus-visible:outline-brand"
-                  aria-label={`Delete ${item.title || 'conversation'}`}
-                  title="Delete conversation"
-                  onClick={() => void deleteConversation(item.session_id)}
-                >
-                  <Trash2 size={15} aria-hidden />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
+        {conversationList}
         <div className="border-t border-border px-4 py-3">
           <div className="flex items-start gap-2 text-[11px] leading-[1.65] text-muted">
             <ShieldCheck
@@ -937,6 +1041,7 @@ function ChatView() {
           </div>
         </div>
       </aside>
+      )}
 
       <section
         className="flex min-w-0 flex-1 flex-col"
@@ -945,6 +1050,31 @@ function ChatView() {
         <header className="shrink-0 px-3 pt-3 sm:px-5">
           <div className="assistant-glass flex h-14 w-full items-center justify-between gap-3 rounded-2xl px-3">
             <div className="flex min-w-0 items-center gap-2.5 pl-1">
+              {chatHome && !sidebarOpen && (
+                <>
+                  <button
+                    type="button"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
+                    title="Show conversations"
+                    aria-label="Show conversations"
+                    onClick={toggleSidebar}
+                  >
+                    <PanelLeftOpen size={17} />
+                  </button>
+                  <button
+                    type="button"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
+                    title="New conversation"
+                    aria-label="New conversation"
+                    onClick={() => {
+                      startNewConversation()
+                      inputRef.current?.focus()
+                    }}
+                  >
+                    <Plus size={17} />
+                  </button>
+                </>
+              )}
               <span className="assistant-orb h-8 w-8 shrink-0 rounded-full" aria-hidden />
               <span className="min-w-0">
                 <span className="block truncate text-[14px] font-semibold tracking-tight text-primary">
@@ -977,6 +1107,8 @@ function ChatView() {
                 <span className="hidden sm:inline">Acquisition</span>
               </button>
             )}
+            {!chatHome && (
+            <>
             <button
               type="button"
               role="switch"
@@ -1036,11 +1168,13 @@ function ChatView() {
               <span className="hidden sm:inline">New chat</span>
               <span className="sm:hidden">New</span>
             </Btn>
+            </>
+            )}
           </div>
           </div>
         </header>
 
-        {alerts.length > 0 && (
+        {!chatHome && alerts.length > 0 && (
           <div className="shrink-0 border-b border-warning/20 bg-warning/5 px-4 py-2.5 sm:px-7">
             <button
               type="button"
@@ -1258,7 +1392,7 @@ function ChatView() {
                       {debug && turn.response ? (
                         <ToolsCalled activity={turn.response.tool_activity ?? []} />
                       ) : null}
-                      {developer && turn.trace ? (
+                      {developer && !chatHome && turn.trace ? (
                         <TurnTrace trace={turn.trace} response={turn.response} />
                       ) : null}
                     </div>

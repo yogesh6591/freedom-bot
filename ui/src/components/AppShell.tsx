@@ -8,8 +8,9 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { readShowAcquisition, useDebug, useShowAcquisition } from '@/lib/debug'
+import { useDebug, useShowAcquisition } from '@/lib/debug'
 import { usePanel } from '@/lib/panel'
+import { SidebarSwitch } from '@/components/SidebarSwitch'
 import { useEffect, useRef, useState } from 'react'
 import {
   BookOpenText,
@@ -137,43 +138,6 @@ const AREA_LABEL: Record<string, string> = {
   strategy: 'Strategy'
 }
 
-/** A small on/off row for the sidebar footer (Debug, Acquisition pages). */
-function SidebarSwitch({
-  label,
-  icon: Icon,
-  on,
-  onChange,
-  title
-}: {
-  label: string
-  icon: LucideIcon
-  on: boolean
-  onChange: (next: boolean) => void
-  title: string
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={() => onChange(!on)}
-      title={title}
-      className="mb-2 flex w-full items-center gap-2 rounded-lg border border-border bg-background-elevated px-3 py-2 text-[12px] font-semibold text-secondary hover:text-primary"
-    >
-      <Icon size={14} aria-hidden />
-      <span className="flex-1 text-left">{label}</span>
-      <span
-        className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${on ? 'bg-brand' : 'bg-border'}`}
-        aria-hidden
-      >
-        <span
-          className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${on ? 'translate-x-3.5' : 'translate-x-0.5'}`}
-        />
-      </span>
-    </button>
-  )
-}
-
 function accessLabel(me: Me): string {
   if (me.user.primary_role === 'ADMIN' || me.user.roles.includes('ADMIN'))
     return 'Administrator'
@@ -203,16 +167,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!loading && !me) router.replace(pathname.startsWith('/admin') ? '/login?panel=full' : '/login')
   }, [loading, me, router, pathname])
-  // Chat-only: the assistant, plus the acquisition pages when that switch is on. /admin asks for the
-  // password again and opens every page.
+  // Chat home shows only the assistant. /admin asks for the password again and opens every page.
   useEffect(() => {
     if (!me || panel !== 'chat') return
-    const onChat = pathname === '/chat' || pathname.startsWith('/chat/')
-    const onAcquisition = pathname === '/acquisition' || pathname.startsWith('/acquisition/')
-    const acquisitionOk = onAcquisition && readShowAcquisition() && me.user.roles.includes('ADMIN')
-    if (onChat || acquisitionOk) return
+    if (pathname === '/chat' || pathname.startsWith('/chat/')) return
     router.replace(pathname.startsWith('/admin') ? '/login?panel=full' : '/chat')
-  }, [me, panel, pathname, router, showAcquisition])
+  }, [me, panel, pathname, router])
   useEffect(() => setNotice(takeNotice()), [])
   useEffect(() => {
     setAcquirePath(null)
@@ -284,6 +244,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     )
   }
   if (!me || panel === null) return null
+  // Chat home: the chat page draws its own sidebar (conversations, Debug, account), full screen.
+  if (chatOnly) {
+    return (
+      <div className="flex h-dvh min-h-0 overflow-hidden bg-background text-primary">
+        <main id="main-content" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </main>
+      </div>
+    )
+  }
 
   const isChat = pathname === '/chat' || pathname.startsWith('/chat/')
   const isAcquisition = pathname === '/acquisition' || pathname.startsWith('/acquisition/')
@@ -294,9 +264,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const accessibleGroups = NAV_GROUPS.map((group) => ({
     ...group,
     items: group.items.filter((item) =>
-      chatOnly
-        ? Boolean(item.demoHidden && showAcquisition && hasRole('ADMIN'))
-        : DEMO_HIDE_ACQUISITION && item.demoHidden && !showAcquisition
+      DEMO_HIDE_ACQUISITION && item.demoHidden && !showAcquisition
         ? false
         : item.platformOwner
         ? Boolean(me.user.is_platform_owner)
@@ -370,7 +338,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
-        {!chatOnly && (
         <div className="px-4 pb-3 pt-5">
           <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-background-elevated px-3 py-3">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white">
@@ -386,7 +353,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
-        )}
 
         <nav
           aria-label="Main navigation"
@@ -449,7 +415,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onChange={setDebug}
             title="Show which tools the assistant called"
           />
-          {(DEMO_HIDE_ACQUISITION || chatOnly) && hasRole('ADMIN') && (
+          {DEMO_HIDE_ACQUISITION && hasRole('ADMIN') && (
             <SidebarSwitch
               label="Acquisition pages"
               icon={Megaphone}
@@ -458,7 +424,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               title="Show Overview, Prospects, Campaigns, Assessments, Engine & AI and Buyer Journey"
             />
           )}
-          {!chatOnly && (!me.client.allow_phi || !me.client.allow_card_data) && (
+          {(!me.client.allow_phi || !me.client.allow_card_data) && (
             <div className="mb-4 rounded-lg border border-border bg-background-elevated px-3 py-2.5">
               <div className="mb-1.5 flex items-center gap-2 text-[11px] font-semibold text-secondary">
                 <ShieldCheck size={14} /> Data restrictions
