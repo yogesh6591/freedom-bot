@@ -13,15 +13,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowUp,
+  BarChart3,
   Bug,
+  CalendarDays,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
   History,
   LogOut,
+  Mail,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Plus,
+  Search,
   ShieldCheck,
   Trash2
 } from 'lucide-react'
@@ -550,6 +555,35 @@ function withMessageIds(turns: Turn[], detail: ChatSessionDetail): Turn[] {
   }))
 }
 
+/** Sidebar group for a conversation, like ChatGPT: Today, Yesterday, Previous 7 days, Older. */
+function groupLabel(iso: string | null): string {
+  if (!iso) return 'Older'
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return 'Older'
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const days = Math.floor((start.getTime() - date.getTime()) / 86_400_000) + 1
+  if (date >= start) return 'Today'
+  if (days <= 1) return 'Yesterday'
+  if (days <= 7) return 'Previous 7 days'
+  if (days <= 30) return 'Previous 30 days'
+  return 'Older'
+}
+
+function greeting(name: string | undefined): string {
+  const hour = new Date().getHours()
+  const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+  const first = (name || '').trim().split(/\s+/)[0]
+  return first ? `${part}, ${first}` : part
+}
+
+const HOME_SUGGESTIONS = [
+  { icon: BarChart3, title: 'Pipeline by stage', question: 'Give me a pipeline summary by stage', tint: 'bg-violet-500/15 text-violet-600 dark:text-violet-300' },
+  { icon: CheckCircle2, title: 'Waiting for approval', question: "What's waiting for approval?", tint: 'bg-amber-500/15 text-amber-600 dark:text-amber-300' },
+  { icon: CalendarDays, title: 'My week', question: 'What meetings do I have in the next 7 days?', tint: 'bg-sky-500/15 text-sky-600 dark:text-sky-300' },
+  { icon: Mail, title: 'Latest emails', question: 'Any emails from Globex this week?', tint: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300' }
+]
+
 function whenLabel(iso: string | null): string {
   if (!iso) return ''
   const date = new Date(iso)
@@ -567,6 +601,7 @@ function ChatView() {
   // Home chat (signed in from home, lib/panel.ts): conversations in a sidebar and nothing but the chat.
   const chatHome = usePanel() === 'chat'
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [historyQuery, setHistoryQuery] = useState('')
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
   const storageKey = me ? `bizos:chat:${me.client.id}:${me.user.id}` : null
@@ -920,6 +955,67 @@ function ChatView() {
     </div>
   )
 
+  const visibleHistory = history.filter((item) =>
+    (item.title || 'Untitled conversation').toLowerCase().includes(historyQuery.trim().toLowerCase())
+  )
+  const groups: { label: string; items: ChatSessionSummary[] }[] = []
+  for (const item of visibleHistory) {
+    const label = groupLabel(item.updated_at)
+    const group = groups.find((g) => g.label === label)
+    if (group) group.items.push(item)
+    else groups.push({ label, items: [item] })
+  }
+  const homeConversationList = (
+    <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+      {historyError && <ErrorNote>{historyError}</ErrorNote>}
+      {!historyError && visibleHistory.length === 0 && (
+        <p className="px-3 py-8 text-center text-[12px] leading-6 text-muted">
+          {historyQuery ? 'No conversation matches.' : 'Your conversations will appear here.'}
+        </p>
+      )}
+      {groups.map((group) => (
+        <div key={group.label} className="mt-3 first:mt-1">
+          <p className="px-3 pb-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted">
+            {group.label}
+          </p>
+          {group.items.map((item) => {
+            const active = item.session_id === sessionId
+            return (
+              <div
+                key={item.session_id}
+                className={`group relative flex items-center rounded-lg transition-colors ${
+                  active ? 'bg-brand/10' : 'hover:bg-background-elevated'
+                }`}
+              >
+                {active && <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-brand" aria-hidden />}
+                <button
+                  type="button"
+                  onClick={() => void openSession(item.session_id)}
+                  aria-current={active ? 'true' : undefined}
+                  title={item.title || 'Untitled conversation'}
+                  className={`min-w-0 flex-1 truncate rounded-lg py-2 pl-3 pr-1 text-left text-[13px] focus-visible:outline-brand ${
+                    active ? 'font-semibold text-primary' : 'text-secondary group-hover:text-primary'
+                  }`}
+                >
+                  {item.title || 'Untitled conversation'}
+                </button>
+                <button
+                  type="button"
+                  className="mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition-opacity hover:text-red-600 focus-visible:opacity-100 group-hover:opacity-100"
+                  aria-label={`Delete ${item.title || 'conversation'}`}
+                  title="Delete conversation"
+                  onClick={() => void deleteConversation(item.session_id)}
+                >
+                  <Trash2 size={14} aria-hidden />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      ))}
+    </div>
+  )
+
   const initials = (me?.user.display_name?.trim() || 'U')
     .split(/\s+/)
     .slice(0, 2)
@@ -932,7 +1028,7 @@ function ChatView() {
       {chatHome && sidebarOpen && (
         <aside
           aria-label="Conversations"
-          className="flex w-[280px] shrink-0 flex-col border-r border-border bg-background-secondary"
+          className="flex w-[272px] shrink-0 flex-col border-r border-border bg-background-secondary/95 backdrop-blur"
         >
           <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-4">
             <BrandMark className="h-8 w-8" />
@@ -959,7 +1055,19 @@ function ChatView() {
               <PanelLeftClose size={17} />
             </button>
           </div>
-          {conversationList}
+          <div className="shrink-0 px-3 pb-2 pt-3">
+            <label className="flex h-9 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-muted focus-within:border-purple-300">
+              <Search size={14} aria-hidden />
+              <span className="sr-only">Search conversations</span>
+              <input
+                value={historyQuery}
+                onChange={(event) => setHistoryQuery(event.target.value)}
+                placeholder="Search conversations"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-muted"
+              />
+            </label>
+          </div>
+          {homeConversationList}
           <div className="shrink-0 border-t border-border px-4 pb-4 pt-3">
             <SidebarSwitch
               label="Debug"
@@ -975,9 +1083,10 @@ function ChatView() {
               >
                 {initials}
               </div>
-              <p className="min-w-0 flex-1 truncate text-[13px] font-semibold text-primary">
-                {me?.user.display_name}
-              </p>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-semibold text-primary">{me?.user.display_name}</p>
+                <p className="truncate text-[11px] text-muted">{me?.client.company_name}</p>
+              </div>
               <button
                 type="button"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
@@ -1048,7 +1157,11 @@ function ChatView() {
         aria-label="Assistant"
       >
         <header className="shrink-0 px-3 pt-3 sm:px-5">
-          <div className="assistant-glass flex h-14 w-full items-center justify-between gap-3 rounded-2xl px-3">
+          <div
+            className={`flex h-14 w-full items-center justify-between gap-3 px-3 ${
+              chatHome ? 'mx-auto max-w-3xl' : 'assistant-glass rounded-2xl'
+            }`}
+          >
             <div className="flex min-w-0 items-center gap-2.5 pl-1">
               {chatHome && !sidebarOpen && (
                 <>
@@ -1231,7 +1344,44 @@ function ChatView() {
                 Opening conversation…
               </p>
             )}
-            {!restoring && turns.length === 0 && (
+            {!restoring && turns.length === 0 && chatHome && !(canAcquire && acquisition) && (
+              <div className="mx-auto w-full max-w-[680px] pb-10">
+                <div className="mb-8 flex flex-col items-center text-center">
+                  <span className="assistant-orb mb-5 h-14 w-14 rounded-full" aria-hidden />
+                  <h2 className="bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500 bg-clip-text font-[family-name:var(--font-display)] text-[30px] font-semibold tracking-tight text-transparent dark:from-violet-300 dark:via-indigo-300 dark:to-sky-300 sm:text-[38px]">
+                    {greeting(me?.user.display_name)}
+                  </h2>
+                  <p className="mt-2 max-w-[460px] text-[14px] leading-6 text-secondary">
+                    Ask about your pipeline, inbox, calendar or company knowledge. Anything that changes your data
+                    waits for approval.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {HOME_SUGGESTIONS.map((item) => (
+                    <button
+                      key={item.title}
+                      type="button"
+                      onClick={() => {
+                        setInput(item.question)
+                        inputRef.current?.focus()
+                      }}
+                      className="group flex items-start gap-3 rounded-2xl border border-border bg-background-secondary/70 px-4 py-3.5 text-left shadow-sm backdrop-blur transition-all hover:-translate-y-0.5 hover:border-purple-300 hover:shadow-md"
+                    >
+                      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${item.tint}`}>
+                        <item.icon size={17} aria-hidden />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[13.5px] font-semibold text-primary">{item.title}</span>
+                        <span className="mt-0.5 block truncate text-[12.5px] text-muted group-hover:text-secondary">
+                          {item.question}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {!restoring && turns.length === 0 && !(chatHome && !(canAcquire && acquisition)) && (
               <div className="mx-auto w-full max-w-[640px] pb-6">
                 <div className="mb-6 flex flex-col items-center text-center">
                   <span className="assistant-orb mb-4 h-16 w-16 rounded-full" aria-hidden />
@@ -1262,7 +1412,7 @@ function ChatView() {
             )}
 
             {turns.length > 0 && (
-              <div className="flex flex-col gap-4 pb-2">
+              <div className={`flex flex-col gap-4 pb-2 ${chatHome ? 'mx-auto w-full max-w-3xl' : ''}`}>
                 {turns.map((turn, index) =>
                   turn.role === 'user' ? (
                     <div
@@ -1425,7 +1575,7 @@ function ChatView() {
         </div>
 
         <div className="shrink-0 px-3 pb-4 pt-1 sm:px-5">
-          <div className="w-full">
+          <div className={chatHome ? 'mx-auto w-full max-w-3xl' : 'w-full'}>
             {error && (
               <div className="mb-3">
                 <ErrorNote>{error}</ErrorNote>
@@ -1476,6 +1626,11 @@ function ChatView() {
                 )}
               </button>
             </form>
+            {chatHome && (
+              <p className="mt-2 text-center text-[11px] text-muted">
+                FreedomBot can make mistakes. Check important details; changes to your data wait for approval.
+              </p>
+            )}
           </div>
         </div>
       </section>
