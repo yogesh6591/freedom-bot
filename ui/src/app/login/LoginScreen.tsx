@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
@@ -53,6 +53,145 @@ function signInError(err: unknown): string {
   return 'Could not sign in. Check your email and password.'
 }
 
+type FormProps = {
+  email: string
+  password: string
+  clientSlug: string
+  showPassword: boolean
+  busy: boolean
+  error: string | null
+  notice: string | null
+  submitLabel: string
+  idPrefix: string
+  setEmail: (value: string) => void
+  setPassword: (value: string) => void
+  setClientSlug: (value: string) => void
+  setShowPassword: (value: boolean | ((current: boolean) => boolean)) => void
+  onSubmit: (event: FormEvent) => void
+  appearance?: 'home' | 'admin'
+}
+
+function SignInForm({
+  email,
+  password,
+  clientSlug,
+  showPassword,
+  busy,
+  error,
+  notice,
+  submitLabel,
+  idPrefix,
+  setEmail,
+  setPassword,
+  setClientSlug,
+  setShowPassword,
+  onSubmit,
+  appearance = 'home'
+}: FormProps) {
+  const admin = appearance === 'admin'
+  const fieldClass = admin
+    ? 'w-full min-h-12 rounded-xl border border-border bg-background px-4 py-3 font-geist text-[14px] text-primary outline-none transition placeholder:text-muted focus:border-brand focus:ring-[3px] focus:ring-brand/20'
+    : inputClass
+  return (
+    <>
+      {notice && (
+        <div
+          role="status"
+          className="mt-6 rounded-lg border border-border bg-background-elevated p-3.5 text-[13px] leading-6 text-secondary"
+        >
+          {notice}
+        </div>
+      )}
+      {error && (
+        <div className="mt-6">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
+      )}
+      <form onSubmit={onSubmit} className={admin ? 'mt-7 space-y-4' : 'mt-8 space-y-5'}>
+        <Field label="Work email" htmlFor={`${idPrefix}-email`}>
+          <input
+            id={`${idPrefix}-email`}
+            className={fieldClass}
+            type="email"
+            inputMode="email"
+            autoCapitalize="off"
+            spellCheck={false}
+            autoComplete="username"
+            placeholder="name@company.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
+        </Field>
+        <div className="block space-y-2">
+          <label
+            htmlFor={`${idPrefix}-password`}
+            className="block font-geist text-sm font-medium text-primary"
+          >
+            Password
+          </label>
+          <span className="relative block">
+            <input
+              id={`${idPrefix}-password`}
+              className={`${fieldClass} pr-12`}
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              title={showPassword ? 'Hide password' : 'Show password'}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+              aria-pressed={showPassword}
+              className="absolute inset-y-0 right-1 my-auto flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
+            >
+              {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+          </span>
+        </div>
+        <details className={`group ${admin ? 'rounded-xl border border-border bg-background' : 'rounded-lg border border-border bg-background-elevated/35'}`}>
+          <summary className="cursor-pointer rounded-xl px-3.5 py-3 text-[12px] font-medium text-secondary marker:text-muted hover:text-primary focus-visible:outline-brand">
+            Signing in to a different workspace?
+          </summary>
+          <div className="border-t border-border px-3.5 py-3.5">
+            <Field
+              label="Workspace identifier (optional)"
+              htmlFor={`${idPrefix}-workspace`}
+              hint="Use this if your email belongs to more than one company."
+            >
+              <input
+                id={`${idPrefix}-workspace`}
+                className={fieldClass}
+                placeholder="e.g. acme"
+                autoComplete="off"
+                value={clientSlug}
+                onChange={(event) => setClientSlug(event.target.value)}
+              />
+            </Field>
+          </div>
+        </details>
+        <Btn
+          type="submit"
+          loading={busy}
+          size="lg"
+          className={
+            admin
+              ? 'mt-2 w-full justify-center rounded-xl border-0 bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500 text-white shadow-[0_12px_28px_-12px_rgba(79,70,229,0.9)] hover:brightness-105'
+              : 'mt-1 w-full justify-center'
+          }
+        >
+          {busy ? 'Signing in…' : submitLabel}
+          {!busy && <ArrowRight size={17} aria-hidden />}
+        </Btn>
+      </form>
+    </>
+  )
+}
+
 /** Sign-in for the home chat (``/``) or, with ``admin``, for the admin panel (``/admin``). */
 export function LoginScreen({ admin = false }: { admin?: boolean }) {
   const [email, setEmail] = useState('')
@@ -78,7 +217,7 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
     setNoticeText(takeNotice())
   }, [])
 
-  async function submit(event: React.FormEvent) {
+  async function submit(event: FormEvent) {
     event.preventDefault()
     setBusy(true)
     setError(null)
@@ -99,6 +238,71 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  const form = (
+    <SignInForm
+      email={email}
+      password={password}
+      clientSlug={clientSlug}
+      showPassword={showPassword}
+      busy={busy}
+      error={error}
+      notice={notice}
+      submitLabel={adminPanel ? 'Continue' : 'Sign in to workspace'}
+      idPrefix={adminPanel ? 'admin-login' : 'login'}
+      setEmail={setEmail}
+      setPassword={setPassword}
+      setClientSlug={setClientSlug}
+      setShowPassword={setShowPassword}
+      onSubmit={submit}
+      appearance={adminPanel ? 'admin' : 'home'}
+    />
+  )
+
+  if (adminPanel) {
+    return (
+      <div className="fb-admin-stage relative flex min-h-dvh flex-col text-primary">
+        <div aria-hidden className="fb-admin-grid pointer-events-none absolute inset-0" />
+        <header className="relative z-10 flex h-16 shrink-0 items-center justify-between border-b border-border bg-background-secondary/80 px-5 backdrop-blur-md sm:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <BrandMark className="h-9 w-9" />
+            <div className="min-w-0">
+              <p className="truncate text-[14px] font-semibold tracking-[-0.03em] text-primary">
+                FreedomBot
+              </p>
+              <p className="text-[11px] text-muted">Administration</p>
+            </div>
+          </div>
+          <ThemeToggle />
+        </header>
+
+        <main className="relative z-10 flex flex-1 items-center justify-center px-5 py-12 sm:px-8">
+          <div className="w-full max-w-[440px] overflow-hidden rounded-2xl border border-border bg-background-secondary shadow-lift">
+            <div className="h-1 w-full bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500" aria-hidden />
+            <div className="p-7 sm:p-8">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-brand">
+                Administration
+              </p>
+              <h1 className="font-[family-name:var(--font-display)] text-[28px] font-semibold tracking-[-0.04em] text-primary">
+                Sign in
+              </h1>
+              <p className="mt-2 text-[14px] leading-6 text-muted">
+                This account opens the full workspace: assistant, memory, approvals, and acquisition.
+              </p>
+              {form}
+              <p className="mt-8 text-[12px] leading-5 text-muted">
+                Need only the assistant? Use the home sign-in instead.
+              </p>
+            </div>
+          </div>
+        </main>
+
+        <footer className="relative z-10 shrink-0 px-5 py-4 text-center text-[11px] text-muted sm:px-8">
+          © {new Date().getFullYear()} FreedomBot
+        </footer>
+      </div>
+    )
   }
 
   return (
@@ -174,115 +378,16 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
           <ThemeToggle />
         </div>
         <div className="mx-auto flex w-full max-w-[430px] flex-1 flex-col justify-center py-9 lg:py-12">
-          <p className="page-eyebrow">{adminPanel ? 'Admin panel' : 'Secure access'}</p>
+          <p className="page-eyebrow">Secure access</p>
           <h2 className="mt-1 text-[34px] font-semibold tracking-[-0.05em] text-primary sm:text-[39px]">
             Welcome back.
           </h2>
           <p className="mt-2 text-[14px] leading-6 text-muted">
-            {adminPanel
-              ? 'Sign in to open every workspace page.'
-              : 'Sign in to continue to your workspace.'}
+            Sign in to continue to your workspace.
           </p>
-
-          {notice && (
-            <div
-              role="status"
-              className="mt-6 rounded-lg border border-border bg-background-elevated p-3.5 text-[13px] leading-6 text-secondary"
-            >
-              {notice}
-            </div>
-          )}
-          {error && (
-            <div className="mt-6">
-              <ErrorNote>{error}</ErrorNote>
-            </div>
-          )}
-
-          <form onSubmit={submit} className="mt-8 space-y-5">
-            <Field label="Work email" htmlFor="login-email">
-              <input
-                id="login-email"
-                className={inputClass}
-                type="email"
-                inputMode="email"
-                autoCapitalize="off"
-                spellCheck={false}
-                autoComplete="username"
-                placeholder="name@company.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-            </Field>
-            <div className="block space-y-2">
-              <label
-                htmlFor="login-password"
-                className="block font-geist text-sm font-medium text-primary"
-              >
-                Password
-              </label>
-              <span className="relative block">
-                <input
-                  id="login-password"
-                  className={`${inputClass} pr-12`}
-                  type={showPassword ? 'text' : 'password'}
-                  autoComplete="current-password"
-                  placeholder="Enter your password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((value) => !value)}
-                  title={showPassword ? 'Hide password' : 'Show password'}
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-1 my-auto flex h-10 w-10 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
-                >
-                  {showPassword ? <EyeOff size={17} /> : <Eye size={17} />}
-                </button>
-              </span>
-            </div>
-
-            <details className="group rounded-lg border border-border bg-background-elevated/35">
-              <summary className="cursor-pointer rounded-lg px-3.5 py-3 text-[12px] font-medium text-secondary marker:text-muted hover:text-primary focus-visible:outline-brand">
-                Signing in to a different workspace?
-              </summary>
-              <div className="border-t border-border px-3.5 py-3.5">
-                <Field
-                  label="Workspace identifier (optional)"
-                  htmlFor="login-workspace"
-                  hint="Use this if your email belongs to more than one company."
-                >
-                  <input
-                    id="login-workspace"
-                    className={inputClass}
-                    placeholder="e.g. acme"
-                    autoComplete="off"
-                    value={clientSlug}
-                    onChange={(event) => setClientSlug(event.target.value)}
-                  />
-                </Field>
-              </div>
-            </details>
-
-            <Btn
-              type="submit"
-              loading={busy}
-              size="lg"
-              className="mt-1 w-full justify-center"
-            >
-              {busy ? 'Signing in…' : 'Sign in to workspace'}
-              {!busy && <ArrowRight size={17} aria-hidden />}
-            </Btn>
-          </form>
+          {form}
           <div className="mt-9 flex items-start gap-2.5 rounded-lg border border-border bg-background-elevated/40 px-3.5 py-3.5">
-            <ShieldCheck
-              size={17}
-              className="mt-0.5 shrink-0 text-brand"
-              aria-hidden
-            />
+            <ShieldCheck size={17} className="mt-0.5 shrink-0 text-brand" aria-hidden />
             <p className="text-[12px] leading-5 text-muted">
               Your workspace determines which information you can see and what
               actions you can take.

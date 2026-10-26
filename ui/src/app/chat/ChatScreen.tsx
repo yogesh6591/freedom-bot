@@ -9,7 +9,7 @@
  * the campaign assistant instead of the ops pipeline.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ArrowUp,
@@ -22,6 +22,7 @@ import {
   History,
   LogOut,
   Mail,
+  Megaphone,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -629,6 +630,21 @@ function ChatView({ home }: { home: boolean }) {
   const [acquisition, setAcquisition] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const editRef = useRef<HTMLTextAreaElement>(null)
+
+  useLayoutEffect(() => {
+    const el = editRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [editText, editingId])
+
+  useLayoutEffect(() => {
+    const el = editRef.current
+    if (!el || !editingId) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [editingId])
 
   const refreshContext = useCallback(async () => {
     try {
@@ -880,27 +896,30 @@ function ChatView({ home }: { home: boolean }) {
       )
       if (!ok) return
     }
+    const kept: Turn[] = [
+      ...turns.slice(0, index),
+      { ...turn, content: message }
+    ]
+    setEditingId(null)
+    setEditText('')
     setBusy(true)
     setError(null)
+    setTurns(kept)
     try {
       const data = await api.post<ChatResponse & { response?: string }>(
         `/api/chat/sessions/${encodeURIComponent(sessionId)}/edit`,
         { message_id: turn.id, message, domain: engineDomain() ?? 'auto' }
       )
-      const nextTurns = [
-        ...turns.slice(0, index),
-        { role: 'user' as const, content: message },
-        assistantTurnFrom(data)
-      ]
+      const nextTurns = [...kept, assistantTurnFrom(data)]
       setSessionId(data.session_id)
       remember(data.session_id)
       setTurns(nextTurns)
-      setEditingId(null)
       await attachMessageIds(data.session_id, nextTurns)
       void refreshContext()
       void loadHistory()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chat failed')
+      await openSession(sessionId)
     } finally {
       setBusy(false)
       inputRef.current?.focus()
@@ -912,21 +931,6 @@ function ChatView({ home }: { home: boolean }) {
     (found, item, i) => (item.role === 'assistant' ? i : found),
     -1
   )
-  const suggestions = [
-    {
-      question: 'Summarize our current priorities',
-      wash: 'linear-gradient(135deg, rgba(124,58,237,0.16), rgba(255,255,255,0.7))'
-    },
-    {
-      question: 'Which actions need my approval?',
-      wash: 'linear-gradient(135deg, rgba(37,99,235,0.16), rgba(255,255,255,0.7))'
-    },
-    {
-      question: 'Help me draft a customer follow-up',
-      wash: 'linear-gradient(135deg, rgba(219,39,119,0.16), rgba(255,255,255,0.7))'
-    }
-  ]
-
   const conversationList = (
     <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-3">
       {historyError && <ErrorNote>{historyError}</ErrorNote>}
@@ -1229,7 +1233,7 @@ function ChatView({ home }: { home: boolean }) {
         <header className="shrink-0 px-3 pt-3 sm:px-5">
           <div
             className={`flex h-14 w-full items-center justify-between gap-3 px-3 ${
-              chatHome ? 'mx-auto max-w-3xl' : 'assistant-glass rounded-2xl'
+              chatHome ? 'w-full' : 'assistant-glass rounded-2xl'
             }`}
           >
             <div className="flex min-w-0 items-center gap-2.5 pl-1">
@@ -1276,18 +1280,28 @@ function ChatView({ home }: { home: boolean }) {
                 role="switch"
                 aria-checked={acquisition}
                 aria-label="Acquisition"
+                title={acquisition ? 'Acquisition is on' : 'Turn on Acquisition'}
                 onClick={toggleAcquisition}
-                className={`inline-flex h-8 items-center gap-2 rounded-md border px-2.5 text-[12px] font-semibold ${
+                className={`inline-flex h-9 items-center gap-2 rounded-full pl-3 pr-1.5 text-[12.5px] font-semibold tracking-tight transition-all duration-200 ${
                   acquisition
-                    ? 'border-purple-300 bg-purple-50 text-brand'
-                    : 'border-border text-muted hover:text-primary'
+                    ? 'bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500 text-white shadow-[0_10px_22px_-10px_rgba(79,70,229,0.9)]'
+                    : 'border border-white/80 bg-white/70 text-secondary shadow-sm backdrop-blur hover:border-violet-200 hover:text-primary dark:border-white/10 dark:bg-white/5'
                 }`}
               >
-                <span
-                  className={`h-2 w-2 rounded-full ${acquisition ? 'bg-brand' : 'bg-border'}`}
-                  aria-hidden
-                />
+                <Megaphone size={14} strokeWidth={2.2} aria-hidden />
                 <span className="hidden sm:inline">Acquisition</span>
+                <span
+                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ${
+                    acquisition ? 'bg-white/25' : 'bg-black/10 dark:bg-white/15'
+                  }`}
+                  aria-hidden
+                >
+                  <span
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                      acquisition ? 'translate-x-[18px]' : 'translate-x-[2px]'
+                    }`}
+                  />
+                </span>
               </button>
             )}
             {!chatHome && (
@@ -1405,8 +1419,8 @@ function ChatView({ home }: { home: boolean }) {
           className="workspace-scroll min-h-0 flex-1 overflow-y-auto"
         >
           <div
-            className={`flex min-h-full w-full flex-col px-4 py-5 sm:px-6 ${
-              turns.length === 0 ? 'justify-center' : 'justify-start'
+            className={`mx-auto flex min-h-full w-full max-w-[48rem] flex-col px-3 py-5 sm:px-4 ${
+              turns.length === 0 ? 'justify-center' : 'justify-end'
             }`}
           >
             {restoring && turns.length === 0 && (
@@ -1415,7 +1429,7 @@ function ChatView({ home }: { home: boolean }) {
               </p>
             )}
             {!restoring && turns.length === 0 && chatHome && !(canAcquire && acquisition) && (
-              <div className="mx-auto w-full max-w-[680px] pb-10">
+              <div className="w-full pb-10">
                 <div className="mb-8 flex flex-col items-center text-center">
                   <span className="assistant-orb mb-5 h-14 w-14 rounded-full" aria-hidden />
                   <h2 className="bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500 bg-clip-text font-[family-name:var(--font-display)] text-[30px] font-semibold tracking-tight text-transparent dark:from-violet-300 dark:via-indigo-300 dark:to-sky-300 sm:text-[38px]">
@@ -1452,7 +1466,7 @@ function ChatView({ home }: { home: boolean }) {
               </div>
             )}
             {!restoring && turns.length === 0 && !(chatHome && !(canAcquire && acquisition)) && (
-              <div className="mx-auto w-full max-w-[640px] pb-6">
+              <div className="w-full pb-6">
                 <div className="mb-6 flex flex-col items-center text-center">
                   <span className="assistant-orb mb-4 h-16 w-16 rounded-full" aria-hidden />
                   <h2 className="font-[family-name:var(--font-display)] text-[30px] font-semibold tracking-tight text-primary sm:text-[36px]">
@@ -1462,32 +1476,16 @@ function ChatView({ home }: { home: boolean }) {
                     Name a person, a campaign, and a send window. The draft stays here until you approve it.
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {suggestions.map((item) => (
-                    <button
-                      key={item.question}
-                      type="button"
-                      onClick={() => {
-                        setInput(item.question)
-                        inputRef.current?.focus()
-                      }}
-                      style={{ background: item.wash }}
-                      className="assistant-glass rounded-2xl px-4 py-4 text-left text-[14px] font-medium leading-6 text-primary transition-transform hover:-translate-y-0.5"
-                    >
-                      {item.question}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
 
             {turns.length > 0 && (
-              <div className={`flex flex-col gap-4 pb-2 ${chatHome ? 'mx-auto w-full max-w-3xl' : ''}`}>
+              <div className="flex w-full flex-col gap-3 pb-2">
                 {turns.map((turn, index) =>
                   turn.role === 'user' ? (
                     <div
                       key={turn.id || index}
-                      className="group flex items-end justify-end gap-1.5"
+                      className="group flex w-full items-end justify-end gap-1.5"
                     >
                       {turn.id && !busy && editingId !== turn.id ? (
                         <button
@@ -1504,13 +1502,14 @@ function ChatView({ home }: { home: boolean }) {
                         </button>
                       ) : null}
                       {editingId === turn.id ? (
-                        <div className="w-fit max-w-[min(80%,28rem)]">
+                        <div className="w-full max-w-[min(100%,40rem)]">
                           <textarea
+                            ref={editRef}
                             value={editText}
                             onChange={(event) => setEditText(event.target.value)}
-                            rows={Math.min(8, Math.max(2, editText.split('\n').length))}
+                            rows={1}
                             aria-label="Edit message"
-                            className="assistant-user-bubble w-full min-w-[16rem] resize-y rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7 outline-none"
+                            className="assistant-user-bubble min-h-[2.75rem] w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7 outline-none"
                           />
                           <div className="mt-1.5 flex justify-end gap-2">
                             <button
@@ -1531,7 +1530,7 @@ function ChatView({ home }: { home: boolean }) {
                               }
                               onClick={() => void saveEdit(index)}
                             >
-                              Save
+                              Send
                             </button>
                           </div>
                         </div>
@@ -1645,7 +1644,7 @@ function ChatView({ home }: { home: boolean }) {
         </div>
 
         <div className="shrink-0 px-3 pb-4 pt-1 sm:px-5">
-          <div className={chatHome ? 'mx-auto w-full max-w-3xl' : 'w-full'}>
+          <div className="mx-auto w-full max-w-[48rem]">
             {error && (
               <div className="mb-3">
                 <ErrorNote>{error}</ErrorNote>
