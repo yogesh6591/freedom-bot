@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 import { useSession } from '@/components/SessionProvider'
+import { setPanel } from '@/lib/panel'
 import { announceSessionChange, takeNotice } from '@/lib/sessionSync'
 import { BrandMark } from '@/components/BrandMark'
 import {
@@ -63,8 +64,12 @@ export default function LoginPage() {
   const router = useRouter()
   const { refresh } = useSession()
 
+  // /admin sends people here with ?panel=full: they get every page after signing in.
+  const [adminPanel, setAdminPanel] = useState(false)
+
   useEffect(() => {
     setNoticeText(takeNotice())
+    setAdminPanel(new URLSearchParams(window.location.search).get('panel') === 'full')
   }, [])
 
   async function submit(event: React.FormEvent) {
@@ -80,7 +85,8 @@ export default function LoginPage() {
       await refresh()
       // Other open tabs must stop showing the previous workspace (M01-06).
       announceSessionChange()
-      router.replace('/chat')
+      setPanel(adminPanel ? 'full' : 'chat')
+      router.replace(adminPanel ? '/admin' : '/chat')
     } catch (err) {
       setError(signInError(err))
     } finally {
@@ -161,12 +167,14 @@ export default function LoginPage() {
           <ThemeToggle />
         </div>
         <div className="mx-auto flex w-full max-w-[430px] flex-1 flex-col justify-center py-9 lg:py-12">
-          <p className="page-eyebrow">Secure access</p>
+          <p className="page-eyebrow">{adminPanel ? 'Admin panel' : 'Secure access'}</p>
           <h2 className="mt-1 text-[34px] font-semibold tracking-[-0.05em] text-primary sm:text-[39px]">
             Welcome back.
           </h2>
           <p className="mt-2 text-[14px] leading-6 text-muted">
-            Sign in to continue to your workspace.
+            {adminPanel
+              ? 'Sign in to open every workspace page.'
+              : 'Sign in to continue to your workspace.'}
           </p>
 
           {notice && (
