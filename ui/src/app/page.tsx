@@ -1,5 +1,8 @@
-import { redirect } from 'next/navigation'
+'use client'
 
-export default function Home() {
-  redirect('/chat')
+import { LoginScreen } from '@/app/login/LoginScreen'
+
+/** Home sign-in; the home chat is at /chat. */
+export default function HomePage() {
+  return <LoginScreen />
 }

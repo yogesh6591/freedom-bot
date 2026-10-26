@@ -1,39 +1,45 @@
 'use client'
 
 /**
- * Which screen a signed-in browser gets, decided by where the person signed in:
+ * Two front doors, kept apart by URL:
  *
- * - `/login` (home)        → "chat": the assistant only, with Debug, Acquisition pages and the account.
- * - `/admin` → `/login?panel=full` → "full": every page in the sidebar.
+ * - Home:  `/` signs in, `/chat` is the assistant on its own.
+ * - Admin: `/admin` signs in, `/admin/chat` and every other page is the full panel.
  *
- * A UI choice per browser, not a permission: the API still checks every request by role.
+ * Signing in at `/admin` unlocks the admin panel for that user in this browser; signing in at home or
+ * signing out locks it again. This only decides which screen shows: the API still checks every request
+ * by role, and both doors use the same account and data.
  */
 
-import { useEffect, useState } from 'react'
+const KEY = 'bizos:admin-panel'
 
-export type Panel = 'chat' | 'full'
+/** Home pages: the chat-only screen. Everything else (except the sign-in pages) is the admin panel. */
+export function isHomePath(path: string): boolean {
+  return path === '/chat' || path.startsWith('/chat/')
+}
 
-const KEY = 'bizos:panel'
+export function isSignInPath(path: string): boolean {
+  return path === '/' || path === '/admin' || path === '/login'
+}
 
-export function readPanel(): Panel {
+/** Where a signed-out visitor to ``path`` signs in. */
+export function signInPathFor(path: string): string {
+  return isHomePath(path) || path === '/' ? '/' : '/admin'
+}
+
+export function adminUnlocked(userId: string): boolean {
   try {
-    return localStorage.getItem(KEY) === 'full' ? 'full' : 'chat'
+    return localStorage.getItem(KEY) === userId
   } catch {
-    return 'chat'
+    return false
   }
 }
 
-export function setPanel(panel: Panel): void {
+export function setAdminUnlocked(userId: string | null): void {
   try {
-    localStorage.setItem(KEY, panel)
+    if (userId) localStorage.setItem(KEY, userId)
+    else localStorage.removeItem(KEY)
   } catch {
-    /* storage blocked: the default (chat) applies */
+    /* storage blocked: the admin panel stays locked */
   }
-}
-
-/** The current panel, or null until it has been read in the browser. */
-export function usePanel(): Panel | null {
-  const [panel, set] = useState<Panel | null>(null)
-  useEffect(() => set(readPanel()), [])
-  return panel
 }
