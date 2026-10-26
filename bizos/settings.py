@@ -192,6 +192,16 @@ def llm_available() -> bool:
     return openai_api_key() is not None
 
 
+def memory_vector_search() -> bool:
+    """Meaning-based memory search (bizos/memory/vectors.py). On unless MEMORY_VECTOR_SEARCH is off."""
+    return getenv("MEMORY_VECTOR_SEARCH", "on").strip().casefold() not in ("0", "off", "false", "no")
+
+
+def embedding_model_id() -> str:
+    """OpenAI embedding model for memory search (1536 dimensions)."""
+    return getenv("EMBEDDING_MODEL_ID", "").strip() or "text-embedding-3-small"
+
+
 def pinned_client_slug() -> str | None:
     """FB-033: the one client this deployment serves, or ``None`` for shared dev.
 

@@ -35,6 +35,8 @@ _DB = dict(
 ACQUISITION_TEST_DB = "acquisition_test"
 os.environ["DATABASE_URL"] = "postgresql+psycopg://{u}:{p}@{h}:{port}/".format(**_DB) + ACQUISITION_TEST_DB
 os.environ["JWT_SECRET"] = "test-only-signing-key-please-do-not-reuse-anywhere-0001"
+# Memory vector search calls the embedding API; tests that need it switch it on with a fake embedder.
+os.environ["MEMORY_VECTOR_SEARCH"] = "off"
 
 from bizos.bootstrap import admin_context, ensure_dev_users, seed_business_data  # noqa: E402
 from bizos.connectors.registry import seed_default_integrations  # noqa: E402

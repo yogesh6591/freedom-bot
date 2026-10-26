@@ -29,6 +29,7 @@ from typing import Any, Optional, Sequence
 
 from sqlalchemy import text
 
+from bizos.memory import vectors
 from bizos.memory.models import MemoryItem, MemoryVersion
 from bizos.tenancy.context import TenantContext, current_context, require_context
 from bizos.tenancy.registry import workspace_connection
@@ -848,13 +849,18 @@ def search(
         match = _word_match_sql(n, word, params)
         word_clauses.append(match)
         hit_terms.append(f"(CASE WHEN {match} THEN 1 ELSE 0 END)")
-    clauses.append(f"({' OR '.join(word_clauses)})")
     # More of the question's words matched ranks higher, so "salary band engineer"
     # prefers the salary item over one that merely mentions an engineer.
     word_rank = f"({' + '.join(hit_terms)}) DESC, " if hit_terms else ""
     area_sql, area_params = _area_filter(tenant)
     clauses.append(area_sql)
     params.update(area_params)
+    # Vector search uses every visibility clause above, but not the word match.
+    visible_sql = " AND ".join(clauses)
+    clauses.append(f"({' OR '.join(word_clauses)})")
+    use_vectors = bool((query or "").strip()) and vectors.available(tenant)
+    if use_vectors:
+        vectors.index_missing(tenant)
 
     # Source trust as SQL so ordering happens in the database rather than after
     # a LIMIT, which would rank only an arbitrary slice.
@@ -877,6 +883,9 @@ def search(
             ),
             params,
         ).fetchall()
+        if use_vectors:
+            rows = vectors.fuse(list(rows), vectors.nearest(conn, query, visible_sql, params, params["limit"]),
+                                params["limit"])
         out: list[MemoryItem] = []
         for row in rows:
             version = conn.execute(

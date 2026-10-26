@@ -65,6 +65,9 @@ services:
       MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
       EXECUTOR_MODEL_ID: ${EXECUTOR_MODEL_ID:-}
       ROUTER_MODEL_ID: ${ROUTER_MODEL_ID:-}
+      # Meaning-based memory search (pgvector + OpenAI embeddings). off disables it.
+      MEMORY_VECTOR_SEARCH: ${MEMORY_VECTOR_SEARCH:-on}
+      EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-}
       AGENT_PIPELINE_V2: ${AGENT_PIPELINE_V2:-}
       # Optional: none | low | medium | high. Leave unset for models that reject it with tools.
       MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-}

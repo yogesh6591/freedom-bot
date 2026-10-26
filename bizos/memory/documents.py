@@ -14,7 +14,7 @@ import io
 import re
 from typing import Any, Optional
 
-from bizos.memory import store
+from bizos.memory import store, vectors
 from bizos.tenancy.context import TenantContext
 from bizos.types import ApprovalStatus, DataClassification, MemoryCategory, SourceType
 from bizos.util.ids import new_id
@@ -109,6 +109,10 @@ def upload(*, title: str, filename: str, data: bytes, access_area: Optional[str]
             settings=settings,
             ctx=ctx,
         )
+    # Embed the new parts now (general-access documents only), so the first question about it is fast.
+    for _ in range(5):
+        if not vectors.index_missing(ctx):
+            break
     return {"document_id": doc_id, "title": title, "filename": filename, "parts": len(parts),
             "access_area": area, "characters": sum(len(p) for p in parts)}
 
