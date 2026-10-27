@@ -327,7 +327,7 @@ domains.
 
 | Domain | Router description | Tools |
 |---|---|---|
-| memory | Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts (policy, contract and brand questions also need finance or ops) | memory_search, memory_get_fact, memory_history, memory_add, memory_correct, memory_escalate_conflict |
+| memory | Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts (policy, contract and brand questions also need finance or ops) | memory_search, synced_search, memory_get_fact, memory_history, memory_add, memory_correct, memory_escalate_conflict |
 | approvals | Approval requests: list, view, submit, approve/reject/request changes, cancel | approvals_list, approvals_get, approvals_submit, approvals_decide, approvals_cancel |
 | crm | Contacts, companies, deals: search, view, notes, tasks, tags, create contacts, update contact fields, bulk updates by lifecycle stage, deal stages, delete records | crm_search_contacts, crm_search_companies, crm_search_deals, crm_get_contact, crm_pipeline_summary, crm_create_note, crm_create_task, crm_tag_lead, crm_create_contact, crm_update_contact_field, crm_bulk_update_contacts, crm_update_deal_stage, crm_delete_record |
 | email | Email: search and read threads, draft, send to named people | email_search_threads, email_read_thread, email_create_draft, email_send_message, + crm_search_contacts, crm_get_contact, brand_get_voice |

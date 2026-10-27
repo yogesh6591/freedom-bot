@@ -95,6 +95,18 @@ OPEN_OBJECT_SCHEMA: dict[str, Any] = {
 
 
 TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
+    "synced_search": _obj(
+        {
+            "query": _s("Words to look for, e.g. a sender, company or topic (optional: empty lists the latest)"),
+            "sources": {
+                "type": "array",
+                "description": "Only these sources (optional; default all)",
+                "items": {"type": "string", "enum": ["gmail", "calendar", "youtube", "hubspot"]},
+            },
+            "since": _s("Only records on or after this ISO date or date-time (optional)"),
+            "limit": _i("Max results (default 20, at most 50)"),
+        }
+    ),
     "memory_search": _obj(
         {
             "query": _s("Search text"),

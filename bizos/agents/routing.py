@@ -34,7 +34,7 @@ PROMPTS = Path(__file__).parent / "prompts"
 
 LOAD_TOOLS = "load_tools"
 #: Loaded on every request, whatever the route.
-ALWAYS_ON = ("memory_search", LOAD_TOOLS)
+ALWAYS_ON = ("memory_search", "synced_search", LOAD_TOOLS)
 
 Domain = Literal[
     "memory", "approvals", "crm", "email", "calendar", "finance", "ops", "youtube",

@@ -238,6 +238,7 @@ def _hint(name: str) -> str:
 #: the registry because it is a *presentation* concern for the model, not a
 #: permission concern.
 ARGUMENT_HINTS: dict[str, str] = {
+    "synced_search": "query (str, optional), sources (list of gmail|calendar|youtube|hubspot, optional), since (ISO date, optional), limit (int, optional)",
     "memory_search": "query (str), categories (list of FACT|SOP|DECISION|CORRECTION, optional), limit (int, optional)",
     "memory_get_fact": "key (str), category (str, default FACT)",
     "memory_history": "item_id (str)",

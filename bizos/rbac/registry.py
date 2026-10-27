@@ -243,6 +243,16 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         tags=frozenset({"read", "memory"}),
     ),
     _spec(
+        "synced_search",
+        "Search my synced activity",
+        "Search the user's own recently synced Gmail, Google Calendar, YouTube and HubSpot records "
+        "(bizos/sync). Only the caller's records are ever returned.",
+        CATEGORY_MEMORY,
+        _ALL,
+        classification=DataClassification.CONFIDENTIAL,
+        tags=frozenset({"read", "sync"}),
+    ),
+    _spec(
         "memory_get_fact",
         "Get a fact",
         "Read the current active value of one organizational fact by its key.",

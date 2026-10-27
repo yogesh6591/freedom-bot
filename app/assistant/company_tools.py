@@ -419,6 +419,28 @@ def memory_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     return ConnectorResult(ok=True, data=data, summary=summary)
 
 
+@effect("synced_search")
+def synced_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """The caller's own synced Gmail / Calendar / YouTube / HubSpot records (bizos/sync), newest first."""
+    from bizos.sync import store as sync_store
+
+    raw = args.get("sources")
+    sources = [raw] if isinstance(raw, str) else [str(s) for s in (raw or [])]
+    try:
+        limit = int(args.get("limit") or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    rows = sync_store.search(scope.ctx, str(args.get("query") or ""), sources=sources,
+                             since=str(args.get("since") or "") or None, limit=limit)
+    if not rows:
+        return ConnectorResult(
+            ok=True, data=[],
+            summary="No synced records match. Nothing may be synced yet for this user: connect accounts on "
+                    "Integrations, or use the live tools (email_search_threads, calendar_list_events).",
+        )
+    return ConnectorResult(ok=True, data=rows, summary=f"{len(rows)} synced record(s), newest first")
+
+
 @effect("memory_get_fact")
 def memory_get_fact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     category = MemoryCategory.parse(args.get("category"), MemoryCategory.FACT)

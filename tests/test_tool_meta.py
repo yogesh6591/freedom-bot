@@ -72,7 +72,7 @@ def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
     assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
-    assert len(VISIBLE) == 82
+    assert len(VISIBLE) == 83  # synced_search added (bizos/sync)
     assert {n for n in NAMES if TOOL_META[n].domain == "campaign"} == {t["function"]["name"] for t in CAMPAIGN_TOOLS}
 
 

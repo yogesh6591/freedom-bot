@@ -125,7 +125,7 @@ def test_merged_tools_follow_the_old_tools_they_wrap(client_scratch, ctx_factory
 def test_a_route_loads_its_bundles_intersected_with_visibility(client_scratch, ctx_factory):
     visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "drafter"))
     loaded = tools_for_route(["crm", "email"], visible)
-    assert loaded[:2] == list(ALWAYS_ON)
+    assert loaded[: len(ALWAYS_ON)] == list(ALWAYS_ON)
     assert set(loaded) - {LOAD_TOOLS} <= visible
     assert "crm_delete_record" not in loaded  # in the crm bundle, but denied to drafters
     assert {"crm_search_deals", "email_send_message"} <= set(loaded)

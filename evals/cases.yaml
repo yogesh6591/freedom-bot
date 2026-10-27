@@ -30783,3 +30783,39 @@
   expected_outcome: approval
 
 # ==== END PHASE 8 GENERATED CASES ====
+- id: t_synced_search_001
+  query: What's new in my inbox since yesterday?
+  user:
+    name: Ravi
+    roles:
+    - VIEWER
+  fixtures: {}
+  expected_tool_calls:
+  - synced_search
+  expected_gates:
+    synced_search: run
+  expected_outcome: answer
+- id: t_synced_search_002
+  query: Anything changed in HubSpot today?
+  user:
+    name: Meena
+    roles:
+    - OPERATOR
+  fixtures: {}
+  expected_tool_calls:
+  - synced_search
+  expected_gates:
+    synced_search: run
+  expected_outcome: answer
+- id: t_synced_search_003
+  query: Show the latest comments on my YouTube videos
+  user:
+    name: Ada
+    roles:
+    - ADMIN
+  fixtures: {}
+  expected_tool_calls:
+  - synced_search|youtube_video
+  expected_gates:
+    synced_search: run
+  expected_outcome: answer

@@ -99,6 +99,7 @@ GENERAL = DomainPack(
     ),
     tools=(
         "memory_search",
+        "synced_search",
         "memory_get_fact",
         "memory_history",
         "approvals_list",
