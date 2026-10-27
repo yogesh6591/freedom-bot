@@ -10,6 +10,14 @@ import {
 import { api, ApiError } from '@/lib/api'
 import type { EmailCardScope, EmailView, EmailViewPerson } from '@/lib/types'
 import {
+  applyNames,
+  detailsForPerson,
+  fillText,
+  namesFromGreeting,
+  previewAsLabel,
+  type Names
+} from '@/app/chat/emailCardPeople'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -27,7 +35,6 @@ const KNOWN_TOKENS = new Set([TOKEN_FIRST, TOKEN_LAST, TOKEN_COMPANY, TOKEN_ASSE
 const KEEP_LINK = /(https?:\/\/[^\s]+|\{+\s*assessment[_-]?url\s*\}+)/gi
 
 type NameKey = 'first' | 'last' | 'company'
-type Names = Record<NameKey, string>
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -51,19 +58,6 @@ function uniqueKeepOrder(values: string[]): string[] {
   return out
 }
 
-function namesFromGreeting(text: string): { first_name: string; last_name: string } {
-  const pattern =
-    /\b(?:Hi|Hello|Dear|Hey)\s+(?!\{\{)(?!there\b)([A-Za-z][A-Za-z'-]*)(?:\s+([A-Z][A-Za-z'-]*))?\b/g
-  const match = pattern.exec(text || '')
-  const first = (match?.[1] || '').trim()
-  const last = (match?.[2] || '').trim()
-  if (!first || /^firstName$/i.test(first)) return { first_name: '', last_name: '' }
-  return {
-    first_name: first,
-    last_name: /^lastName$/i.test(last) ? '' : last
-  }
-}
-
 function isEmail(value: string): boolean {
   return value.includes('@')
 }
@@ -74,15 +68,6 @@ function displayName(person: EmailViewPerson): string {
     .filter((part) => part && part.toLowerCase() !== 'there')
     .join(' ')
   return name || person.email || ''
-}
-
-function previewFirstName(person: EmailViewPerson): string {
-  const first = person.first_name.trim()
-  if (first && first.toLowerCase() !== 'there') return first
-  const name = displayName(person)
-  if (name && !isEmail(name)) return name.split(/\s+/)[0] || name
-  const local = (person.email || '').split('@')[0].trim()
-  return local || 'Recipient'
 }
 
 function uniquePeople(people: EmailViewPerson[]): EmailViewPerson[] {
@@ -275,38 +260,6 @@ function nameChange(original: Names, next: Names): { from: string; to: string } 
   if (next.last !== original.last) return { from: original.last, to: next.last }
   if (next.company !== original.company) return { from: original.company, to: next.company }
   return null
-}
-
-function applyNames(person: EmailViewPerson | undefined, names: Names): EmailViewPerson {
-  return {
-    email: person?.email || '',
-    first_name: names.first,
-    last_name: names.last,
-    company: names.company,
-    sources: {
-      first_name: names.first !== (person?.first_name || '') ? 'typed' : person?.sources.first_name || 'typed',
-      last_name: names.last !== (person?.last_name || '') ? 'typed' : person?.sources.last_name || 'missing',
-      company: names.company !== (person?.company || '') ? 'typed' : person?.sources.company || 'missing'
-    }
-  }
-}
-
-function fillText(text: string, person?: EmailViewPerson, assessmentUrl = ''): string {
-  const first = (person?.first_name || '').trim() || 'there'
-  const last = (person?.last_name || '').trim()
-  const company = (person?.company || '').trim()
-  const link = (assessmentUrl || '').trim() || TOKEN_ASSESS
-  return (text || '')
-    .split(TOKEN_FIRST)
-    .join(first)
-    .split(TOKEN_LAST)
-    .join(last)
-    .split(TOKEN_COMPANY)
-    .join(company)
-    .split(TOKEN_ASSESS)
-    .join(link)
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/[ \t]+([,.!?:;])/g, '$1')
 }
 
 /** Chip replacements stay blanks in shared text. A typed name never becomes everyone else's wording. */
@@ -871,6 +824,11 @@ export function EmailCard({
           <div role="tablist" aria-label="Preview as" className="flex flex-wrap gap-1.5">
             {previewPeople.map((person, index) => {
               const selected = index === Math.min(previewIndex, previewPeople.length - 1)
+              const resolved = detailsForPerson(
+                person,
+                editing ? names : null,
+                previewPerson?.email || ''
+              )
               return (
                 <button
                   key={person.email || index}
@@ -887,7 +845,7 @@ export function EmailCard({
                     if (editing) setNames(namesFromPerson(previewPeople[index]))
                   }}
                 >
-                  {previewFirstName(person)}
+                  {previewAsLabel(resolved, sharedBody, assessmentUrl)}
                 </button>
               )
             })}
