@@ -106,6 +106,21 @@ def evaluate(req: PolicyRequest, *, domain_mode: Optional[ExecutionMode] = None)
         reason = f"executing approved action {req.approved_action_id or ''}".strip()
         rule_code = "APPROVED_ACTION_EXECUTION"
 
+    # Opt-in (approval_policy.admins_skip_approval, off by default): an Admin's action that would only
+    # wait for approval runs now. Only REQUIRE_APPROVAL changes: denials, draft-only, guardrails and the
+    # workspace's always-require-approval list still bind.
+    policy = req.settings.approval_policy
+    if (
+        effect == PolicyEffect.REQUIRE_APPROVAL
+        and getattr(policy, "admins_skip_approval", False)
+        and req.ctx.is_admin
+        and permission.can_execute_approved
+        and req.tool not in (policy.always_require_approval or [])
+    ):
+        effect = PolicyEffect.ALLOW
+        reason = "this workspace lets admins act without waiting for approval"
+        rule_code = "ADMIN_SKIPS_APPROVAL"
+
     return PolicyDecision(
         effect=effect,
         tool=req.tool,

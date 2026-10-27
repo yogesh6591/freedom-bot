@@ -77,6 +77,10 @@ class ApprovalPolicy:
     #: Enabled by default so a single admin/operator demo account can exercise
     #: the full approve→execute path; turn off in production workspaces.
     allow_self_approval: bool = True
+    #: Opt-in, off by default: an Admin's action that would only wait for approval runs straight away.
+    #: Denials, Advise/Draft modes, guardrails and always_require_approval still apply to admins.
+    #: The workspace's own choice (an admin turns it on); no role is less strict while it is off.
+    admins_skip_approval: bool = False
 
 
 @dataclass

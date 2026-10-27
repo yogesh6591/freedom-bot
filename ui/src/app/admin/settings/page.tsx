@@ -68,6 +68,7 @@ interface ClientSettings {
   risk_policy: RiskPolicy
   approval_policy?: {
     allow_self_approval?: boolean
+    admins_skip_approval?: boolean
     approver_role?: string
     expires_after_hours?: number
   }
@@ -1339,6 +1340,21 @@ function Policies() {
               }
             />
             Allow self-approval
+          </label>
+          <label
+            className="flex items-center gap-2 text-xs text-muted"
+            title="Admin actions run without waiting for approval. Refusals, Advise/Draft modes and data guardrails still apply."
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(settings.approval_policy?.admins_skip_approval)}
+              onChange={(event) =>
+                void save({
+                  approval_policy: { admins_skip_approval: event.target.checked }
+                })
+              }
+            />
+            Admins skip approval
           </label>
           {saving && <span className="text-[11px] text-muted">Saving…</span>}
         </div>
