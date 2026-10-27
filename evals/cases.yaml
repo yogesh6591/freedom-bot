@@ -392,7 +392,7 @@
   expected_domains: []
   expected_tool_calls: []
   forbidden_tool_calls: [send_approved, approve_move, email_send_message]
-  expected_hidden: [update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved]
+  expected_hidden: [update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved, show_campaign_people, show_prospects, pause_campaign, resume_campaign, delete_campaign, delete_prospect, remove_from_campaign, set_person_details, choose_email_scope]
   expected_outcome: not_permitted
 
 - id: clarify_no_referent_001
@@ -30819,3 +30819,212 @@
   expected_gates:
     synced_search: run
   expected_outcome: answer
+
+# ---------------------------------------------------------------- campaign listing / pause / delete (new tools)
+
+- id: t_show_campaign_people_001
+  query: Who is in the snowflake campaign?
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [show_campaign_people]
+  expected_gates: {show_campaign_people: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_show_campaign_people_002
+  query: Who is in the snowflake campaign?
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [show_campaign_people]
+  expected_outcome: not_permitted
+
+- id: t_show_campaign_people_003
+  query: snowflake mein kaun hai
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [show_campaign_people]
+  expected_gates: {show_campaign_people: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_show_prospects_001
+  query: How many prospects do we have?
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [show_prospects]
+  expected_gates: {show_prospects: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_show_prospects_002
+  query: How many prospects do we have?
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [show_prospects]
+  expected_outcome: not_permitted
+
+- id: t_show_prospects_003
+  query: kitne prospects hain
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [show_prospects]
+  expected_gates: {show_prospects: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_pause_campaign_001
+  query: Pause the snowflake campaign
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [pause_campaign]
+  expected_gates: {pause_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_pause_campaign_002
+  query: Pause the snowflake campaign
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [pause_campaign]
+  expected_outcome: not_permitted
+
+- id: t_pause_campaign_003
+  query: snowflake pause kar do
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [pause_campaign]
+  expected_gates: {pause_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_resume_campaign_001
+  query: Resume the snowflake campaign
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [resume_campaign]
+  expected_gates: {resume_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_resume_campaign_002
+  query: Resume the snowflake campaign
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [resume_campaign]
+  expected_outcome: not_permitted
+
+- id: t_resume_campaign_003
+  query: snowflake campaign restart kar do
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [resume_campaign]
+  expected_gates: {resume_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_delete_campaign_001
+  query: Delete the snowflake campaign
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [delete_campaign]
+  expected_gates: {delete_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_delete_campaign_002
+  query: Delete the snowflake campaign
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [delete_campaign]
+  expected_outcome: not_permitted
+
+- id: t_delete_campaign_003
+  query: snowflake campaign delete kar do
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [delete_campaign]
+  expected_gates: {delete_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_delete_prospect_001
+  query: Delete the prospect nina@acme.example.com
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [delete_prospect]
+  expected_gates: {delete_prospect: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_delete_prospect_002
+  query: Delete the prospect nina@acme.example.com
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [delete_prospect]
+  expected_outcome: not_permitted
+
+- id: t_delete_prospect_003
+  query: nina prospect delete kar do
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [delete_prospect]
+  expected_gates: {delete_prospect: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_remove_from_campaign_001
+  query: Remove Nina from snowflake
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [remove_from_campaign]
+  expected_gates: {remove_from_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_remove_from_campaign_002
+  query: Remove Nina from snowflake
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [remove_from_campaign]
+  expected_outcome: not_permitted
+
+- id: t_remove_from_campaign_003
+  query: Nina ko snowflake se hata do
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [remove_from_campaign]
+  expected_gates: {remove_from_campaign: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_set_person_details_001
+  query: Raj's last name is Mehta
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [set_person_details]
+  expected_gates: {set_person_details: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_set_person_details_002
+  query: Raj's last name is Mehta
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [set_person_details]
+  expected_outcome: not_permitted
+
+- id: t_set_person_details_003
+  query: Raj ka naam set kar do, last name Mehta
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [set_person_details]
+  expected_gates: {set_person_details: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_choose_email_scope_001
+  query: Yes, change the first email for everyone still waiting
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [choose_email_scope]
+  expected_gates: {choose_email_scope: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_choose_email_scope_002
+  query: Yes, change the first email for everyone still waiting
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [choose_email_scope]
+  expected_outcome: not_permitted
+
+- id: t_choose_email_scope_003
+  query: haan, sab ke liye change karo
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [choose_email_scope]
+  expected_gates: {choose_email_scope: run}
+  expected_outcome: [handed_off, answer]

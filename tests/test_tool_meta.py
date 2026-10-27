@@ -54,6 +54,9 @@ CONFUSABLE = [
     ("approvals_decide", "approvals_cancel"),
     ("youtube_my_channel", "youtube_video", "youtube_search_videos"),
     ("finance_draft_invoice", "finance_propose_adjustment"),
+    ("show_campaign_people", "show_prospects"),
+    ("pause_campaign", "resume_campaign", "delete_campaign"),
+    ("delete_prospect", "remove_from_campaign"),
 ]
 
 HINGLISH = re.compile(r"\b(ko|kar do|kya|kab|hai|hain|bhej|bana|dhundo|daal|kaun|hata|mein|kis|bhejo|haan|karo)\b")
@@ -72,7 +75,7 @@ def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
     assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
-    assert len(VISIBLE) == 83  # synced_search added (bizos/sync)
+    assert len(VISIBLE) == 92  # campaign listing / pause / delete tools added
     assert {n for n in NAMES if TOOL_META[n].domain == "campaign"} == {t["function"]["name"] for t in CAMPAIGN_TOOLS}
 
 

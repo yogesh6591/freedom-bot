@@ -788,4 +788,77 @@ TOOL_META: dict[str, AgentMeta] = {
         Needs: approval_evidence copied from the user's latest message.
         Effect: emails go out and cannot be recalled. {gate}
     """)),
+    "show_campaign_people": M("campaign", d("""
+        List who is in one named campaign, with each person's name, email and outreach status
+        (waiting, emailed, replied, and so on). Changes nothing. Read-only.
+        Use when: "who is in Harbor Light Test", "how many people are in snowflake",
+        "did we email everyone in it", "snowflake mein kaun hai".
+        Don't use: every prospect in the workspace, including people in no campaign -> show_prospects;
+        the saved pick-list for a new send -> show_contacts; campaign names -> show_campaigns;
+        pausing or deleting a campaign -> pause_campaign or delete_campaign; writing an email ->
+        propose_email.
+    """)),
+    "show_prospects": M("campaign", d("""
+        Count or list every saved prospect, with which campaigns each person is in and their status.
+        Filter to people in a campaign, people in none, or one named campaign.
+        Use when: "how many prospects", "list all prospects", "who is not in any campaign",
+        "kitne prospects hain", "and in total".
+        Don't use: one named campaign's roster -> show_campaign_people; the saved pick-list ->
+        show_contacts; campaign names -> show_campaigns; writing an email -> propose_email;
+        changing who is selected -> update_selection.
+    """)),
+    "pause_campaign": M("campaign", d("""
+        Pause a campaign so nothing is emailed from it until it is resumed. Same as the admin pause.
+        Nothing is deleted. People stay in the campaign.
+        Use when: "pause the snowflake campaign", "stop sending for Harbor", "campaign pause kar do".
+        Don't use: starting sending again -> resume_campaign; deleting a campaign -> delete_campaign;
+        listing people -> show_campaign_people; listing campaigns -> show_campaigns; sending an email
+        -> send_approved.
+    """)),
+    "resume_campaign": M("campaign", d("""
+        Resume a paused campaign so emails may start sending again in its send window. The first call
+        returns the yes/no question to ask; call again only after the user's next message says yes.
+        Use when: "resume snowflake", "turn Harbor back on", "campaign restart kar do".
+        Don't use: pausing -> pause_campaign; deleting a campaign -> delete_campaign; listing people
+        -> show_campaign_people; sending a new approved email -> send_approved.
+    """)),
+    "delete_campaign": M("campaign", d("""
+        Delete a campaign from FreedomBot and Instantly, like the admin Delete button. People stay in
+        the workspace. Asks yes/no first with counts. Never for pause or stop.
+        Use when: "delete the snowflake campaign", "remove this campaign entirely",
+        "campaign delete kar do".
+        Don't use: pausing -> pause_campaign; resuming -> resume_campaign; taking one person out of a
+        campaign -> remove_from_campaign; deleting a person -> delete_prospect.
+    """)),
+    "delete_prospect": M("campaign", d("""
+        Delete one person from the workspace, like the admin Delete Prospect button, and stop their
+        Instantly leads. Asks yes/no first. History of sent mail is not unsent.
+        Use when: "delete Raj as a prospect", "remove this person completely", "prospect delete kar do".
+        Don't use: taking them out of one campaign only -> remove_from_campaign; deleting a campaign
+        -> delete_campaign; listing prospects -> show_prospects.
+    """)),
+    "remove_from_campaign": M("campaign", d("""
+        Take one person out of one campaign. They stay in the workspace. Asks yes/no first. Already
+        emailed people keep the sent mail; only follow-ups stop. Replied, booked, unsubscribed or
+        bounced people are not changed.
+        Use when: "remove Raj from east", "take Nina out of snowflake", "campaign se hata do".
+        Don't use: deleting the person entirely -> delete_prospect; deleting the campaign ->
+        delete_campaign; listing who is in it -> show_campaign_people.
+    """)),
+    "set_person_details": M("campaign", d("""
+        Save a first name, last name or company for one chosen recipient. A name the user wrote with
+        the email always wins. Never invent a company from the mailbox, and never overwrite a name
+        already on file using only the address.
+        Use when: "Raj's last name is Mehta", "company is Acme for nina@", "naam set kar do".
+        Don't use: changing who is selected -> update_selection; listing people -> show_contacts;
+        sending mail -> propose_email or send_approved.
+    """)),
+    "choose_email_scope": M("campaign", d("""
+        Record that the user chose to change the campaign's first email for everyone who has not been
+        emailed yet. Call with scope everyone after they say yes. Never pick keep on your own.
+        Use when: the user agrees to change the first email for everyone still waiting,
+        "haan, sab ke liye change karo".
+        Don't use: sending the email -> send_approved; editing the draft text -> propose_email;
+        choosing recipients -> update_selection.
+    """)),
 }

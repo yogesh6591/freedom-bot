@@ -1365,6 +1365,31 @@ CAMPAIGN_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "show_prospects",
+            "description": (
+                "Read-only. Prospects across the WHOLE workspace: how many there are, who they are, and which campaign each "
+                "is in. Use it for 'how many prospects do we have', 'list all prospects', 'prospects not in a campaign', "
+                "'which prospects are in which campaigns'. If the user names one campaign ('how many in Harbor Light Test', "
+                "'did we email everyone in X') pass campaign. Changes nothing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"type": "string", "description": "campaign name or id; leave empty for all prospects"},
+                    "only": {
+                        "type": "string",
+                        "enum": ["all", "not_in_campaign", "in_campaign"],
+                        "description": "all (default), only those in no campaign, or only those in some campaign",
+                    },
+                    "why": _WHY,
+                },
+                "required": ["why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "pause_campaign",
             "description": (
                 "Pause a campaign (also for 'stop' a campaign): nothing is emailed from it until it is resumed. Nothing is "
@@ -3015,12 +3040,106 @@ class CampaignSession:
         finally:
             db.close()
         people.sort(key=lambda p: (p["name"] or p["email"]).casefold())
+        total = len(people)
+        waiting = sum(1 for p in people if p["status"].startswith("waiting"))
+        emailed = total - waiting
+        if total == 0:
+            text = f"{name} has no people in it yet."
+        else:
+            head = f"{name} has {total} {'person' if total == 1 else 'people'}. "
+            if waiting == 0:
+                head += "All of them have been emailed."
+            elif emailed == 0:
+                head += "None have been emailed yet."
+            else:
+                head += f"{emailed} emailed, {waiting} still waiting."
+            lines = [
+                f"{i}. {p['name'] or p['email']} ({p['email']}): {p['status']}"
+                for i, p in enumerate(people, 1)
+            ]
+            text = head + "\n\n" + "\n".join(lines)
         return json.dumps(
             {
                 "campaign": name,
-                "total": len(people),
-                "people": people,
-                "note": "Read-only. Answer with a short table (name, email, status). If there are no people, say the campaign is empty.",
+                "total": total,
+                "emailed": emailed,
+                "waiting": waiting,
+                "text": text,
+                "note": "Read-only. Reply with the text field exactly as written. No tables, no markdown, no extra sentences.",
+            }
+        )
+
+    def _show_prospects(self, campaign="", only="all") -> str:
+        """Read-only: every prospect in the workspace (or only those in / not in a campaign)."""
+        words = {
+            "pending": "waiting, not emailed yet",
+            "active": "emailed",
+            "replied": "replied",
+            "assessment_started": "started the assessment",
+            "completed": "completed",
+            "bounced": "bounced",
+            "unsubscribed": "unsubscribed",
+            "cold": "cold",
+            "stopped": "stopped",
+        }
+        if str(campaign or "").strip():
+            return self._show_campaign_people(campaign)
+        only = str(only or "all").strip().lower()
+        db = SessionLocal()
+        try:
+            prospects = db.scalars(select(Prospect).order_by(Prospect.executive_name)).all()
+            by_person: dict = {}
+            for link in db.scalars(
+                select(CampaignProspect).options(selectinload(CampaignProspect.campaign))
+            ).all():
+                if link.campaign is None:
+                    continue
+                raw = getattr(link.outreach_status, "value", link.outreach_status)
+                by_person.setdefault(link.prospect_id, []).append(
+                    f"{link.campaign.name} ({words.get(str(raw), str(raw))})"
+                )
+            rows = [
+                {
+                    "name": str(person.executive_name or ""),
+                    "email": str(person.email or ""),
+                    "where": by_person.get(person.id, []),
+                }
+                for person in prospects
+            ]
+        finally:
+            db.close()
+        total = len(rows)
+        in_any = [r for r in rows if r["where"]]
+        free = [r for r in rows if not r["where"]]
+        if only in ("not_in_campaign", "free", "unassigned"):
+            shown, title = free, "not in any campaign"
+        elif only in ("in_campaign", "assigned"):
+            shown, title = in_any, "in a campaign"
+        else:
+            shown, title = rows, ""
+        if total == 0:
+            text = "There are no prospects saved yet."
+        else:
+            noun = "prospect" if total == 1 else "prospects"
+            head = f"You have {total} {noun} in total: {len(in_any)} in a campaign, {len(free)} not in any campaign."
+            if title:
+                head = f"{len(shown)} of your {total} {noun} {'is' if len(shown) == 1 else 'are'} {title}."
+            if not shown:
+                text = head
+            else:
+                lines = [
+                    f"{i}. {r['name'] or r['email']} ({r['email']}): "
+                    + ("; ".join(r["where"]) if r["where"] else "not in any campaign")
+                    for i, r in enumerate(shown, 1)
+                ]
+                text = head + "\n\n" + "\n".join(lines)
+        return json.dumps(
+            {
+                "total": total,
+                "in_a_campaign": len(in_any),
+                "not_in_any_campaign": len(free),
+                "text": text,
+                "note": "Read-only. Reply with the text field exactly as written. No tables, no markdown, no extra sentences.",
             }
         )
 
@@ -3395,9 +3514,15 @@ REMOVING SOMEONE FROM A CAMPAIGN
 - Ask ONE yes/no first. Only after the user's NEXT message says yes, call remove_from_campaign. Never in the same turn you first ask, never on a vague answer, never choose for them. If they say no, change nothing.
 - After the tool returns, reply in one line with that sentence (for example "Removed Raj from east."). If it returns an error, tell the user that error in plain words; change nothing.
 
-WHO IS IN A CAMPAIGN
-- "who is in Harbor Light Test?", "list the people in <campaign>": call show_campaign_people with that campaign and
-  answer with a short table (name, email, status). It is read-only: do not change the pending selection or ask who to email.
+COUNTS AND LISTS OF PROSPECTS (read-only; the chat window cannot draw tables)
+- Two kinds of question. About ONE campaign ("how many people in Harbor Light Test", "who is in it", "did we email
+  everyone in it"): call show_prospects with campaign set. About everyone ("how many prospects do we have", "list
+  all prospects", "prospects not in a campaign", "which prospects are in which campaign"): call show_prospects
+  with no campaign; use only="not_in_campaign" or "in_campaign" when they ask for that slice.
+- A bare "how many prospects?" means the whole workspace, even if a campaign was mentioned earlier.
+- Always call the tool; never answer counts from memory or from the contacts list. Reply with the tool's text
+  field exactly as written. Never draw a table, never use pipes or markdown. These questions do not change the
+  pending selection and never ask who to email.
 
 PAUSE, RESUME AND DELETE
 - "pause" or "stop" a campaign: call pause_campaign right away (it is reversible). Reply with the one sentence it returns.
