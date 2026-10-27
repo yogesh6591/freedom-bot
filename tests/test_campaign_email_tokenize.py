@@ -5,7 +5,15 @@ from __future__ import annotations
 import pytest
 
 from acquisition.config import get_settings
-from app.assistant.assistant import TOKEN_ASSESS, keep_assessment_link, strip_assessment_link, tokenize
+from app.assistant.assistant import (
+    TOKEN_ASSESS,
+    TOKEN_FIRST,
+    draft_view,
+    keep_assessment_link,
+    person_fields,
+    strip_assessment_link,
+    tokenize,
+)
 
 BASE = "http://localhost:3001/acquire"
 
@@ -70,3 +78,42 @@ def test_strip_assessment_link_removes_the_placeholder_from_a_subject(public_bas
     cleaned = strip_assessment_link("Quick question {{assessment_url}}")
     assert TOKEN_ASSESS not in cleaned
     assert cleaned == "Quick question"
+
+
+def test_a_database_given_name_that_matches_the_local_part_is_kept():
+    records = {"people": [{"email": "ada@acme.example.com", "name": "Ada"}]}
+    fields = person_fields(records, {}, {"email": "ada@acme.example.com"})
+    assert fields["first_name"] == "Ada"
+    assert fields["sources"]["first_name"] == "database"
+
+
+def test_a_handle_copied_from_the_mailbox_is_not_a_name():
+    records = {"people": [{"email": "ada.lee92@gmail.com", "name": "ada.lee92"}]}
+    fields = person_fields(records, {}, {"email": "ada.lee92@gmail.com"})
+    assert fields["first_name"] == ""
+    assert fields["sources"]["first_name"] == "missing"
+
+
+def test_the_full_email_is_not_treated_as_a_name():
+    records = {"people": [{"email": "ada@acme.example.com", "name": "ada@acme.example.com"}]}
+    fields = person_fields(records, {}, {"email": "ada@acme.example.com"})
+    assert fields["first_name"] == ""
+    assert fields["sources"]["first_name"] == "missing"
+
+
+def test_missing_name_warning_is_only_when_the_greeting_uses_the_blank():
+    state = {
+        "recipients": [{"email": "zed@new.example.com"}],
+        "draft": {
+            "id": "d1",
+            "email_template": True,
+            "email_subject": "Hello",
+            "email_body": "Hi Zed,\n\nNote.\n",
+        },
+    }
+    view = draft_view({}, state)
+    assert not any("Hi there" in w for w in view["warnings"])
+
+    state["draft"]["email_body"] = f"Hi {TOKEN_FIRST},\n\nNote.\n"
+    view = draft_view({}, state)
+    assert any("Hi there" in w for w in view["warnings"])

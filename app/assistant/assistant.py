@@ -1508,9 +1508,29 @@ def proper_case(value: str) -> str:
     return text
 
 
+def _local_part_is_handle(local: str) -> bool:
+    """A mailbox is a handle when it has digits or separators, not a single given name."""
+    token = (local or "").strip()
+    if not token:
+        return True
+    return any(ch.isdigit() or ch in "._+%" for ch in token)
+
+
 def _mailbox_name(email: str, value: str) -> bool:
-    local = (email or "").split("@", 1)[0].strip().casefold()
-    return bool(value) and value.strip().casefold() in {local, (email or "").casefold()}
+    """True when ``value`` is the address itself, not a person's name.
+
+    A given name that matches the local part of a simple address is a real name and is kept.
+    """
+    raw = (value or "").strip()
+    addr = (email or "").strip()
+    if not raw or not addr:
+        return False
+    if raw.casefold() == addr.casefold():
+        return True
+    local = addr.split("@", 1)[0].strip()
+    if raw.casefold() != local.casefold():
+        return False
+    return _local_part_is_handle(local)
 
 
 def _evidence_is_the_address(evidence: str, email: str) -> bool:
@@ -1739,7 +1759,7 @@ def draft_view(records: dict, state: dict) -> dict:
     warnings: list[str] = []
     if is_template:
         for f in fields:
-            if not f["first_name"]:
+            if not f["first_name"] and TOKEN_FIRST in subject + body:
                 warnings.append(f'{f["email"]}: no first name on file. The email will say "Hi there,". Type a name in Details if you know it.')
         for name in literal_greeting_names(body):
             warnings.append(
