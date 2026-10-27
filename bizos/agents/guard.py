@@ -15,7 +15,9 @@ Order, on every call:
 
 1–3 can only stop a call or ask the model to fix it; they never let through anything the policy check
 would stop. Every write gets an idempotency key: the same write with the same arguments is not repeated
-within one request.
+within one request. Reads are bounded too: the same read with the same arguments returns the earlier
+result, and one read tool is called at most READ_REPEAT_LIMIT times per request, so the executor cannot
+spend its whole tool budget searching in a loop.
 """
 
 from __future__ import annotations
@@ -48,6 +50,9 @@ V2_SCHEMAS: dict[str, dict[str, Any]] = {
         "additionalProperties": False,
     },
 }
+
+#: Calls of one read tool allowed per request before the executor is told to stop and answer or ask.
+READ_REPEAT_LIMIT = 3
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
@@ -120,6 +125,8 @@ class GuardDecision:
     stage: str
     results: list[ToolResult] = field(default_factory=list)
     idempotency_key: Optional[str] = None
+    #: The arguments the call was made with (for the conversation's work record).
+    args: dict[str, Any] = field(default_factory=dict)
 
 
 class Guard:
@@ -141,6 +148,8 @@ class Guard:
         self.schemas = dict(schemas or {})
         self.log: list[GuardDecision] = []
         self._writes: dict[str, GuardDecision] = {}
+        self._reads: dict[str, GuardDecision] = {}
+        self._read_counts: dict[str, int] = {}
 
     # ------------------------------------------------------------------ checks 1-3
 
@@ -176,17 +185,43 @@ class Guard:
             return f"Call {', '.join(missing)} first, then try {tool} again."
         return None
 
+    def check_repeat(self, tool: str, args: dict[str, Any]) -> Optional[GuardDecision]:
+        """Reads only: the same call again returns its earlier result; too many calls of one tool stop."""
+        if is_write(tool):
+            return None
+        earlier = self._reads.get(idempotency_key(tool, args))
+        if earlier is not None:
+            return GuardDecision(
+                tool,
+                "Already looked up earlier in this request with the same inputs; use that result. " + earlier.text,
+                "repeat", args=dict(args),
+            )
+        count = self._read_counts.get(tool, 0)
+        if count >= READ_REPEAT_LIMIT:
+            return GuardDecision(
+                tool,
+                f"Stop calling {tool}: it already ran {count} times in this request. Answer from the results you "
+                "have, use load_tools if the task needs a tool from another area, or ask the user one short "
+                "question.",
+                "repeat", args=dict(args),
+            )
+        return None
+
     def pre_check(self, tool: str, args: dict[str, Any]) -> Optional[GuardDecision]:
-        """Run checks 1–3. Returns the blocking decision, or None when the call may go to the policy step."""
+        """Run checks 1–3 and the read-repeat bound. Returns the blocking decision, or None to go on."""
         for stage, problem in (
             ("schema", self.check_schema(tool, args)),
             ("provenance", self.check_provenance(tool, args)),
             ("prerequisite", self.check_prerequisites(tool)),
         ):
             if problem:
-                decision = GuardDecision(tool, problem, stage)
+                decision = GuardDecision(tool, problem, stage, args=dict(args))
                 self.log.append(decision)
                 return decision
+        repeat = self.check_repeat(tool, args)
+        if repeat is not None:
+            self.log.append(repeat)
+            return repeat
         return None
 
     # ------------------------------------------------------------------ check 4 and recording
@@ -211,8 +246,12 @@ class Guard:
             decision = GuardDecision(tool, _model_text(outcome), "policy", [from_outcome(outcome)])
             self._record(tool, outcome)
         decision.idempotency_key = key
+        decision.args = dict(args)
         if key and any(r.status != "error" for r in decision.results):
             self._writes[key] = decision
+        if key is None:
+            self._reads[idempotency_key(tool, args)] = decision
+            self._read_counts[tool] = self._read_counts.get(tool, 0) + 1
         self.log.append(decision)
         return decision
 
