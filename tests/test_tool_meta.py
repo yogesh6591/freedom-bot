@@ -75,7 +75,7 @@ def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
     assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
-    assert len(VISIBLE) == 92  # campaign listing / pause / delete tools added
+    assert len(VISIBLE) == 93  # refuse_bulk_change added
     assert {n for n in NAMES if TOOL_META[n].domain == "campaign"} == {t["function"]["name"] for t in CAMPAIGN_TOOLS}
 
 

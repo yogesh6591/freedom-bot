@@ -861,4 +861,12 @@ TOOL_META: dict[str, AgentMeta] = {
         Don't use: sending the email -> send_approved; editing the draft text -> propose_email;
         choosing recipients -> update_selection.
     """)),
+    "refuse_bulk_change": M("campaign", d("""
+        Say that deleting, removing or clearing several or all prospects or campaigns at once is not
+        supported. Changes nothing. Returns the sentence the model must reply with.
+        Use when: "delete all prospects", "remove everyone", "clear the list", "delete all campaigns",
+        "wipe everything", "sab delete kar do".
+        Don't use: deleting one named person -> delete_prospect; deleting one named campaign ->
+        delete_campaign; listing prospects -> show_prospects; listing campaigns -> show_campaigns.
+    """)),
 }

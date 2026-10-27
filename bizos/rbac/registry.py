@@ -946,6 +946,8 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
              "Save a first name, last name or company for one chosen recipient."),
             ("choose_email_scope", "Choose email change scope",
              "Record that the user chose to change the campaign first email for everyone not yet emailed."),
+            ("refuse_bulk_change", "Refuse bulk delete",
+             "Tell the user bulk delete is not supported and ask for one prospect or campaign. Read-only."),
         )
     ),
     _campaign(

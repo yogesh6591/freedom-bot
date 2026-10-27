@@ -1370,7 +1370,7 @@ CAMPAIGN_TOOLS = [
                 "Read-only. Prospects across the WHOLE workspace: how many there are, who they are, and which campaign each "
                 "is in. Use it for 'how many prospects do we have', 'list all prospects', 'prospects not in a campaign', "
                 "'which prospects are in which campaigns'. If the user names one campaign ('how many in Harbor Light Test', "
-                "'did we email everyone in X') pass campaign. Changes nothing."
+                "'did we email everyone in X') pass campaign. Changes nothing. Never use this for delete, remove or clear requests."
             ),
             "parameters": {
                 "type": "object",
@@ -1384,6 +1384,23 @@ CAMPAIGN_TOOLS = [
                     "why": _WHY,
                 },
                 "required": ["why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "refuse_bulk_change",
+            "description": (
+                "Call this when the user asks to DELETE, REMOVE or CLEAR several or all prospects, campaigns or people at "
+                "once ('delete all prospects', 'remove everyone', 'clear the list', 'delete all campaigns'). Bulk changes are "
+                "not supported here. It changes nothing and returns the sentence to reply with. Never call show_prospects or "
+                "show_campaigns for such a request."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"what": {"type": "string", "description": "what the user asked to delete or clear, in their words"}, "why": _WHY},
+                "required": ["what", "why"],
             },
         },
     },
@@ -3143,6 +3160,15 @@ class CampaignSession:
             }
         )
 
+    def _refuse_bulk_change(self, what="") -> str:
+        """Read-only: bulk delete is not supported; the model asks for one at a time."""
+        return json.dumps(
+            {
+                "text": "I can't delete everyone at once. Tell me which one prospect or campaign to delete.",
+                "note": "Nothing was changed. Reply with the text field exactly as written.",
+            }
+        )
+
     def _pause_campaign(self, campaign="") -> str:
         db = SessionLocal()
         try:
@@ -3520,6 +3546,9 @@ COUNTS AND LISTS OF PROSPECTS (read-only; the chat window cannot draw tables)
   all prospects", "prospects not in a campaign", "which prospects are in which campaign"): call show_prospects
   with no campaign; use only="not_in_campaign" or "in_campaign" when they ask for that slice.
 - A bare "how many prospects?" means the whole workspace, even if a campaign was mentioned earlier.
+- A request to DELETE, REMOVE or CLEAR several or all prospects or campaigns ("delete all prospects", "remove
+  everyone", "clear the list", "delete all campaigns") is NOT a question about counts. Call refuse_bulk_change for it,
+  not show_prospects and not show_campaigns, and reply with its text.
 - Always call the tool; never answer counts from memory or from the contacts list. Reply with the tool's text
   field exactly as written. Never draw a table, never use pipes or markdown. These questions do not change the
   pending selection and never ask who to email.

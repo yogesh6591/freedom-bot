@@ -70,7 +70,7 @@ ROLE_USER = {"ADMIN": "admin", "OPERATOR": "operator", "APPROVER": "approver", "
 CAMPAIGN_TOOLS = frozenset({"update_selection", "show_contacts", "show_campaigns", "propose_email", "approve_move",
                             "send_approved", "show_campaign_people", "show_prospects", "pause_campaign",
                             "resume_campaign", "delete_campaign", "delete_prospect", "remove_from_campaign",
-                            "set_person_details", "choose_email_scope"})
+                            "set_person_details", "choose_email_scope", "refuse_bulk_change"})
 
 
 CANARIES = ROOT / "evals" / "canaries.yaml"

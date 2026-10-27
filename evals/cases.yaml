@@ -392,7 +392,7 @@
   expected_domains: []
   expected_tool_calls: []
   forbidden_tool_calls: [send_approved, approve_move, email_send_message]
-  expected_hidden: [update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved, show_campaign_people, show_prospects, pause_campaign, resume_campaign, delete_campaign, delete_prospect, remove_from_campaign, set_person_details, choose_email_scope]
+  expected_hidden: [update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved, show_campaign_people, show_prospects, pause_campaign, resume_campaign, delete_campaign, delete_prospect, remove_from_campaign, set_person_details, choose_email_scope, refuse_bulk_change]
   expected_outcome: not_permitted
 
 - id: clarify_no_referent_001
@@ -31027,4 +31027,27 @@
   expected_domains: [campaign]
   expected_tool_calls: [choose_email_scope]
   expected_gates: {choose_email_scope: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_refuse_bulk_change_001
+  query: Delete all prospects
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [refuse_bulk_change]
+  expected_gates: {refuse_bulk_change: run}
+  expected_outcome: [handed_off, answer]
+
+- id: t_refuse_bulk_change_002
+  query: Delete all prospects
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [refuse_bulk_change]
+  expected_outcome: not_permitted
+
+- id: t_refuse_bulk_change_003
+  query: sab delete kar do
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [campaign]
+  expected_tool_calls: [refuse_bulk_change]
+  expected_gates: {refuse_bulk_change: run}
   expected_outcome: [handed_off, answer]
