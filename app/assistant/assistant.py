@@ -14,6 +14,7 @@ from typing import Any, Callable, Optional
 # ------------------------------------------------------------------------------------------------
 # context  (app/assistant/context.py) - Facts the assistant may use: saved campaigns, people, and the initial email.
 # ------------------------------------------------------------------------------------------------
+import itertools
 import json
 
 
@@ -661,7 +662,10 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
 
     return FulfillResult(
         campaign_id=campaign_id,
-        message=f"Created the {name} campaign and sent this email.{moved_note}",
+        message=(
+            f"Created the {name} campaign in Instantly and scheduled this email. Nothing has been delivered yet: "
+            f"Instantly sends it inside the campaign's send window.{moved_note}"
+        ),
         prior_emails=tuple(progress.prior_emails),
     )
 
@@ -1774,11 +1778,23 @@ def draft_view(records: dict, state: dict) -> dict:
     camp = _find_campaign(records, cid, "") if cid else None
     existing = camp is not None
     changed, others = False, []
+    changed_parts: list[str] = []
+    first_difference = ""
     if existing and is_template:
         saved = camp.get("initial_email") or {}
         t_subject, t_body = finalize_template(subject, body)
         norm = lambda t: " ".join(str(t or "").split())  # noqa: E731
-        changed = norm(t_subject) != norm(saved.get("subject")) or norm(t_body) != norm(saved.get("body"))
+        if norm(t_subject) != norm(saved.get("subject")):
+            changed_parts.append("subject")
+        if norm(t_body) != norm(saved.get("body")):
+            changed_parts.append("body")
+            saved_lines = [ln for ln in str(saved.get("body") or "").splitlines() if ln.strip()]
+            new_lines = [ln for ln in t_body.splitlines() if ln.strip()]
+            for old_ln, new_ln in itertools.zip_longest(saved_lines, new_lines, fillvalue=""):
+                if norm(old_ln) != norm(new_ln):
+                    first_difference = f"saved: {norm(old_ln)[:80]} | draft: {norm(new_ln)[:80]}"
+                    break
+        changed = bool(changed_parts)
         if changed:
             others = waiting_in_campaign(cid, {f["email"].casefold() for f in fields})
     scope = str(state.get("scope") or "")
@@ -1796,6 +1812,8 @@ def draft_view(records: dict, state: dict) -> dict:
             "will_send_now": [label(f) for f in fields],
             "also_waiting": others,
             "template_changed": changed,
+            "changed_parts": changed_parts,
+            "first_difference": first_difference,
             "scope": scope,
             "scope_needed": bool(existing and changed and others and not scope),
         },
@@ -1894,6 +1912,16 @@ _QUESTION_START = re.compile(
 )
 _SEND_WORD = re.compile(r"\b(send|approve[ds]?|go ahead|ship|do it|proceed|confirm(ed)?)\b", re.I)
 _HOLD_WORD = re.compile(r"\b(don'?t|do not|never|not yet|wait|hold on|hold off|stop|cancel)\b|^\s*no\b", re.I)
+#: The user asked to change the whole email (subject AND body), not just one part.
+_WHOLE_EMAIL = re.compile(
+    r"\b(?:whole|entire|full|complete)\s+(?:email|mail|message|draft)\b"
+    r"|\bsubject\s*(?:,|and|&|\+|as well|too|also)\s*(?:the\s+)?body\b"
+    r"|\bbody\s*(?:,|and|&|\+|as well|too|also)\s*(?:the\s+)?subject\b"
+    r"|\b(?:including|plus|with|and)\s+(?:the\s+)?subject\b"
+    r"|\bsubject\s+(?:too|also|as well)\b",
+    re.I,
+)
+_CHANGE_VERB = re.compile(r"\b(?:change|make|rewrite|redo|replace|update|turn|convert|switch|edit|write)\b", re.I)
 
 
 def approval_problem(latest: str, evidence: str) -> str:
@@ -2491,6 +2519,21 @@ class CampaignSession:
         prev, prev_scope = s.get("draft") or {}, s.get("scope")
         if prev and (prev.get("email_subject"), prev.get("email_body")) == (subject, body):
             return "ok: this is the draft that is already shown. Do not call propose_email again; answer the user in words."
+        if prev and _WHOLE_EMAIL.search(self.user_message or "") and _CHANGE_VERB.search(self.user_message or ""):
+            subject_changed = (prev.get("email_subject") or "") != subject
+            body_changed = (prev.get("email_body") or "") != body
+            if subject_changed != body_changed:
+                return json.dumps(
+                    {
+                        "error": "change_both",
+                        "changed_only": "subject" if subject_changed else "body",
+                        "instruction": (
+                            "The user asked to change the whole email, subject and body. You changed only the "
+                            f"{'subject' if subject_changed else 'body'}. Call propose_email again with BOTH a new "
+                            "subject and a new body that match what the user asked for."
+                        ),
+                    }
+                )
         if prev.get("user_edited") and not (change_evidence and self._user_said(change_evidence)):
             return json.dumps(
                 {
@@ -2721,6 +2764,8 @@ class CampaignSession:
                 {
                     "error": "needs_scope",
                     "campaign": audience.get("campaign"),
+                    "changed_parts": audience.get("changed_parts"),
+                    "first_difference": audience.get("first_difference"),
                     "also_waiting": [p["name"] for p in audience.get("also_waiting") or []],
                     "instruction": (
                         "This email differs from the campaign's saved first email, and these people are in the campaign "
@@ -2751,7 +2796,7 @@ class CampaignSession:
             evidence=approval_evidence,
             prior_emails=list(outcome.prior_emails),
         )
-        return f"sent: {outcome.message}"
+        return f"scheduled (not delivered yet): {outcome.message}"
 
 
 
@@ -2933,8 +2978,16 @@ EMAIL AND SENDING
   or body.
 - Call send_approved only when a draft is pending AND the user's latest message clearly approves it, in any
   wording. Changes requested or ambiguous means do not send; ask. After it returns, confirm in one natural
-  sentence using only what the tool returned. If send_approved returns an error, tell the user that error in plain
+  sentence using only what the tool returned. The email is SCHEDULED in Instantly, not delivered: say the
+  campaign is created and the email is scheduled to go out in its send window; never say it was "sent" or
+  "delivered". If send_approved returns an error, tell the user that error in plain
   words and what they can do; never retry blindly and never change the hours or anything else on your own.
+- CHANGING THE EMAIL: decide what the user wants changed before you call propose_email. If they name only the
+  subject, change only the subject. If they name only the body, change only the body. If they say "the email",
+  "the whole email", "everything", "both", or give a topic or theme ("make it about X", "anything related to X"),
+  change BOTH the subject and the body so they match, in the same propose_email call. Never change just one of
+  them when the request covers both. Before you call propose_email, check that the new subject and body
+  together answer every part of the user's request.
 - With several recipients write ONE greeting, "Hi there,". The platform greets each person by their own first
   name. Never list the people in the greeting ("Hi Nina and Raj,") and never type a name placeholder such as
   {first name} yourself: write the greeting in plain words. Do keep the assessment URL in the body from the
@@ -2953,6 +3006,11 @@ EMAIL AND SENDING
   choose for them. If they say yes, call choose_email_scope with everyone, then send_approved again. If they
   say no, do not send and do not call choose_email_scope; reply: "Okay, nothing sent. Want to change the
   wording back to the campaign's email, or edit it more?"
+  Ask this question at most ONCE. If the user already said earlier in this conversation that the change is for
+  everyone in the campaign ("change it for everyone", "for all of them"), do not ask: call choose_email_scope
+  with everyone, using those words as approval_evidence, then send_approved. After you have asked, any
+  approving answer ("yes", "send", "send it", "go ahead", "ok") means yes: call choose_email_scope with
+  everyone using their words, then send_approved in the same turn. Never repeat the question.
 - Never invent people, addresses, campaigns or drafts. The records below are the only truth.
 """
 
