@@ -467,7 +467,7 @@ from acquisition.services.instantly_campaign_sync_service import (
 )
 from acquisition.services.lead_sync_service import LeadSyncError, LeadSyncService
 from acquisition.services.instantly_service import InstantlyService
-from acquisition.services.prospect_service import ProspectService
+from acquisition.services.prospect_service import ProspectNotFoundError, ProspectService
 
 
 class FulfillError(Exception):
@@ -632,7 +632,16 @@ def fulfill_approved_email(ctx, parsed: dict) -> FulfillResult:
         if already_active:
             return FulfillResult(
                 campaign_id=campaign_id,
-                message=f"The {name} campaign is already created and this email is already set to send.{moved_note}",
+                message=(
+                    f"Added {', '.join(recipients)} to the existing {name} campaign. Nothing has been delivered yet: "
+                    "Instantly sends inside the campaign's send window."
+                    + (
+                        " The updated email also applies to everyone in the campaign who has not been emailed yet."
+                        if str(parsed.get("email_scope") or "") == "everyone"
+                        else ""
+                    )
+                    + moved_note
+                ),
                 prior_emails=tuple(progress.prior_emails),
             )
         CampaignActivationService(db).activate(campaign.id, confirm=True)
@@ -1265,10 +1274,10 @@ CAMPAIGN_TOOLS = [
         "type": "function",
         "function": {
             "name": "show_campaigns",
-            "description": "Show the saved campaigns table (only ones the committed recipients are not already active in). Requires recipients to be committed. Refused if a campaign is already committed unless change_campaign=true.",
+            "description": "Show the saved campaigns table so the user can pick (only ones the committed recipients are not already active in). Requires recipients to be committed. Refused if a campaign is already committed unless change_campaign=true. When the user only wants to LOOK at their campaigns (for example 'show my campaigns'), call it with show_all=true: it lists every saved campaign at any time, even with no recipients or a pending selection, and changes nothing.",
             "parameters": {
                 "type": "object",
-                "properties": {"change_campaign": {"type": "boolean"}, "why": _WHY},
+                "properties": {"change_campaign": {"type": "boolean"}, "show_all": {"type": "boolean"}, "why": _WHY},
                 "required": ["why"],
             },
         },
@@ -1335,6 +1344,80 @@ CAMPAIGN_TOOLS = [
                     "why": _WHY,
                 },
                 "required": ["email", "campaign", "approval_evidence", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "pause_campaign",
+            "description": (
+                "Pause a campaign (also for 'stop' a campaign): nothing is emailed from it until it is resumed. Nothing is "
+                "deleted. Call it only when the user asks in this message to pause or stop that campaign."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"campaign": {"type": "string", "description": "campaign name or id"}, "why": _WHY},
+                "required": ["campaign", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "resume_campaign",
+            "description": (
+                "Resume (turn back on) a paused campaign. Emails may start sending, so the first call returns the yes/no "
+                "question to ask; call again only after the user's NEXT message says yes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"type": "string", "description": "campaign name or id"},
+                    "approval_evidence": {"type": "string", "description": "the user's words that count as yes (empty on the first call)"},
+                    "why": _WHY,
+                },
+                "required": ["campaign", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_campaign",
+            "description": (
+                "Delete a campaign completely from FreedomBot AND Instantly, like the admin Delete button. The first call "
+                "returns the yes/no question to ask (with counts); call again only after the user's NEXT message says yes. "
+                "The people stay in the workspace. Never for 'stop' or 'pause'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "campaign": {"type": "string", "description": "campaign name or id"},
+                    "approval_evidence": {"type": "string", "description": "the user's words that count as yes (empty on the first call)"},
+                    "why": _WHY,
+                },
+                "required": ["campaign", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_prospect",
+            "description": (
+                "Delete one person completely, like the admin Delete Prospect button, and remove their leads from Instantly "
+                "so no more emails go out. The first call returns the yes/no question to ask; call again only after the "
+                "user's NEXT message says yes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string"},
+                    "approval_evidence": {"type": "string", "description": "the user's words that count as yes (empty on the first call)"},
+                    "why": _WHY,
+                },
+                "required": ["email", "why"],
             },
         },
     },
@@ -1470,6 +1553,7 @@ def campaign_state_text(state: dict, people_status: list | None = None, fields: 
         "still_missing": _missing(state),
         "last_shown_to_user_in_tables_in_order": state.get("shown") or {"people": [], "campaigns": []},
         "pending_draft": state.get("draft", {}).get("email_draft") if state.get("draft") else None,
+        "previous_draft_wording_reuse_it": state.get("previous_draft") or None,
         "person_details_for_the_email": [
             {k: v for k, v in f.items() if k != "email"} | {"email": f["email"]} for f in (fields or [])
         ],
@@ -1921,6 +2005,12 @@ _WHOLE_EMAIL = re.compile(
     r"|\bsubject\s+(?:too|also|as well)\b",
     re.I,
 )
+def _has_clock_hours(text: str) -> bool:
+    """True when the user's words give real clock times (two numbers like '9 am to 5 pm', or noon)."""
+    nums = re.findall(r"(?<![\w:])\d{1,2}(?::\d{2})?(?!\d)", text or "")
+    return len(nums) >= 2 or bool(re.search(r"\bnoon\b", text or "", re.I) and len(nums) >= 1)
+
+
 _CHANGE_VERB = re.compile(r"\b(?:change|make|rewrite|redo|replace|update|turn|convert|switch|edit|write)\b", re.I)
 
 
@@ -1952,6 +2042,72 @@ NOT_SENT_TEXT = (
     "Nothing has been sent yet. The email draft is still waiting. Say \"send it\" and I will send it."
 )
 
+#: After a successful send_approved the email is only SCHEDULED in Instantly. Saying it was sent/delivered is wrong.
+_DELIVERED_CLAIM = re.compile(
+    r"\b(?:email|message|mail)\b[^.\n]{0,40}\b(?:was|has been|is|been|got) (?:sent|delivered)\b"
+    r"|\b(?:i(?:'ve| have)? )?sent (?:the|this|your|it|that)\b"
+    r"|^\s*(?:email )?sent\b|\bemail sent\b|\bdelivered (?:the|this|your|it)\b",
+    re.I | re.M,
+)
+_DENIES_DELIVERY = re.compile(r"\b(?:not|nothing|n't|no)\b[^.\n]{0,40}\b(?:sent|delivered)\b", re.I)
+
+
+def claims_delivered(text: str) -> bool:
+    """True when the reply says the email was sent or delivered without saying it is only scheduled."""
+    blob = text or ""
+    if re.search(r"\bschedul", blob, re.I) or _DENIES_DELIVERY.search(blob):
+        return False
+    return bool(_DELIVERED_CLAIM.search(blob))
+
+
+def _campaign_row(db, raw: str):
+    """A campaign by id or by exact (case-insensitive) name, or None."""
+    raw = str(raw or "").strip()
+    if not raw:
+        return None
+    try:
+        return db.get(Campaign, uuid.UUID(raw))
+    except ValueError:
+        return db.scalar(select(Campaign).where(func.lower(Campaign.name) == raw.lower()))
+
+
+def _campaign_counts(db, campaign_id) -> dict:
+    """How many people in a campaign were emailed, replied, started the assessment or booked."""
+    links = db.scalars(select(CampaignProspect).where(CampaignProspect.campaign_id == campaign_id)).all()
+    counts = {"people": len(links), "emailed": 0, "replied": 0, "assessment": 0, "booked": 0}
+    for link in links:
+        if link.outreach_status != OutreachStatus.PENDING:
+            counts["emailed"] += 1
+        if link.outreach_status == OutreachStatus.REPLIED or link.last_reply_at is not None:
+            counts["replied"] += 1
+        if (
+            link.outreach_status == OutreachStatus.ASSESSMENT_STARTED
+            or link.assessment_started_at is not None
+            or link.assessment_status != AssessmentStatus.NOT_STARTED
+        ):
+            counts["assessment"] += 1
+        if link.booked_at is not None or (link.booking_status or "").strip().lower() == "confirmed":
+            counts["booked"] += 1
+    return counts
+
+
+def _audit_change(ctx, action: str, detail: dict) -> None:
+    """Audit-log a pause/resume/delete done from chat. Never lets logging break the action."""
+    try:
+        from bizos.audit import events as audit
+        from bizos.types import AuditEventType
+
+        audit.log(
+            AuditEventType("ACTION_EXECUTED"),
+            ctx=ctx,
+            tool=f"campaign_{action}",
+            status="ACTION_EXECUTED",
+            request=detail,
+            result={"action": action},
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
 
 class CampaignSession:
     """One turn of the campaign flow: the committed selection plus the tools that change it.
@@ -1979,6 +2135,10 @@ class CampaignSession:
         self.started_with_recipients = bool(self.state.get("recipients"))
         # People already explained to the user in an earlier turn. A move can only be approved for these.
         self.offered_before = set(self.state.get("move_offered") or [])
+        # Pause/resume/delete questions asked in the previous turn. A delete is only carried out when the user
+        # answers yes to a question they already saw; the offer lives for exactly one following turn.
+        self.delete_offered_before = set(self.state.get("delete_offered") or [])
+        self.state["delete_offered"] = []
 
     def call(self, name: str, args: dict) -> str:
         why = str(args.pop("why", "") or "")
@@ -2013,10 +2173,25 @@ class CampaignSession:
         # Said "I will call send_approved" but never did. (If it was called and failed, the model is reporting that.)
         return (not tried) and bool(_WILL_SEND.search(explanation or ""))
 
+    def scheduled_text(self) -> str:
+        """Plain wording for a send that only scheduled the email (used if the model keeps saying "sent")."""
+        s = self.state
+        name = str(s.get("campaign_name") or "").strip()
+        window = s.get("window") or []
+        when = f" It goes out between {window[0]} and {window[1]}." if len(window) >= 2 else ""
+        label = f"The {name} campaign" if name else "The campaign"
+        return f"{label} is created in Instantly and the email is scheduled. Nothing has been delivered yet.{when}"
+
     def problems(self, reply: str = "", explanation: str = "") -> list[str]:
         """Consistency check between the model's turn and the state it just built.
         Returned as notes for the model to act on; code never rewrites the reply."""
         s, out = self.state, []
+        if self.sent and claims_delivered(reply):
+            out.append(
+                "Your reply says the email was sent or delivered. It is only SCHEDULED in Instantly. Say the campaign "
+                "is created and the email is scheduled to go out in its send window, and that nothing has been "
+                "delivered yet. Do not use the words sent or delivered as a done deal."
+            )
         if self.claims_unsent(reply, explanation):
             out.append(
                 "Your reply says the email was sent or the campaign was created, but send_approved has NOT "
@@ -2229,6 +2404,11 @@ class CampaignSession:
         self.state["move_offered"] = sorted(offered)
 
     def _invalidate_draft(self) -> None:
+        d = self.state.get("draft") or {}
+        if d.get("email_subject") and d.get("email_body"):
+            # Keep the wording, so a change of window/people/campaign never sends the model back to the default
+            # template and loses what the user already wrote.
+            self.state["previous_draft"] = {"subject": d["email_subject"], "body": d["email_body"]}
         self.state.pop("draft", None)
         self.state.pop("scope", None)
 
@@ -2349,13 +2529,14 @@ class CampaignSession:
             if _find_campaign(self.records, s.get("campaign_id", ""), s.get("campaign_name", "")):
                 notes.append("ignored window: an existing campaign keeps its saved window")
             else:
-                if not self._user_said(window_evidence):
+                if not self._user_said(window_evidence) or not _has_clock_hours(window_evidence):
                     return json.dumps(
                         {
                             "error": "window_not_given_by_user",
                             "instruction": (
-                                "The user has not told you the daily send hours, so I did not save any. Never invent or "
-                                "default them. Ask: 'What daily send hours should it use, for example 9 am to 5 pm?'. "
+                                "The user has not told you exact daily send hours (words like 'morning' or 'afternoon' are "
+                                "not hours), so I did not save any. Never invent or default them. Ask: 'What daily send "
+                                "hours should it use, for example 9 am to 5 pm?'. "
                                 "When they answer, call update_selection with the hours and window_evidence set to their words."
                             ),
                             "selection": self._sel(),
@@ -2464,8 +2645,23 @@ class CampaignSession:
         s.setdefault("shown", {})["people"] = rows
         return json.dumps({"table_shown_in_order": rows})
 
-    def _show_campaigns(self, change_campaign: bool = False) -> str:
+    def _show_campaigns(self, change_campaign: bool = False, show_all: bool = False) -> str:
         s = self.state
+        if show_all:
+            # Only looking: every saved campaign, no exclusions, and the pending selection stays as it is.
+            rows = [
+                {"name": str(c.get("campaign_name") or ""), "timing": _campaign_timing(c)}
+                for c in self.records.get("campaigns") or []
+                if c.get("campaign_name")
+            ]
+            self.campaigns_to_show = rows
+            return json.dumps(
+                {
+                    "table_shown_in_order": rows,
+                    "note": "informational only: the user's pending selection is unchanged. Say in one short sentence "
+                    "that these are their campaigns; if a request is still pending, say it is still waiting.",
+                }
+            )
         if not s.get("recipients"):
             return "error: commit recipients first so I can exclude campaigns they are already active in"
         if s.get("campaign_name") and not change_campaign:
@@ -2558,6 +2754,7 @@ class CampaignSession:
             "email_draft": "",
             "email_from": ", ".join(sending_account_emails()),
         }
+        s.pop("previous_draft", None)
         refresh_preview(self.records, s)
         self.card_shown = True
         self.people_to_show, self.campaigns_to_show = [], []
@@ -2734,6 +2931,176 @@ class CampaignSession:
             self._invalidate_draft()
         return done
 
+    # ---- pause / resume / delete (same services as the admin buttons) ----
+
+    def _confirm_destructive(self, key: str, approval_evidence: str, question: str) -> str:
+        """Empty string only when the user already SAW this question in an earlier turn and now clearly says yes.
+
+        Otherwise returns the not_approved result that tells the model to ask the one yes/no."""
+        why_not = approval_problem(self.user_message, approval_evidence)
+        if key in self.delete_offered_before and not why_not:
+            return ""
+        offers = self.state.setdefault("delete_offered", [])
+        if key not in offers:
+            offers.append(key)
+        return json.dumps(
+            {
+                "error": "not_approved",
+                "reason": why_not or "the user has not yet been asked this question",
+                "instruction": (
+                    f"Nothing was changed. Ask the user ONE yes/no question, in your own words, with these facts: {question} "
+                    "Call this tool again only after their NEXT message says yes, and pass their words as approval_evidence."
+                ),
+            }
+        )
+
+    def _pause_campaign(self, campaign="") -> str:
+        db = SessionLocal()
+        try:
+            row = _campaign_row(db, campaign)
+            if row is None:
+                return json.dumps({"error": f"I could not find a campaign called {campaign}."})
+            name = row.name
+            try:
+                CampaignActivationService(db).pause(row.id)
+            except (ActivationError, CampaignNotFoundError, CampaignValidationError) as exc:
+                return json.dumps({"error": getattr(exc, "message", None) or str(exc) or "Instantly did not pause it. Nothing changed."})
+        finally:
+            db.close()
+        _audit_change(self.ctx, "pause_campaign", {"campaign": name})
+        return f"Paused {name}. Nothing is emailed from it until it is resumed."
+
+    def _resume_campaign(self, campaign="", approval_evidence="") -> str:
+        db = SessionLocal()
+        try:
+            row = _campaign_row(db, campaign)
+            if row is None:
+                return json.dumps({"error": f"I could not find a campaign called {campaign}."})
+            name = row.name
+            gate = self._confirm_destructive(
+                f"resume_campaign:{row.id}",
+                approval_evidence,
+                f"Resume the {name} campaign? Emails to the people still waiting in it may start sending in its send window.",
+            )
+            if gate:
+                return gate
+            try:
+                CampaignActivationService(db).activate(row.id, confirm=True)
+            except (ActivationError, CampaignNotFoundError, CampaignValidationError) as exc:
+                detail = getattr(exc, "message", None) or str(exc) or "Instantly did not resume it."
+                missing = getattr(exc, "missing", None) or []
+                if missing:
+                    detail = f"{detail} {' '.join(str(m) for m in missing)}"
+                return json.dumps({"error": detail.strip()})
+        finally:
+            db.close()
+        _audit_change(self.ctx, "resume_campaign", {"campaign": name})
+        return f"Resumed {name}. Its emails go out inside the campaign's send window."
+
+    def _delete_campaign(self, campaign="", approval_evidence="") -> str:
+        db = SessionLocal()
+        try:
+            row = _campaign_row(db, campaign)
+            if row is None:
+                return json.dumps({"error": f"I could not find a campaign called {campaign}."})
+            name, row_id = row.name, row.id
+            counts = _campaign_counts(db, row_id)
+            question = (
+                f"Delete the {name} campaign from FreedomBot and from Instantly? It has {counts['people']} people: "
+                f"{counts['emailed']} emailed, {counts['replied']} replied, {counts['assessment']} started the assessment, "
+                f"{counts['booked']} booked. "
+            )
+            if counts["replied"] or counts["assessment"] or counts["booked"]:
+                question += "Their replies, assessment chats and bookings in this campaign are deleted too. "
+            question += "The people stay in the workspace. This cannot be undone."
+            gate = self._confirm_destructive(f"delete_campaign:{row_id}", approval_evidence, question)
+            if gate:
+                return gate
+            try:
+                CampaignService(db).delete_campaign(row_id)
+            except (CampaignNotFoundError, CampaignValidationError) as exc:
+                return json.dumps({"error": getattr(exc, "message", None) or str(exc) or "The campaign was not deleted."})
+        finally:
+            db.close()
+        s = self.state
+        if str(s.get("campaign_id") or "") == str(row_id):
+            s["campaign_id"], s["campaign_name"], s["window"] = "", "", []
+            self._invalidate_draft()
+        _audit_change(self.ctx, "delete_campaign", {"campaign": name, **counts})
+        return f"Deleted the {name} campaign from FreedomBot and Instantly."
+
+    def _delete_prospect(self, email="", approval_evidence="") -> str:
+        address = str(email or "").strip()
+        if "@" not in address:
+            return json.dumps({"error": "Say which person to delete (their email address)."})
+        db = SessionLocal()
+        try:
+            prospect = db.scalar(select(Prospect).where(func.lower(Prospect.email) == address.lower()))
+            if prospect is None:
+                return json.dumps({"error": f"I could not find {address}."})
+            prospect_id = prospect.id
+            statuses = describe_people(db, [address])
+            st = statuses[0] if statuses else None
+            who = (st.label if st else "") or address
+            infos = list(st.links) if st else []
+            question = f"Delete {who} completely from FreedomBot? "
+            if infos:
+                names = sorted({i.campaign_name or "a campaign" for i in infos})
+                question += f"They are in {', '.join(names)}, and any lead in Instantly is removed so no more emails go out. "
+            if any(i.conversation for i in infos):
+                question += "Their replies, assessment chats and bookings are deleted too. "
+            if any(i.opted_out for i in infos):
+                question += (
+                    "They unsubscribed or bounced earlier: deleting them also erases that record, so they could be added "
+                    "and emailed again. "
+                )
+            question += "This cannot be undone."
+            gate = self._confirm_destructive(f"delete_prospect:{prospect_id}", approval_evidence, question)
+            if gate:
+                return gate
+            link_rows = db.scalars(
+                select(CampaignProspect)
+                .options(selectinload(CampaignProspect.campaign), selectinload(CampaignProspect.prospect))
+                .where(CampaignProspect.prospect_id == prospect_id)
+            ).all()
+            if link_rows:
+                try:
+                    client = InstantlyService(db).get_api_client()
+                except Exception as exc:  # noqa: BLE001
+                    return json.dumps({"error": str(exc) or "Could not reach Instantly. Nothing was deleted."})
+                for link_row in link_rows:
+                    try:
+                        lead_id = _instantly_lead_id(client, link_row)
+                        if lead_id:
+                            try:
+                                client._request("DELETE", f"/leads/{lead_id}", json={})
+                            except InstantlyError as exc:
+                                if getattr(exc, "status_code", None) != 404:
+                                    raise
+                    except InstantlyError as exc:
+                        return json.dumps(
+                            {
+                                "error": (
+                                    (str(exc) or "Instantly did not remove them.")
+                                    + " The person was not deleted from FreedomBot; some of their Instantly leads may already be gone."
+                                )
+                            }
+                        )
+            try:
+                ProspectService(db).delete_prospect(prospect_id)
+            except ProspectNotFoundError:
+                return json.dumps({"error": f"I could not find {address}."})
+        finally:
+            db.close()
+        s = self.state
+        kept = [r for r in s.get("recipients") or [] if str(r.get("email") or "").lower() != address.lower()]
+        if kept != (s.get("recipients") or []):
+            s["recipients"] = kept
+            _keep_approvals(s, {str(r.get("email") or "").lower() for r in kept})
+            self._invalidate_draft()
+        _audit_change(self.ctx, "delete_prospect", {"email": address})
+        return f"Deleted {who} from FreedomBot, and removed their leads from Instantly."
+
     def _send_approved(self, approval_evidence: str = "") -> str:
         if not self.state.get("draft"):
             return "error: no draft pending, nothing to send"
@@ -2896,6 +3263,9 @@ TABLES (UI cards)
 - The contacts table appears only if you call show_contacts; the campaigns table only if you call
   show_campaigns. Show one only when the user must choose and you do not yet have the answer. Never show
   contacts after recipients are committed, and never "just in case".
+- If the user only asks to SEE their campaigns ("show my campaigns", "what campaigns do I have"), call
+  show_campaigns with show_all=true right away, whatever else is pending. Do not ask who to email, do not
+  change the pending selection, and answer in one short sentence.
 - If the user has not named anyone to email and no recipient is committed, call show_contacts in that SAME
   turn (after saving anything they did say, such as the campaign name). Never ask "who?" in words alone and
   never wait for them to ask to see the list: they cannot choose from people they cannot see.
@@ -2955,6 +3325,20 @@ REMOVING SOMEONE FROM A CAMPAIGN
 - Ask ONE yes/no first. Only after the user's NEXT message says yes, call remove_from_campaign. Never in the same turn you first ask, never on a vague answer, never choose for them. If they say no, change nothing.
 - After the tool returns, reply in one line with that sentence (for example "Removed Raj from east."). If it returns an error, tell the user that error in plain words; change nothing.
 
+PAUSE, RESUME AND DELETE
+- "pause" or "stop" a campaign: call pause_campaign right away (it is reversible). Reply with the one sentence it returns.
+- "resume", "restart" or "turn it back on": call resume_campaign. It returns a yes/no question; ask it. Only after the
+  user's NEXT message says yes, call it again with their words as approval_evidence.
+- "delete" a campaign: call delete_campaign. It returns a yes/no question with the counts; ask exactly that, in your own
+  words. Only after the user's NEXT message says yes, call it again with their words as approval_evidence. Never delete
+  because the user said "stop" or "pause".
+- "delete" a person (a prospect): call delete_prospect with their email, the same way. This is different from removing
+  someone from one campaign; use remove_from_campaign when they only want them out of one campaign.
+- Never pause, resume or delete unless the user asked for it in this message. Never answer the yes/no for them. If they say
+  no, change nothing. After a tool succeeds, reply with its one sentence; if it returns an error, tell the user that error in
+  plain words. Deleting many people or campaigns at once ("delete all prospects") is not supported here: say so and ask
+  for one at a time.
+
 SIMILAR CAMPAIGN NAMES
 - If update_selection returns similar_campaign_name, do not guess. Ask: "Do you mean the existing <similar
   name>, or a new campaign called <typed name>?" Then commit the existing one by campaign_id, or call
@@ -2982,6 +3366,10 @@ EMAIL AND SENDING
   campaign is created and the email is scheduled to go out in its send window; never say it was "sent" or
   "delivered". If send_approved returns an error, tell the user that error in plain
   words and what they can do; never retry blindly and never change the hours or anything else on your own.
+- If the state has previous_draft_wording_reuse_it, the user already had an email draft and only the people,
+  campaign or send window changed. Call propose_email with exactly that subject and body (keep its {{blanks}}
+  as they are). Never go back to the saved campaign template or write a new email unless the user asked for
+  new wording.
 - CHANGING THE EMAIL: decide what the user wants changed before you call propose_email. If they name only the
   subject, change only the subject. If they name only the body, change only the body. If they say "the email",
   "the whole email", "everything", "both", or give a topic or theme ("make it about X", "anything related to X"),
@@ -3455,6 +3843,11 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
             )
         if session is not None:
             issues.extend(session.problems(text, explanation))
+        if not text:
+            issues.append(
+                "Your reply was empty. Answer the user now in one or two plain sentences, using the current state "
+                "and the tool results."
+            )
         if issues and attempt < MAX_NUDGES:
             turn.nudges += 1
             turn.self_check.extend(issues)
@@ -3486,8 +3879,17 @@ def reply(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
             else NOT_SENT_TEXT
         )
         turn.guardrail_events.append("FALSE_SEND_CLAIM_CORRECTED")
+    if session is not None and session.sent and claims_delivered(text):
+        # Last line of defence: the email is scheduled, not delivered.
+        text = session.scheduled_text()
+        turn.guardrail_events.append("SENT_WORDING_CORRECTED")
     if not text:
-        raise HTTPException(status_code=502, detail="The assistant returned an empty message")
+        # Never show the user a blank error: say something safe and keep the chat state as it is.
+        turn.guardrail_events.append("EMPTY_REPLY_FALLBACK")
+        if session is not None and session.state.get("draft"):
+            text = "The draft is ready for review. Approve it as is, or tell me what you'd like changed."
+        else:
+            text = "Sorry, I didn't catch that. Could you say it again?"
 
     new_actions = [a.to_dict() for a in actions.list_actions(limit=200, ctx=ctx) if a.id not in before]
     final_state = prior_state
