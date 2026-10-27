@@ -1350,6 +1350,21 @@ CAMPAIGN_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "show_campaign_people",
+            "description": (
+                "Read-only. Lists the people in ONE campaign with their status (waiting, emailed, replied, started the "
+                "assessment, booked, stopped...). Use it for 'who is in <campaign>?'. Changes nothing."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"campaign": {"type": "string", "description": "campaign name or id"}, "why": _WHY},
+                "required": ["campaign", "why"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "pause_campaign",
             "description": (
                 "Pause a campaign (also for 'stop' a campaign): nothing is emailed from it until it is resumed. Nothing is "
@@ -2655,11 +2670,16 @@ class CampaignSession:
                 if c.get("campaign_name")
             ]
             self.campaigns_to_show = rows
+            pending = bool(s.get("recipients") or s.get("campaign_name"))
             return json.dumps(
                 {
                     "table_shown_in_order": rows,
-                    "note": "informational only: the user's pending selection is unchanged. Say in one short sentence "
-                    "that these are their campaigns; if a request is still pending, say it is still waiting.",
+                    "pending_selection": pending,
+                    "note": (
+                        "informational only: the user's pending selection is unchanged. Say in one short sentence that "
+                        "these are their campaigns."
+                        + (" Also say their earlier request is still waiting." if pending else " Do not mention any pending request: there is none.")
+                    ),
                 }
             )
         if not s.get("recipients"):
@@ -2951,6 +2971,56 @@ class CampaignSession:
                     f"Nothing was changed. Ask the user ONE yes/no question, in your own words, with these facts: {question} "
                     "Call this tool again only after their NEXT message says yes, and pass their words as approval_evidence."
                 ),
+            }
+        )
+
+    def _show_campaign_people(self, campaign="") -> str:
+        """Read-only: who is in one campaign, and where each person stands."""
+        words = {
+            "pending": "waiting (not emailed yet)",
+            "active": "emailed",
+            "replied": "replied",
+            "assessment_started": "started the assessment",
+            "completed": "completed",
+            "bounced": "bounced",
+            "unsubscribed": "unsubscribed",
+            "cold": "cold",
+            "stopped": "stopped",
+        }
+        db = SessionLocal()
+        try:
+            row = _campaign_row(db, campaign)
+            if row is None:
+                return json.dumps({"error": f"I could not find a campaign called {campaign}."})
+            name = row.name
+            links = db.scalars(
+                select(CampaignProspect)
+                .options(selectinload(CampaignProspect.prospect))
+                .where(CampaignProspect.campaign_id == row.id)
+            ).all()
+            people = []
+            for link in links:
+                person = link.prospect
+                raw = getattr(link.outreach_status, "value", link.outreach_status)
+                status = words.get(str(raw), str(raw))
+                if link.booked_at is not None or (link.booking_status or "").strip().lower() == "confirmed":
+                    status += ", booked"
+                people.append(
+                    {
+                        "name": str(getattr(person, "executive_name", "") or "") if person else "",
+                        "email": str(getattr(person, "email", "") or "") if person else "",
+                        "status": status,
+                    }
+                )
+        finally:
+            db.close()
+        people.sort(key=lambda p: (p["name"] or p["email"]).casefold())
+        return json.dumps(
+            {
+                "campaign": name,
+                "total": len(people),
+                "people": people,
+                "note": "Read-only. Answer with a short table (name, email, status). If there are no people, say the campaign is empty.",
             }
         )
 
@@ -3325,6 +3395,10 @@ REMOVING SOMEONE FROM A CAMPAIGN
 - Ask ONE yes/no first. Only after the user's NEXT message says yes, call remove_from_campaign. Never in the same turn you first ask, never on a vague answer, never choose for them. If they say no, change nothing.
 - After the tool returns, reply in one line with that sentence (for example "Removed Raj from east."). If it returns an error, tell the user that error in plain words; change nothing.
 
+WHO IS IN A CAMPAIGN
+- "who is in Harbor Light Test?", "list the people in <campaign>": call show_campaign_people with that campaign and
+  answer with a short table (name, email, status). It is read-only: do not change the pending selection or ask who to email.
+
 PAUSE, RESUME AND DELETE
 - "pause" or "stop" a campaign: call pause_campaign right away (it is reversible). Reply with the one sentence it returns.
 - "resume", "restart" or "turn it back on": call resume_campaign. It returns a yes/no question; ask it. Only after the
@@ -3464,7 +3538,7 @@ MAX_NUDGES = 2
 TOOL_CALL_LIMIT = 16
 #: People listed in the prompt. The rest are still found by exact address.
 #: Tool names that are campaign state or display only; they never count as "doing" something.
-_CAMPAIGN_READ_ONLY = {"show_contacts", "show_campaigns"}
+_CAMPAIGN_READ_ONLY = {"show_contacts", "show_campaigns", "show_campaign_people"}
 _CAMPAIGN_NAMES = {spec["function"]["name"] for spec in CAMPAIGN_TOOLS}
 
 _SECTION_MARKER = re.compile(r"\[\[/?area(:\s*[a-z_]+\s*)?\]\]\n?", re.I)
