@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from acquisition.config import get_settings
-from app.assistant.assistant import TOKEN_ASSESS, keep_assessment_link, tokenize
+from app.assistant.assistant import TOKEN_ASSESS, keep_assessment_link, strip_assessment_link, tokenize
 
 BASE = "http://localhost:3001/acquire"
 
@@ -56,3 +56,17 @@ def test_keep_assessment_link_restores_the_placeholder_if_framing_ate_the_url(pu
     eaten = "Hi {{firstName}},\n\nWould you be open to a short free assessment?\n\nBest,\nJeanne"
     restored = keep_assessment_link(eaten)
     assert TOKEN_ASSESS in restored
+
+
+def test_strip_assessment_link_removes_the_cta_from_a_subject(public_base):
+    subject = f"Spring offer for the team {public_base}"
+    cleaned = strip_assessment_link(subject)
+    assert TOKEN_ASSESS not in cleaned
+    assert public_base not in cleaned
+    assert cleaned == "Spring offer for the team"
+
+
+def test_strip_assessment_link_removes_the_placeholder_from_a_subject(public_base):
+    cleaned = strip_assessment_link("Quick question {{assessment_url}}")
+    assert TOKEN_ASSESS not in cleaned
+    assert cleaned == "Quick question"

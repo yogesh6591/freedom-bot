@@ -852,12 +852,8 @@ def _template_copy(
                 out = out.replace(company, "{{companyName}}")
         return out
 
-    text_subject = _map_unprotected(subject, _swap)
+    text_subject = strip_assessment_link(_map_unprotected(subject, _swap))
     text_body = _map_unprotected(body, _swap)
-    if has_assessment_link(text_subject) or (assessment_url and assessment_url in (subject or "")):
-        text_subject = keep_assessment_link(text_subject)
-    elif assessment_url:
-        text_subject = text_subject.replace(assessment_url, placeholder)
     if has_assessment_link(text_body) or (assessment_url and assessment_url in (body or "")):
         text_body = keep_assessment_link(text_body)
     elif assessment_url:
@@ -1343,9 +1339,10 @@ CAMPAIGN_TOOLS = [
         "function": {
             "name": "set_person_details",
             "description": (
-                "Save a first name, last name or company the USER wrote for ONE chosen recipient (for example 'his name is "
-                "Shubham Kumar, he works at Acme'). It applies to that person only, never to the whole campaign. Never guess "
-                "details; pass the user's own words as evidence."
+                "Save a first name, last name or company for ONE chosen recipient. A name the user wrote with the email "
+                "always wins. If they only gave the address, judge a human name from the mailbox and pass that email as "
+                "evidence. Never overwrite a name already on file using only the address. Never invent a company from the "
+                "mailbox. Applies to that person only."
             ),
             "parameters": {
                 "type": "object",
@@ -1516,6 +1513,16 @@ def _mailbox_name(email: str, value: str) -> bool:
     return bool(value) and value.strip().casefold() in {local, (email or "").casefold()}
 
 
+def _evidence_is_the_address(evidence: str, email: str) -> bool:
+    """True when the only evidence is the recipient address (or its mailbox), not a spoken name."""
+    quote = " ".join((evidence or "").casefold().split())
+    addr = " ".join((email or "").casefold().split())
+    if not quote or not addr:
+        return False
+    local = addr.split("@", 1)[0]
+    return quote in {addr, local}
+
+
 def person_fields(records: dict, state: dict, recipient: dict) -> dict:
     """What fills the blanks for one recipient, and where each value came from.
 
@@ -1529,8 +1536,6 @@ def person_fields(records: dict, state: dict, recipient: dict) -> dict:
         known_name = ""
     k_first, k_last = split_executive_name(known_name) if known_name else ("", "")
     chat_name = str(recipient.get("name") or "").strip()
-    if _mailbox_name(email, chat_name):
-        chat_name = ""
     c_first, c_last = split_executive_name(chat_name) if chat_name else ("", "")
     c_first, c_last = proper_case(c_first), proper_case(c_last)
     out: dict = {"email": email}
@@ -1608,6 +1613,20 @@ def keep_assessment_link(text: str) -> str:
     return out
 
 
+def strip_assessment_link(text: str) -> str:
+    """Remove the assessment CTA from a field that must not carry it (the subject)."""
+    holder, base = _assessment_settings()
+    out = text or ""
+    if base:
+        out = re.sub(rf"{re.escape(base)}(?:/a/\S+)?", "", out)
+    out = re.sub(r"\{+\s*assessment[\s_-]*url\s*\}+", "", out, flags=re.I)
+    if holder:
+        out = out.replace(holder, "")
+    out = re.sub(r"[ \t]{2,}", " ", out)
+    out = re.sub(r"\n{3,}", "\n\n", out)
+    return out.strip()
+
+
 def _map_unprotected(text: str, transform) -> str:
     bits = _PROTECTED_LINK.split(text or "")
     return "".join(bit if i % 2 else transform(bit) for i, bit in enumerate(bits))
@@ -1668,12 +1687,8 @@ def literal_greeting_names(text: str) -> list[str]:
 
 
 def finalize_template(subject: str, body: str) -> tuple[str, str]:
-    """The wording as stored on the campaign: the assessment link becomes Instantly's placeholder."""
-    if has_assessment_link(subject):
-        subject = keep_assessment_link(subject)
-    if has_assessment_link(body):
-        body = keep_assessment_link(body)
-    return subject, body
+    """The wording as stored on the campaign: the assessment link lives in the body only."""
+    return strip_assessment_link(subject), keep_assessment_link(body)
 
 
 def waiting_in_campaign(campaign_id: str, exclude: set[str]) -> list[dict]:
@@ -2002,6 +2017,22 @@ class CampaignSession:
                 "Recipients are committed and a campaign is still needed, but no campaigns table is shown. If the user "
                 "has not said they want a new campaign, call show_campaigns so they can see the options you ask about."
             )
+        nameless = [f["email"] for f in self._fields() if not f.get("first_name")]
+        if (
+            nameless
+            and not self.sent
+            and not miss
+            and not any(c.get("tool") == "set_person_details" for c in self.log)
+        ):
+            out.append(
+                "These recipients have no first name on file: "
+                + ", ".join(nameless)
+                + ". If the user already gave a name with the email, call set_person_details with that name "
+                "and their words as evidence. If they only gave the address, judge a human first and last name "
+                "from the mailbox (a name that is clearly in the local part) and call set_person_details with "
+                "evidence set to that email. Never overwrite a name the user already gave. Do not invent a "
+                "company. If the mailbox is not a person's name, leave it blank."
+            )
         return out
 
     def _assess(self):
@@ -2157,18 +2188,30 @@ class CampaignSession:
         return [person_fields(self.records, self.state, r) for r in self.state.get("recipients") or []]
 
     def _set_person_details(self, email: str = "", first_name=None, last_name=None, company=None, evidence: str = "") -> str:
-        """Save a name/company the user gave in chat for ONE recipient. Only for this person; never the whole campaign."""
+        """Save a name/company for ONE recipient. A name the user wrote wins over a mailbox guess."""
         key = str(email or "").strip().casefold()
         known = {str(r["email"]).casefold(): r for r in self.state.get("recipients") or []}
         if key not in known:
             return "error: that address is not one of the chosen recipients"
-        if not self._user_said(evidence):
+        current = person_fields(self.records, self.state, known[key])
+        from_mailbox = _evidence_is_the_address(evidence, known[key]["email"])
+        if not from_mailbox and not self._user_said(evidence):
             return json.dumps(
                 {
                     "error": "details_not_given_by_user",
-                    "instruction": "Use only a name or company the user actually wrote. Pass their own words as evidence, or ask them.",
+                    "instruction": "Use only a name or company the user actually wrote, or the chosen email as evidence when reading a name from the mailbox.",
                 }
             )
+        if from_mailbox and current.get("first_name"):
+            return json.dumps(
+                {
+                    "ok": True,
+                    "details": current,
+                    "note": "A name is already on file for this person. It was not replaced from the email address. Use the user's words as evidence to change it.",
+                }
+            )
+        if from_mailbox:
+            company = None
         typed = self.state.setdefault("overrides", {}).setdefault(key, {})
         for field, value in (("first_name", first_name), ("last_name", last_name), ("company", company)):
             if value is not None:
@@ -2421,8 +2464,9 @@ class CampaignSession:
         subject, body = subject.strip(), body.strip()
         fields = self._fields()
         subject, body = tokenize(subject, fields), tokenize(body, fields)
-        # Campaign first emails keep the assessment CTA even if the model omitted the URL
-        # (it is told not to type name placeholders, and often drops this one too).
+        # Campaign first emails keep the assessment CTA in the body even if the model omitted it.
+        # Never put it on the subject line.
+        subject = strip_assessment_link(subject)
         body = keep_assessment_link(body)
         prev, prev_scope = s.get("draft") or {}, s.get("scope")
         if prev and (prev.get("email_subject"), prev.get("email_body")) == (subject, body):
@@ -2861,22 +2905,27 @@ EMAIL AND SENDING
   email_without_company) exactly, except change "Hi there," to "Hi {first name},". For an EXISTING campaign
   start from that campaign's own initial_email in the records, unchanged, unless the user asks for changes.
   The platform turns real first names and company names into blanks ({{firstName}}, {{companyName}}), so
-  each person gets their own; you do not need to. Keep the assessment URL from the template (the real
-  link in the records, or {{assessment_url}} if the campaign's email already uses that blank). That is
-  not a name placeholder — never omit it. Apply edits the user asks for, then propose_email
-  again. After propose_email succeeds the UI shows the email card; your message is one short question about
-  it (approve as is, or change something). Do not paste the subject or body.
+  each person gets their own; you do not need to. Keep the assessment URL in the body only (the real
+  link in the records, or {{assessment_url}} if the campaign's email already uses that blank). Never put
+  it in the subject. That is not a name placeholder — never omit it from the body. Apply edits the user
+  asks for, then propose_email again. After propose_email succeeds the UI shows the email card; your
+  message is one short question about it (approve as is, or change something). Do not paste the subject
+  or body.
 - Call send_approved only when a draft is pending AND the user's latest message clearly approves it, in any
   wording. Changes requested or ambiguous means do not send; ask. After it returns, confirm in one natural
   sentence using only what the tool returned. If send_approved returns an error, tell the user that error in plain
   words and what they can do; never retry blindly and never change the hours or anything else on your own.
 - With several recipients write ONE greeting, "Hi there,". The platform greets each person by their own first
   name. Never list the people in the greeting ("Hi Nina and Raj,") and never type a name placeholder such as
-  {first name} yourself: write the greeting in plain words. Do keep the assessment URL from the template.
-- Names and companies: the card shows each person's details and where they came from. If the user tells you
-  a person's name or company in chat ("his name is Shubham Kumar, he works at Acme"), call set_person_details
-  with their words; it applies to that one person only. Never guess a name or company, and never fill one in
-  from an email address.
+  {first name} yourself: write the greeting in plain words. Do keep the assessment URL in the body from the
+  template. Never put it in the subject.
+- Names and companies: the card shows each person's details and where they came from. A name the user gave
+  with the email always wins — put it on the recipient (and set_person_details with their words). If they
+  only gave an email, judge a human first and last name from the mailbox itself when a name is clearly
+  there, and call set_person_details with evidence = that email before you propose. If you are unsure,
+  still try to read a name from the address rather than leaving it blank. Never replace a given name with
+  a mailbox guess. Never invent a company from the address. If the mailbox is not a person's name, leave
+  it missing (the greeting stays "Hi there,").
 - If send_approved returns needs_scope, the user changed an existing campaign's email and other people in it
   have not been emailed yet, so they would get the change too. Tell the user this edit also changes the email
   for the names in also_waiting, and ask ONE short yes/no question, e.g. "This also changes the email for Gus

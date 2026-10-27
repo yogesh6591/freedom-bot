@@ -1242,12 +1242,12 @@ def _add_prospect(name, email):
     db.close()
 
 
-def _draft_for(ctx, st, recipients, campaign="Spring2", message="email them in a new campaign Spring2, 9 am to 5 pm", body="Hi Raj,\n\nQuick note.\n"):
+def _draft_for(ctx, st, recipients, campaign="Spring2", message="email them in a new campaign Spring2, 9 am to 5 pm", body="Hi Raj,\n\nQuick note.\n", subject="Quick question"):
     _add_prospect("Raj Mehta", "raj@acme.example.com")
     SCRIPT[:] = [
         call("update_selection", recipients=recipients, campaign_name=campaign, confirmed_new_campaign=True,
              window_start="9 am", window_end="5 pm", window_evidence="9 am to 5 pm"),
-        call("propose_email", subject="Quick question", body=body),
+        call("propose_email", subject=subject, body=body),
         final("Here is the email. Approve it as is, or change something?"),
     ]
     return ask(ctx, st, message)
@@ -1277,9 +1277,35 @@ def test_framing_keeps_the_assessment_link_even_if_the_model_omits_it(fake_model
     )
     view = out["trace"]["email_view"]
     assert TOKEN_ASSESS in view["template"]["body"]
+    assert TOKEN_ASSESS not in (view["template"].get("subject") or "")
     link = (view.get("assessment_url") or "").strip()
     assert link
     assert link in view["previews"][0]["body"]
+    assert link not in (view["template"].get("subject") or "")
+    assert link not in (view["previews"][0].get("subject") or "")
+
+
+def test_assessment_link_is_stripped_when_the_model_puts_it_on_the_subject(fake_model, acq, client_scratch, ctx_factory):
+    from acquisition.config import get_settings
+    from app.assistant.assistant import TOKEN_ASSESS
+
+    ctx = ctx_factory(client_scratch, "admin")
+    base = (get_settings().public_base_url or "").strip().rstrip("/")
+    out = _draft_for(
+        ctx,
+        client_scratch.settings,
+        [{"email": "raj@acme.example.com"}],
+        subject=f"Quick question {base}" if base else "Quick question {{assessment_url}}",
+        body="Hi Raj,\n\nWould you be open to a short free assessment?\n\nBest,\nJeanne",
+    )
+    view = out["trace"]["email_view"]
+    subject = view["template"].get("subject") or ""
+    assert TOKEN_ASSESS not in subject
+    assert "Quick question" in subject
+    if base:
+        assert base not in subject
+        assert base not in (view["previews"][0].get("subject") or "")
+    assert TOKEN_ASSESS in view["template"]["body"]
 
 
 def test_unknown_person_uses_the_chat_name_or_there_and_warns(fake_model, acq, client_scratch, ctx_factory):
@@ -1498,6 +1524,55 @@ def test_person_details_must_come_from_the_user(fake_model, acq, client_scratch,
     assert "details_not_given_by_user" in log[0]["result"]
     person = t2["trace"]["email_view"]["people"][0]
     assert person["first_name"] == "Zed" and person["company"] == "Acme" and person["sources"]["first_name"] == "typed"
+
+
+def test_a_name_given_with_the_email_beats_the_mailbox(fake_model, acq, client_scratch, ctx_factory):
+    ctx = ctx_factory(client_scratch, "admin")
+    out = _draft_for(
+        ctx,
+        client_scratch.settings,
+        [{"email": "ethanparker.us07@gmail.com", "name": "Priya Shah"}],
+        body="Hi there,\n\nQuick note.\n",
+    )
+    view = out["trace"]["email_view"]
+    person = view["people"][0]
+    assert person["first_name"] == "Priya" and person["last_name"] == "Shah"
+    assert view["previews"][0]["body"].startswith("Hi Priya,")
+    SCRIPT[:] = [
+        call(
+            "set_person_details",
+            email="ethanparker.us07@gmail.com",
+            first_name="Ethan",
+            last_name="Parker",
+            evidence="ethanparker.us07@gmail.com",
+        ),
+        final("Saved."),
+    ]
+    later = ask(ctx, client_scratch.settings, "keep her name", session_id=out["session_id"])
+    still = later["trace"]["email_view"]["people"][0]
+    assert still["first_name"] == "Priya" and still["last_name"] == "Shah"
+    assert "not replaced from the email address" in later["trace"]["tool_log"][0]["result"]
+
+
+def test_a_missing_name_can_be_read_from_the_email_address(fake_model, acq, client_scratch, ctx_factory):
+    ctx = ctx_factory(client_scratch, "admin")
+    t1 = _draft_for(ctx, client_scratch.settings, [{"email": "ethanparker.us07@gmail.com"}], body="Hi there,\n\nNote.\n")
+    assert t1["trace"]["email_view"]["people"][0]["sources"]["first_name"] == "missing"
+    SCRIPT[:] = [
+        call(
+            "set_person_details",
+            email="ethanparker.us07@gmail.com",
+            first_name="Ethan",
+            last_name="Parker",
+            evidence="ethanparker.us07@gmail.com",
+        ),
+        final("Updated from the mailbox."),
+    ]
+    t2 = ask(ctx, client_scratch.settings, "use the name from the email", session_id=t1["session_id"])
+    person = t2["trace"]["email_view"]["people"][0]
+    assert person["first_name"] == "Ethan" and person["last_name"] == "Parker"
+    assert t2["trace"]["email_view"]["previews"][0]["body"].startswith("Hi Ethan,")
+    assert not any("no first name on file" in w for w in t2["trace"]["email_view"]["warnings"])
 
 
 def test_what_is_typed_for_one_person_is_saved_on_that_persons_link_only(acq):

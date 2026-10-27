@@ -170,13 +170,6 @@ function isProtectedLink(part: string): boolean {
   return /^https?:\/\//i.test(part) || /^\{+\s*assessment[_-]?url\s*\}+$/i.test(part)
 }
 
-function hasAssessmentLink(text: string, base = ''): boolean {
-  const blob = text || ''
-  if (/\{+\s*assessment[_-]?url\s*\}+/i.test(blob)) return true
-  const root = (base || '').replace(/\/$/, '')
-  return Boolean(root && blob.includes(root))
-}
-
 function keepAssessmentLink(text: string, base = ''): string {
   let out = text || ''
   const root = (base || '').replace(/\/$/, '')
@@ -190,6 +183,17 @@ function keepAssessmentLink(text: string, base = ''): string {
   return out
 }
 
+function stripAssessmentLink(text: string, base = ''): string {
+  let out = text || ''
+  const root = (base || '').replace(/\/$/, '')
+  if (root) {
+    out = out.replace(new RegExp(`${escapeRegExp(root)}(?:/a/\\S+)?`, 'g'), '')
+  }
+  out = out.replace(/\{+\s*assessment[_-]?url\s*\}+/gi, '')
+  out = out.replace(TOKEN_ASSESS, '')
+  return out.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+}
+
 function mapUnprotected(text: string, transform: (chunk: string) => string): string {
   return (text || '')
     .split(KEEP_LINK)
@@ -198,10 +202,15 @@ function mapUnprotected(text: string, transform: (chunk: string) => string): str
 }
 
 /** Shared text never contains a real name — blanks fill in per person after save. */
-function tokenizeText(text: string, people: EmailViewPerson[], assessmentUrl = ''): string {
-  const keepLink = hasAssessmentLink(text, assessmentUrl) || Boolean((assessmentUrl || '').trim())
+function tokenizeText(
+  text: string,
+  people: EmailViewPerson[],
+  assessmentUrl = '',
+  ensureLink = false
+): string {
   const framed = mapUnprotected(text || '', (chunk) => tokenizeNames(chunk, people))
-  return keepLink ? keepAssessmentLink(framed, assessmentUrl) : framed
+  if (ensureLink) return keepAssessmentLink(framed, assessmentUrl)
+  return stripAssessmentLink(framed, assessmentUrl)
 }
 
 function tokenizeNames(text: string, people: EmailViewPerson[]): string {
@@ -578,8 +587,8 @@ export function EmailCard({
   const template = view.template
   const blanks = peopleForBlanks(view)
   const assessmentUrl = (view.assessment_url || '').trim()
-  const sharedSubject = tokenizeText(template?.subject ?? '', blanks, assessmentUrl)
-  const sharedBody = tokenizeText(template?.body ?? '', blanks, assessmentUrl)
+  const sharedSubject = tokenizeText(template?.subject ?? '', blanks, assessmentUrl, false)
+  const sharedBody = tokenizeText(template?.body ?? '', blanks, assessmentUrl, true)
   const previews = view.previews ?? []
   const audience = view.audience
   const warnings = (view.warnings ?? []).filter((warning) => !isGreetingPlainTextWarning(warning))
