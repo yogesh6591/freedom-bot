@@ -266,9 +266,12 @@ def patch_world(mp, world, fixtures: dict) -> None:
     for name in list(tools_base.EFFECTS):
         mp.setitem(tools_base.EFFECTS, name, world.effect(name))
     mp.setitem(tools_base.RISK_INPUTS, "crm_bulk_update_contacts", world.bulk_inputs)
-    mp.setattr(current, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
+    # Company tools moved out of assistant.py (campaign-only now) into company_tools.py.
+    import app.assistant.company_tools as company
+
+    mp.setattr(company, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
     mp.setattr(current, "known_records", lambda ctx=None: world.campaign_records())
-    mp.setattr(current, "_find_user", world.find_user(current._find_user))
+    mp.setattr(company, "_find_user", world.find_user(company._find_user))
     mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     if fixtures.get("now"):
         frozen = real_datetime.fromisoformat(str(fixtures["now"]))
