@@ -37,6 +37,8 @@ os.environ["DATABASE_URL"] = "postgresql+psycopg://{u}:{p}@{h}:{port}/".format(*
 os.environ["JWT_SECRET"] = "test-only-signing-key-please-do-not-reuse-anywhere-0001"
 # Memory vector search calls the embedding API; tests that need it switch it on with a fake embedder.
 os.environ["MEMORY_VECTOR_SEARCH"] = "off"
+# The background integration sync must not start inside tests.
+os.environ["INTEGRATION_SYNC_ENABLED"] = "off"
 
 from bizos.bootstrap import admin_context, ensure_dev_users, seed_business_data  # noqa: E402
 from bizos.connectors.registry import seed_default_integrations  # noqa: E402

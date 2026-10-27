@@ -68,6 +68,9 @@ services:
       # Meaning-based memory search (pgvector + OpenAI embeddings). off disables it.
       MEMORY_VECTOR_SEARCH: ${MEMORY_VECTOR_SEARCH:-on}
       EMBEDDING_MODEL_ID: ${EMBEDDING_MODEL_ID:-}
+      # Background sync of each user's Composio sources (bizos/sync): on|off, and seconds between runs.
+      INTEGRATION_SYNC_ENABLED: ${INTEGRATION_SYNC_ENABLED:-on}
+      INTEGRATION_SYNC_INTERVAL_SEC: ${INTEGRATION_SYNC_INTERVAL_SEC:-300}
       AGENT_PIPELINE_V2: ${AGENT_PIPELINE_V2:-}
       # Optional: none | low | medium | high. Leave unset for models that reject it with tools.
       MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-}

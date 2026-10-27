@@ -197,6 +197,19 @@ def memory_vector_search() -> bool:
     return getenv("MEMORY_VECTOR_SEARCH", "on").strip().casefold() not in ("0", "off", "false", "no")
 
 
+def integration_sync_enabled() -> bool:
+    """Background sync of each user's Composio sources (bizos/sync). On unless INTEGRATION_SYNC_ENABLED is off."""
+    return getenv("INTEGRATION_SYNC_ENABLED", "on").strip().casefold() not in ("0", "off", "false", "no")
+
+
+def integration_sync_interval() -> int:
+    """Seconds between background syncs (minimum 60, default 300)."""
+    try:
+        return max(60, int(getenv("INTEGRATION_SYNC_INTERVAL_SEC", "300")))
+    except ValueError:
+        return 300
+
+
 def embedding_model_id() -> str:
     """OpenAI embedding model for memory search (1536 dimensions)."""
     return getenv("EMBEDDING_MODEL_ID", "").strip() or "text-embedding-3-small"

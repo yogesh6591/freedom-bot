@@ -68,9 +68,18 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
             "OPENAI_API_KEY is not set — chat is disabled. Policy, approvals, memory, "
             "audit and the connectors all work without it."
         )
+    stop_sync = None
+    try:
+        from bizos.sync import scheduler as sync_scheduler
+
+        stop_sync = sync_scheduler.start()
+    except Exception as exc:  # noqa: BLE001 - the API must start even if the sync loop cannot
+        log_warning(f"bizos: integration sync not started: {exc}")
     try:
         yield
     finally:
+        if stop_sync:
+            stop_sync()
         registry.dispose_all()
         dispose_control_engine()
         log_info("bizos: stopped")

@@ -11,7 +11,9 @@ from app.api.deps import bound, current_context, require_admin
 from bizos.audit import events as audit
 from bizos.connectors import composio
 from bizos.connectors import registry as connectors
+from bizos import settings
 from bizos.connectors.base import ConnectorNotConfigured
+from bizos.sync import store as sync_store
 from bizos.tenancy.context import TenantContext
 from bizos.types import AuditEventType
 
@@ -121,9 +123,34 @@ def composio_disconnect(toolkit: str, ctx: TenantContext = Depends(current_conte
         composio.disconnect(ctx, toolkit)
     except Exception as exc:
         raise _composio_error(exc) from exc
+    # Disconnecting also deletes what was synced from that source for this user.
+    source = _SYNC_SOURCE.get(toolkit)
+    if source:
+        sync_store.forget(ctx, ctx.user_id, source)
     with bound(ctx):
         audit.log(AuditEventType.CONFIG_CHANGED, ctx=ctx, integration=toolkit, status="DISCONNECTED")
     return {"ok": True}
+
+
+_SYNC_SOURCE = {"gmail": "gmail", "googlecalendar": "calendar", "youtube": "youtube", "hubspot": "hubspot"}
+
+
+@router.get("/composio/sync")
+def composio_sync_status(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """When each of the signed-in user's sources last synced, and how many records are kept."""
+    from bizos.sync import scheduler
+
+    return {"enabled": settings.integration_sync_enabled(), "interval_sec": settings.integration_sync_interval(),
+            "next_run_in_sec": scheduler.seconds_until_next(), "sources": sync_store.status(ctx)}
+
+
+@router.post("/composio/sync")
+def composio_sync_now(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """Sync the signed-in user's connected sources now."""
+    from bizos.sync.runner import sync_user
+
+    report = sync_user(ctx)
+    return {"report": report, "sources": sync_store.status(ctx)}
 
 
 @router.post("/composio/refresh")

@@ -26,6 +26,39 @@ interface ComposioItem {
   connected: boolean
 }
 
+interface SyncSource {
+  source: string
+  items: number
+  last_ok_at: string | null
+  last_error: string | null
+  items_new: number
+  items_updated: number
+}
+
+interface SyncStatus {
+  enabled: boolean
+  interval_sec: number
+  next_run_in_sec: number | null
+  sources: SyncSource[]
+}
+
+/** Composio toolkit -> sync source (bizos/sync). */
+const SYNC_SOURCE: Record<string, string> = {
+  gmail: 'gmail',
+  googlecalendar: 'calendar',
+  youtube: 'youtube',
+  hubspot: 'hubspot'
+}
+
+function ago(iso: string | null): string {
+  if (!iso) return 'never'
+  const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  return hours < 24 ? `${hours} h ago` : new Date(iso).toLocaleString()
+}
+
 interface ComposioStatus {
   configured: boolean
   items: ComposioItem[]
@@ -73,6 +106,28 @@ export function IntegrationsView({
   const [status, setStatus] = useState<ComposioStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [sync, setSync] = useState<SyncStatus | null>(null)
+  const [syncing, setSyncing] = useState(false)
+
+  const loadSync = useCallback(async () => {
+    try {
+      setSync(await api.get<SyncStatus>('/api/integrations/composio/sync'))
+    } catch {
+      setSync(null)
+    }
+  }, [])
+
+  async function syncNow() {
+    setSyncing(true)
+    try {
+      const data = await api.post<{ sources: SyncSource[] }>('/api/integrations/composio/sync')
+      setSync((current) => (current ? { ...current, sources: data.sources } : current))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sync now')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const load = useCallback(async (fresh = false) => {
     try {
@@ -89,8 +144,9 @@ export function IntegrationsView({
   useEffect(() => {
     const returned = new URLSearchParams(window.location.search).has('connected')
     void load(returned)
+    void loadSync()
     if (returned) window.history.replaceState(null, '', callbackPath)
-  }, [load, callbackPath])
+  }, [load, loadSync, callbackPath])
 
   async function connect(toolkit: string) {
     setBusy(toolkit)
@@ -147,6 +203,21 @@ export function IntegrationsView({
 
       {error && <ErrorNote>{error}</ErrorNote>}
 
+      {status?.configured && sync && status.items.some((item) => item.connected) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background-elevated px-4 py-3">
+          <p className="text-[13px] text-secondary">
+            {sync.enabled
+              ? `Latest emails, meetings, videos and CRM changes sync automatically every ${Math.round(sync.interval_sec / 60)} min${
+                  sync.next_run_in_sec != null ? ` · next in ${Math.max(1, Math.round(sync.next_run_in_sec / 60))} min` : ''
+                }.`
+              : 'Automatic sync is off on this server. Use Sync now to pull your latest activity.'}
+          </p>
+          <Btn variant="secondary" size="sm" loading={syncing} onClick={() => void syncNow()}>
+            Sync now
+          </Btn>
+        </div>
+      )}
+
       {status && !status.configured && (
         <ErrorNote>
           Connections are not enabled on this server yet. An administrator needs to set
@@ -185,6 +256,18 @@ export function IntegrationsView({
                     ))}
                   </ul>
                 </div>
+
+                {item.connected && sync && (() => {
+                  const state = sync.sources.find((s) => s.source === SYNC_SOURCE[item.toolkit])
+                  if (!state) return null
+                  return (
+                    <p className={`mt-4 text-[12px] ${state.last_error ? 'text-red-600' : 'text-muted'}`}>
+                      {state.last_error
+                        ? `Last sync failed: ${state.last_error}`
+                        : `Synced ${ago(state.last_ok_at)} · ${state.items} item${state.items === 1 ? '' : 's'} kept`}
+                    </p>
+                  )
+                })()}
 
                 <div className="mt-6 flex justify-end">
                   {item.connected ? (
