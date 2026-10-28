@@ -3,12 +3,15 @@ YouTube Transcripts
 ===================
 
 The spoken words of a video, so the assistant can summarize it, answer questions about it or compare
-videos. Two sources, tried in order:
+videos. Three sources, tried in order:
 
 1. **The user's own channel** through their Composio YouTube connection (caption tracks they own).
    YouTube only lets the channel owner download caption tracks this way.
 2. **Any public video** with captions, through ``youtube-transcript-api``. That library reads the
-   captions YouTube shows on the watch page; it is unofficial and YouTube may block server IPs.
+   captions YouTube shows on the watch page; it is unofficial and YouTube blocks cloud-server IPs
+   (``RequestBlocked``), so it works on a laptop but not on AWS.
+3. **Any public video** through Google's Gemini API (``GEMINI_API_KEY``), which accepts a YouTube link
+   and transcribes the video itself. This is Google's supported way, so the cloud block does not apply.
 
 The transcript is external content and is neutralized before the model sees it.
 """
@@ -19,6 +22,9 @@ import re
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
+import httpx
+
+from bizos import settings
 from bizos.connectors import composio
 from bizos.connectors.base import ConnectorError
 from bizos.connectors.untrusted import neutralize
@@ -122,16 +128,60 @@ def _from_public_captions(vid: str, language: Optional[str]) -> tuple[str, str]:
             transcript = next(iter(listing))
             fetched = transcript.fetch()
         except Exception as exc:  # noqa: BLE001 - the library raises many specific types
+            if type(exc).__name__ in ("RequestBlocked", "IpBlocked"):
+                raise YouTubeBlocked("YouTube blocks transcript requests from this server.") from exc
             raise ConnectorError(
-                f"No transcript is available for video {vid}: captions may be turned off, the video may be "
-                f"private, or YouTube blocked the request ({type(exc).__name__})."
+                f"No captions are available for video {vid}: they may be turned off or the video may be "
+                f"private ({type(exc).__name__})."
             ) from exc
     text = " ".join(str(getattr(s, "text", "") or "").replace("\n", " ") for s in fetched)
     return text, str(getattr(fetched, "language_code", "") or "")
 
 
+class YouTubeBlocked(ConnectorError):
+    """YouTube refused the caption request from this server's IP (cloud providers are blocked)."""
+
+
+_GEMINI_PROMPT = (
+    "Transcribe the speech in this video verbatim, in the language spoken (do not translate). Plain text "
+    "only, no timestamps or speaker labels unless speakers change clearly. If it is very long, transcribe "
+    "as much as you can from the start."
+)
+
+
+def _from_gemini(vid: str, language: Optional[str]) -> tuple[str, str]:
+    """(text, language) from Gemini watching the public video (Google's supported YouTube-link input)."""
+    key = settings.gemini_api_key()
+    if not key:
+        raise ConnectorError("Gemini is not configured (GEMINI_API_KEY).")
+    prompt = _GEMINI_PROMPT + (f" The user prefers language code {language}." if language else "")
+    try:
+        response = httpx.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model_id()}:generateContent",
+            headers={"x-goog-api-key": key},
+            json={"contents": [{"parts": [{"file_data": {"file_uri": f"https://www.youtube.com/watch?v={vid}"}},
+                                          {"text": prompt}]}],
+                  "generationConfig": {"maxOutputTokens": 12000, "temperature": 0}},
+            timeout=300,
+        )
+    except httpx.HTTPError as exc:
+        raise ConnectorError(f"Gemini could not read the video ({type(exc).__name__}).") from exc
+    if response.status_code >= 400:
+        detail = ""
+        try:
+            detail = str(response.json().get("error", {}).get("message") or "")[:200]
+        except ValueError:
+            pass
+        raise ConnectorError(f"Gemini could not read the video ({response.status_code}{': ' + detail if detail else ''}).")
+    parts = ((response.json().get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+    text = " ".join(str(p.get("text") or "") for p in parts if isinstance(p, dict)).strip()
+    if not text:
+        raise ConnectorError("Gemini returned no transcript for this video (it may be private or age-restricted).")
+    return text, language or ""
+
+
 def fetch(owner: TenantContext, video: str, *, language: Optional[str] = None) -> dict[str, Any]:
-    """The transcript of one video as ``owner`` (their own captions first, then public captions)."""
+    """The transcript of one video as ``owner``: their own captions, then public captions, then Gemini."""
     vid = video_id(video)
     if not vid:
         raise ConnectorError("video must be a YouTube video id (11 characters) or a YouTube link.")
@@ -143,8 +193,19 @@ def fetch(owner: TenantContext, video: str, *, language: Optional[str] = None) -
     except ConnectorError:
         found = None  # not the user's video, or captions not downloadable: try public captions
     if not found:
-        found = _from_public_captions(vid, language)
-        source = "public captions"
+        try:
+            found = _from_public_captions(vid, language)
+            source = "public captions"
+        except ConnectorError as captions_error:
+            if not settings.gemini_api_key():
+                if isinstance(captions_error, YouTubeBlocked):
+                    raise ConnectorError(
+                        "YouTube blocks transcript requests from this server, so the transcript cannot be read "
+                        "here. An admin can add GEMINI_API_KEY to read public videos through Google's Gemini API."
+                    ) from captions_error
+                raise
+            found = _from_gemini(vid, language)
+            source = "Gemini (transcribed from the video)"
     text, lang = found
     text, findings = neutralize(" ".join(text.split()))
     return {

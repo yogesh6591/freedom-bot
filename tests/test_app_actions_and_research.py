@@ -240,3 +240,40 @@ def test_web_search_without_an_openai_key_says_so(monkeypatch):
     monkeypatch.setattr(web.settings, "openai_api_key", lambda: None)
     with pytest.raises(ConnectorError, match="OPENAI_API_KEY"):
         web.search("Initech hiring")
+
+
+def _blocked(vid, lang):
+    raise yt.YouTubeBlocked("YouTube blocks transcript requests from this server.")
+
+
+def test_a_blocked_server_without_gemini_says_what_to_add(monkeypatch, client_scratch, ctx_factory):
+    monkeypatch.setattr(composio, "connected_toolkit", lambda ctx, category: None)
+    monkeypatch.setattr(yt, "_from_public_captions", _blocked)
+    monkeypatch.setattr(yt.settings, "gemini_api_key", lambda: "")
+    with pytest.raises(ConnectorError, match="GEMINI_API_KEY"):
+        yt.fetch(ctx_factory(client_scratch, "viewer"), "x63HCoDfAhQ")
+
+
+def test_a_blocked_server_reads_the_video_through_gemini(monkeypatch, client_scratch, ctx_factory):
+    sent = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        sent.update(url=url, headers=headers, json=json)
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "I got the closest person "
+                                                                                          "to the president."}]}}]})
+
+    monkeypatch.setattr(composio, "connected_toolkit", lambda ctx, category: None)
+    monkeypatch.setattr(yt, "_from_public_captions", _blocked)
+    monkeypatch.setattr(yt.settings, "gemini_api_key", lambda: "g-test")
+    monkeypatch.setattr(yt.httpx, "post", fake_post)
+    data = yt.fetch(ctx_factory(client_scratch, "viewer"), "https://youtu.be/x63HCoDfAhQ?si=abc")
+    assert data["source"].startswith("Gemini") and "closest person" in data["transcript"]
+    assert sent["headers"] == {"x-goog-api-key": "g-test"}
+    assert sent["json"]["contents"][0]["parts"][0] == {"file_data": {"file_uri": "https://www.youtube.com/watch?v=x63HCoDfAhQ"}}
+
+
+def test_a_gemini_error_is_explained(monkeypatch):
+    monkeypatch.setattr(yt.settings, "gemini_api_key", lambda: "g-test")
+    monkeypatch.setattr(yt.httpx, "post", lambda *a, **k: httpx.Response(403, json={"error": {"message": "API key not valid"}}))
+    with pytest.raises(ConnectorError, match="403: API key not valid"):
+        yt._from_gemini("x63HCoDfAhQ", None)

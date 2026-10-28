@@ -232,6 +232,16 @@ def web_search_reasoning_effort() -> str | None:
     return value if value in ("minimal", "low", "medium", "high") else None
 
 
+def gemini_api_key() -> str:
+    """Google Gemini key: YouTube transcripts of public videos when YouTube blocks this server."""
+    return getenv("GEMINI_API_KEY", "").strip()
+
+
+def gemini_model_id() -> str:
+    """Gemini model that transcribes YouTube videos."""
+    return getenv("GEMINI_MODEL_ID", "").strip() or "gemini-2.5-flash"
+
+
 def tavily_api_key() -> str:
     """Tavily key, used only when WEB_SEARCH_PROVIDER=tavily."""
     return getenv("TAVILY_API_KEY", "").strip()
