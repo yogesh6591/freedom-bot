@@ -371,8 +371,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "integration_find_action": _obj(
         {
             "query": _s("What the action should do, in plain words, e.g. 'reply to a youtube comment'"),
-            "app": _enum("Only this app (optional; default every connected app)",
-                         ["gmail", "googlecalendar", "youtube", "hubspot"]),
+            "app": _s("Only this connected app, by its slug, e.g. gmail, youtube, hubspot, slack, notion "
+                      "(optional; default every connected app)"),
             "limit": _i("Max actions (default 8, at most 15)"),
         },
         ["query"],

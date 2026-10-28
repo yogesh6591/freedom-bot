@@ -37,12 +37,12 @@ def content_for(action: Action, *, ctx: TenantContext) -> dict[str, Any]:
 
 def _app_action(tool: str, payload: dict[str, Any]) -> dict[str, Any]:
     """An app action (Gmail, Calendar, YouTube, HubSpot): which action, and every argument it will send."""
-    from bizos.connectors.composio import TOOLKITS
+    from bizos.connectors.composio import app_name
     from bizos.connectors.composio_actions import toolkit_of
 
     action = str(payload.get("action") or "").upper()
-    toolkit = toolkit_of(action) or ""
-    app = TOOLKITS.get(toolkit, {}).get("name", "App")
+    toolkit = toolkit_of(action) or action.split("_", 1)[0].lower()
+    app = app_name(toolkit) if toolkit else "App"
     what = action.split("_", 1)[1].replace("_", " ").capitalize() if "_" in action else action
     arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
     fields = [{"label": "App", "value": app}, {"label": "Action", "value": action}]

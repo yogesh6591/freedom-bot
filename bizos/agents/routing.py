@@ -59,7 +59,7 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "admin_users": "BizOS login accounts: list, create, roles and data access, suspend or reactivate, password reset",
     "admin_permissions": "Tool rules: which roles can use a tool, and tightening how it runs",
     "admin_commercial": "Pricing, resale rules, consulting quotes, change orders",
-    "integrations": "Anything else in the user's connected Gmail, Google Calendar, YouTube or HubSpot that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it",
+    "integrations": "Anything else in the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion or any other connected platform) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it",
     "research": "The public web: research a company or person, news, job posts, read a web page",
     "campaign": "Outbound email campaigns (admins only): pick prospects, pick or create a campaign and send window, propose the email, approve moving people between campaigns, send after approval",
 }

@@ -44,7 +44,7 @@ def test_a_mismatched_tool_is_refused_and_names_the_right_one(monkeypatch):
     monkeypatch.setattr(acts, "describe", lambda slug: {"tier": acts.classify(slug, ["createHint"])})
     toolkit, problem = acts.check("YOUTUBE_CREATE_COMMENT_REPLY", acts.WRITE)
     assert toolkit == "youtube" and "integration_destructive_action" in problem
-    assert acts.check("SLACK_SEND_MESSAGE", acts.WRITE)[1].startswith("SLACK_SEND_MESSAGE is not an action")
+    assert acts.check("NOPE_DO_THING", acts.WRITE)[1].startswith("NOPE_DO_THING is not an action")
     assert "action must be" in acts.check("rm -rf /", acts.READ)[1]
 
 

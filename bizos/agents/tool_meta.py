@@ -543,8 +543,8 @@ TOOL_META: dict[str, AgentMeta] = {
 
     # ------------------------------------------------------------------ integrations
     "integration_find_action": M("integrations", d("""
-        Find actions of the user's connected apps (Gmail, Google Calendar, YouTube, HubSpot) for
-        anything the other tools cannot do. Returns each action's name, which tool runs it and its
+        Find actions of the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion and
+        any other connected platform) for anything the other tools cannot do. Returns each action's name, which tool runs it and its
         arguments. Changes nothing.
         Use when: no dedicated tool fits - "reply to the top comment", "add this video to a
         playlist", "label these emails", "YouTube analytics for last month", "HubSpot tickets".

@@ -2,8 +2,9 @@
 Composio Actions (any action of a connected app)
 ================================================
 
-Lets the assistant find and run any Composio action of the apps a user connected (Gmail, Google
-Calendar, YouTube, HubSpot), not only the ones a dedicated tool wraps. Plain Python; the tools in
+Lets the assistant find and run any Composio action of the platforms a user connected (Gmail, Google
+Calendar, YouTube, HubSpot, and any other Composio platform), not only the ones a dedicated tool wraps.
+Tools the user switched off in Integrations are neither offered nor run. Plain Python; the tools in
 ``app/assistant/company_tools.py`` call it after the guard and the policy check.
 
 Every action has a tier, and each tier has its own tool, so a destructive action is never run by a
@@ -74,7 +75,7 @@ _cache_lock = threading.Lock()
 
 
 def toolkit_of(slug: str) -> Optional[str]:
-    """The toolkit an action belongs to, from its name (``YOUTUBE_LIST_COMMENTS`` -> ``youtube``)."""
+    """The built-in app an action belongs to, from its name (``YOUTUBE_LIST_COMMENTS`` -> ``youtube``)."""
     return _PREFIX_TOOLKIT.get(str(slug or "").split("_", 1)[0].upper())
 
 
@@ -137,6 +138,7 @@ def _describe(tool: Any) -> dict[str, Any]:
     tier = classify(slug, list(getattr(tool, "tags", None) or []))
     return {
         "action_id": slug,  # an *_id key, so the guard counts it as a known value for the run tools
+        "app": str(getattr(getattr(tool, "toolkit", None), "slug", "") or toolkit_of(slug) or "").lower(),
         "title": str(getattr(tool, "name", "") or ""),
         "description": " ".join(str(getattr(tool, "description", "") or "").split())[:300],
         "tier": tier,
@@ -150,13 +152,12 @@ def find(ctx: TenantContext, query: str, *, toolkit: Optional[str] = None, limit
     connected = connected_toolkits(ctx)
     if not connected:
         raise ConnectorNotConfigured(
-            "No apps are connected for your account. Connect Gmail, Google Calendar, YouTube or HubSpot "
-            "on the Integrations page."
+            "No apps are connected for your account. Connect one on the Integrations page."
         )
     wanted = [toolkit.strip().lower()] if toolkit else connected
     missing = [t for t in wanted if t not in connected]
     if missing:
-        names = ", ".join(composio.TOOLKITS.get(t, {}).get("name", t) for t in missing)
+        names = ", ".join(composio.app_name(t) for t in missing)
         raise ConnectorNotConfigured(f"{names} is not connected for your account. Connect it on the Integrations page.")
     try:
         tools = composio.get_client().tools.get_raw_composio_tools(
@@ -164,7 +165,10 @@ def find(ctx: TenantContext, query: str, *, toolkit: Optional[str] = None, limit
         )
     except Exception as exc:  # noqa: BLE001 - the SDK raises its own types
         raise ConnectorError(f"Could not search the app actions: {exc}") from exc
+    from bizos.connectors import composio_catalog
+
     found = [_describe(t) for t in tools if not getattr(t, "is_deprecated", False)]
+    found = [f for f in found if composio_catalog.allowed(ctx, f["app"], f["action_id"])]
     for item in found:
         with _cache_lock:
             _schema_cache[item["action_id"]] = (time.monotonic(), item)
@@ -193,14 +197,13 @@ def check(slug: str, tier: str) -> tuple[Optional[str], Optional[str]]:
     name = str(slug or "").strip().upper()
     if not re.fullmatch(r"[A-Z0-9_]{3,120}", name):
         return None, "action must be an action name from integration_find_action, e.g. YOUTUBE_LIST_COMMENTS"
-    toolkit = toolkit_of(name)
-    if toolkit is None:
-        return None, (f"{name} is not an action of a connectable app (Gmail, Google Calendar, YouTube, HubSpot). "
-                      "Use integration_find_action to find one.")
     try:
-        actual = describe(name)["tier"]
+        described = describe(name)
+        actual, toolkit = described["tier"], described.get("app") or toolkit_of(name)
     except ConnectorNotConfigured:
-        actual = classify_by_name(name)
+        actual, toolkit = classify_by_name(name), toolkit_of(name)
+    if not toolkit:
+        return None, f"{name} is not an action of a connectable app. Use integration_find_action to find one."
     if actual != tier:
         return toolkit, (f"{name} is a {actual} action; run it with {TOOL_FOR_TIER[actual]}, not "
                          f"{TOOL_FOR_TIER[tier]}. Nothing was run.")

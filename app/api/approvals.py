@@ -99,6 +99,27 @@ def list_all(
         return {"items": _named(items, ctx), "count": len(items)}
 
 
+#: How far back the requester's own decided requests are shown in the chat inbox.
+_INBOX_RECENT = 25
+
+
+@router.get("/inbox")
+def inbox(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """What the chat's approval bell shows (polled every few seconds).
+
+    ``to_decide``: requests waiting for approval that this user may decide (approvers and admins; never
+    their own, which self-approval refuses). ``mine``: this user's own recent requests and their status,
+    so a requester sees the moment theirs is approved or rejected. Deciding still goes through
+    POST /{id}/approve and /{id}/reject with their normal checks.
+    """
+    can_decide = ctx.is_admin or ctx.has_role(Role.APPROVER)
+    with bound(ctx):
+        pending = actions.pending_approvals(limit=100, ctx=ctx) if can_decide else []
+        to_decide = [a for a in pending if a.requested_by != ctx.user_id]
+        mine = actions.list_actions(requested_by=ctx.user_id, limit=_INBOX_RECENT, ctx=ctx)
+        return {"can_decide": can_decide, "to_decide": _named(to_decide, ctx), "mine": _named(mine, ctx)}
+
+
 @router.get("/{action_id}")
 def get_action(action_id: str, ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
     """One action with its full transition history."""

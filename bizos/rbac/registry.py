@@ -783,8 +783,8 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     _spec(
         "integration_find_action",
         "Find an app action",
-        "Search the actions of the user's connected apps (Gmail, Google Calendar, YouTube, HubSpot) and "
-        "return each action's tier and arguments. Changes nothing.",
+        "Search the actions of the user's connected apps (Gmail, Calendar, YouTube, HubSpot or any other "
+        "connected Composio platform) and return each action's tier and arguments. Changes nothing.",
         CATEGORY_INTEGRATIONS,
         _ALL,
         tags=frozenset({"read", "integrations"}),

@@ -239,7 +239,7 @@ def _hint(name: str) -> str:
 #: permission concern.
 ARGUMENT_HINTS: dict[str, str] = {
     "youtube_transcript": "video (YouTube id or link), language (str, optional)",
-    "integration_find_action": "query (str), app (gmail|googlecalendar|youtube|hubspot, optional), limit (int, optional)",
+    "integration_find_action": "query (str), app (connected app slug, e.g. gmail or slack, optional), limit (int, optional)",
     "integration_read_action": "action (an action_id from integration_find_action), arguments (object)",
     "integration_write_action": "action (an action_id from integration_find_action), arguments (object)",
     "integration_destructive_action": "action (an action_id from integration_find_action), arguments (object)",

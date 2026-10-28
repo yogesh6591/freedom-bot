@@ -342,7 +342,7 @@ domains.
 | finance | Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments | finance_lookup_policy, finance_list_pending_billables, finance_list_invoices, finance_draft_invoice, finance_propose_adjustment, + crm_search_companies |
 | ops | Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations | strategy_list_priorities, strategy_record_option, hr_match_candidate, brand_get_voice, legal_find_clause, legal_flag_for_counsel, support_create_ticket, support_my_tickets, n8n_trigger_webhook |
 | youtube | YouTube: search videos, our channel and videos, one video's details and comments, video transcripts (summaries, what the speaker says) | youtube_search_videos, youtube_my_channel, youtube_video, youtube_transcript, + integration_write_action, integration_destructive_action |
-| integrations | Anything else in the user's connected Gmail, Google Calendar, YouTube or HubSpot that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it | integration_find_action, integration_read_action, integration_write_action, integration_destructive_action |
+| integrations | Anything else in the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion or any other connected platform) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it | integration_find_action, integration_read_action, integration_write_action, integration_destructive_action |
 | research | The public web: research a company or person, news, job posts, read a web page | web_search, web_read, + crm_search_companies, crm_search_contacts |
 | admin_setup | Workspace config: overview, setup, settings, enable or disable domain packs | admin_workspace_overview, admin_get_setup, admin_apply_setup, admin_update_settings, admin_list_domains, admin_toggle_domain |
 | admin_launch | Go-live: launch checklist, mark items, sign-off, handoff readiness | admin_launch_checklist, admin_mark_launch_item, admin_launch_sign_off, admin_handoff_assessment |
@@ -366,6 +366,14 @@ any approval is queued), and any app the caller may not use through the matching
 (Gmail: email_search_threads / email_send_message; Calendar: calendar_list_events /
 calendar_create_event; HubSpot: crm_search_contacts / crm_update_contact_field; YouTube reads:
 youtube_my_videos), so a generic action is never looser than the dedicated tool.
+
+**Any Composio platform** (bizos/connectors/composio_catalog.py): Integrations lists every Composio
+platform (about 1,700), searchable. One-click connect where Composio manages sign-in or this Composio
+project has an auth config; others show "admin setup needed". App actions work on any connected
+platform; platforms without a dedicated tool use only the generic tools' own permissions. Each user can
+allow all of a platform's tools (default) or a chosen subset (`integration_tool_choices`, owner-only);
+`composio.execute` refuses a switched-off tool for dedicated tools and app actions alike, and
+`integration_find_action` does not offer it.
 
 ## 8. Agno implementation notes (verified against agno==3.0.9)
 - Router: an Agent with `output_schema=Route`.

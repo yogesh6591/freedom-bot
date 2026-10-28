@@ -120,10 +120,28 @@ def as_user(ctx: TenantContext, user_id: Optional[str]) -> TenantContext:
 
 
 def _check_toolkit(toolkit: str) -> str:
+    """A platform slug this server knows: the four built-in apps or any Composio catalog platform."""
+    from bizos.connectors import composio_catalog
+
     slug = (toolkit or "").strip().lower()
-    if slug not in TOOLKITS:
+    if slug in TOOLKITS:
+        return slug
+    if not composio_catalog.SLUG.match(slug) or composio_catalog.platform(slug) is None:
         raise ValueError(f"Unsupported toolkit {toolkit!r}")
     return slug
+
+
+def app_name(toolkit: str) -> str:
+    """Display name of a platform ("Gmail", "Slack"), for messages."""
+    if toolkit in TOOLKITS:
+        return TOOLKITS[toolkit]["name"]
+    try:
+        from bizos.connectors import composio_catalog
+
+        found = composio_catalog.platform(toolkit)
+    except Exception:  # noqa: BLE001 - a name is cosmetic; never fail a call over it
+        found = None
+    return found["name"] if found else toolkit
 
 
 def invalidate(ctx: TenantContext) -> None:
@@ -131,7 +149,8 @@ def invalidate(ctx: TenantContext) -> None:
 
 
 def _active_accounts(ctx: TenantContext) -> dict[str, Optional[str]]:
-    """toolkit slug -> ACTIVE connected account id (None when not connected)."""
+    """toolkit slug -> ACTIVE connected account id, for the built-in apps (None when not connected) and
+    any other Composio platform the user connected."""
     uid = composio_user_id(ctx)
     cached = _status_cache.get(uid)
     if cached and time.monotonic() - cached[0] < _STATUS_TTL:
@@ -139,13 +158,11 @@ def _active_accounts(ctx: TenantContext) -> dict[str, Optional[str]]:
     found: dict[str, Optional[str]] = {slug: None for slug in TOOLKITS}
     if configured():
         try:
-            listing = get_client().connected_accounts.list(
-                user_ids=[uid], toolkit_slugs=list(TOOLKITS), statuses=["ACTIVE"]
-            )
+            listing = get_client().connected_accounts.list(user_ids=[uid], statuses=["ACTIVE"], limit=200)
             for account in getattr(listing, "items", None) or []:
                 toolkit = getattr(getattr(account, "toolkit", None), "slug", "") or ""
                 slug = toolkit.lower()
-                if slug in found and found[slug] is None:
+                if slug and found.get(slug) is None:
                     found[slug] = account.id
         except Exception as exc:
             log_warning(f"Composio status lookup failed for {uid}: {exc}")
@@ -169,7 +186,7 @@ def connected_categories(ctx: TenantContext) -> frozenset[str]:
     if not configured() or not ctx.user_id:
         return frozenset()
     accounts = _active_accounts(ctx)
-    return frozenset(TOOLKITS[slug]["category"] for slug, acc in accounts.items() if acc)
+    return frozenset(TOOLKITS[slug]["category"] for slug, acc in accounts.items() if acc and slug in TOOLKITS)
 
 
 def status(ctx: TenantContext) -> dict[str, Any]:
@@ -190,7 +207,15 @@ def status(ctx: TenantContext) -> dict[str, Any]:
 
 
 def connect_url(ctx: TenantContext, toolkit: str, callback_url: Optional[str] = None) -> str:
+    from bizos.connectors import composio_catalog
+
     slug = _check_toolkit(toolkit)
+    item = composio_catalog.platform(slug) if slug not in TOOLKITS else None
+    if item is not None and not composio_catalog.connectable(item):
+        raise ValueError(
+            f"{item['name']} needs an admin to set it up in Composio first (it signs in with its own "
+            f"{' or '.join(item['auth_schemes']) or 'credentials'}). Once it is set up there, it can be connected here."
+        )
     client = get_client()
     auth_config_id = client.toolkits._get_auth_config_id(toolkit=slug)
     request = client.connected_accounts.link(
@@ -215,12 +240,19 @@ def disconnect(ctx: TenantContext, toolkit: str) -> None:
 
 
 def execute(ctx: TenantContext, toolkit: str, action: str, arguments: dict[str, Any]) -> Any:
-    """Run one Composio tool against this user's connected account."""
+    """Run one Composio tool against this user's connected account, if they allow that tool."""
+    from bizos.connectors import composio_catalog
+
+    name = app_name(toolkit)
     account_id = _active_accounts(ctx).get(toolkit)
     if not account_id:
         raise ConnectorNotConfigured(
-            f"{TOOLKITS[toolkit]['name']} is not connected for your account. "
+            f"{name} is not connected for your account. "
             "Connect it on the Integrations page."
+        )
+    if not composio_catalog.allowed(ctx, toolkit, action):
+        raise ConnectorError(
+            f"{action} is switched off for your {name} connection. Turn it on in Integrations to use it."
         )
     try:
         raw = get_client().tools.execute(
@@ -231,7 +263,7 @@ def execute(ctx: TenantContext, toolkit: str, action: str, arguments: dict[str, 
             dangerously_skip_version_check=True,
         )
     except Exception as exc:
-        raise ConnectorError(f"{TOOLKITS[toolkit]['name']} request failed: {exc}") from exc
+        raise ConnectorError(f"{name} request failed: {exc}") from exc
     payload = raw if isinstance(raw, dict) else {
         "data": getattr(raw, "data", None),
         "error": getattr(raw, "error", None),
@@ -239,7 +271,7 @@ def execute(ctx: TenantContext, toolkit: str, action: str, arguments: dict[str, 
     }
     if payload.get("error") or payload.get("successful") is False:
         raise ConnectorError(
-            f"{TOOLKITS[toolkit]['name']} request failed: {payload.get('error') or 'unknown error'}"
+            f"{name} request failed: {payload.get('error') or 'unknown error'}"
         )
     return payload.get("data")
 
