@@ -125,6 +125,12 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
 - The response keeps the current contract (`content`, `actions`, `awaiting_approval`, `drafts`,
   `tool_activity`, admin-only `trace`), so the UI is unchanged. Pending work appears on the existing
   approval and draft cards.
+- **Streaming** (`POST /api/chat/stream`, Server-Sent Events): the same turn, with `emit`. Events: `status`
+  (a tool started), `token` (reply words), then `done` with exactly the `/api/chat` response, which replaces
+  the streamed text, or `error`. Words pass through `composer.StreamGate`: whole words only, and a sentence
+  holding a write or approval word is held until it ends and shown only if `compose()` would keep it on the
+  tool results so far. The turn runs in a worker thread with the request's context copied, so the tenant
+  binding holds. Other assistants (acquisition, campaign handoff) send only `done`.
 
 ### 5.6 Executor (strong model)
 - Prompt: bizos/agents/prompts/executor.md plus the playbook sections for the routed domains

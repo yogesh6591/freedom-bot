@@ -47,6 +47,31 @@ export class ApiError extends Error {
   }
 }
 
+function headersFor(options: RequestInit, opts: RequestOptions): HeadersInit {
+  return {
+    ...(options.body && !(options.body instanceof FormData)
+      ? { 'Content-Type': 'application/json' }
+      : {}),
+    ...(expected && !opts.anyWorkspace
+      ? { 'X-Bizos-Client': expected.clientId, 'X-Bizos-User': expected.userId }
+      : {}),
+    ...(options.headers ?? {})
+  }
+}
+
+/** The ApiError for a failed response (and the workspace-changed event for that 409). */
+function failure(status: number, data: unknown): ApiError {
+  const detail = readErrorDetail(data, status)
+  if (status === 409 && detail === WORKSPACE_CHANGED && typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(WORKSPACE_CHANGED_EVENT))
+    return new ApiError(
+      409,
+      'This tab is out of date — you signed in to another workspace in a different tab.'
+    )
+  }
+  return new ApiError(status, detail)
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -55,15 +80,7 @@ async function request<T>(
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
     credentials: 'include',
-    headers: {
-      ...(options.body && !(options.body instanceof FormData)
-        ? { 'Content-Type': 'application/json' }
-        : {}),
-      ...(expected && !opts.anyWorkspace
-        ? { 'X-Bizos-Client': expected.clientId, 'X-Bizos-User': expected.userId }
-        : {}),
-      ...(options.headers ?? {})
-    }
+    headers: headersFor(options, opts)
   })
 
   if (response.status === 204) return undefined as T
@@ -71,18 +88,53 @@ async function request<T>(
   const text = await response.text()
   const data = text ? safeJson(text) : null
 
-  if (!response.ok) {
-    const detail = readErrorDetail(data, response.status)
-    if (response.status === 409 && detail === WORKSPACE_CHANGED && typeof window !== 'undefined') {
-      window.dispatchEvent(new Event(WORKSPACE_CHANGED_EVENT))
-      throw new ApiError(
-        409,
-        'This tab is out of date — you signed in to another workspace in a different tab.'
-      )
-    }
-    throw new ApiError(response.status, detail)
-  }
+  if (!response.ok) throw failure(response.status, data)
   return data as T
+}
+
+/** One event of a streamed reply (POST /api/chat/stream). */
+export interface StreamEvent {
+  type: 'status' | 'token' | 'done' | 'error'
+  text?: string
+  response?: unknown
+  status?: number
+  detail?: unknown
+}
+
+/**
+ * POST and read Server-Sent Events as they arrive, calling `onEvent` for each.
+ * An `error` event becomes a thrown ApiError, like a failed request.
+ */
+async function stream(path: string, body: unknown, onEvent: (event: StreamEvent) => void): Promise<void> {
+  const init: RequestInit = { method: 'POST', body: JSON.stringify(body) }
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    credentials: 'include',
+    headers: { ...headersFor(init, {}), Accept: 'text/event-stream' }
+  })
+  if (!response.ok || !response.body) {
+    const text = await response.text()
+    throw failure(response.status, text ? safeJson(text) : null)
+  }
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let end: number
+    while ((end = buffer.indexOf('\n\n')) >= 0) {
+      const chunk = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data:')) continue
+        const event = safeJson(line.slice(5).trim()) as StreamEvent
+        if (event.type === 'error') throw failure(event.status ?? 500, { detail: event.detail })
+        onEvent(event)
+      }
+    }
+  }
 }
 
 function safeJson(text: string): unknown {
@@ -140,5 +192,6 @@ export const api = {
     }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: <T>(path: string, form: FormData) =>
-    request<T>(path, { method: 'POST', body: form })
+    request<T>(path, { method: 'POST', body: form }),
+  stream
 }

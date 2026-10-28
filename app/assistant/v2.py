@@ -26,6 +26,7 @@ from typing import Any, Callable, Optional
 
 from agno.agent import Agent
 from agno.models.message import Message
+from agno.run.agent import RunEvent, RunOutput
 from agno.run.base import RunStatus
 from agno.tools import tool
 from fastapi import HTTPException
@@ -35,7 +36,7 @@ from bizos import settings as app_settings
 from bizos.actions import store as actions
 from bizos.agents import conversation, grounding
 from bizos.agents import instructions as agent_instructions
-from bizos.agents.composer import compose
+from bizos.agents.composer import StreamGate, compose
 from bizos.agents.guard import Guard, KnownValues, make_guard_hook
 from bizos.agents.merged_tools import MERGED, schema_for
 from bizos.agents.persona import AUTO
@@ -46,6 +47,7 @@ from bizos.agents.routing import (
 )
 from bizos.agents.tool_args import normalize_tool_arguments
 from bizos.agents.tool_meta import GATE_TEXT, TOOL_META, render
+from bizos.rbac.registry import get_spec
 from bizos.tools.base import RunScope
 from bizos.util.timeutil import local_now, workspace_zone
 from bizos.tools.dry_run import bound_scope, policy_gate
@@ -218,8 +220,12 @@ def _memory_context(outcome) -> str:
 # --------------------------------------------------------------------------- the turn
 
 
-def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
-    """One chat turn through the v2 pipeline. Must be called with the tenant bound."""
+def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], None]] = None) -> dict[str, Any]:
+    """One chat turn through the v2 pipeline. Must be called with the tenant bound.
+
+    With ``emit``, progress streams while the turn runs (POST /api/chat/stream): a status line per tool
+    call and the model's words through :class:`StreamGate`. The returned reply is the same either way.
+    """
     from app.api.chat import _regulated_data_refusal as regulated_data_refusal
     from app.api.deps import run_scope
     from app.assistant.assistant import _guardrail_audit, _history, _packs_for, reply
@@ -308,6 +314,9 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
         )
     next_input: list[Message] = conversation.window(history) + [Message(role="user", content=message)]
     calls_left, text, output = TOOL_CALL_LIMIT, "", None
+    gate = StreamGate(lambda: _write_state(guard), task=route.kind == "task")
+    if emit:
+        emit({"type": "status", "text": "Working on it"})
     for _ in range(MAX_RELOADS + 1):
         for name in loader.loaded:
             if name in MERGED and name not in guard.schemas:
@@ -335,7 +344,9 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
             store_events=False,
         )
         try:
-            output = agent.run(input=next_input)
+            output = agent.run(input=next_input) if emit is None else _run_streaming(agent, next_input, emit, gate)
+        except HTTPException:
+            raise
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"Model call failed: {exc}") from exc
         if output.status == RunStatus.error:
@@ -350,6 +361,44 @@ def handle(body: Any, ctx: Any, settings: Any) -> dict[str, Any]:
     trace.update(loaded=loader.loaded, load_tools_misses=loader.misses)
     return _respond(ctx, scope, body, session_id, saved, text=text, before=before, guard=guard, trace=trace,
                     task=route.kind == "task")
+
+
+def _write_state(guard: Guard) -> tuple[bool, bool, bool]:
+    """(a write succeeded, a write is waiting for approval, any write was tried) so far in this request."""
+    writes = [r for d in guard.log if d.stage in ("policy", "duplicate") for r in d.results
+              if getattr(get_spec(r.tool), "write", False)]
+    return (any(r.status == "success" for r in writes),
+            any(r.status == "pending" and r.pending_kind == "approval" for r in writes), bool(writes))
+
+
+def _status_text(tool: str) -> str:
+    """What the user sees while a tool runs ("Search CRM contacts…")."""
+    if tool == LOAD_TOOLS:
+        return "Loading more tools…"
+    spec = get_spec(tool)
+    return f"{spec.title if spec else tool.replace('_', ' ').capitalize()}…"
+
+
+def _run_streaming(agent: Agent, messages: list, emit: Callable[[dict], None], gate: StreamGate) -> Any:
+    """agent.run with streaming: status per tool call, words through the gate; returns the RunOutput."""
+    output = None
+    for event in agent.run(input=messages, stream=True, stream_events=True, yield_run_output=True):
+        if isinstance(event, RunOutput):
+            output = event
+            continue
+        kind = getattr(event, "event", "")
+        if kind == RunEvent.tool_call_started.value and getattr(event, "tool", None) is not None:
+            emit({"type": "status", "text": _status_text(str(event.tool.tool_name or ""))})
+        elif kind == RunEvent.run_content.value and isinstance(getattr(event, "content", None), str):
+            safe = gate.feed(event.content)
+            if safe:
+                emit({"type": "token", "text": safe})
+    tail = gate.flush()
+    if tail:
+        emit({"type": "token", "text": tail})
+    if output is None:
+        raise HTTPException(status_code=502, detail="Model call failed: the stream ended without a result")
+    return output
 
 
 def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, guard: Optional[Guard],

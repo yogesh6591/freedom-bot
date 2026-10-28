@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Callable, Iterable, Optional
 
 from bizos.agents.claims import _APPROVAL_CLAIM
 from bizos.agents.tool_result import ToolResult
@@ -201,3 +201,67 @@ def compose(lead_in: str, results: Iterable[ToolResult], *, task: bool = True) -
     body = "\n".join(lines)
     reply = "\n\n".join(part for part in (text, body) if part)
     return Acknowledgement(reply or NOTHING_DONE, wrote, pending_approval)
+
+
+#: Words that may start a claim (done or approval). A sentence holding one is held back while it streams.
+_RISKY = re.compile(
+    rf"\b{_WROTE}\b|\b(?:done|all set|taken care|completed|finished|sorted|ho gaya|kar diya|approv\w*|queued|"
+    r"pending|submitted)\b",
+    re.I,
+)
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n\s*\n")
+
+
+class StreamGate:
+    """The model's text as it streams, word by word, with the same claim rule as :func:`compose`.
+
+    Text goes out as it arrives until the current sentence holds a word that could start a claim ("sent",
+    "deleted", "approval"...). That sentence is then held until it ends and goes out only if compose() would
+    keep it, judged on the tool results at that moment. ``state`` returns (wrote, pending_approval, any_write)
+    for the request so far. The final reply is still compose()'s: the UI replaces the streamed text with it.
+    """
+
+    def __init__(self, state: Callable[[], tuple[bool, bool, bool]], *, task: bool = True) -> None:
+        self._state = state
+        self._task = task
+        self._sentence = ""  # the current, unfinished sentence
+        self._shown = 0  # characters of it already sent
+
+    def _filtering(self) -> tuple[bool, bool]:
+        wrote, pending, any_write = self._state()
+        return (not wrote and (self._task or any_write)), pending
+
+    def _finish(self, sentence: str, gap: str) -> str:
+        """The rest of one complete sentence (plus the gap after it), or "" when it must not be shown."""
+        filtering, pending = self._filtering()
+        rest = sentence[self._shown:]
+        self._sentence, self._shown = "", 0
+        if not filtering or not _RISKY.search(sentence):
+            return rest + gap
+        patterns = (_DONE,) if pending else (_DONE, _APPROVAL_CLAIM)
+        return rest + gap if _clean_sentence(sentence, patterns, pending=pending) == sentence else ""
+
+    def feed(self, delta: str) -> str:
+        """Text that is safe to show now."""
+        self._sentence += str(delta or "")
+        out = []
+        while True:
+            end = _SENTENCE_END.search(self._sentence)
+            if not end:
+                break
+            sentence, gap = self._sentence[:end.start()], self._sentence[end.start():end.end()]
+            remainder = self._sentence[end.end():]
+            out.append(self._finish(sentence, gap))
+            self._sentence = remainder
+        filtering, _ = self._filtering()
+        if not (filtering and _RISKY.search(self._sentence)):
+            # Whole words only: the word still arriving might be the one that starts a claim.
+            cut = max(self._sentence.rfind(" "), self._sentence.rfind("\n")) + 1
+            if cut > self._shown:
+                out.append(self._sentence[self._shown:cut])
+                self._shown = cut
+        return "".join(out)
+
+    def flush(self) -> str:
+        """Whatever is left once the model stops."""
+        return self._finish(self._sentence, "") if self._sentence else ""

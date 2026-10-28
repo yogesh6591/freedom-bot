@@ -12,11 +12,18 @@ without dumping raw traces at ordinary users (§17).
 
 from __future__ import annotations
 
+import contextvars
+import json
+import logging
 import os
+import queue
 import re
-from typing import Any, Optional
+import threading
+from typing import Any, Callable, Iterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, run_scope
@@ -35,6 +42,7 @@ from bizos.types import ActionStatus
 from bizos.util.ids import new_id
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+log = logging.getLogger(__name__)
 
 
 class ChatRequest(BaseModel):
@@ -276,13 +284,15 @@ def _edit_chat_request(body: EditMessageRequest, ctx: TenantContext, session_id:
     return ChatRequest(message=body.message, session_id=session_id, domain=domain)
 
 
-def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings) -> dict[str, Any]:
+def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings,
+              emit: Optional[Callable[[dict], None]] = None) -> dict[str, Any]:
     """Pick the assistant for this turn.
 
     Admin chat with ``domain=acquisition`` always uses the campaign assistant
     (``app.assistant.assistant``). Everything else uses the v2 pipeline when
     ``AGENT_PIPELINE_V2`` is on, otherwise the same campaign assistant or the
-    legacy per-domain agent.
+    legacy per-domain agent. ``emit`` streams progress from the v2 pipeline; the other assistants
+    send only their final reply.
     """
     from app.assistant import v2
 
@@ -294,7 +304,8 @@ def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings) -
             return reply(body, ctx, settings)
     if v2.enabled():  # AGENT_PIPELINE_V2: the routed pipeline (off by default)
         with bound(ctx):
-            return v2.handle(body, ctx, settings)
+            # Only a streamed turn passes emit, so the normal call is unchanged.
+            return v2.handle(body, ctx, settings, **({"emit": emit} if emit else {}))
     if _engine() != "legacy":
         from app.assistant.assistant import reply
 
@@ -311,6 +322,43 @@ def chat(
 ) -> dict[str, Any]:
     """One chat turn."""
     return _dispatch(body, ctx, settings)
+
+
+@router.post("/stream")
+def chat_stream(
+    body: ChatRequest,
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> StreamingResponse:
+    """One chat turn as Server-Sent Events, so the reply shows while it is written.
+
+    Events (one JSON object per ``data:`` line): ``status`` (a tool is running), ``token`` (more of the
+    reply, already passed through the claim gate), then ``done`` with exactly the response POST /api/chat
+    returns, which replaces the streamed text, or ``error`` with an HTTP status and detail.
+    The turn runs in its own thread with this request's context, so the tenant binding holds throughout.
+    """
+    events: queue.Queue = queue.Queue()
+    context = contextvars.copy_context()
+
+    def work() -> None:
+        try:
+            response = context.run(_dispatch, body, ctx, settings, events.put)
+            events.put({"type": "done", "response": response})
+        except HTTPException as exc:
+            events.put({"type": "error", "status": exc.status_code, "detail": exc.detail})
+        except Exception:  # noqa: BLE001 - the stream must end with an event, never hang
+            log.exception("chat stream failed")
+            events.put({"type": "error", "status": 500, "detail": "Chat failed. Please try again."})
+        finally:
+            events.put(None)
+
+    def stream() -> Iterator[str]:
+        while (event := events.get()) is not None:
+            yield f"data: {json.dumps(jsonable_encoder(event))}\n\n"
+
+    threading.Thread(target=work, name="chat-stream", daemon=True).start()
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
 def _legacy_chat(

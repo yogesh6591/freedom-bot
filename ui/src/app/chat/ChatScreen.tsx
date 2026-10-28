@@ -620,6 +620,8 @@ function ChatView({ home }: { home: boolean }) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  /** The reply while it streams in: the current step and the words so far (replaced by the final reply). */
+  const [live, setLive] = useState<{ status: string; text: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
@@ -853,7 +855,7 @@ function ChatView({ home }: { home: boolean }) {
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
     // Scroll only the transcript pane — scrollIntoView was jumping the whole shell up.
     el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
-  }, [turns, busy])
+  }, [turns, busy, live])
 
   async function send(event: React.FormEvent) {
     event.preventDefault()
@@ -865,11 +867,22 @@ function ChatView({ home }: { home: boolean }) {
     setError(null)
     setEditingId(null)
     setTurns((prev) => [...prev, { role: 'user', content: message }])
+    const body = { message, session_id: sessionId, domain: engineDomain() ?? 'auto' }
     try {
-      const data = await api.post<ChatResponse & { response?: string }>(
-        '/api/chat',
-        { message, session_id: sessionId, domain: engineDomain() ?? 'auto' }
-      )
+      let data: (ChatResponse & { response?: string }) | null = null
+      setLive({ status: '', text: '' })
+      try {
+        await api.stream('/api/chat/stream', body, (event) => {
+          if (event.type === 'status') setLive((l) => ({ status: event.text ?? '', text: l?.text ?? '' }))
+          else if (event.type === 'token') setLive((l) => ({ status: l?.status ?? '', text: (l?.text ?? '') + (event.text ?? '') }))
+          else if (event.type === 'done') data = event.response as ChatResponse & { response?: string }
+        })
+      } catch (err) {
+        // A server without the stream route answers the same request the normal way.
+        if (!(err instanceof ApiError && (err.status === 404 || err.status === 405))) throw err
+        data = await api.post<ChatResponse & { response?: string }>('/api/chat', body)
+      }
+      if (!data) throw new Error('The reply stopped before it finished. Please try again.')
       setSessionId(data.session_id)
       remember(data.session_id)
       const nextTurns = [...turns, { role: 'user' as const, content: message }, assistantTurnFrom(data)]
@@ -880,6 +893,7 @@ function ChatView({ home }: { home: boolean }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chat failed')
     } finally {
+      setLive(null)
       setBusy(false)
       inputRef.current?.focus()
     }
@@ -1629,15 +1643,29 @@ function ChatView({ home }: { home: boolean }) {
                 aria-label="Working"
               >
                 <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
-                <span className="assistant-bot-bubble inline-flex items-center gap-1.5 rounded-3xl rounded-bl-md px-4 py-3">
-                  {[0, 1, 2].map((i) => (
-                    <span
-                      key={i}
-                      className="h-2 w-2 animate-pulse rounded-full bg-purple-400"
-                      style={{ animationDelay: `${i * 160}ms` }}
-                    />
-                  ))}
-                </span>
+                <div className="min-w-0 max-w-[85%]">
+                  {live?.status ? (
+                    <p className="mb-1 text-[12px] text-muted" aria-live="polite">
+                      {live.status}
+                    </p>
+                  ) : null}
+                  {live?.text ? (
+                    <div className="assistant-bot-bubble whitespace-pre-wrap rounded-3xl rounded-bl-md px-4 py-3 text-[15px] leading-7">
+                      {live.text}
+                      <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-purple-400 align-middle" aria-hidden />
+                    </div>
+                  ) : (
+                    <span className="assistant-bot-bubble inline-flex items-center gap-1.5 rounded-3xl rounded-bl-md px-4 py-3">
+                      {[0, 1, 2].map((i) => (
+                        <span
+                          key={i}
+                          className="h-2 w-2 animate-pulse rounded-full bg-purple-400"
+                          style={{ animationDelay: `${i * 160}ms` }}
+                        />
+                      ))}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
           </div>
