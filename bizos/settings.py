@@ -216,8 +216,24 @@ def executor_reasoning_effort() -> str | None:
     return value if value in ("minimal", "low", "medium", "high") else None
 
 
+def web_search_provider() -> str:
+    """web_search backend: openai (default, OpenAI's built-in web search) or tavily."""
+    return "tavily" if getenv("WEB_SEARCH_PROVIDER", "").strip().casefold() == "tavily" else "openai"
+
+
+def web_search_model_id() -> str:
+    """OpenAI model that runs web searches (needs the Responses API web_search tool)."""
+    return getenv("WEB_SEARCH_MODEL_ID", "").strip().removeprefix("openai:") or "gpt-5.5"
+
+
+def web_search_reasoning_effort() -> str | None:
+    """Reasoning effort for the search model (default low: about 20 s; high is slower). "none" turns it off."""
+    value = getenv("WEB_SEARCH_REASONING_EFFORT", "low").strip().casefold()
+    return value if value in ("minimal", "low", "medium", "high") else None
+
+
 def tavily_api_key() -> str:
-    """Tavily key for web_search (bizos/connectors/web.py). Empty: DuckDuckGo results instead."""
+    """Tavily key, used only when WEB_SEARCH_PROVIDER=tavily."""
     return getenv("TAVILY_API_KEY", "").strip()
 
 

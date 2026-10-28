@@ -5,9 +5,9 @@ Web Research
 ``search`` finds pages on the public web; ``read`` fetches one page as plain text. Used for company,
 prospect and news research.
 
-* Search uses Tavily when ``TAVILY_API_KEY`` is set (built for agents: clean snippets), else
-  DuckDuckGo's HTML results page (no key; best effort, and often refused for server traffic, in which
-  case the tool says an admin must set the key).
+* Search uses OpenAI's built-in web search (Responses API, ``web_search`` tool) with
+  ``WEB_SEARCH_MODEL_ID``: a cited answer plus its source links, on the OpenAI key the chat already uses.
+  ``WEB_SEARCH_PROVIDER=tavily`` (with ``TAVILY_API_KEY``) uses Tavily's result list instead.
 * ``read`` only fetches public ``http``/``https`` addresses. Every address, including each redirect,
   must resolve to public IPs, so the tool can never reach the server's own network or cloud metadata.
 
@@ -21,7 +21,7 @@ import socket
 from html import unescape
 from html.parser import HTMLParser
 from typing import Any, Optional
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -42,6 +42,47 @@ def _clean(text: Any, limit: int) -> str:
 
 # --------------------------------------------------------------------------- search
 
+#: What the search model is asked to do with the query (the query itself is data, not an instruction).
+_SEARCH_PROMPT = (
+    "Search the web and report what reliable, recent sources say about the topic below. Give the key "
+    "facts concisely, with dates where they matter, and say when sources disagree or little was found. "
+    "Cite every fact.\n\nTopic: "
+)
+
+
+def _openai(query: str, limit: int) -> tuple[str, list[dict[str, str]], str]:
+    """(answer, sources, model) from OpenAI's built-in web search (Responses API, web_search tool)."""
+    if not settings.openai_api_key():
+        raise ConnectorError("Web search needs OPENAI_API_KEY on this server.")
+    from openai import OpenAI
+
+    model = settings.web_search_model_id()
+    extra: dict[str, Any] = {}
+    effort = settings.web_search_reasoning_effort()
+    if effort and model.startswith(("gpt-5", "gpt-6", "o")):  # reasoning models only
+        extra["reasoning"] = {"effort": effort}
+    try:
+        response = OpenAI().responses.create(model=model, tools=[{"type": "web_search"}],
+                                             input=_SEARCH_PROMPT + query, timeout=90, **extra)
+    except Exception as exc:  # noqa: BLE001 - the SDK raises many specific types
+        raise ConnectorError(f"Web search failed: {type(exc).__name__}.") from exc
+    answer = str(getattr(response, "output_text", "") or "")
+    sources: dict[str, dict[str, str]] = {}
+    for item in getattr(response, "output", None) or []:
+        if getattr(item, "type", "") != "message":
+            continue
+        for part in getattr(item, "content", None) or []:
+            text = str(getattr(part, "text", "") or "")
+            for note in getattr(part, "annotations", None) or []:
+                url = str(getattr(note, "url", "") or "")
+                if getattr(note, "type", "") != "url_citation" or not url or url in sources:
+                    continue
+                start, end = getattr(note, "start_index", None), getattr(note, "end_index", None)
+                cited = text[max(0, (start or 0) - 240):start] if isinstance(start, int) and isinstance(end, int) else ""
+                sources[url] = {"title": _clean(getattr(note, "title", ""), 200), "url": url,
+                                "snippet": _clean(cited.split("\n")[-1], 300)}
+    return answer, list(sources.values())[:limit], model
+
 
 def _tavily(query: str, limit: int, key: str) -> list[dict[str, str]]:
     response = httpx.post(
@@ -56,63 +97,29 @@ def _tavily(query: str, limit: int, key: str) -> list[dict[str, str]]:
              "snippet": _clean(r.get("content"), 500)} for r in (response.json().get("results") or [])]
 
 
-class _DuckResults(HTMLParser):
-    """Titles, links and snippets from DuckDuckGo's HTML results page."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.rows: list[dict[str, str]] = []
-        self._field: Optional[str] = None
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
-        a = dict(attrs)
-        classes = (a.get("class") or "").split()
-        if tag == "a" and "result__a" in classes:
-            href = a.get("href") or ""
-            target = (parse_qs(urlparse(href).query).get("uddg") or [href])[0]
-            self.rows.append({"title": "", "url": target if target.startswith("http") else "", "snippet": ""})
-            self._field = "title"
-        elif "result__snippet" in classes and self.rows:
-            self._field = "snippet"
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in ("a", "td", "div"):
-            self._field = None
-
-    def handle_data(self, data: str) -> None:
-        if self._field and self.rows:
-            self.rows[-1][self._field] += data
-
-
-def _duckduckgo(query: str, limit: int) -> list[dict[str, str]]:
-    response = httpx.post("https://html.duckduckgo.com/html/", data={"q": query},
-                          headers={"User-Agent": _UA}, timeout=TIMEOUT, follow_redirects=True)
-    if response.status_code >= 400:
-        raise ConnectorError(f"Web search failed ({response.status_code}).")
-    parser = _DuckResults()
-    parser.feed(response.text)
-    return [{"title": _clean(r["title"], 200), "url": r["url"], "snippet": _clean(r["snippet"], 500)}
-            for r in parser.rows if r["url"]][:limit]
-
-
 def search(query: str, *, limit: int = 6) -> dict[str, Any]:
-    """Public web results for ``query``: title, url and snippet each."""
+    """What the public web says about ``query``: a cited answer and its sources (title, url, snippet)."""
     query = " ".join(str(query or "").split())
     if not query:
         raise ConnectorError("query is required: say what to search for.")
     limit = max(1, min(int(limit or 6), 10))
-    key = settings.tavily_api_key()
-    try:
-        rows = _tavily(query, limit, key) if key else _duckduckgo(query, limit)
-    except httpx.HTTPError as exc:
-        raise ConnectorError(f"Web search failed: {type(exc).__name__}.") from exc
-    if not rows and not key:
-        raise ConnectorError(
-            "Web search returned nothing. This server has no search API key, and the free fallback is often "
-            "refused for servers: an admin needs to set TAVILY_API_KEY. web_read still works for a known address."
-        )
-    return {"query": query, "provider": "tavily" if key else "duckduckgo", "results": rows,
-            "_untrusted_source": "web_search"}
+    if settings.web_search_provider() == "tavily":
+        key = settings.tavily_api_key()
+        if not key:
+            raise ConnectorError("WEB_SEARCH_PROVIDER is tavily but TAVILY_API_KEY is not set.")
+        try:
+            rows = _tavily(query, limit, key)
+        except httpx.HTTPError as exc:
+            raise ConnectorError(f"Web search failed: {type(exc).__name__}.") from exc
+        return {"query": query, "provider": "tavily", "results": rows, "_untrusted_source": "web_search"}
+    answer, rows, model = _openai(query, limit)
+    return {"query": query, "provider": "openai", "model": model, "answer": _clean_answer(answer),
+            "results": rows, "_untrusted_source": "web_search"}
+
+
+def _clean_answer(text: str) -> str:
+    """The search model's cited summary, neutralized; line breaks kept for readability."""
+    return neutralize(unescape(str(text or "")))[0].strip()[:6000]
 
 
 # --------------------------------------------------------------------------- read

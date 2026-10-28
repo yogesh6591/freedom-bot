@@ -63,7 +63,7 @@ services:
       # FB-043: shared secret for the checkout/contract sale webhook.
       SALE_WEBHOOK_SECRET: ${SALE_WEBHOOK_SECRET:-}
       MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
-      EXECUTOR_MODEL_ID: ${EXECUTOR_MODEL_ID:-}
+      EXECUTOR_MODEL_ID: ${EXECUTOR_MODEL_ID:-openai:gpt-5.5}
       ROUTER_MODEL_ID: ${ROUTER_MODEL_ID:-}
       # Meaning-based memory search (pgvector + OpenAI embeddings). off disables it.
       MEMORY_VECTOR_SEARCH: ${MEMORY_VECTOR_SEARCH:-on}
@@ -72,6 +72,9 @@ services:
       INTEGRATION_SYNC_ENABLED: ${INTEGRATION_SYNC_ENABLED:-on}
       INTEGRATION_SYNC_INTERVAL_SEC: ${INTEGRATION_SYNC_INTERVAL_SEC:-300}
       EXECUTOR_REASONING_EFFORT: ${EXECUTOR_REASONING_EFFORT:-}
+      WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-openai}
+      WEB_SEARCH_MODEL_ID: ${WEB_SEARCH_MODEL_ID:-}
+      WEB_SEARCH_REASONING_EFFORT: ${WEB_SEARCH_REASONING_EFFORT:-low}
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       AGENT_PIPELINE_V2: ${AGENT_PIPELINE_V2:-}
       # Optional: none | low | medium | high. Leave unset for models that reject it with tools.
