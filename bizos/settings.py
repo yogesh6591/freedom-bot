@@ -232,6 +232,11 @@ def web_search_reasoning_effort() -> str | None:
     return value if value in ("minimal", "low", "medium", "high") else None
 
 
+def transcript_api_key() -> str:
+    """Supadata key for YouTube transcripts (TRANSCRIPT_API_KEY, or SUPADATA_API_KEY)."""
+    return (getenv("TRANSCRIPT_API_KEY", "") or getenv("SUPADATA_API_KEY", "")).strip()
+
+
 def gemini_api_key() -> str:
     """Google Gemini key: YouTube transcripts of public videos when YouTube blocks this server."""
     return getenv("GEMINI_API_KEY", "").strip()

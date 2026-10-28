@@ -3,15 +3,17 @@ YouTube Transcripts
 ===================
 
 The spoken words of a video, so the assistant can summarize it, answer questions about it or compare
-videos. Three sources, tried in order:
+videos. Sources, tried in order:
 
 1. **The user's own channel** through their Composio YouTube connection (caption tracks they own).
    YouTube only lets the channel owner download caption tracks this way.
-2. **Any public video** with captions, through ``youtube-transcript-api``. That library reads the
+2. **Supadata** (``TRANSCRIPT_API_KEY``), a transcript API that returns a public video's captions in
+   seconds from a cloud server.
+3. **Any public video** with captions, through ``youtube-transcript-api``. That library reads the
    captions YouTube shows on the watch page; it is unofficial and YouTube blocks cloud-server IPs
    (``RequestBlocked``), so it works on a laptop but not on AWS.
-3. **Any public video** through Google's Gemini API (``GEMINI_API_KEY``), which accepts a YouTube link
-   and transcribes the video itself. This is Google's supported way, so the cloud block does not apply.
+4. **Any public video** through Google's Gemini API (``GEMINI_API_KEY``), which accepts a YouTube link
+   and transcribes the video itself, captions or not.
 
 The transcript is external content and is neutralized before the model sees it.
 """
@@ -191,8 +193,30 @@ def _from_gemini(vid: str, language: Optional[str]) -> tuple[str, str]:
     return text, language or ""
 
 
+def _from_supadata(vid: str, language: Optional[str]) -> tuple[str, str]:
+    """(text, language) of a public video's captions from Supadata's transcript API."""
+    params = {"videoId": vid, "text": "true", **({"lang": language} if language else {})}
+    try:
+        response = httpx.get("https://api.supadata.ai/v1/youtube/transcript", params=params,
+                             headers={"x-api-key": settings.transcript_api_key()}, timeout=90)
+    except httpx.HTTPError as exc:
+        raise ConnectorError(f"The transcript service could not be reached ({type(exc).__name__}).") from exc
+    try:
+        body = response.json()
+    except ValueError:
+        body = {}
+    if response.status_code >= 400:
+        reason = str(body.get("details") or body.get("message") or "") if isinstance(body, dict) else ""
+        raise ConnectorError(f"The transcript service could not read video {vid} "
+                             f"({response.status_code}{': ' + reason[:150] if reason else ''}).")
+    text = str(body.get("content") or "") if isinstance(body, dict) else ""
+    if not text.strip():
+        raise ConnectorError(f"The transcript service has no transcript for video {vid}.")
+    return text, str(body.get("lang") or language or "")
+
+
 def fetch(owner: TenantContext, video: str, *, language: Optional[str] = None) -> dict[str, Any]:
-    """The transcript of one video as ``owner``: their own captions, then public captions, then Gemini."""
+    """The transcript of one video as ``owner``: own captions, Supadata, public captions, then Gemini."""
     vid = video_id(video)
     if not vid:
         raise ConnectorError("video must be a YouTube video id (11 characters) or a YouTube link.")
@@ -202,21 +226,29 @@ def fetch(owner: TenantContext, video: str, *, language: Optional[str] = None) -
         found = _from_own_channel(owner, vid, language)
         source = "your channel's captions"
     except ConnectorError:
-        found = None  # not the user's video, or captions not downloadable: try public captions
+        found = None  # not the user's video, or captions not downloadable: try the next source
     if not found:
-        try:
-            found = _from_public_captions(vid, language)
-            source = "public captions"
-        except ConnectorError as captions_error:
-            if not settings.gemini_api_key():
-                if isinstance(captions_error, YouTubeBlocked):
-                    raise ConnectorError(
-                        "YouTube blocks transcript requests from this server, so the transcript cannot be read "
-                        "here. An admin can add GEMINI_API_KEY to read public videos through Google's Gemini API."
-                    ) from captions_error
-                raise
-            found = _from_gemini(vid, language)
-            source = "Gemini (transcribed from the video)"
+        attempts = []
+        if settings.transcript_api_key():
+            attempts.append(("captions via Supadata", _from_supadata))
+        attempts.append(("public captions", _from_public_captions))
+        if settings.gemini_api_key():
+            attempts.append(("Gemini (transcribed from the video)", _from_gemini))
+        failures: list[ConnectorError] = []
+        for name, get in attempts:
+            try:
+                found, source = get(vid, language), name
+                break
+            except ConnectorError as exc:
+                failures.append(exc)
+        if not found:
+            if all(isinstance(f, YouTubeBlocked) for f in failures):
+                raise ConnectorError(
+                    "YouTube blocks transcript requests from this server, so the transcript cannot be read here. "
+                    "An admin can add TRANSCRIPT_API_KEY (Supadata) or GEMINI_API_KEY to read public videos."
+                ) from failures[-1]
+            raise ConnectorError(" ".join(str(f) for f in failures if not isinstance(f, YouTubeBlocked))
+                                 or str(failures[-1])) from failures[-1]
     text, lang = found
     text, findings = neutralize(" ".join(text.split()))
     return {
