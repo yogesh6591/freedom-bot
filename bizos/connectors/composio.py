@@ -900,7 +900,7 @@ class ComposioYouTubeConnector(_ComposioIdentity, Connector):
             return ConnectorResult.failure("video_id is required")
         try:
             data = self._run(
-                "YOUTUBE_LIST_COMMENT_THREADS",
+                "YOUTUBE_LIST_COMMENT_THREADS2",
                 {
                     "videoId": video_id,
                     "part": "snippet",
@@ -1051,6 +1051,9 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
         args: dict[str, Any] = {"limit": min(wanted, _HS_PAGE), "properties": properties}
         if query:
             args["query"] = query
+        if not query and not filters and action == "HUBSPOT_SEARCH_CONTACTS_BY_CRITERIA":
+            # contact search needs a query or a filter; this one matches every contact
+            filters = [{"propertyName": "hs_object_id", "operator": "HAS_PROPERTY"}]
         if filters:
             args["filterGroups"] = [{"filters": filters}]
         rows: list[dict[str, Any]] = []

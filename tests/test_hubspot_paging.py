@@ -66,3 +66,13 @@ def test_search_by_hubspot_stage_label_and_total():
     assert calls[0]["filterGroups"][0]["filters"][0]["value"] == "appointmentscheduled"
     assert len(out.data) == 10
     assert out.metadata["total"] == 22 and "of 22" in out.summary
+
+
+def test_listing_every_contact_sends_a_match_all_filter():
+    """HubSpot rejects a contact search with neither query nor filterGroups; the sync lists every contact."""
+    hs, calls = _connector([])
+    assert hs.search_contacts("", limit=100).ok
+    assert calls[0]["filterGroups"] == [{"filters": [{"propertyName": "hs_object_id", "operator": "HAS_PROPERTY"}]}]
+    assert "query" not in calls[0]
+    hs.search_contacts("Contoso")
+    assert calls[-1]["query"] == "Contoso" and "filterGroups" not in calls[-1]
