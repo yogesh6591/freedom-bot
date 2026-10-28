@@ -35,7 +35,7 @@ interface Inbox {
 type Decided = { kind: 'approved' | 'rejected'; note: string }
 
 const POLL_MS = 10_000
-const DONE = new Set(['APPROVED', 'EXECUTED', 'REJECTED', 'FAILED', 'CANCELLED'])
+const DONE = new Set(['APPROVED', 'EXECUTING', 'COMPLETED', 'REJECTED', 'FAILED', 'CANCELLED'])
 
 function statusLabel(status: string): { text: string; tone: string } {
   switch (status) {
@@ -43,8 +43,12 @@ function statusLabel(status: string): { text: string; tone: string } {
       return { text: 'Waiting for approval', tone: 'bg-amber-500/10 text-amber-700' }
     case 'APPROVED':
       return { text: 'Approved', tone: 'bg-emerald-500/10 text-emerald-700' }
-    case 'EXECUTED':
+    case 'EXECUTING':
+      return { text: 'Approved, running', tone: 'bg-emerald-500/10 text-emerald-700' }
+    case 'COMPLETED':
       return { text: 'Approved and done', tone: 'bg-emerald-500/10 text-emerald-700' }
+    case 'CANCELLED':
+      return { text: 'Cancelled', tone: 'bg-black/5 text-secondary' }
     case 'REJECTED':
       return { text: 'Rejected', tone: 'bg-red-500/10 text-red-600' }
     case 'FAILED':
@@ -239,8 +243,54 @@ function Card({
   )
 }
 
-/** The approvals message: what waits for this user (with Approve / Reject) and their own requests. */
-export function ApprovalsPanel({
+/** The bell with its dropdown: what waits for this user (Approve / Reject) and their own requests. */
+export function ApprovalsMenu({
+  approvals
+}: {
+  approvals: ReturnType<typeof useApprovalInbox>
+}) {
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const outside = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) setOpen(false)
+    }
+    const escape = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false)
+    document.addEventListener('mousedown', outside)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', outside)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [open])
+
+  return (
+    <div ref={box} className="relative">
+      <ApprovalBell
+        waiting={approvals.inbox?.to_decide.length ?? 0}
+        fresh={approvals.fresh}
+        flash={approvals.flash}
+        onClick={() => {
+          setOpen((o) => !o)
+          approvals.markSeen()
+          void approvals.refresh()
+        }}
+      />
+      {open && (
+        <ApprovalsPanel
+          inbox={approvals.inbox}
+          onClose={() => setOpen(false)}
+          onChanged={() => void approvals.refresh()}
+          onDecided={(kind) => approvals.showFlash(kind)}
+        />
+      )}
+    </div>
+  )
+}
+
+function ApprovalsPanel({
   inbox,
   onClose,
   onChanged,
@@ -286,9 +336,12 @@ export function ApprovalsPanel({
   const waiting = [...pending, ...decidedItems.filter((d) => !pending.some((p) => p.id === d.id))]
   const mine = (inbox?.mine ?? []).slice(0, 8)
   return (
-    <div className="flex items-start gap-2.5">
-      <span className="assistant-orb mt-0.5 h-5 w-5 shrink-0 rounded-full" aria-hidden />
-      <div className="assistant-bot-bubble w-full max-w-[min(100%,40rem)] rounded-2xl rounded-tl-md px-4 py-3">
+    <div
+      role="dialog"
+      aria-label="Approvals"
+      className="absolute right-0 top-full z-40 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-border bg-background shadow-xl"
+    >
+      <div className="max-h-[70vh] overflow-y-auto px-4 py-3">
         <div className="mb-2 flex items-center justify-between">
           <p className="text-[15px] font-semibold text-primary">Approvals</p>
           <button type="button" onClick={onClose} aria-label="Close approvals" className="rounded p-1 text-muted hover:text-primary">

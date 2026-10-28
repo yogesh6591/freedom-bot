@@ -55,7 +55,7 @@ import { useDebug } from '@/lib/debug'
 import { BrandMark } from '@/components/BrandMark'
 import { SidebarSwitch } from '@/components/SidebarSwitch'
 import { IntegrationsView } from '@/components/IntegrationsView'
-import { ApprovalBell, ApprovalsPanel, useApprovalInbox } from './Approvals'
+import { ApprovalsMenu, useApprovalInbox } from './Approvals'
 
 interface Turn {
   id?: string
@@ -688,7 +688,6 @@ function ChatView({ home }: { home: boolean }) {
   const [live, setLive] = useState<{ status: string; text: string } | null>(null)
   /** Approvals in the chat (home page): the bell's inbox and whether its panel is open in the transcript. */
   const approvals = useApprovalInbox(home)
-  const [approvalsOpen, setApprovalsOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
@@ -922,7 +921,7 @@ function ChatView({ home }: { home: boolean }) {
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
     // Scroll only the transcript pane — scrollIntoView was jumping the whole shell up.
     el.scrollTo({ top: el.scrollHeight, behavior: reduce ? 'auto' : 'smooth' })
-  }, [turns, busy, live, approvalsOpen])
+  }, [turns, busy, live])
 
   async function send(event: React.FormEvent) {
     event.preventDefault()
@@ -1357,18 +1356,7 @@ function ChatView({ home }: { home: boolean }) {
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
-            {chatHome && (
-              <ApprovalBell
-                waiting={approvals.inbox?.to_decide.length ?? 0}
-                fresh={approvals.fresh}
-                flash={approvals.flash}
-                onClick={() => {
-                  setApprovalsOpen(true)
-                  approvals.markSeen()
-                  void approvals.refresh()
-                }}
-              />
-            )}
+            {chatHome && <ApprovalsMenu approvals={approvals} />}
             {canAcquire && (
               <button
                 type="button"
@@ -1714,17 +1702,6 @@ function ChatView({ home }: { home: boolean }) {
                     })()
                   )
                 )}
-              </div>
-            )}
-
-            {chatHome && approvalsOpen && (
-              <div className="mt-3">
-                <ApprovalsPanel
-                  inbox={approvals.inbox}
-                  onClose={() => setApprovalsOpen(false)}
-                  onChanged={() => void approvals.refresh()}
-                  onDecided={(kind) => approvals.showFlash(kind)}
-                />
               </div>
             )}
 
