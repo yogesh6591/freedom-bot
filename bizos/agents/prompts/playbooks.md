@@ -76,7 +76,7 @@
 
 ## research
 - web_search with a specific query (company name plus what is needed: "Globex hiring", "Globex
-  funding 2026"), then web_read the two or three best results, often the company's own site.
+  funding 2026"). Its answer is already a cited summary; web_read a page only to check one detail.
 - For "is X a good fit": check our records too (crm_search_companies, crm_search_contacts), then
   give the evidence for and against with sources, and say what is still unknown.
 - Never put confidential data (prices, customer details, internal plans) in a search query.

@@ -11,6 +11,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import ReactMarkdown from 'react-markdown'
+import rehypeSanitize from 'rehype-sanitize'
+import remarkGfm from 'remark-gfm'
 import {
   ArrowUp,
   BarChart3,
@@ -319,19 +322,79 @@ function TraceRow({
 }
 
 /** Debug mode (sidebar switch): the tools this reply called, in order, with whether each succeeded. */
+/**
+ * The assistant's Markdown (bold, lists, links, tables, code) in the chat's own sizes. Raw HTML from the
+ * model is not rendered, and the output is sanitized.
+ */
+function ChatMarkdown({ text }: { text: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      rehypePlugins={[rehypeSanitize]}
+      components={{
+        p: ({ children }) => <p className="text-[15px] leading-6 text-primary [&:not(:first-child)]:mt-2">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold text-primary">{children}</strong>,
+        em: ({ children }) => <em className="italic">{children}</em>,
+        ul: ({ children }) => <ul className="my-1 list-disc space-y-1 pl-5 text-[15px] leading-6">{children}</ul>,
+        ol: ({ children, start }) => (
+          <ol start={start} className="my-1 list-decimal space-y-1 pl-5 text-[15px] leading-6">{children}</ol>
+        ),
+        li: ({ children }) => <li className="pl-0.5 text-primary">{children}</li>,
+        h1: ({ children }) => <p className="mt-1 text-[16px] font-semibold text-primary">{children}</p>,
+        h2: ({ children }) => <p className="mt-1 text-[16px] font-semibold text-primary">{children}</p>,
+        h3: ({ children }) => <p className="mt-1 text-[15px] font-semibold text-primary">{children}</p>,
+        a: ({ children, href }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-brand underline underline-offset-2">
+            {children}
+          </a>
+        ),
+        code: ({ children }) => (
+          <code className="rounded bg-black/5 px-1 py-0.5 font-dmmono text-[13px]">{children}</code>
+        ),
+        pre: ({ children }) => (
+          <pre className="my-2 overflow-x-auto rounded-lg bg-black/5 p-3 font-dmmono text-[13px]">{children}</pre>
+        ),
+        table: ({ children }) => (
+          <div className="my-2 overflow-x-auto">
+            <table className="w-full border-collapse text-left text-[14px]">{children}</table>
+          </div>
+        ),
+        th: ({ children }) => (
+          <th className="border-b border-black/10 py-1.5 pr-4 text-[12px] font-semibold uppercase tracking-wide text-secondary">
+            {children}
+          </th>
+        ),
+        td: ({ children }) => <td className="border-b border-black/5 py-1.5 pr-4 text-primary">{children}</td>
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  )
+}
+
 function ToolsCalled({ activity }: { activity: { tool: string; ok: boolean }[] }) {
+  // One chip per tool, with how many times it ran and how many of those failed.
+  const groups = new Map<string, { calls: number; failed: number }>()
+  for (const item of activity) {
+    const group = groups.get(item.tool) ?? { calls: 0, failed: 0 }
+    group.calls += 1
+    if (item.ok === false) group.failed += 1
+    groups.set(item.tool, group)
+  }
   return (
     <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed border-border bg-background px-2.5 py-1.5 font-dmmono text-[11px] text-muted">
       <span className="font-geist font-semibold uppercase tracking-wide">Tools called</span>
-      {activity.length === 0 ? (
+      {groups.size === 0 ? (
         <span>none</span>
       ) : (
-        activity.map((item, i) => (
+        [...groups].map(([tool, { calls, failed }]) => (
           <span
-            key={`${item.tool}-${i}`}
-            className={`rounded px-1.5 py-0.5 ${item.ok === false ? 'bg-red-500/10 text-red-600' : 'bg-emerald-500/10 text-emerald-700'}`}
+            key={tool}
+            title={`${calls} call${calls === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}`}
+            className={`rounded px-1.5 py-0.5 ${failed === calls ? 'bg-red-500/10 text-red-600' : failed ? 'bg-amber-500/10 text-amber-700' : 'bg-emerald-500/10 text-emerald-700'}`}
           >
-            {item.tool} {item.ok === false ? '✗' : '✓'}
+            {tool}
+            {calls > 1 ? ` ×${calls}` : ''} {failed === 0 ? '✓' : failed === calls ? '✗' : `(${calls - failed} ✓ ${failed} ✗)`}
           </span>
         ))
       )}
@@ -466,9 +529,9 @@ function AssistantMessage({
       <div className="assistant-bot-bubble w-fit max-w-[min(100%,36rem)] rounded-2xl rounded-tl-md px-4 py-3">
         <div className="flex flex-col gap-3">
           {lead.map((block) => (
-            <p key={block} className="whitespace-pre-wrap text-[15px] leading-6 text-primary">
-              {block}
-            </p>
+            <div key={block} className="break-words">
+              <ChatMarkdown text={block} />
+            </div>
           ))}
           {people.length > 0 ? (
             <table className="w-full border-collapse text-left text-[14px]">
@@ -507,9 +570,9 @@ function AssistantMessage({
             </table>
           ) : null}
           {rest.map((block) => (
-            <p key={block} className="whitespace-pre-wrap text-[15px] leading-6 text-primary">
-              {block}
-            </p>
+            <div key={block} className="break-words">
+              <ChatMarkdown text={block} />
+            </div>
           ))}
         </div>
       </div>
@@ -1650,8 +1713,8 @@ function ChatView({ home }: { home: boolean }) {
                     </p>
                   ) : null}
                   {live?.text ? (
-                    <div className="assistant-bot-bubble whitespace-pre-wrap rounded-3xl rounded-bl-md px-4 py-3 text-[15px] leading-7">
-                      {live.text}
+                    <div className="assistant-bot-bubble break-words rounded-3xl rounded-bl-md px-4 py-3">
+                      <ChatMarkdown text={live.text} />
                       <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse bg-purple-400 align-middle" aria-hidden />
                     </div>
                   ) : (
