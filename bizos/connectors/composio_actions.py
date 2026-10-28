@@ -115,25 +115,75 @@ def connected_toolkits(ctx: TenantContext) -> list[str]:
     return [slug for slug, account in composio._active_accounts(ctx).items() if account]
 
 
-def _compact_schema(params: Any) -> dict[str, Any]:
-    """Argument names, types, required flags and short descriptions (enough to call the action)."""
+#: Argument names most requests fill, listed before the rest when an action has many arguments.
+_COMMON_ARGS = ("id", "email", "name", "title", "subject", "body", "text", "message", "content", "query", "q",
+                "channel", "to", "recipient", "user_id", "limit", "max_results", "start", "end", "date", "description")
+#: Arguments shown per action in a list; one action asked for by its action_id shows all of them.
+LIST_ARGS = 25
+
+
+def _type_of(spec: dict[str, Any]) -> str:
+    if spec.get("type"):
+        return str(spec["type"])
+    options = spec.get("anyOf") or spec.get("oneOf") or []
+    kinds = sorted({str(o.get("type")) for o in options if isinstance(o, dict) and o.get("type") and o.get("type") != "null"})
+    return " or ".join(kinds) or "any"
+
+
+def _arg(spec: Any, *, depth: int = 0) -> dict[str, Any]:
+    """One argument: type, short description, enum, default, and one level of nested fields or list items."""
+    spec = spec if isinstance(spec, dict) else {}
+    entry: dict[str, Any] = {"type": _type_of(spec),
+                             "description": " ".join(str(spec.get("description") or "").split())[:160]}
+    if isinstance(spec.get("enum"), list):
+        entry["enum"] = spec["enum"][:12]
+    if spec.get("default") not in (None, "", [], {}):
+        entry["default"] = spec["default"]
+    if depth == 0:
+        inner = spec.get("properties")
+        if isinstance(inner, dict) and inner:
+            entry["fields"] = {k: _arg(v, depth=1) for k, v in list(inner.items())[:12]}
+            if spec.get("required"):
+                entry["required_fields"] = list(spec["required"])[:12]
+        items = spec.get("items")
+        if isinstance(items, dict):
+            entry["items"] = ({k: _arg(v, depth=1) for k, v in list(items["properties"].items())[:12]}
+                              if isinstance(items.get("properties"), dict) else _type_of(items))
+    return entry
+
+
+def _compact_schema(params: Any, *, limit: Optional[int] = LIST_ARGS, prefer: frozenset[str] = frozenset()) -> dict[str, Any]:
+    """The action's arguments for the model: required ones first, then ones the request mentions, then the
+    usual ones, then the rest. ``limit`` None shows every argument; otherwise ``_more`` counts the hidden ones."""
     params = params if isinstance(params, dict) else {}
     props = params.get("properties") if isinstance(params.get("properties"), dict) else {}
     required = set(params.get("required") or [])
+
+    def rank(key: str) -> tuple[int, int]:
+        words = set(re.findall(r"[a-z0-9]+", key.lower()))
+        if key in required:
+            return (0, 0)
+        if words & prefer:
+            return (1, 0)
+        if key.lower() in _COMMON_ARGS or words & set(_COMMON_ARGS):
+            return (2, 0)
+        return (3, 0)
+
+    keys = sorted(props, key=rank)  # stable: Composio's order within each group
+    shown = keys if limit is None else keys[:max(limit, len(required))]
     out: dict[str, Any] = {}
-    for key, spec in list(props.items())[:25]:
-        spec = spec if isinstance(spec, dict) else {}
-        entry: dict[str, Any] = {"type": spec.get("type") or "any",
-                                 "description": " ".join(str(spec.get("description") or "").split())[:160]}
+    for key in shown:
+        entry = _arg(props[key])
         if key in required:
             entry["required"] = True
-        if isinstance(spec.get("enum"), list):
-            entry["enum"] = spec["enum"][:12]
         out[key] = entry
+    if len(shown) < len(keys):
+        out["_more"] = (f"{len(keys) - len(shown)} more optional arguments; call integration_find_action with this "
+                        "action_id as the query to see all of them")
     return out
 
 
-def _describe(tool: Any) -> dict[str, Any]:
+def _describe(tool: Any, *, full: bool = False, prefer: frozenset[str] = frozenset()) -> dict[str, Any]:
     slug = str(getattr(tool, "slug", "") or "")
     tier = classify(slug, list(getattr(tool, "tags", None) or []))
     return {
@@ -143,7 +193,8 @@ def _describe(tool: Any) -> dict[str, Any]:
         "description": " ".join(str(getattr(tool, "description", "") or "").split())[:300],
         "tier": tier,
         "run_with": TOOL_FOR_TIER[tier],
-        "arguments": _compact_schema(getattr(tool, "input_parameters", None)),
+        "arguments": _compact_schema(getattr(tool, "input_parameters", None), limit=None if full else LIST_ARGS,
+                                     prefer=prefer),
     }
 
 
@@ -162,6 +213,22 @@ def find(ctx: TenantContext, query: str, *, toolkit: Optional[str] = None, limit
     from bizos.connectors import composio_catalog
 
     limit = max(1, min(int(limit or 8), 15))
+    exact = str(query or "").strip().upper()
+    if re.fullmatch(r"[A-Z0-9]+(?:_[A-Z0-9]+)+", exact):
+        # One action by its action_id: every argument, nested fields included.
+        try:
+            tool = composio.get_client().tools.get_raw_composio_tool_by_slug(exact)
+        except Exception as exc:  # noqa: BLE001
+            raise ConnectorError(f"Unknown app action {exact!r}. Search with plain words instead.") from exc
+        item = _describe(tool, full=True)
+        if item["app"] not in connected:
+            raise ConnectorNotConfigured(f"{composio.app_name(item['app'])} is not connected for your account. "
+                                         "Connect it on the Integrations page.")
+        if not composio_catalog.allowed(ctx, item["app"], item["action_id"]):
+            raise ConnectorError(f"{exact} is switched off for this connection in Integrations.")
+        with _cache_lock:
+            _schema_cache[exact] = (time.monotonic(), item)
+        return {"connected_apps": connected, "actions": [item]}
     words = _query_groups(query)
     # Named apps narrow the search ("recent emails on outlook" -> outlook).
     named = [t for t in wanted if t in words["apps"]]
@@ -174,22 +241,28 @@ def find(ctx: TenantContext, query: str, *, toolkit: Optional[str] = None, limit
     except Exception:  # noqa: BLE001 - the local ranking below still answers
         hits = []
     boosted = {str(getattr(t, "slug", "")) for t in hits}
-    candidates: dict[str, dict[str, Any]] = {}
+    candidates: dict[str, tuple[dict[str, Any], Any]] = {}
     for slug in targets:
         try:
-            for item in _toolkit_actions(slug):
-                candidates[item["action_id"]] = item
+            for item, tool in _toolkit_actions(slug):
+                candidates[item["action_id"]] = (item, tool)
         except Exception as exc:  # noqa: BLE001
             if not hits:
                 raise ConnectorError(f"Could not search the app actions: {exc}") from exc
     for t in hits:
         if not getattr(t, "is_deprecated", False):
-            candidates.setdefault(str(t.slug), _describe(t))
-    ranked = sorted(
-        candidates.values(),
-        key=lambda item: (-(_score(item, words) + (2 if item["action_id"] in boosted else 0)), len(item["action_id"])),
-    )
-    found = [f for f in ranked if composio_catalog.allowed(ctx, f["app"], f["action_id"])][:limit]
+            candidates.setdefault(str(t.slug), (_describe(t), t))
+
+    def relevance(item: dict[str, Any]) -> int:
+        return _score(item, words) + (2 if item["action_id"] in boosted else 0)
+
+    ranked = sorted((pair for pair in candidates.values() if relevance(pair[0]) > 0),
+                    key=lambda pair: (-relevance(pair[0]), len(pair[0]["action_id"])))
+    if not ranked:  # nothing matched the words: offer the platform's read actions to start from
+        ranked = sorted((p for p in candidates.values() if p[0]["tier"] == READ), key=lambda p: len(p[0]["action_id"]))
+    prefer = frozenset(words["apps"])
+    found = [_describe(tool, prefer=prefer) for item, tool in ranked
+             if composio_catalog.allowed(ctx, item["app"], item["action_id"])][:limit]
     for item in found:
         with _cache_lock:
             _schema_cache[item["action_id"]] = (time.monotonic(), item)
@@ -211,14 +284,26 @@ _SYNONYMS = {
     **dict.fromkeys(["send", "reply", "respond", "forward", "write"], "send"),
     **dict.fromkeys(["delete", "remove", "trash", "archive"], "delete"),
     **dict.fromkeys(["meeting", "meetings", "event", "events", "calendar", "schedule"], "event"),
-    **dict.fromkeys(["contact", "contacts", "people", "person"], "contact"),
-    **dict.fromkeys(["file", "files", "document", "documents", "doc", "docs"], "file"),
-    **dict.fromkeys(["channel", "channels"], "channel"),
+    **dict.fromkeys(["create", "add", "new", "insert", "make", "upsert"], "create"),
+    **dict.fromkeys(["update", "edit", "change", "modify", "patch", "set", "rename"], "update"),
+    **dict.fromkeys(["contact", "contacts", "people", "person", "persons", "customer", "customers", "client",
+                     "clients", "lead", "leads"], "contact"),
+    **dict.fromkeys(["file", "files", "document", "documents", "doc", "docs", "attachment", "attachments"], "file"),
+    **dict.fromkeys(["task", "tasks", "card", "cards", "issue", "issues", "ticket", "tickets", "todo", "todos"], "task"),
+    **dict.fromkeys(["repository", "repositories", "repo", "repos", "project", "projects"], "project"),
+    **dict.fromkeys(["invoice", "invoices", "bill", "bills"], "invoice"),
+    **dict.fromkeys(["post", "posts", "tweet", "tweets", "status"], "post"),
+    **dict.fromkeys(["channel", "channels", "conversation", "conversations"], "channel"),
     **dict.fromkeys(["comment", "comments"], "comment"),
+    **dict.fromkeys(["page", "pages", "note", "notes"], "page"),
+    **dict.fromkeys(["deal", "deals", "opportunity", "opportunities"], "deal"),
+    **dict.fromkeys(["user", "users", "member", "members"], "user"),
 }
+#: Groups that are verbs; a request's nouns decide more than its verb ("list tasks" is mostly about tasks).
+_VERB_GROUPS = frozenset({"read", "send", "delete", "create", "update"})
 _STOPWORDS = frozenset({"the", "a", "an", "on", "in", "of", "to", "for", "from", "my", "me", "i", "is", "are", "any",
                         "and", "or", "with", "about", "please", "can", "you", "what", "do", "have", "got"})
-_TOOLKIT_ACTIONS: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_TOOLKIT_ACTIONS: dict[str, tuple[float, list[tuple[dict[str, Any], Any]]]] = {}
 
 
 def _groups(text: str) -> set[str]:
@@ -236,17 +321,18 @@ def _score(item: dict[str, Any], words: dict[str, Any]) -> int:
     title, about = _groups(item.get("title", "")), _groups(item.get("description", ""))
     score = 0
     for group in words["groups"]:
-        score += 3 if group in name else 2 if group in title else 1 if group in about else 0
+        weight = 1 if group in _VERB_GROUPS else 2
+        score += weight * (3 if group in name else 2 if group in title else 1 if group in about else 0)
     return score
 
 
-def _toolkit_actions(slug: str) -> list[dict[str, Any]]:
-    """Every current action of one platform, described (cached for an hour)."""
+def _toolkit_actions(slug: str) -> list[tuple[dict[str, Any], Any]]:
+    """Every current action of one platform: (description, Composio tool), cached for an hour."""
     cached = _TOOLKIT_ACTIONS.get(slug)
     if cached and time.monotonic() - cached[0] < _SCHEMA_CACHE_TTL * 6:
         return cached[1]
     raw = composio.get_client().tools.get_raw_composio_tools(toolkits=[slug], limit=1000)
-    items = [_describe(t) for t in raw if not getattr(t, "is_deprecated", False)]
+    items = [(_describe(t), t) for t in raw if not getattr(t, "is_deprecated", False)]
     _TOOLKIT_ACTIONS[slug] = (time.monotonic(), items)
     return items
 

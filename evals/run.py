@@ -279,6 +279,7 @@ def patch_world(mp, world, fixtures: dict) -> None:
     from bizos.connectors import composio_actions
 
     mp.setattr(composio_actions, "describe", lambda slug: {"tier": composio_actions.classify_by_name(slug)})
+    mp.setattr(composio_actions, "connected_toolkits", lambda ctx: [])
     if fixtures.get("now"):
         frozen = real_datetime.fromisoformat(str(fixtures["now"]))
 

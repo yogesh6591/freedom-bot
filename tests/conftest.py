@@ -39,6 +39,8 @@ os.environ["JWT_SECRET"] = "test-only-signing-key-please-do-not-reuse-anywhere-0
 os.environ["MEMORY_VECTOR_SEARCH"] = "off"
 # The background integration sync must not start inside tests.
 os.environ["INTEGRATION_SYNC_ENABLED"] = "off"
+# Tests never reach Composio (CLAUDE.md: mocked tools only); tests that need it patch it in.
+os.environ["COMPOSIO_API_KEY"] = ""
 
 from bizos.bootstrap import admin_context, ensure_dev_users, seed_business_data  # noqa: E402
 from bizos.connectors.registry import seed_default_integrations  # noqa: E402
