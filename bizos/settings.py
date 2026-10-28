@@ -239,7 +239,7 @@ def gemini_api_key() -> str:
 
 def gemini_model_id() -> str:
     """Gemini model that transcribes YouTube videos."""
-    return getenv("GEMINI_MODEL_ID", "").strip() or "gemini-2.5-flash"
+    return getenv("GEMINI_MODEL_ID", "").strip().removeprefix("models/") or "gemini-3.8-flash"
 
 
 def tavily_api_key() -> str:
