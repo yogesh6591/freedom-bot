@@ -275,6 +275,10 @@ def patch_world(mp, world, fixtures: dict) -> None:
     mp.setattr(current, "known_records", lambda ctx=None: world.campaign_records())
     mp.setattr(company, "_find_user", world.find_user(company._find_user))
     mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
+    # App-action prechecks look actions up in Composio; evals classify by name and never reach it.
+    from bizos.connectors import composio_actions
+
+    mp.setattr(composio_actions, "describe", lambda slug: {"tier": composio_actions.classify_by_name(slug)})
     if fixtures.get("now"):
         frozen = real_datetime.fromisoformat(str(fixtures["now"]))
 

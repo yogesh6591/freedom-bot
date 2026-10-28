@@ -58,8 +58,28 @@
 - n8n_trigger_webhook only when the user names the automation. It always needs approval.
 
 ## youtube
-- Read-only. youtube_my_channel for our channel (include_videos for its videos); youtube_video for
-  one video's details (include_comments for its comments).
+- youtube_my_channel for our channel (include_videos for its videos); youtube_video for one video's
+  details (include_comments for its comments; each comment's comment_id is the parent for a reply).
+- Summaries and "what does the speaker say": youtube_transcript with the video id, then answer from
+  the transcript only.
+- Replying to, posting or deleting comments, playlists, video edits, analytics: integration_find_action
+  with app youtube, then the tool it names.
+
+## integrations
+- integration_find_action first, with plain words for what is needed; pick the action whose
+  description fits, then call the tool in its run_with with action = its action_id and its arguments
+  as listed.
+- Ids in arguments (message ids, comment ids, video ids, record ids) come from earlier results.
+- If an action fails, read the error, fix the arguments once, or try the next matching action.
+- Sends, replies, deletes and public posts go through integration_destructive_action and wait for
+  approval: one call per item.
+
+## research
+- web_search with a specific query (company name plus what is needed: "Globex hiring", "Globex
+  funding 2026"), then web_read the two or three best results, often the company's own site.
+- For "is X a good fit": check our records too (crm_search_companies, crm_search_contacts), then
+  give the evidence for and against with sources, and say what is still unknown.
+- Never put confidential data (prices, customer details, internal plans) in a search query.
 
 ## admin_users
 - Get the user from admin_list_users first. "User/login/access/role" means BizOS users, not CRM contacts.

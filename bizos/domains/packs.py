@@ -100,6 +100,13 @@ GENERAL = DomainPack(
     tools=(
         "memory_search",
         "synced_search",
+        "youtube_transcript",
+        "integration_find_action",
+        "integration_read_action",
+        "integration_write_action",
+        "integration_destructive_action",
+        "web_search",
+        "web_read",
         "memory_get_fact",
         "memory_history",
         "approvals_list",

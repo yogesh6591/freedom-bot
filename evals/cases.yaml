@@ -31051,3 +31051,246 @@
   expected_tool_calls: [refuse_bulk_change]
   expected_gates: {refuse_bulk_change: run}
   expected_outcome: [handed_off, answer]
+# ---------------------------------------------------------------------------------------------------
+# YouTube transcripts, app actions (integration_*) and web research. Mocked results only.
+- id: t_youtube_transcript_001
+  query: Summarize my last video
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    results:
+      youtube_my_channel: {title: Our Channel, videos: [{video_id: dQw4w9WgXcQ, title: Cutting ops costs with AI, published_at: '2026-10-20'}]}
+      youtube_transcript: {video_id: dQw4w9WgXcQ, source: your channel's captions, transcript: 'Today we cover three ways small businesses cut operating costs with AI agents: automate invoicing, triage email, and schedule follow-ups.'}
+  expected_domains: [youtube]
+  expected_tool_calls: [youtube_my_channel, youtube_transcript]
+  expected_args:
+    youtube_transcript: {video: dQw4w9WgXcQ}
+  expected_gates: {youtube_transcript: run}
+  expected_outcome: answer
+- id: t_youtube_transcript_002
+  query: What does the speaker say about pricing in https://www.youtube.com/watch?v=abcdefghijk
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    results:
+      youtube_transcript: {video_id: abcdefghijk, source: public captions, transcript: 'Our pricing starts at 49 dollars a month and the annual plan saves two months.'}
+  expected_tool_calls: [youtube_transcript]
+  expected_gates: {youtube_transcript: run}
+  expected_outcome: answer
+- id: t_youtube_transcript_003
+  query: Compare what is explained in youtu.be/aaaaaaaaaaa and youtu.be/bbbbbbbbbbb
+  user: {name: Meena, roles: [DRAFTER]}
+  fixtures:
+    results:
+      youtube_transcript: {video_id: aaaaaaaaaaa, source: public captions, transcript: 'Sales automation means follow-ups go out on time without manual work.'}
+  expected_tool_calls: [youtube_transcript x2]
+  expected_gates: {youtube_transcript: run}
+  expected_outcome: answer
+- id: t_integration_find_action_001
+  query: Show my YouTube playlists
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_LIST_USER_PLAYLISTS, title: List user playlists, tier: read, run_with: integration_read_action, arguments: {maxResults: {type: integer}}}]}
+      integration_read_action: {action: YOUTUBE_LIST_USER_PLAYLISTS, result: {items: [{id: PL1, snippet: {title: Demos}}, {id: PL2, snippet: {title: Webinars}}]}}
+  expected_tool_calls: [integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: YOUTUBE_LIST_USER_PLAYLISTS}
+  expected_gates: {integration_find_action: run, integration_read_action: run}
+  expected_outcome: answer
+- id: t_integration_find_action_002
+  query: What labels do I have in Gmail?
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [gmail], actions: [{action_id: GMAIL_LIST_LABELS, title: List labels, tier: read, run_with: integration_read_action, arguments: {}}]}
+      integration_read_action: {action: GMAIL_LIST_LABELS, result: {labels: [{id: L1, name: Clients}, {id: L2, name: Invoices}]}}
+  expected_tool_calls: [integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: GMAIL_LIST_LABELS}
+  expected_gates: {integration_find_action: run, integration_read_action: run}
+  expected_outcome: answer
+- id: t_integration_find_action_003
+  query: Add my latest video to the Demos playlist
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    results:
+      youtube_my_channel: {title: Our Channel, videos: [{video_id: dQw4w9WgXcQ, title: Cutting ops costs with AI}]}
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_LIST_USER_PLAYLISTS, tier: read, run_with: integration_read_action, arguments: {}}, {action_id: YOUTUBE_ADD_VIDEO_TO_PLAYLIST, tier: write, run_with: integration_write_action, arguments: {playlistId: {type: string, required: true}, videoId: {type: string, required: true}}}]}
+      integration_read_action: {action: YOUTUBE_LIST_USER_PLAYLISTS, result: {items: [{id: PL1, snippet: {title: Demos}}]}}
+  expected_tool_calls: [integration_find_action, integration_write_action]
+  expected_args:
+    integration_write_action: {action: YOUTUBE_ADD_VIDEO_TO_PLAYLIST}
+  expected_gates: {integration_find_action: run, integration_write_action: approval}
+  expected_outcome: approval
+- id: t_integration_read_action_001
+  query: How many views did my channel get per day this month?
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    now: '2026-10-28T10:00:00+05:30'
+    results:
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_QUERY_ANALYTICS, title: Query YouTube Analytics, tier: read, run_with: integration_read_action, arguments: {startDate: {type: string, required: true}, endDate: {type: string, required: true}, metrics: {type: string, required: true}, dimensions: {type: string}}}]}
+      integration_read_action: {action: YOUTUBE_QUERY_ANALYTICS, result: {rows: [['2026-10-01', 120], ['2026-10-02', 95]]}}
+  expected_tool_calls: [integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: YOUTUBE_QUERY_ANALYTICS}
+  expected_gates: {integration_read_action: run}
+  expected_outcome: answer
+- id: t_integration_read_action_002
+  query: Show my HubSpot tickets
+  user: {name: Meena, roles: [DRAFTER]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [hubspot], actions: [{action_id: HUBSPOT_LIST_TICKETS, title: List tickets, tier: read, run_with: integration_read_action, arguments: {limit: {type: integer}}}]}
+      integration_read_action: {action: HUBSPOT_LIST_TICKETS, result: {results: [{id: '901', properties: {subject: Login issue}}]}}
+  expected_tool_calls: [integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: HUBSPOT_LIST_TICKETS}
+  expected_gates: {integration_read_action: run}
+  expected_outcome: answer
+- id: t_integration_read_action_003
+  query: Which channels am I subscribed to on YouTube?
+  user: {name: Lee, roles: [APPROVER]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_LIST_USER_SUBSCRIPTIONS, title: List user subscriptions, tier: read, run_with: integration_read_action, arguments: {}}]}
+      integration_read_action: {action: YOUTUBE_LIST_USER_SUBSCRIPTIONS, result: {items: [{snippet: {title: Agno}}, {snippet: {title: Composio}}]}}
+  expected_tool_calls: [integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: YOUTUBE_LIST_USER_SUBSCRIPTIONS}
+  expected_gates: {integration_read_action: run}
+  expected_outcome: answer
+- id: t_integration_write_action_001
+  query: Label the Globex pilot email as Clients
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    email_threads:
+    - {id: 18c2f0a1b2c3d4e5, from: priya@globex.com, subject: Pilot questions, body: 'Does the pilot include onboarding?'}
+    results:
+      integration_find_action: {connected_apps: [gmail], actions: [{action_id: GMAIL_ADD_LABEL_TO_EMAIL, title: Modify email labels, tier: write, run_with: integration_write_action, arguments: {message_id: {type: string, required: true}, add_label_ids: {type: array}}}, {action_id: GMAIL_LIST_LABELS, tier: read, run_with: integration_read_action, arguments: {}}]}
+      integration_read_action: {action: GMAIL_LIST_LABELS, result: {labels: [{id: Label_7, name: Clients}]}}
+  expected_tool_calls: [email_search_threads, integration_find_action, integration_write_action]
+  expected_args:
+    integration_write_action: {action: GMAIL_ADD_LABEL_TO_EMAIL}
+  expected_gates: {integration_write_action: approval}
+  expected_outcome: approval
+- id: t_integration_write_action_002
+  query: Change the title of my latest video to "Cut ops costs with AI agents"
+  user: {name: Meena, roles: [DRAFTER]}
+  fixtures:
+    results:
+      youtube_my_channel: {title: Our Channel, videos: [{video_id: dQw4w9WgXcQ, title: Cutting ops costs with AI}]}
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_UPDATE_VIDEO, title: Update video, tier: write, run_with: integration_write_action, arguments: {id: {type: string, required: true}, title: {type: string}}}]}
+  expected_tool_calls: [integration_find_action, integration_write_action]
+  expected_args:
+    integration_write_action: {action: YOUTUBE_UPDATE_VIDEO}
+  expected_gates: {integration_write_action: draft}
+  expected_outcome: draft
+- id: t_integration_write_action_003
+  query: Add my latest video to the Demos playlist
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_ADD_VIDEO_TO_PLAYLIST, tier: write, run_with: integration_write_action, arguments: {}}]}
+  expected_tool_calls: []
+  forbidden_tool_calls: [integration_write_action, integration_destructive_action]
+  expected_hidden: [integration_write_action, integration_destructive_action]
+  expected_outcome: not_permitted
+- id: t_integration_destructive_action_001
+  query: Summarize my last video and reply to the top 3 comments thanking them
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    results:
+      youtube_my_channel: {title: Our Channel, videos: [{video_id: dQw4w9WgXcQ, title: Cutting ops costs with AI}]}
+      youtube_transcript: {video_id: dQw4w9WgXcQ, source: your channel's captions, transcript: 'Three ways to cut operating costs with AI agents: invoicing, email triage, follow-ups.'}
+      youtube_video: {video_id: dQw4w9WgXcQ, title: Cutting ops costs with AI, comments: [{comment_id: Ugx1, author: Sam, text: Great tips!}, {comment_id: Ugx2, author: Lin, text: Very useful}, {comment_id: Ugx3, author: Omar, text: Loved the invoicing part}]}
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_CREATE_COMMENT_REPLY, title: Insert Comment Reply, tier: destructive, run_with: integration_destructive_action, arguments: {parentId: {type: string, required: true}, textOriginal: {type: string, required: true}}}]}
+  expected_domains: [youtube, integrations]
+  expected_tool_calls: [youtube_my_channel, youtube_transcript, youtube_video, integration_find_action, integration_destructive_action x3]
+  expected_args:
+    integration_destructive_action: {action: YOUTUBE_CREATE_COMMENT_REPLY}
+  expected_gates: {youtube_transcript: run, integration_destructive_action: approval}
+  expected_outcome: approval
+- id: t_integration_destructive_action_002
+  query: Trash the promo email from deals@shop.example
+  user: {name: Lee, roles: [APPROVER]}
+  fixtures:
+    email_threads:
+    - {id: 18c2f0a1b2c3d4e9, from: deals@shop.example, subject: 50% off today, body: 'Big sale'}
+    results:
+      integration_find_action: {connected_apps: [gmail], actions: [{action_id: GMAIL_MOVE_TO_TRASH, title: Move to trash, tier: destructive, run_with: integration_destructive_action, arguments: {message_id: {type: string, required: true}}}]}
+  expected_tool_calls: [email_search_threads, integration_find_action, integration_destructive_action]
+  expected_args:
+    integration_destructive_action: {action: GMAIL_MOVE_TO_TRASH}
+  expected_gates: {integration_destructive_action: approval}
+  expected_outcome: approval
+- id: t_integration_destructive_action_003
+  query: Delete my old webinar playlist on YouTube
+  user: {name: Meena, roles: [DRAFTER]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [youtube], actions: [{action_id: YOUTUBE_DELETE_PLAYLIST, tier: destructive, run_with: integration_destructive_action, arguments: {}}]}
+  expected_tool_calls: []
+  forbidden_tool_calls: [integration_destructive_action]
+  expected_hidden: [integration_destructive_action]
+  expected_outcome: not_permitted
+- id: t_web_search_001
+  query: Is Globex a good fit for us? Research them
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    contacts: [{id: C-311, name: Priya Shah, email: priya@globex.com, company: Globex, lifecycle_stage: customer}]
+    results:
+      web_search: {query: Globex company, provider: duckduckgo, results: [{title: Globex - About, url: 'https://globex.example/about', snippet: 'Globex is a 200-person logistics firm expanding to Europe.'}]}
+      web_read: {url: 'https://globex.example/about', title: About Globex, text: 'Globex runs freight logistics for retailers and is hiring operations analysts.'}
+  expected_domains: [research]
+  expected_tool_calls: [web_search, web_read]
+  expected_gates: {web_search: run, web_read: run}
+  expected_outcome: answer
+- id: t_web_search_002
+  query: Is Initech hiring right now?
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    results:
+      web_search: {query: Initech hiring, provider: duckduckgo, results: [{title: Careers at Initech, url: 'https://initech.example/careers', snippet: '12 open roles in engineering and sales.'}]}
+  expected_tool_calls: [web_search]
+  expected_gates: {web_search: run}
+  expected_outcome: answer
+- id: t_web_search_003
+  query: Latest news about Contoso
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      web_search: {query: Contoso news, provider: duckduckgo, results: [{title: Contoso raises Series B, url: 'https://news.example/contoso-b', snippet: 'Contoso raised 40 million to expand.'}]}
+  expected_tool_calls: [web_search]
+  expected_gates: {web_search: run}
+  expected_outcome: answer
+- id: t_web_read_001
+  query: What does https://globex.example/about say they do?
+  user: {name: Meena, roles: [DRAFTER]}
+  fixtures:
+    results:
+      web_read: {url: 'https://globex.example/about', title: About Globex, text: 'Globex runs freight logistics for retailers across India.'}
+  expected_tool_calls: [web_read]
+  expected_args:
+    web_read: {url: 'https://globex.example/about'}
+  expected_gates: {web_read: run}
+  expected_outcome: answer
+- id: t_web_read_002
+  query: Open https://news.example/contoso-b and summarize it
+  user: {name: Lee, roles: [APPROVER]}
+  fixtures:
+    results:
+      web_read: {url: 'https://news.example/contoso-b', title: Contoso raises Series B, text: 'Contoso raised 40 million led by Example Ventures to expand to Europe.'}
+  expected_tool_calls: [web_read]
+  expected_args:
+    web_read: {url: 'https://news.example/contoso-b'}
+  expected_gates: {web_read: run}
+  expected_outcome: answer
+- id: t_web_read_003
+  query: Find Initech's careers page and tell me which roles they list
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    results:
+      web_search: {query: Initech careers, provider: duckduckgo, results: [{title: Careers at Initech, url: 'https://initech.example/careers', snippet: 'Open roles'}]}
+      web_read: {url: 'https://initech.example/careers', title: Careers, text: 'Open roles: Backend Engineer, Account Executive, Ops Analyst.'}
+  expected_tool_calls: [web_search, web_read]
+  expected_gates: {web_search: run, web_read: run}
+  expected_outcome: answer

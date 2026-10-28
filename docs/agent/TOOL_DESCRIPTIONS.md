@@ -60,6 +60,11 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 | calendar_list_events / calendar_check_availability | What is scheduled vs whether a slot is free |
 | approvals_decide / approvals_cancel | Approver's decision vs submitter withdrawing their own request |
 | finance_draft_invoice / finance_propose_adjustment | Invoice draft from pending billables vs a credit or adjustment for licensed review |
+| integration_read_action / integration_write_action / integration_destructive_action | Run the action with the tool integration_find_action names in run_with: read-only vs create or update vs delete, trash, send, reply or public post. The precheck refuses any other pairing |
+| integration_find_action / a dedicated tool | Only when no dedicated tool covers it (email_search_threads, crm_search_deals, youtube_video...) |
+| integration_destructive_action / email_send_message | Reply, forward or trash an existing email (app action) vs one new email to named people |
+| youtube_transcript / youtube_video | What the speaker says vs views, likes and what viewers wrote |
+| web_search / memory_search / crm_search_companies | The public web vs company knowledge vs our CRM records |
 
 ## Examples
 ```python

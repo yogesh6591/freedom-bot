@@ -34,6 +34,8 @@ Do not clarify when:
 - a detail has a sensible default (meeting length, "next week")
 - the message content is not spelled out ("email Priya the pilot timeline now"): the executor writes it
 - several records might match (the executor handles that after searching)
+- the user means their own connected account ("my channel", "my inbox", "my calendar", "my HubSpot"):
+  the account is already known from their connected apps
 
 ## Disambiguation
 - "user", "account", "login", "access", "role", "deactivate", "suspend", "reset password" → admin_users.
@@ -55,6 +57,11 @@ Do not clarify when:
   admin_alerts; prices, resale rules and margins, consult quotes, change orders → admin_commercial.
 - Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
 - Support tickets, bugs and problems with BizOS itself, company goals and strategic priorities → ops.
+- Summaries, transcripts or "what does the speaker say" for a video → youtube. Doing something in
+  YouTube, Gmail, Calendar or HubSpot that no domain lists (reply to or delete comments, playlists,
+  labels, analytics, HubSpot tickets) → integrations, plus the app's own domain when it helps find ids.
+- Researching a company or person, news, job posts, "is X a good fit", reading a website → research
+  (plus crm when our records matter).
 - Hindi and Hinglish are routed exactly like English.
 
 ## Examples
@@ -66,6 +73,12 @@ Do not clarify when:
 
 "Move the Acme deal to won and email Raj a thank-you"
 → {"domains":["crm","email"],"kind":"task","entities":{"deal":"Acme","stage":"won","contact":"Raj"},"clarify":null}
+
+"Summarize my last video and reply to the top 3 comments"
+→ {"domains":["youtube","integrations"],"kind":"task","entities":{"video":"last video","count":"3"},"clarify":null}
+
+"Is Globex a good fit for us? Research them"
+→ {"domains":["research","crm"],"kind":"question","entities":{"company":"Globex"},"clarify":null}
 
 "Find a 30-min slot with Priya next Tuesday and book it"
 → {"domains":["calendar","crm"],"kind":"task","entities":{"contact":"Priya","when":"next Tuesday","duration":"30 min"},"clarify":null}

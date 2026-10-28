@@ -3,7 +3,7 @@
 One chat turn:
   pre-model refusals + grounding (the same functions the current assistant calls)
   -> visibility filter -> router (+ memory_search in parallel) -> tool loading
-  -> one executor Agent (fresh per request, tool_call_limit 8) whose every tool call goes through the guard
+  -> one executor Agent (fresh per request, tool_call_limit 25) whose every tool call goes through the guard
   -> reply composed from tool results.
 
 The rules live in plain modules under bizos/agents (routing, guard, merged_tools, composer, tool_meta);
@@ -54,7 +54,7 @@ from bizos.util.ids import new_id
 
 log = logging.getLogger(__name__)
 
-TOOL_CALL_LIMIT = 8
+TOOL_CALL_LIMIT = 25
 #: Extra executor runs allowed after load_tools added tools mid-run.
 MAX_RELOADS = 2
 
@@ -163,14 +163,19 @@ def executor_model() -> Any:
 
     The router has its own setting (ROUTER_MODEL_ID), so the two can differ.
     Campaign chat uses MODEL_ID; ops stays on EXECUTOR_MODEL_ID when that is set.
+    EXECUTOR_REASONING_EFFORT (low|medium|high) turns on model reasoning for reasoning models; it uses
+    the Responses API, the one that accepts function tools together with reasoning.
     """
-    from app.assistant.assistant import _model
+    from app.assistant.assistant import _model, _responses_model
 
     mid = (os.environ.get("EXECUTOR_MODEL_ID") or "").strip()
+    effort = app_settings.executor_reasoning_effort()
     if not mid:
-        return _model(None)
+        return _model(effort)
     provider, _, name = mid.partition(":")
     if provider == "openai" and name:
+        if effort:
+            return _responses_model(id=name, reasoning_effort=effort)
         from agno.models.openai import OpenAIChat
 
         return OpenAIChat(id=name)
@@ -191,6 +196,7 @@ def _executor_prompt(ctx, settings, *, memory_context: str, playbooks: str, grou
         "{timezone}": workspace_zone(settings).key,
         "{memory_context}": memory_context or "(nothing relevant recorded)",
         "{playbooks}": playbooks or "(none)",
+        "{call_limit}": str(TOOL_CALL_LIMIT),
     }.items():
         text = text.replace(key, value)
     if grounded:

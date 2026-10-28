@@ -53,6 +53,9 @@ V2_SCHEMAS: dict[str, dict[str, Any]] = {
 
 #: Calls of one read tool allowed per request before the executor is told to stop and answer or ask.
 READ_REPEAT_LIMIT = 3
+#: Research and app reads legitimately take more steps (several searches, pages or app reads); every
+#: other read keeps READ_REPEAT_LIMIT. Identical calls are still answered from the earlier result.
+READ_REPEAT_LIMITS = {"integration_read_action": 8, "web_search": 5, "web_read": 6, "youtube_transcript": 4}
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
@@ -197,7 +200,7 @@ class Guard:
                 "repeat", args=dict(args),
             )
         count = self._read_counts.get(tool, 0)
-        if count >= READ_REPEAT_LIMIT:
+        if count >= READ_REPEAT_LIMITS.get(tool, READ_REPEAT_LIMIT):
             return GuardDecision(
                 tool,
                 f"Stop calling {tool}: it already ran {count} times in this request. Answer from the results you "

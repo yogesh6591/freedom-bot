@@ -29,6 +29,9 @@ HARD_PRIOR = {
     "admin_set_tool_permission": ("admin_tool_permissions",),
     "admin_set_tool_mode": ("admin_tool_permissions",),
     "finance_propose_adjustment": ("finance_lookup_policy",),
+    "integration_read_action": ("integration_find_action",),
+    "integration_write_action": ("integration_find_action",),
+    "integration_destructive_action": ("integration_find_action",),
 }
 
 #: Confusable groups from TOOL_DESCRIPTIONS.md, in the final (model-visible) names.
@@ -75,7 +78,7 @@ def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
     assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
-    assert len(VISIBLE) == 93  # refuse_bulk_change added
+    assert len(VISIBLE) == 100  # refuse_bulk_change; youtube_transcript, integration_* (4), web_search, web_read
     assert {n for n in NAMES if TOOL_META[n].domain == "campaign"} == {t["function"]["name"] for t in CAMPAIGN_TOOLS}
 
 

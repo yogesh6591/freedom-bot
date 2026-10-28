@@ -2315,3 +2315,160 @@ def youtube_video_comments(scope: RunScope, args: dict[str, Any]) -> ConnectorRe
     )
 
 
+
+
+@effect("youtube_transcript")
+def youtube_transcript(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    from bizos.connectors import composio as composio_conn
+    from bizos.connectors import youtube_transcript as transcripts
+    from bizos.connectors.base import ConnectorError
+
+    try:
+        data = transcripts.fetch(composio_conn.as_user(scope.ctx, scope.on_behalf_of), str(args.get("video") or ""),
+                                 language=str(args.get("language") or "") or None)
+    except ConnectorError as exc:
+        return ConnectorResult.failure(str(exc))
+    note = " (cut to the first part; it is long)" if data["truncated"] else ""
+    return ConnectorResult(ok=True, data=data,
+                           summary=f"transcript of {data['video_id']} from {data['source']}, "
+                                   f"{data['characters']} characters{note}")
+
+
+# ------------------------------------------------------------------------------------------------
+# integrations  (bizos/connectors/composio_actions.py) - any action of the user's connected apps.
+# ------------------------------------------------------------------------------------------------
+
+from bizos.connectors import composio_actions as app_actions
+
+#: The dedicated tool a generic action of each app and tier may never be looser than. Reads compare
+#: with the app's read tool; writes and destructive actions with its write tool.
+_ACTION_REFERENCE = {
+    ("gmail", "read"): "email_search_threads",
+    ("gmail", "write"): "email_send_message",
+    ("googlecalendar", "read"): "calendar_list_events",
+    ("googlecalendar", "write"): "calendar_create_event",
+    ("hubspot", "read"): "crm_search_contacts",
+    ("hubspot", "write"): "crm_update_contact_field",
+    ("youtube", "read"): "youtube_my_videos",
+}
+
+
+def _app_owner(scope: RunScope):
+    from bizos.connectors import composio as composio_conn
+
+    return composio_conn.as_user(scope.ctx, scope.on_behalf_of)
+
+
+def _app_action_problem(scope: RunScope, args: dict[str, Any], tier: str) -> Optional[str]:
+    """Why this action may not run with this tool, or None.
+
+    The tier must match the tool, and the caller must be allowed the app's dedicated tool for that
+    tier in this workspace (so a generic action never reaches what a dedicated tool would refuse).
+    An approver executing an approved action was not the requester; the requester was checked when
+    the request was made.
+    """
+    from bizos.connectors.base import ConnectorError
+    from bizos.domains.packs import enabled_packs
+    from bizos.tools.dry_run import is_visible
+
+    try:
+        toolkit, problem = app_actions.check(str(args.get("action") or ""), tier)
+    except ConnectorError as exc:
+        return str(exc)
+    if problem or scope.on_behalf_of:
+        return problem
+    reference = _ACTION_REFERENCE.get((toolkit, app_actions.READ if tier == app_actions.READ else app_actions.WRITE))
+    if reference and not is_visible(scope, reference, enabled_packs(scope.settings.enabled_domains)):
+        return (f"Not permitted: your role or this workspace's settings do not allow "
+                f"{'reading' if tier == app_actions.READ else 'changing'} this app's data. Nothing was run.")
+    return None
+
+
+def _run_app_action(scope: RunScope, args: dict[str, Any], tier: str) -> ConnectorResult:
+    from bizos.connectors.base import ConnectorError
+
+    slug = str(args.get("action") or "").strip().upper()
+    try:
+        data, truncated = app_actions.run(_app_owner(scope), slug, args.get("arguments") or {}, tier=tier)
+    except ConnectorError as exc:
+        return ConnectorResult.failure(f"{exc} If the arguments were wrong, check them with "
+                                       f"integration_find_action and try again.")
+    done = "ran" if tier == app_actions.READ else "done"
+    return ConnectorResult(ok=True, data={"action": slug, "result": data, "_untrusted_source": f"app_{slug.lower()}"},
+                           summary=f"{slug} {done}" + (" (result cut; narrow the request)" if truncated else ""))
+
+
+@effect("integration_find_action")
+def integration_find_action(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    from bizos.connectors.base import ConnectorError
+
+    try:
+        data = app_actions.find(_app_owner(scope), str(args.get("query") or ""),
+                                toolkit=str(args.get("app") or "") or None, limit=int(args.get("limit") or 8))
+    except ConnectorError as exc:
+        return ConnectorResult.failure(str(exc))
+    if not data["actions"]:
+        return ConnectorResult(ok=True, data=data, summary="No matching actions; try other words, or web_search.")
+    return ConnectorResult(ok=True, data=data, summary=f"{len(data['actions'])} matching action(s); each says which "
+                                                       "tool runs it and the arguments it takes")
+
+
+@precheck("integration_read_action")
+def _read_action_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    return _app_action_problem(scope, args, app_actions.READ)
+
+
+@effect("integration_read_action")
+def integration_read_action(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    return _run_app_action(scope, args, app_actions.READ)
+
+
+@precheck("integration_write_action")
+def _write_action_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    return _app_action_problem(scope, args, app_actions.WRITE)
+
+
+@effect("integration_write_action")
+def integration_write_action(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    return _run_app_action(scope, args, app_actions.WRITE)
+
+
+@precheck("integration_destructive_action")
+def _destructive_action_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    return _app_action_problem(scope, args, app_actions.DESTRUCTIVE)
+
+
+@effect("integration_destructive_action")
+def integration_destructive_action(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    return _run_app_action(scope, args, app_actions.DESTRUCTIVE)
+
+
+# ------------------------------------------------------------------------------------------------
+# research  (bizos/connectors/web.py) - public web search and page reading.
+# ------------------------------------------------------------------------------------------------
+
+
+@effect("web_search")
+def web_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    from bizos.connectors import web
+    from bizos.connectors.base import ConnectorError
+
+    try:
+        data = web.search(str(args.get("query") or ""), limit=int(args.get("limit") or 6))
+    except ConnectorError as exc:
+        return ConnectorResult.failure(str(exc))
+    return ConnectorResult(ok=True, data=data, summary=f"{len(data['results'])} web result(s); read the useful "
+                                                       "ones with web_read")
+
+
+@effect("web_read")
+def web_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    from bizos.connectors import web
+    from bizos.connectors.base import ConnectorError
+
+    try:
+        data = web.read(str(args.get("url") or ""))
+    except ConnectorError as exc:
+        return ConnectorResult.failure(str(exc))
+    return ConnectorResult(ok=True, data=data, summary=f"read {data['url']} ({data['characters']} characters"
+                                                       + ("; cut" if data["truncated"] else "") + ")")

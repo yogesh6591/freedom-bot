@@ -218,12 +218,14 @@ def test_a_repeated_write_is_not_run_twice(client_scratch, ctx_factory, stubs):
         second = _note(guard)
         other = guard.call("crm_create_note", {"contact_id": "C-310", "body": "different"})
         guard.call("crm_search_contacts", {"query": "Raj"})
-        guard.call("crm_search_contacts", {"query": "Raj"})
+        again = guard.call("crm_search_contacts", {"query": "Raj"})
     assert first.idempotency_key == second.idempotency_key == idempotency_key(
         "crm_create_note", {"contact_id": "C-310", "body": "called"})
     assert second.stage == "duplicate" and "not repeated" in second.text
     assert [s[0] for s in stubs].count("crm_create_note") == 2  # the first call and the different one
-    assert other.stage == "policy" and [s[0] for s in stubs].count("crm_search_contacts") == 2  # reads repeat
+    # The same read again is answered from the earlier result (5ff07c8), not run twice.
+    assert other.stage == "policy" and [s[0] for s in stubs].count("crm_search_contacts") == 1
+    assert again.stage == "repeat" and "Already looked up" in again.text
 
 
 # --------------------------------------------------------------------------- Agno hook wiring

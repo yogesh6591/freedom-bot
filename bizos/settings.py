@@ -210,6 +210,17 @@ def integration_sync_interval() -> int:
         return 300
 
 
+def executor_reasoning_effort() -> str | None:
+    """Reasoning effort for the v2 executor (low|medium|high), for reasoning models only; unset = off."""
+    value = getenv("EXECUTOR_REASONING_EFFORT", "").strip().casefold()
+    return value if value in ("minimal", "low", "medium", "high") else None
+
+
+def tavily_api_key() -> str:
+    """Tavily key for web_search (bizos/connectors/web.py). Empty: DuckDuckGo results instead."""
+    return getenv("TAVILY_API_KEY", "").strip()
+
+
 def embedding_model_id() -> str:
     """OpenAI embedding model for memory search (1536 dimensions)."""
     return getenv("EMBEDDING_MODEL_ID", "").strip() or "text-embedding-3-small"

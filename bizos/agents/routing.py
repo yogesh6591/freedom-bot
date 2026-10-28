@@ -34,12 +34,13 @@ PROMPTS = Path(__file__).parent / "prompts"
 
 LOAD_TOOLS = "load_tools"
 #: Loaded on every request, whatever the route.
-ALWAYS_ON = ("memory_search", "synced_search", LOAD_TOOLS)
+ALWAYS_ON = ("memory_search", "synced_search", "integration_find_action", "integration_read_action", "web_search",
+             "web_read", LOAD_TOOLS)
 
 Domain = Literal[
     "memory", "approvals", "crm", "email", "calendar", "finance", "ops", "youtube",
     "admin_setup", "admin_launch", "admin_alerts", "admin_users", "admin_permissions",
-    "admin_commercial", "campaign",
+    "admin_commercial", "campaign", "integrations", "research",
 ]
 
 #: What the router reads for each domain (ARCHITECTURE.md §7).
@@ -51,21 +52,27 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "calendar": "Meetings: list, check availability, create, reschedule, cancel",
     "finance": "Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments",
     "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations",
-    "youtube": "YouTube: search videos, our channel and videos, one video's details and comments",
+    "youtube": "YouTube: search videos, our channel and videos, one video's details and comments, video transcripts (summaries, what the speaker says)",
     "admin_setup": "Workspace config: overview, setup, settings, enable or disable domain packs",
     "admin_launch": "Go-live: launch checklist, mark items, sign-off, handoff readiness",
     "admin_alerts": "Workspace alerts: list, rescan, dismiss, alert baselines",
     "admin_users": "BizOS login accounts: list, create, roles and data access, suspend or reactivate, password reset",
     "admin_permissions": "Tool rules: which roles can use a tool, and tightening how it runs",
     "admin_commercial": "Pricing, resale rules, consulting quotes, change orders",
+    "integrations": "Anything else in the user's connected Gmail, Google Calendar, YouTube or HubSpot that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it",
+    "research": "The public web: research a company or person, news, job posts, read a web page",
     "campaign": "Outbound email campaigns (admins only): pick prospects, pick or create a campaign and send window, propose the email, approve moving people between campaigns, send after approval",
 }
 
 #: Tools from other domains a bundle also loads (ARCHITECTURE.md §7).
+_APP_ACTIONS = ("integration_write_action", "integration_destructive_action")
 BUNDLE_EXTRAS: dict[str, tuple[str, ...]] = {
-    "email": ("crm_search_contacts", "crm_get_contact", "brand_get_voice"),
-    "calendar": ("crm_search_contacts", "crm_get_contact"),
+    "email": ("crm_search_contacts", "crm_get_contact", "brand_get_voice", *_APP_ACTIONS),
+    "calendar": ("crm_search_contacts", "crm_get_contact", *_APP_ACTIONS),
     "finance": ("crm_search_companies",),
+    "crm": _APP_ACTIONS,
+    "youtube": _APP_ACTIONS,
+    "research": ("crm_search_companies", "crm_search_contacts"),
 }
 
 #: Every tool the v2 model can ever be given: merged tools replace the old tools they wrap.

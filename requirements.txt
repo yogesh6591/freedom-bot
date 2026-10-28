@@ -18,6 +18,9 @@ openai>=1.106.0
 cryptography==44.0.0
 # Per-user Gmail / Google Calendar via Composio managed OAuth.
 composio==0.19.0
+# YouTube transcripts of public videos (youtube_transcript); web tools call httpx directly.
+youtube-transcript-api==1.2.2
+httpx==0.28.1
 # IANA zones for zoneinfo on slim images (calendar time zones).
 tzdata>=2024.1
 # Acquisition (prospects, campaigns, assessments, outreach) runs in the same process.

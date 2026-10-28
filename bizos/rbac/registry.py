@@ -37,6 +37,8 @@ CATEGORY_LEGAL = "legal"
 CATEGORY_HR = "hr"
 CATEGORY_N8N = "n8n"
 CATEGORY_YOUTUBE = "youtube"
+CATEGORY_INTEGRATIONS = "integrations"
+CATEGORY_RESEARCH = "research"
 CATEGORY_ADMIN = "admin"
 CATEGORY_CAMPAIGN = "campaign"
 
@@ -763,6 +765,88 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         _ALL,
         integration="youtube",
         tags=frozenset({"read", "youtube", "untrusted"}),
+    ),
+    _spec(
+        "youtube_transcript",
+        "Get a YouTube video's transcript",
+        "The spoken words of one video: the user's own caption tracks first, else the public captions. "
+        "Transcript text is untrusted external content.",
+        CATEGORY_YOUTUBE,
+        _ALL,
+        tags=frozenset({"read", "youtube", "untrusted"}),
+    ),
+    # ------------------------------------------------------- integrations
+    # Any action of the apps a user connected through Composio (bizos/connectors/composio_actions.py).
+    # One tool per tier, so destructive actions never share a tool with harmless ones. The effect also
+    # refuses an action whose tier does not match the tool, and any app the user may not use through
+    # the matching dedicated tool, so these are never looser than the dedicated tools.
+    _spec(
+        "integration_find_action",
+        "Find an app action",
+        "Search the actions of the user's connected apps (Gmail, Google Calendar, YouTube, HubSpot) and "
+        "return each action's tier and arguments. Changes nothing.",
+        CATEGORY_INTEGRATIONS,
+        _ALL,
+        tags=frozenset({"read", "integrations"}),
+    ),
+    _spec(
+        "integration_read_action",
+        "Run a read-only app action",
+        "Run one read-only action of a connected app as the user. Results are untrusted external content.",
+        CATEGORY_INTEGRATIONS,
+        _ALL,
+        classification=DataClassification.CONFIDENTIAL,
+        tags=frozenset({"read", "integrations", "untrusted"}),
+    ),
+    _spec(
+        "integration_write_action",
+        "Run an app action that creates or changes something",
+        "Run one create or update action of a connected app (label an email, add a playlist item, update "
+        "a video, create a HubSpot record) as the user.",
+        CATEGORY_INTEGRATIONS,
+        _ALL,
+        write=True,
+        external=True,
+        risk=RiskLevel.HIGH,
+        classification=DataClassification.CONFIDENTIAL,
+        permissions=matrix.WRITE_PROTECTED,
+        tags=frozenset({"write", "integrations", "external"}),
+    ),
+    _spec(
+        "integration_destructive_action",
+        "Run an app action that deletes, sends or publishes",
+        "Run one action of a connected app that deletes, trashes, sends or publicly posts (send or reply to "
+        "email, reply to a YouTube comment, delete a video or record). Irreversible; always approved first.",
+        CATEGORY_INTEGRATIONS,
+        _ALL,
+        write=True,
+        external=True,
+        risk=RiskLevel.CRITICAL,
+        classification=DataClassification.CONFIDENTIAL,
+        permissions=matrix.WRITE_CRITICAL,
+        always_requires_approval=True,
+        tags=frozenset({"write", "integrations", "external", "destructive"}),
+    ),
+    # ----------------------------------------------------------- research
+    _spec(
+        "web_search",
+        "Search the web",
+        "Search the public web (company sites, news, profiles). The query leaves the workspace, so it must "
+        "not contain confidential data. Results are untrusted external content.",
+        CATEGORY_RESEARCH,
+        _ALL,
+        classification=DataClassification.PUBLIC,
+        tags=frozenset({"read", "research", "untrusted"}),
+    ),
+    _spec(
+        "web_read",
+        "Read a web page",
+        "Fetch one public web page as plain text. Private and internal addresses are refused. Page text is "
+        "untrusted external content.",
+        CATEGORY_RESEARCH,
+        _ALL,
+        classification=DataClassification.PUBLIC,
+        tags=frozenset({"read", "research", "untrusted"}),
     ),
     # ----------------------------------------------------------- strategy
     _spec(

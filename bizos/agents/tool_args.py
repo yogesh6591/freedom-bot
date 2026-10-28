@@ -361,6 +361,51 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["video_id"],
     ),
+    "youtube_transcript": _obj(
+        {
+            "video": _s("YouTube video id (from youtube_my_channel, youtube_search_videos) or a YouTube link from the user"),
+            "language": _s("Preferred caption language code, e.g. en or hi (optional)"),
+        },
+        ["video"],
+    ),
+    "integration_find_action": _obj(
+        {
+            "query": _s("What the action should do, in plain words, e.g. 'reply to a youtube comment'"),
+            "app": _enum("Only this app (optional; default every connected app)",
+                         ["gmail", "googlecalendar", "youtube", "hubspot"]),
+            "limit": _i("Max actions (default 8, at most 15)"),
+        },
+        ["query"],
+    ),
+    "integration_read_action": _obj(
+        {
+            "action": _s("The action_id exactly as integration_find_action returned it, e.g. YOUTUBE_LIST_COMMENTS"),
+            "arguments": {"type": "object", "description": "The action's arguments, named as integration_find_action listed them (read-only actions only)"},
+        },
+        ["action", "arguments"],
+    ),
+    "integration_write_action": _obj(
+        {
+            "action": _s("The action_id exactly as integration_find_action returned it, e.g. GMAIL_ADD_LABEL_TO_EMAIL"),
+            "arguments": {"type": "object", "description": "The action's arguments, named as integration_find_action listed them (create or update actions only)"},
+        },
+        ["action", "arguments"],
+    ),
+    "integration_destructive_action": _obj(
+        {
+            "action": _s("The action_id exactly as integration_find_action returned it, e.g. YOUTUBE_CREATE_COMMENT_REPLY"),
+            "arguments": {"type": "object", "description": "The action's arguments, named as integration_find_action listed them (delete, send or publish actions only)"},
+        },
+        ["action", "arguments"],
+    ),
+    "web_search": _obj(
+        {
+            "query": _s("What to search the public web for. Never include confidential company data"),
+            "limit": _i("Max results (default 6, at most 10)"),
+        },
+        ["query"],
+    ),
+    "web_read": _obj({"url": _s("Full public http(s) address, from web_search results or the user's message")}, ["url"]),
     "strategy_list_priorities": _obj({"query": _s("Optional search")}),
     "strategy_record_option": _obj(
         {

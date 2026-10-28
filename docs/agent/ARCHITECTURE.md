@@ -117,7 +117,7 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   with no tools. Chitchat and out-of-scope turns get no tools.
 - **Campaign turns** (an admin routed to `campaign`) are handed to the current assistant, which owns the
   campaign flow's state, records and checks, so admins' campaign behaviour is unchanged.
-- Executor: a fresh Agent per run with exactly the loaded tools and `tool_hooks=[guard]`. The 8-call
+- Executor: a fresh Agent per run with exactly the loaded tools and `tool_hooks=[guard]`. The 25-call
   limit is shared across the request. If `load_tools` added tools, the run is continued with them
   (at most twice).
 - Known values and successful tools are kept per conversation in the chat history (`meta.v2`), and every
@@ -133,7 +133,8 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   Keep each playbook bullet about one tool so general rules survive.
 - `{default_meeting_minutes}`: the workspace's default meeting length if its settings define one,
   otherwise 30. (No such setting exists today, so it is 30.)
-- Temperature 0. Max 8 tool calls per request.
+- Temperature 0. Max 25 tool calls per request (rules 15-17: plan, work step by step, try another
+  route before giving up). `EXECUTOR_REASONING_EFFORT` turns on model reasoning for reasoning models.
 - A new Agent instance is created per request with exactly the loaded tools.
 
 ### 5.7 Guard (code)
@@ -166,7 +167,7 @@ Order:
    `finance_lookup_policy`. `suggested_prior` tools (soft: availability before booking, memory search
    before adding, checklist before marking an item, list packs before toggling) are playbook guidance
    and never enforced. Users may book over a conflict on purpose, a duplicate memory entry is low harm,
-   and each hard rule costs a step against the 8-call limit. Campaign:
+   and each hard rule costs a step against the 25-call limit. Campaign:
    `send_approved` requires `approval_evidence` that matches text in the user's latest message
    (case- and whitespace-insensitive, whole words, non-empty). This lives in shared code (Phase 2),
    so the current assistant gets it too. The evidence is logged with every send attempt.
@@ -329,12 +330,14 @@ domains.
 |---|---|---|
 | memory | Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts (policy, contract and brand questions also need finance or ops) | memory_search, synced_search, memory_get_fact, memory_history, memory_add, memory_correct, memory_escalate_conflict |
 | approvals | Approval requests: list, view, submit, approve/reject/request changes, cancel | approvals_list, approvals_get, approvals_submit, approvals_decide, approvals_cancel |
-| crm | Contacts, companies, deals: search, view, notes, tasks, tags, create contacts, update contact fields, bulk updates by lifecycle stage, deal stages, delete records | crm_search_contacts, crm_search_companies, crm_search_deals, crm_get_contact, crm_pipeline_summary, crm_create_note, crm_create_task, crm_tag_lead, crm_create_contact, crm_update_contact_field, crm_bulk_update_contacts, crm_update_deal_stage, crm_delete_record |
-| email | Email: search and read threads, draft, send to named people | email_search_threads, email_read_thread, email_create_draft, email_send_message, + crm_search_contacts, crm_get_contact, brand_get_voice |
-| calendar | Meetings: list, check availability, create, reschedule, cancel | calendar_list_events, calendar_check_availability, calendar_create_event, calendar_reschedule_event, calendar_cancel_event, + crm_search_contacts, crm_get_contact |
+| crm | Contacts, companies, deals: search, view, notes, tasks, tags, create contacts, update contact fields, bulk updates by lifecycle stage, deal stages, delete records | crm_search_contacts, crm_search_companies, crm_search_deals, crm_get_contact, crm_pipeline_summary, crm_create_note, crm_create_task, crm_tag_lead, crm_create_contact, crm_update_contact_field, crm_bulk_update_contacts, crm_update_deal_stage, crm_delete_record, + integration_write_action, integration_destructive_action |
+| email | Email: search and read threads, draft, send to named people | email_search_threads, email_read_thread, email_create_draft, email_send_message, + crm_search_contacts, crm_get_contact, brand_get_voice, integration_write_action, integration_destructive_action |
+| calendar | Meetings: list, check availability, create, reschedule, cancel | calendar_list_events, calendar_check_availability, calendar_create_event, calendar_reschedule_event, calendar_cancel_event, + crm_search_contacts, crm_get_contact, integration_write_action, integration_destructive_action |
 | finance | Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments | finance_lookup_policy, finance_list_pending_billables, finance_list_invoices, finance_draft_invoice, finance_propose_adjustment, + crm_search_companies |
 | ops | Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations | strategy_list_priorities, strategy_record_option, hr_match_candidate, brand_get_voice, legal_find_clause, legal_flag_for_counsel, support_create_ticket, support_my_tickets, n8n_trigger_webhook |
-| youtube | YouTube: search videos, our channel and videos, one video's details and comments | youtube_search_videos, youtube_my_channel, youtube_video |
+| youtube | YouTube: search videos, our channel and videos, one video's details and comments, video transcripts (summaries, what the speaker says) | youtube_search_videos, youtube_my_channel, youtube_video, youtube_transcript, + integration_write_action, integration_destructive_action |
+| integrations | Anything else in the user's connected Gmail, Google Calendar, YouTube or HubSpot that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it | integration_find_action, integration_read_action, integration_write_action, integration_destructive_action |
+| research | The public web: research a company or person, news, job posts, read a web page | web_search, web_read, + crm_search_companies, crm_search_contacts |
 | admin_setup | Workspace config: overview, setup, settings, enable or disable domain packs | admin_workspace_overview, admin_get_setup, admin_apply_setup, admin_update_settings, admin_list_domains, admin_toggle_domain |
 | admin_launch | Go-live: launch checklist, mark items, sign-off, handoff readiness | admin_launch_checklist, admin_mark_launch_item, admin_launch_sign_off, admin_handoff_assessment |
 | admin_alerts | Workspace alerts: list, rescan, dismiss, alert baselines | admin_list_alerts, admin_scan_alerts, admin_dismiss_alert, admin_set_baselines |
@@ -344,6 +347,19 @@ domains.
 | campaign | Outbound email campaigns (admins only): pick prospects, pick or create a campaign and send window, propose the email, approve moving people between campaigns, send after approval | update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved |
 
 `admin_handoff_assessment` saves an assessment (it is a write), and `admin_scan_alerts` is a write.
+
+Always loaded, whatever the route: memory_search, synced_search, integration_find_action,
+integration_read_action, web_search, web_read and load_tools. crm, email and calendar bundles also load
+integration_write_action and integration_destructive_action.
+
+**App actions** (bizos/connectors/composio_actions.py): any of the ~470 Composio actions of the four
+connectable apps. Each action gets a tier, the strictest of its name (DELETE, SEND, TRASH, REPLY...) and
+Composio's hints; a read needs both a read verb and the read-only hint. One tool per tier, so destructive
+actions never share a tool. The precheck refuses an action whose tier does not match the tool (before
+any approval is queued), and any app the caller may not use through the matching dedicated tool
+(Gmail: email_search_threads / email_send_message; Calendar: calendar_list_events /
+calendar_create_event; HubSpot: crm_search_contacts / crm_update_contact_field; YouTube reads:
+youtube_my_videos), so a generic action is never looser than the dedicated tool.
 
 ## 8. Agno implementation notes (verified against agno==3.0.9)
 - Router: an Agent with `output_schema=Route`.
