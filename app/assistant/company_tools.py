@@ -2407,10 +2407,12 @@ def integration_find_action(scope: RunScope, args: dict[str, Any]) -> ConnectorR
                                 toolkit=str(args.get("app") or "") or None, limit=int(args.get("limit") or 8))
     except ConnectorError as exc:
         return ConnectorResult.failure(str(exc))
+    missing = (f" Not connected: {', '.join(data['not_connected'])}; the user can connect it on the Integrations "
+               "page." if data.get("not_connected") else "")
     if not data["actions"]:
-        return ConnectorResult(ok=True, data=data, summary="No matching actions; try other words, or web_search.")
+        return ConnectorResult(ok=True, data=data, summary="No matching actions; try other words, or web_search." + missing)
     return ConnectorResult(ok=True, data=data, summary=f"{len(data['actions'])} matching action(s); each says which "
-                                                       "tool runs it and the arguments it takes")
+                                                       "tool runs it and the arguments it takes." + missing)
 
 
 @precheck("integration_read_action")

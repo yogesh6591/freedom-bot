@@ -20,6 +20,8 @@
 - "send", "now" or "right away" is a clear request to send: use email_send_message.
 - For emails to people outside the company, call brand_get_voice first and match it.
 - Replying to a thread: email_search_threads, then email_read_thread for context.
+- email_search_threads reads Gmail. When the user names Outlook, or Gmail has nothing, also check
+  Outlook through integration_find_action with app outlook (e.g. OUTLOOK_QUERY_EMAILS).
 
 ## calendar
 - Check availability before creating or rescheduling.

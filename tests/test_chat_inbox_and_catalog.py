@@ -135,3 +135,22 @@ def test_find_hides_switched_off_tools_and_any_platform_works(client_a, ctx_fact
             assert acts.check("SLACK_SEND_MESSAGE", acts.DESTRUCTIVE) == ("slack", None)
         finally:
             catalog.choose(ctx, "slack", None)
+
+
+def test_find_ranks_plain_phrasings_when_composio_search_misses(client_a, ctx_factory, monkeypatch):
+    """Composio's own search returns nothing for "recent emails"; the local ranking still finds the mail list."""
+    from types import SimpleNamespace as NS
+
+    ctx = ctx_factory(client_a, "operator")
+    raw = [NS(slug=s, name=n, description=d, tags=["readOnlyHint"], toolkit=NS(slug="outlook"), input_parameters={},
+              is_deprecated=False)
+           for s, n, d in [("OUTLOOK_LIST_MESSAGES", "List messages", "List email messages in the mailbox"),
+                           ("OUTLOOK_GET_SCHEDULE", "Get schedule", "Free/busy times"),
+                           ("OUTLOOK_LIST_CONTACTS", "List contacts", "Address book")]]
+    monkeypatch.setattr(acts, "connected_toolkits", lambda c: ["outlook"])
+    monkeypatch.setattr(acts, "_TOOLKIT_ACTIONS", {})
+    monkeypatch.setattr(composio, "get_client", lambda: NS(tools=NS(
+        get_raw_composio_tools=lambda search=None, **k: [] if search else raw)))
+    with tenant_scope(ctx):
+        found = acts.find(ctx, "any recent emails on outlook")
+    assert found["actions"][0]["action_id"] == "OUTLOOK_LIST_MESSAGES"

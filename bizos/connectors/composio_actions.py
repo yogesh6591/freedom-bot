@@ -159,20 +159,96 @@ def find(ctx: TenantContext, query: str, *, toolkit: Optional[str] = None, limit
     if missing:
         names = ", ".join(composio.app_name(t) for t in missing)
         raise ConnectorNotConfigured(f"{names} is not connected for your account. Connect it on the Integrations page.")
-    try:
-        tools = composio.get_client().tools.get_raw_composio_tools(
-            search=str(query or "").strip() or None, toolkits=wanted, limit=max(1, min(int(limit or 8), 15)),
-        )
-    except Exception as exc:  # noqa: BLE001 - the SDK raises its own types
-        raise ConnectorError(f"Could not search the app actions: {exc}") from exc
     from bizos.connectors import composio_catalog
 
-    found = [_describe(t) for t in tools if not getattr(t, "is_deprecated", False)]
-    found = [f for f in found if composio_catalog.allowed(ctx, f["app"], f["action_id"])]
+    limit = max(1, min(int(limit or 8), 15))
+    words = _query_groups(query)
+    # Named apps narrow the search ("recent emails on outlook" -> outlook).
+    named = [t for t in wanted if t in words["apps"]]
+    targets = named or wanted
+    # Composio's own search is a keyword match that misses plain phrasings ("recent emails"), so every
+    # action of the target apps is also ranked here, and both are merged.
+    try:
+        hits = composio.get_client().tools.get_raw_composio_tools(
+            search=str(query or "").strip() or None, toolkits=targets, limit=limit)
+    except Exception:  # noqa: BLE001 - the local ranking below still answers
+        hits = []
+    boosted = {str(getattr(t, "slug", "")) for t in hits}
+    candidates: dict[str, dict[str, Any]] = {}
+    for slug in targets:
+        try:
+            for item in _toolkit_actions(slug):
+                candidates[item["action_id"]] = item
+        except Exception as exc:  # noqa: BLE001
+            if not hits:
+                raise ConnectorError(f"Could not search the app actions: {exc}") from exc
+    for t in hits:
+        if not getattr(t, "is_deprecated", False):
+            candidates.setdefault(str(t.slug), _describe(t))
+    ranked = sorted(
+        candidates.values(),
+        key=lambda item: (-(_score(item, words) + (2 if item["action_id"] in boosted else 0)), len(item["action_id"])),
+    )
+    found = [f for f in ranked if composio_catalog.allowed(ctx, f["app"], f["action_id"])][:limit]
     for item in found:
         with _cache_lock:
             _schema_cache[item["action_id"]] = (time.monotonic(), item)
-    return {"connected_apps": connected, "actions": found}
+    result: dict[str, Any] = {"connected_apps": connected, "actions": found}
+    try:  # an app the user named but has not connected ("send a slack message" with no Slack)
+        unconnected = sorted(w for w in words["apps"] - set(connected) if composio_catalog.platform(w))
+    except Exception:  # noqa: BLE001 - only a hint
+        unconnected = []
+    if unconnected:
+        result["not_connected"] = [composio.app_name(w) for w in unconnected]
+    return result
+
+
+#: Words that mean the same thing in an action's name or description (query word -> group).
+_SYNONYMS = {
+    **dict.fromkeys(["email", "emails", "mail", "mails", "message", "messages", "inbox", "thread", "threads"], "mail"),
+    **dict.fromkeys(["recent", "latest", "new", "list", "show", "get", "fetch", "read", "find", "search", "query",
+                     "any", "check", "view"], "read"),
+    **dict.fromkeys(["send", "reply", "respond", "forward", "write"], "send"),
+    **dict.fromkeys(["delete", "remove", "trash", "archive"], "delete"),
+    **dict.fromkeys(["meeting", "meetings", "event", "events", "calendar", "schedule"], "event"),
+    **dict.fromkeys(["contact", "contacts", "people", "person"], "contact"),
+    **dict.fromkeys(["file", "files", "document", "documents", "doc", "docs"], "file"),
+    **dict.fromkeys(["channel", "channels"], "channel"),
+    **dict.fromkeys(["comment", "comments"], "comment"),
+}
+_STOPWORDS = frozenset({"the", "a", "an", "on", "in", "of", "to", "for", "from", "my", "me", "i", "is", "are", "any",
+                        "and", "or", "with", "about", "please", "can", "you", "what", "do", "have", "got"})
+_TOOLKIT_ACTIONS: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+
+
+def _groups(text: str) -> set[str]:
+    return {_SYNONYMS.get(w, w) for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOPWORDS}
+
+
+def _query_groups(query: str) -> dict[str, Any]:
+    raw = {w for w in re.findall(r"[a-z0-9]+", str(query or "").lower()) if w not in _STOPWORDS}
+    return {"groups": {_SYNONYMS.get(w, w) for w in raw}, "apps": raw}
+
+
+def _score(item: dict[str, Any], words: dict[str, Any]) -> int:
+    """How well an action matches the query: its name counts most, then its title, then its description."""
+    name = _groups(item["action_id"].split("_", 1)[-1].replace("_", " "))
+    title, about = _groups(item.get("title", "")), _groups(item.get("description", ""))
+    score = 0
+    for group in words["groups"]:
+        score += 3 if group in name else 2 if group in title else 1 if group in about else 0
+    return score
+
+
+def _toolkit_actions(slug: str) -> list[dict[str, Any]]:
+    """Every current action of one platform, described (cached for an hour)."""
+    cached = _TOOLKIT_ACTIONS.get(slug)
+    if cached and time.monotonic() - cached[0] < _SCHEMA_CACHE_TTL * 6:
+        return cached[1]
+    raw = composio.get_client().tools.get_raw_composio_tools(toolkits=[slug], limit=1000)
+    items = [_describe(t) for t in raw if not getattr(t, "is_deprecated", False)]
+    _TOOLKIT_ACTIONS[slug] = (time.monotonic(), items)
+    return items
 
 
 def describe(slug: str) -> dict[str, Any]:
