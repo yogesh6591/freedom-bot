@@ -277,3 +277,15 @@ def test_a_gemini_error_is_explained(monkeypatch):
     monkeypatch.setattr(yt.httpx, "post", lambda *a, **k: httpx.Response(403, json={"error": {"message": "API key not valid"}}))
     with pytest.raises(ConnectorError, match="403: API key not valid"):
         yt._from_gemini("x63HCoDfAhQ", None)
+
+
+def test_a_busy_gemini_is_retried_then_explained(monkeypatch):
+    replies = [httpx.Response(503, json={"error": {"message": "high demand"}}),
+               httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "Stay hard."}]}}]})]
+    monkeypatch.setattr(yt.settings, "gemini_api_key", lambda: "g-test")
+    monkeypatch.setattr(yt.time, "sleep", lambda s: None)
+    monkeypatch.setattr(yt.httpx, "post", lambda *a, **k: replies.pop(0))
+    assert yt._from_gemini("TLKxdTmk-zc", None)[0] == "Stay hard."
+    monkeypatch.setattr(yt.httpx, "post", lambda *a, **k: httpx.Response(503, json={}))
+    with pytest.raises(ConnectorError, match="busy right now"):
+        yt._from_gemini("TLKxdTmk-zc", None)

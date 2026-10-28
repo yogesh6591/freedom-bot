@@ -19,6 +19,7 @@ The transcript is external content and is neutralized before the model sees it.
 from __future__ import annotations
 
 import re
+import time
 from typing import Any, Optional
 from urllib.parse import parse_qs, urlparse
 
@@ -142,6 +143,10 @@ class YouTubeBlocked(ConnectorError):
     """YouTube refused the caption request from this server's IP (cloud providers are blocked)."""
 
 
+#: Seconds to wait before each retry when Gemini is busy (503), failing (500) or rate-limited (429).
+GEMINI_RETRY_WAITS = (3, 8, 15)
+_GEMINI_BUSY = {429, 500, 503}
+
 _GEMINI_PROMPT = (
     "Transcribe the speech in this video verbatim, in the language spoken (do not translate). Plain text "
     "only, no timestamps or speaker labels unless speakers change clearly. If it is very long, transcribe "
@@ -155,17 +160,23 @@ def _from_gemini(vid: str, language: Optional[str]) -> tuple[str, str]:
     if not key:
         raise ConnectorError("Gemini is not configured (GEMINI_API_KEY).")
     prompt = _GEMINI_PROMPT + (f" The user prefers language code {language}." if language else "")
-    try:
-        response = httpx.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model_id()}:generateContent",
-            headers={"x-goog-api-key": key},
-            json={"contents": [{"parts": [{"file_data": {"file_uri": f"https://www.youtube.com/watch?v={vid}"}},
-                                          {"text": prompt}]}],
-                  "generationConfig": {"maxOutputTokens": 12000, "temperature": 0}},
-            timeout=300,
-        )
-    except httpx.HTTPError as exc:
-        raise ConnectorError(f"Gemini could not read the video ({type(exc).__name__}).") from exc
+    for wait in (*GEMINI_RETRY_WAITS, None):
+        try:
+            response = httpx.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model_id()}:generateContent",
+                headers={"x-goog-api-key": key},
+                json={"contents": [{"parts": [{"file_data": {"file_uri": f"https://www.youtube.com/watch?v={vid}"}},
+                                              {"text": prompt}]}],
+                      "generationConfig": {"maxOutputTokens": 12000, "temperature": 0}},
+                timeout=300,
+            )
+        except httpx.HTTPError as exc:
+            raise ConnectorError(f"Gemini could not read the video ({type(exc).__name__}).") from exc
+        if response.status_code not in _GEMINI_BUSY or wait is None:
+            break
+        time.sleep(wait)  # busy or rate-limited: Google says these are temporary
+    if response.status_code in _GEMINI_BUSY:
+        raise ConnectorError(f"Gemini is busy right now ({response.status_code}); try again in a minute.")
     if response.status_code >= 400:
         detail = ""
         try:
