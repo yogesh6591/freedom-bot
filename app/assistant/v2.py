@@ -57,6 +57,13 @@ from bizos.util.ids import new_id
 log = logging.getLogger(__name__)
 
 TOOL_CALL_LIMIT = 25
+#: Added to the executor prompt when a data question was answered without looking anything up.
+FRESH_LOOKUP_NOTE = (
+    "## This turn needs fresh data\n"
+    "You answered without calling any tool. Earlier replies and Recent work only tell you what the user means; "
+    "they are not the answer, and the data may have changed since. Call the tools now and answer from their "
+    "results in this turn."
+)
 #: Extra executor runs allowed after load_tools added tools mid-run.
 MAX_RELOADS = 2
 
@@ -320,7 +327,12 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
     gate = StreamGate(lambda: _write_state(guard), task=route.kind == "task")
     if emit:
         emit({"type": "status", "text": "Working on it"})
-    for _ in range(MAX_RELOADS + 1):
+    # Answers about data come from this turn's tool results, never from earlier replies (which may be out
+    # of date). A data question answered without any tool call is run once more with that said plainly.
+    memory_answered = set(route.domains) <= {"memory"} and pre.memory is not None and pre.memory.ok
+    fresh_needed = route.kind in ("task", "question") and bool(route.domains) and not memory_answered
+    nudged = False
+    for _ in range(MAX_RELOADS + 2):
         for name in loader.loaded:
             if name in MERGED and name not in guard.schemas:
                 guard.schemas[name] = schema_for(name, allowed_old)
@@ -356,10 +368,19 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
             raise HTTPException(status_code=502, detail=f"Model call failed: {output.content}")
         text = str(output.content or "")
         calls_left -= len(output.tools or [])
-        if loader.loaded == loaded_before or calls_left <= 0:
-            break
-        # load_tools added tools: carry the run forward with them available.
-        next_input = [m for m in (output.messages or []) if m.role not in ("system", "developer")]
+        if loader.loaded != loaded_before and calls_left > 0:
+            # load_tools added tools: carry the run forward with them available.
+            next_input = [m for m in (output.messages or []) if m.role not in ("system", "developer")]
+            continue
+        if fresh_needed and not nudged and calls_left == TOOL_CALL_LIMIT:
+            nudged = True
+            trace["fresh_lookup_forced"] = True
+            grounded_text = (grounded_text + "\n\n" if grounded_text else "") + FRESH_LOOKUP_NOTE
+            if emit:
+                emit({"type": "reset"})
+                gate = StreamGate(lambda: _write_state(guard), task=route.kind == "task")
+            continue
+        break
 
     trace.update(loaded=loader.loaded, load_tools_misses=loader.misses)
     return _respond(ctx, scope, body, session_id, saved, text=text, before=before, guard=guard, trace=trace,

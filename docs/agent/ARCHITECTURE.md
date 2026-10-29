@@ -126,7 +126,7 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   `tool_activity`, admin-only `trace`), so the UI is unchanged. Pending work appears on the existing
   approval and draft cards.
 - **Streaming** (`POST /api/chat/stream`, Server-Sent Events): the same turn, with `emit`. Events: `status`
-  (a tool started), `token` (reply words), then `done` with exactly the `/api/chat` response, which replaces
+  (a tool started), `token` (reply words), `reset` (discard the streamed words: the turn is re-run), then `done` with exactly the `/api/chat` response, which replaces
   the streamed text, or `error`. Words pass through `composer.StreamGate`: whole words only, and a sentence
   holding a write or approval word is held until it ends and shown only if `compose()` would keep it on the
   tool results so far. The turn runs in a worker thread with the request's context copied, so the tenant
@@ -139,6 +139,10 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   Keep each playbook bullet about one tool so general rules survive.
 - `{default_meeting_minutes}`: the workspace's default meeting length if its settings define one,
   otherwise 30. (No such setting exists today, so it is 30.)
+- Answers about data come from this turn's tool results: earlier replies and Recent work only resolve what
+  the user means (rule 14). A task or question routed to a data domain that the executor answered with no
+  tool call is run once more with `FRESH_LOOKUP_NOTE` (trace `fresh_lookup_forced`); small talk and memory
+  questions answered by the prefetch are exempt.
 - Temperature 0. Max 25 tool calls per request (rules 15-17: plan, work step by step, try another
   route before giving up). `EXECUTOR_REASONING_EFFORT` turns on model reasoning for reasoning models.
 - A new Agent instance is created per request with exactly the loaded tools.

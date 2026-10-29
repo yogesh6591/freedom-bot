@@ -297,3 +297,19 @@ def test_a_named_target_is_looked_up_instead_of_asking(fake_model, client_scratc
                  call("crm_search_contacts", query="Raj"), final("Raj Mehta at Acme is the only Raj.")]
     out = ask(ctx_factory(client_scratch, "operator"), _settings(client_scratch), "Who is Raj?")
     assert "crm_search_contacts" in effects.names() and out["content"] == "Raj Mehta at Acme is the only Raj."
+
+
+def test_a_data_question_answered_from_memory_is_looked_up_again(fake_model, client_scratch, ctx_factory, effects):
+    """Earlier replies are context, not answers: a data question with no tool call is run once more."""
+    SCRIPT[:] = [route("email", kind="question"), final("No, nothing from Shubham (as before)."),
+                 call("email_search_threads", query="leave Shubham"), final("Nothing about leave from Shubham.")]
+    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "any leave request from shubham?")
+    assert effects.names() == ["email_search_threads"]
+    assert out["trace"]["fresh_lookup_forced"] is True
+    assert out["content"].startswith("Nothing about leave from Shubham.")
+
+
+def test_small_talk_is_not_forced_into_a_lookup(fake_model, client_scratch, ctx_factory, effects):
+    SCRIPT[:] = [route(kind="chitchat"), final("Hello! How can I help?")]
+    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "hi")
+    assert effects.names() == [] and "fresh_lookup_forced" not in out["trace"]
