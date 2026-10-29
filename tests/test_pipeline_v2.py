@@ -380,3 +380,30 @@ def test_v2_trace_matches_agno_shape_and_is_admin_only(fake_model, client_scratc
     other = ask(ctx_factory(client_scratch, "drafter"), _settings(client_scratch), "Who is Raj?")
     assert other["trace"] == {"engine": "v2"}
     assert other["content"] == "Raj Mehta at Acme."
+
+
+def test_a_data_question_answered_from_memory_is_looked_up_again(fake_model, client_scratch, ctx_factory, effects):
+    """Earlier replies are context, not answers: a data question with no tool call is run once more."""
+    SCRIPT[:] = [route("email", kind="question"), final("No, nothing from Shubham (as before)."),
+                 call("email_search_threads", query="leave Shubham"), final("Nothing about leave from Shubham.")]
+    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "any leave request from shubham?")
+    assert effects.names() == ["email_search_threads"]
+    assert out["trace"]["fresh_lookup_forced"] is True
+    assert out["content"].startswith("Nothing about leave from Shubham.")
+
+
+def test_small_talk_is_not_forced_into_a_lookup(fake_model, client_scratch, ctx_factory, effects):
+    SCRIPT[:] = [route(kind="chitchat"), final("Hello! How can I help?")]
+    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "hi")
+    assert effects.names() == [] and "fresh_lookup_forced" not in out["trace"]
+
+
+def test_hitting_the_step_limit_says_how_to_carry_on(fake_model, client_scratch, ctx_factory, effects, monkeypatch):
+    from app.assistant import v2
+
+    monkeypatch.setattr(v2, "TOOL_CALL_LIMIT", 2)
+    SCRIPT[:] = [route("crm", kind="question"), call("crm_search_contacts", query="Raj"),
+                 call("crm_search_contacts", query="Priya"), final("Raj is at Acme.")]
+    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "find Raj and Priya")
+    assert effects.names() == ["crm_search_contacts", "crm_search_contacts"]
+    assert out["trace"]["call_limit_reached"] is True and 'Say "continue"' in out["content"]

@@ -20,7 +20,7 @@ from typing import Any, Iterable, Sequence
 #: Turns kept in the record.
 MAX_TURNS = 5
 #: Calls kept per turn.
-MAX_CALLS = 8
+MAX_CALLS = 30  # long workflows: enough to carry on after the step limit
 #: Earlier messages passed word for word to the executor; older turns are covered by the record.
 HISTORY_MESSAGES = 24
 

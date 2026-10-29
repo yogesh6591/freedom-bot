@@ -43,6 +43,8 @@ from bizos.util.ids import new_id
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 log = logging.getLogger(__name__)
+#: Seconds of silence after which the chat stream sends a keep-alive comment.
+KEEPALIVE_SEC = 15
 
 
 class ChatRequest(BaseModel):
@@ -308,7 +310,14 @@ def chat_stream(
             events.put(None)
 
     def stream() -> Iterator[str]:
-        while (event := events.get()) is not None:
+        while True:
+            try:
+                event = events.get(timeout=KEEPALIVE_SEC)
+            except queue.Empty:
+                yield ": keep-alive\n\n"  # an SSE comment: keeps proxies from closing a long, quiet turn
+                continue
+            if event is None:
+                return
             yield f"data: {json.dumps(jsonable_encoder(event))}\n\n"
 
     threading.Thread(target=work, name="chat-stream", daemon=True).start()

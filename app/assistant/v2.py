@@ -3,7 +3,7 @@
 One chat turn:
   pre-model refusals + grounding (the same functions the current assistant calls)
   -> visibility filter -> router (+ memory_search in parallel) -> tool loading
-  -> one executor Agent (fresh per request, tool_call_limit 25) whose every tool call goes through the guard
+  -> one executor Agent (fresh per request, tool_call_limit 60) whose every tool call goes through the guard
   -> reply composed from tool results.
 
 The rules live in plain modules under bizos/agents (routing, guard, merged_tools, composer, tool_meta);
@@ -59,7 +59,19 @@ from bizos.util.ids import new_id
 
 log = logging.getLogger(__name__)
 
-TOOL_CALL_LIMIT = 25
+TOOL_CALL_LIMIT = 60
+#: Added to the reply when a request used every tool call it had.
+CALL_LIMIT_NOTE = (
+    f"I reached the limit of {TOOL_CALL_LIMIT} steps for one message, and some steps are still left. "
+    "Say \"continue\" and I will carry on with the remaining steps."
+)
+#: Added to the executor prompt when a data question was answered without looking anything up.
+FRESH_LOOKUP_NOTE = (
+    "## This turn needs fresh data\n"
+    "You answered without calling any tool. Earlier replies and Recent work only tell you what the user means; "
+    "they are not the answer, and the data may have changed since. Call the tools now and answer from their "
+    "results in this turn."
+)
 #: Extra executor runs allowed after load_tools added tools mid-run.
 MAX_RELOADS = 2
 _ARGS_MAX = 600
@@ -456,7 +468,12 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
     gate = StreamGate(lambda: _write_state(guard), task=route.kind == "task")
     if emit:
         emit({"type": "status", "text": "Working on it"})
-    for _ in range(MAX_RELOADS + 1):
+    # Answers about data come from this turn's tool results, never from earlier replies (which may be out
+    # of date). A data question answered without any tool call is run once more with that said plainly.
+    memory_answered = set(route.domains) <= {"memory"} and pre.memory is not None and pre.memory.ok
+    fresh_needed = route.kind in ("task", "question") and bool(route.domains) and not memory_answered
+    nudged = False
+    for _ in range(MAX_RELOADS + 2):
         for name in loader.loaded:
             if name in MERGED and name not in guard.schemas:
                 guard.schemas[name] = schema_for(name, allowed_old)
@@ -501,11 +518,25 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
             raise HTTPException(status_code=502, detail=f"Model call failed: {output.content}")
         text, explanation = _final(output)
         calls_left -= len(output.tools or [])
-        if loader.loaded == loaded_before or calls_left <= 0:
-            break
-        # load_tools added tools: carry the run forward with them available.
-        next_input = [m for m in (output.messages or []) if m.role not in ("system", "developer")]
+        if loader.loaded != loaded_before and calls_left > 0:
+            # load_tools added tools: carry the run forward with them available.
+            next_input = [m for m in (output.messages or []) if m.role not in ("system", "developer")]
+            continue
+        if fresh_needed and not nudged and calls_left == TOOL_CALL_LIMIT:
+            nudged = True
+            trace["fresh_lookup_forced"] = True
+            grounded_text = (grounded_text + "\n\n" if grounded_text else "") + FRESH_LOOKUP_NOTE
+            if emit:
+                emit({"type": "reset"})
+                gate = StreamGate(lambda: _write_state(guard), task=route.kind == "task")
+            continue
+        break
 
+    if calls_left <= 0:
+        # The step limit stopped the work: say so, so the user can carry on in the next message
+        # (Recent work keeps what was done, and the guard keeps finished writes from running twice).
+        trace["call_limit_reached"] = True
+        text = (text.rstrip() + "\n\n" if text.strip() else "") + CALL_LIMIT_NOTE
     trace.update(loaded=loader.loaded, load_tools_misses=loader.misses, explanation=explanation)
     # The email card and its saved state belong to this turn when outreach was routed or any outreach tool ran
     # (the model can also load the outreach tools itself in the middle of a turn).

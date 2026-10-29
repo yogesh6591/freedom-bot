@@ -918,7 +918,8 @@ function ChatView({ home }: { home: boolean }) {
       setLive({ status: '', text: '' })
       try {
         await api.stream('/api/chat/stream', body, (event) => {
-          if (event.type === 'status') setLive((l) => ({ status: event.text ?? '', text: l?.text ?? '' }))
+          if (event.type === 'reset') setLive((l) => ({ status: l?.status ?? '', text: '' }))
+          else if (event.type === 'status') setLive((l) => ({ status: event.text ?? '', text: l?.text ?? '' }))
           else if (event.type === 'token') setLive((l) => ({ status: l?.status ?? '', text: (l?.text ?? '') + (event.text ?? '') }))
           else if (event.type === 'done') data = event.response as ChatResponse & { response?: string }
         })

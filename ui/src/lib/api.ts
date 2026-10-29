@@ -94,7 +94,7 @@ async function request<T>(
 
 /** One event of a streamed reply (POST /api/chat/stream). */
 export interface StreamEvent {
-  type: 'status' | 'token' | 'done' | 'error'
+  type: 'status' | 'token' | 'reset' | 'done' | 'error'
   text?: string
   response?: unknown
   status?: number

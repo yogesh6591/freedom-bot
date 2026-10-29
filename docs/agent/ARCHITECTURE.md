@@ -117,7 +117,7 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   with no tools. Chitchat and out-of-scope turns get no tools.
 - **Campaign turns** (an admin routed to `campaign`) are handed to the current assistant, which owns the
   campaign flow's state, records and checks, so admins' campaign behaviour is unchanged.
-- Executor: a fresh Agent per run with exactly the loaded tools and `tool_hooks=[guard]`. The 25-call
+- Executor: a fresh Agent per run with exactly the loaded tools and `tool_hooks=[guard]`. The 60-call
   limit is shared across the request. If `load_tools` added tools, the run is continued with them
   (at most twice).
 - Known values and successful tools are kept per conversation in the chat history (`meta.v2`), and every
@@ -126,7 +126,7 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   `tool_activity`, admin-only `trace`), so the UI is unchanged. Pending work appears on the existing
   approval and draft cards.
 - **Streaming** (`POST /api/chat/stream`, Server-Sent Events): the same turn, with `emit`. Events: `status`
-  (a tool started), `token` (reply words), then `done` with exactly the `/api/chat` response, which replaces
+  (a tool started), `token` (reply words), `reset` (discard the streamed words: the turn is re-run), then `done` with exactly the `/api/chat` response, which replaces
   the streamed text, or `error`. Words pass through `composer.StreamGate`: whole words only, and a sentence
   holding a write or approval word is held until it ends and shown only if `compose()` would keep it on the
   tool results so far. The turn runs in a worker thread with the request's context copied, so the tenant
@@ -139,7 +139,11 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   Keep each playbook bullet about one tool so general rules survive.
 - `{default_meeting_minutes}`: the workspace's default meeting length if its settings define one,
   otherwise 30. (No such setting exists today, so it is 30.)
-- Temperature 0. Max 25 tool calls per request (rules 15-17: plan, work step by step, try another
+- Answers about data come from this turn's tool results: earlier replies and Recent work only resolve what
+  the user means (rule 14). A task or question routed to a data domain that the executor answered with no
+  tool call is run once more with `FRESH_LOOKUP_NOTE` (trace `fresh_lookup_forced`); small talk and memory
+  questions answered by the prefetch are exempt.
+- Temperature 0. Max 60 tool calls per request (rules 15-17: plan, work step by step, try another
   route before giving up). `EXECUTOR_REASONING_EFFORT` turns on model reasoning for reasoning models.
 - A new Agent instance is created per request with exactly the loaded tools.
 
@@ -173,7 +177,7 @@ Order:
    `finance_lookup_policy`. `suggested_prior` tools (soft: availability before booking, memory search
    before adding, checklist before marking an item, list packs before toggling) are playbook guidance
    and never enforced. Users may book over a conflict on purpose, a duplicate memory entry is low harm,
-   and each hard rule costs a step against the 25-call limit. Campaign:
+   and each hard rule costs a step against the 60-call limit. Campaign:
    `send_approved` requires `approval_evidence` that matches text in the user's latest message
    (case- and whitespace-insensitive, whole words, non-empty). This lives in shared code (Phase 2),
    so the current assistant gets it too. The evidence is logged with every send attempt.
