@@ -122,6 +122,7 @@
   approval_evidence must be the user's own words copied from that latest message; anything else is refused.
 
 ## outreach
+- Any email to a person in an outreach turn is written with propose_email, whatever the user calls it (create, write, draft, compose, send), whether the people are saved prospects or typed addresses. Do not load the email domain or use Gmail draft or send tools for it. propose_email only drafts the card; nothing leaves until the user approves it.
 - Who: choose_recipients (saved names or typed addresses). It tells you who was emailed before.
 - Wording: propose_email, with blanks ({{firstName}}, {{companyName}}, {{assessment_url}}). Never type a
   person's name or company into the text; code fills each person's own details.
