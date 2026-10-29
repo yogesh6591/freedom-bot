@@ -22,7 +22,12 @@ from sqlalchemy.orm import Session
 
 from acquisition.config import Settings, get_settings
 from acquisition.models.campaign import CampaignProspect, HandoffStatus, PurchaseOutcome
-from acquisition.services.assessment_tokens import build_assessment_url
+from acquisition.services.assessment_tokens import (
+    PublicRedirectError,
+    build_assessment_url,
+    looks_like_browser_origin,
+    public_redirect_base,
+)
 from acquisition.services.booking_service import BOOKING_STATUS_CONFIRMED
 from acquisition.services.stripe_test_service import (
     StripeTestError,
@@ -247,7 +252,16 @@ def create_prospect_checkout_session(
     amount_cents = _amount_to_cents(amount)
     currency = (link.checkout_offer_currency or cfg.stripe_currency or "usd").strip().lower() or "usd"
     token = link.assessment_token or ""
-    base = (public_base or cfg.public_base_url or "http://127.0.0.1:8020").strip().rstrip("/")
+    try:
+        base = public_redirect_base(request_base=public_base, settings=cfg)
+    except PublicRedirectError as exc:
+        raise JeanneCheckoutError(str(exc), code="bad_public_url", http_status=503) from exc
+    if not looks_like_browser_origin(base):
+        raise JeanneCheckoutError(
+            "Checkout return URL is not a public site.",
+            code="bad_public_url",
+            http_status=503,
+        )
     success_url = f"{base}/a/{token}/checkout/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{base}/a/{token}/checkout?cancelled=1"
     metadata = build_checkout_metadata(link)

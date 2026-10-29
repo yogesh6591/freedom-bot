@@ -97,15 +97,18 @@ def resolve_stripe_test_redirect_urls(
     *,
     public_base: str | None = None,
 ) -> tuple[str, str]:
-    """Build success/cancel URLs from the URL the admin is actually using.
+    """Build success/cancel URLs the browser can actually open.
 
-    Hardcoded localhost success URLs break when Admin is opened via tunnel or
-    a remote host — Stripe would redirect somewhere the browser cannot use.
+    PUBLIC_BASE_URL wins. request.base_url inside Docker is http://api:8000
+    and must not be sent to Stripe.
     """
+    from acquisition.services.assessment_tokens import PublicRedirectError, public_redirect_base
+
     cfg = settings or get_settings()
-    base = (public_base or cfg.public_base_url or "http://127.0.0.1:8020").strip().rstrip("/")
-    if not base:
-        base = "http://127.0.0.1:8020"
+    try:
+        base = public_redirect_base(request_base=public_base, settings=cfg)
+    except PublicRedirectError as exc:
+        raise StripeTestError(str(exc), code="bad_public_url") from exc
     success = f"{base}/stripe-test/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel = f"{base}/stripe-test/cancel"
     return success, cancel

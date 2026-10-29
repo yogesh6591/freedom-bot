@@ -29,7 +29,7 @@ from acquisition.services.assessment_extraction import (
     normalize_structured_state,
 )
 from acquisition.services.assessment_journey_reset import reset_assessment_journey
-from acquisition.services.assessment_tokens import build_assessment_url
+from acquisition.services.assessment_tokens import build_assessment_url, public_redirect_base
 from acquisition.services.booking_service import BOOKING_STATUS_CONFIRMED
 from acquisition.services.email_delivery_status import resolve_email_delivery
 from acquisition.services.jeanne_checkout_service import (
@@ -683,12 +683,11 @@ async def assessment_stripe_test_checkout(
             url=f"/assessments/{link_id}?flash=stripe_test_disabled#booking",
             status_code=status.HTTP_303_SEE_OTHER,
         )
-    public_base = str(request.base_url).rstrip("/")
     try:
         created = create_test_checkout_session(
             link,
             settings=get_settings(),
-            public_base=public_base,
+            public_base=public_redirect_base(request_base=str(request.base_url).rstrip("/")),
         )
     except StripeTestError as exc:
         flash = "stripe_test_booking_required" if exc.code == "booking_required" else "stripe_test_error"
