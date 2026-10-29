@@ -526,6 +526,16 @@ function MailRow({
   )
 }
 
+function modeChipClass(mode: string): string {
+  if (mode === 'Follow-up (same thread)') {
+    return 'bg-sky-50 text-sky-700 ring-sky-200/80'
+  }
+  if (mode === 'New email (new thread)') {
+    return 'bg-violet-50 text-violet-700 ring-violet-200/80'
+  }
+  return 'bg-emerald-50 text-emerald-700 ring-emerald-200/80'
+}
+
 export function EmailCard({
   view,
   sessionId,
@@ -606,8 +616,20 @@ export function EmailCard({
           company: 'missing'
         }
       }
-  const shownSubject = fillText(sharedSubject, fillPerson, assessmentUrl)
-  const shownBody = fillText(sharedBody, fillPerson, assessmentUrl)
+  // The server writes each person's own text (different wording, "Re:" follow-ups). Show it when it applies.
+  const serverPreview = previews.find((item) => item.email === previewPerson?.email) as
+    | ((typeof previews)[number] & { mode?: string; custom?: boolean })
+    | undefined
+  const modeLabel = serverPreview?.mode || ''
+  const useServerText = Boolean(
+    !editing && serverPreview && (serverPreview.subject || '').trim() && (serverPreview.body || '').trim()
+  )
+  const shownSubject = useServerText
+    ? serverPreview?.subject || ''
+    : fillText(sharedSubject, fillPerson, assessmentUrl)
+  const shownBody = useServerText
+    ? serverPreview?.body || ''
+    : fillText(sharedBody, fillPerson, assessmentUrl)
   const waitingNames = uniqueKeepOrder(
     (audience?.also_waiting ?? []).map((person) => person.name)
   ).join(', ')
@@ -810,8 +832,15 @@ export function EmailCard({
   return (
     <>
     <article className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]">
-      <div className="flex items-center px-3 pt-3">
+      <div className="flex items-center justify-between gap-2 px-3 pt-3">
         <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
+        {modeLabel ? (
+          <span
+            className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide ring-1 ring-inset ${modeChipClass(modeLabel)}`}
+          >
+            {modeLabel}
+          </span>
+        ) : null}
       </div>
 
       <MailRow label="To">

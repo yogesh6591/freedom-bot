@@ -55,7 +55,7 @@ type NavItem = {
 }
 
 /**
- * Demo switch: true hides the acquisition pages tagged `demoHidden` (Overview, Prospects, Campaigns,
+ * Demo switch: true hides the acquisition pages tagged `demoHidden` (Overview, Prospects,
  * Assessments, Engine & AI, Buyer Journey) unless an admin turns on "Acquisition pages" in the sidebar.
  * Set to false to always show them. The pages still work by URL.
  */
@@ -83,7 +83,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Outreach',
     items: [
-      { href: '/acquisition/campaigns', label: 'Campaigns', icon: Megaphone, roles: ['ADMIN'], demoHidden: true },
       { href: '/acquisition/assessments', label: 'Assessments', icon: MessagesSquare, roles: ['ADMIN'], demoHidden: true }
     ]
   },
@@ -422,7 +421,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               icon={Megaphone}
               on={showAcquisition}
               onChange={setShowAcquisition}
-              title="Show Overview, Prospects, Campaigns, Assessments, Engine & AI and Buyer Journey"
+              title="Show Overview, Prospects, Assessments, Engine & AI and Buyer Journey"
             />
           )}
           {(!me.client.allow_phi || !me.client.allow_card_data) && (

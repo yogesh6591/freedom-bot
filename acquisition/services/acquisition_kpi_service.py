@@ -85,8 +85,8 @@ def build_acquisition_kpis(db: Session) -> dict[str, Any]:
     for link in links:
         prospect = link.prospect
         if prospect is not None and prospect.id not in seen_prospects:
-            # Count people who were synced or otherwise entered outreach.
-            if link.instantly_lead_id or link.assessment_token or link.outreach_status.value != "pending":
+            # Count people who were emailed or otherwise entered outreach.
+            if link.assessment_token or link.outreach_status.value != "pending":
                 seen_prospects.add(prospect.id)
                 totals["prospects_reached"] += 1
 

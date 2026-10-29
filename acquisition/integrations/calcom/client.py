@@ -1,19 +1,26 @@
-"""Cal.com API v2 client — credentials from Integrations DB or env."""
+"""Cal.com through Composio: no API key lives in this app.
+
+A platform user connects Cal.com on the Integrations page (Composio OAuth, like Gmail). Every call here runs
+one Composio ``CAL_*`` tool as that user (see ``owner.py``). The method names and return shapes are the ones
+the rest of the app already uses, so callers do not change.
+"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-import httpx
 from sqlalchemy.orm import Session
 
-from acquisition.config import get_settings
+from acquisition.integrations.calcom import owner
 
 logger = logging.getLogger(__name__)
 
-CALCOM_API_VERSION = "2024-06-14"
-DEFAULT_BASE = "https://api.cal.com/v2"
+TOOLKIT = owner.TOOLKIT
+
+# Booking statuses Cal.com understands. Older callers say "accepted" / "pending".
+ALL_STATUSES = ["upcoming", "recurring", "past", "cancelled", "unconfirmed"]
+_STATUS_ALIASES = {"accepted": "upcoming", "pending": "unconfirmed", "canceled": "cancelled"}
 
 
 class CalcomError(Exception):
@@ -23,84 +30,50 @@ class CalcomError(Exception):
         self.http_status = http_status
 
 
-def resolve_calcom_api_key(db: Session | None = None) -> str:
-    """Resolve Cal.com API key: encrypted Integrations record, then environment."""
-    from acquisition.services.calcom_service import CalcomService
+def _inner(data: Any) -> Any:
+    """Cal.com wraps its answer as ``{status, data}``; return the part inside."""
+    if isinstance(data, dict) and "data" in data:
+        return data["data"]
+    return data
 
-    return (CalcomService(db=db).resolve_api_key() or "").strip()
+
+def _is_gone(exc: CalcomError) -> bool:
+    text = exc.message.lower()
+    return any(word in text for word in ("not found", "404", "already", "cancelled", "canceled"))
 
 
 class CalcomClient:
-    def __init__(
-        self,
-        *,
-        api_key: str | None = None,
-        base_url: str | None = None,
-        db: Session | None = None,
-    ) -> None:
-        settings = get_settings()
-        if api_key is not None:
-            self.api_key = api_key.strip()
-        else:
-            self.api_key = resolve_calcom_api_key(db=db)
-        self.base_url = (
-            base_url
-            or getattr(settings, "calcom_api_base_url", None)
-            or DEFAULT_BASE
-        ).rstrip("/")
+    def __init__(self, *, db: Session | None = None, ctx: Any | None = None) -> None:
+        # ``db`` is accepted for the existing call sites; nothing is read from it any more.
+        self._ctx = ctx
+
+    # ------------------------------------------------------------------ plumbing
+    def _context(self) -> Any | None:
+        return self._ctx or owner.owner_context()
 
     @property
     def configured(self) -> bool:
-        return bool(self.api_key) and self.api_key.startswith("cal_")
+        """True when a platform user has Cal.com connected through Composio."""
+        return self._ctx is not None or owner.owner_user_id() is not None
 
-    def _headers(self) -> dict[str, str]:
-        if not self.api_key:
-            raise CalcomError("Cal.com API key is not configured", http_status=503)
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "cal-api-version": CALCOM_API_VERSION,
-            "Content-Type": "application/json",
-        }
+    def _run(self, action: str, arguments: dict[str, Any] | None = None) -> Any:
+        from bizos.connectors import composio
+        from bizos.connectors.base import ConnectorError, ConnectorNotConfigured
+        from bizos.tenancy.context import tenant_scope
 
-    def _request(self, method: str, path: str, *, json: dict | None = None) -> Any:
-        url = f"{self.base_url}{path}"
+        ctx = self._context()
+        if ctx is None:
+            raise CalcomError("Cal.com is not connected. Connect it on the Integrations page.", http_status=503)
         try:
-            with httpx.Client(timeout=20.0) as client:
-                response = client.request(method, url, headers=self._headers(), json=json)
-        except httpx.HTTPError as exc:
-            logger.warning("Cal.com HTTP error: %s", exc.__class__.__name__)
-            raise CalcomError("Cal.com request failed", http_status=502) from exc
-        if response.status_code >= 400:
-            # Never log Authorization header or raw API key.
-            logger.warning("Cal.com API %s %s → %s", method, path, response.status_code)
-            detail = "Cal.com API error"
-            try:
-                body = response.json()
-                if isinstance(body, dict):
-                    detail = str(body.get("message") or body.get("error") or detail)
-            except Exception:  # noqa: BLE001
-                pass
-            raise CalcomError(detail, http_status=response.status_code)
-        if not response.content:
-            return None
-        return response.json()
+            with tenant_scope(ctx):
+                return composio.execute(ctx, TOOLKIT, action, arguments or {})
+        except ConnectorNotConfigured as exc:
+            raise CalcomError(str(exc), http_status=503) from exc
+        except ConnectorError as exc:
+            logger.warning("Cal.com %s failed: %s", action, exc)
+            raise CalcomError(str(exc), http_status=502) from exc
 
-    def get_me(self) -> dict[str, Any]:
-        raw = self._request("GET", "/me")
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, dict):
-            raise CalcomError("Unexpected Cal.com /me response")
-        # Return only non-secret account fields needed for Admin.
-        return {
-            "id": data.get("id"),
-            "username": data.get("username"),
-            "name": data.get("name"),
-            "email": data.get("email"),
-            "timeZone": data.get("timeZone"),
-            "timeFormat": data.get("timeFormat"),
-            "organizationId": data.get("organizationId"),
-        }
-
+    # ------------------------------------------------------------------ the host account
     @staticmethod
     def _me_summary(data: dict[str, Any]) -> dict[str, Any]:
         return {
@@ -113,156 +86,94 @@ class CalcomClient:
             "organizationId": data.get("organizationId"),
         }
 
+    def get_me(self) -> dict[str, Any]:
+        data = _inner(self._run("CAL_RETRIEVE_MY_INFORMATION"))
+        if not isinstance(data, dict):
+            raise CalcomError("Unexpected Cal.com profile response")
+        return self._me_summary(data)
+
+    def _update_profile(self, fields: dict[str, Any]) -> dict[str, Any]:
+        data = _inner(self._run("CAL_UPDATE_USER_PROFILE_DETAILS", fields))
+        if not isinstance(data, dict):
+            raise CalcomError("Unexpected Cal.com profile update response")
+        return self._me_summary(data)
+
     def ensure_timezone(self, time_zone: str) -> dict[str, Any]:
-        """Keep the Cal.com host account on the FreedomBot platform timezone."""
+        """Keep the Cal.com host account on the platform timezone."""
         desired = (time_zone or "").strip()
         if not desired:
             raise CalcomError("Timezone is required")
         me = self.get_me()
-        current = str(me.get("timeZone") or "").strip()
-        if current == desired:
+        if str(me.get("timeZone") or "").strip() == desired:
             return me
-        raw = self._request("PATCH", "/me", json={"timeZone": desired})
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, dict):
-            raise CalcomError("Unexpected Cal.com update timezone response")
-        return self._me_summary(data)
+        return self._update_profile({"timeZone": desired})
 
     def ensure_time_format(self, time_format: int = 12) -> dict[str, Any]:
-        """Keep the Cal.com host account on 12-hour clock (AM/PM)."""
-        desired = 12 if int(time_format) != 24 else 24
+        """Keep the Cal.com host account on the 12-hour clock (or 24 when asked)."""
+        desired = 24 if int(time_format) == 24 else 12
         me = self.get_me()
-        current = me.get("timeFormat")
         try:
-            current_int = int(current) if current is not None else None
+            current = int(me.get("timeFormat"))
         except (TypeError, ValueError):
-            current_int = None
-        if current_int == desired:
+            current = None
+        if current == desired:
             return me
-        raw = self._request("PATCH", "/me", json={"timeFormat": desired})
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, dict):
-            raise CalcomError("Unexpected Cal.com update timeFormat response")
-        return self._me_summary(data)
+        return self._update_profile({"timeFormat": desired})
 
+    # ------------------------------------------------------------------ event types
     def ensure_event_booker_defaults(self, event_type_id: int | str) -> dict[str, Any]:
-        """Hide guest UI and prefer English (12h-friendly) booker copy on an event type."""
-        safe_id = str(event_type_id).strip()
-        if not safe_id:
-            raise CalcomError("Cal.com event type id is required")
-        raw = self._request(
-            "PATCH",
-            f"/event-types/{safe_id}",
-            json={
-                # Hides "Add guests" / "Add another" in the booker.
-                # CC emails can still be attached via guests= on the embed URL.
-                "disableGuests": True,
-                "interfaceLanguage": "en",
-            },
-        )
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, dict):
+        """Hide the "Add guests" fields on an event type (the prospect is the only booker)."""
+        try:
+            event_id = int(str(event_type_id).strip())
+        except ValueError:
+            raise CalcomError("Cal.com event type id must be a number", http_status=422) from None
+        data = _inner(self._run("CAL_EDIT_EVENT_TYPE_BY_ID", {"id": event_id, "disableGuests": True}))
+        event = data.get("event_type") if isinstance(data, dict) else None
+        if not isinstance(event, dict):
             raise CalcomError("Unexpected Cal.com update event-type response")
         return {
-            "id": data.get("id"),
-            "disableGuests": data.get("disableGuests"),
-            "interfaceLanguage": data.get("interfaceLanguage"),
-            "slug": data.get("slug"),
-            "title": data.get("title"),
-        }
-
-    def set_event_disable_guests(
-        self,
-        event_type_id: int | str,
-        *,
-        disabled: bool = True,
-    ) -> dict[str, Any]:
-        """Hide or show the booker \"Add guests\" / \"Add another\" fields."""
-        if disabled:
-            return self.ensure_event_booker_defaults(event_type_id)
-        safe_id = str(event_type_id).strip()
-        if not safe_id:
-            raise CalcomError("Cal.com event type id is required")
-        raw = self._request(
-            "PATCH",
-            f"/event-types/{safe_id}",
-            json={"disableGuests": False},
-        )
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, dict):
-            raise CalcomError("Unexpected Cal.com update event-type response")
-        return {
-            "id": data.get("id"),
-            "disableGuests": data.get("disableGuests"),
-            "slug": data.get("slug"),
-            "title": data.get("title"),
+            "id": event.get("id"),
+            "disableGuests": event.get("disableGuests"),
+            "slug": event.get("slug"),
+            "title": event.get("title"),
         }
 
     def list_event_types(self, *, username: str | None = None) -> list[dict[str, Any]]:
-        path = "/event-types"
-        if username:
-            path = f"/event-types?username={username}"
-        raw = self._request("GET", path)
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, list):
+        arguments = {"username": username} if username else {}
+        data = _inner(self._run("CAL_LIST_EVENT_TYPES", arguments))
+        groups = data.get("eventTypeGroups") if isinstance(data, dict) else None
+        if not isinstance(groups, list):
             return []
+        groups = [g for g in groups if isinstance(g, dict)]
+        # Your own event types first; team event types only when you have none of your own.
+        personal = [g for g in groups if not g.get("teamId")]
         out: list[dict[str, Any]] = []
-        for item in data:
-            if not isinstance(item, dict):
-                continue
-            out.append(
-                {
-                    "id": item.get("id"),
-                    "title": item.get("title"),
-                    "slug": item.get("slug"),
-                    "lengthInMinutes": item.get("lengthInMinutes") or item.get("length"),
-                    "bookingUrl": item.get("bookingUrl"),
-                    "description": item.get("description"),
-                    "hidden": item.get("hidden"),
-                }
-            )
+        for group in personal or groups:
+            profile = group.get("profile") if isinstance(group.get("profile"), dict) else {}
+            base = str(group.get("bookerUrl") or "").rstrip("/")
+            owner_slug = str(profile.get("slug") or username or "").strip("/")
+            for item in group.get("eventTypes") or []:
+                if not isinstance(item, dict):
+                    continue
+                slug = item.get("slug")
+                booking_url = f"{base}/{owner_slug}/{slug}" if base and owner_slug and slug else None
+                out.append(
+                    {
+                        "id": item.get("id"),
+                        "title": item.get("title"),
+                        "slug": slug,
+                        "lengthInMinutes": item.get("length"),
+                        "bookingUrl": booking_url,
+                        "description": item.get("description"),
+                        "hidden": item.get("hidden"),
+                    }
+                )
         return out
 
-    def create_event_type(
-        self,
-        *,
-        title: str,
-        slug: str,
-        length_in_minutes: int = 30,
-        description: str | None = None,
-    ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "title": title.strip(),
-            "slug": slug.strip(),
-            "lengthInMinutes": int(length_in_minutes),
-        }
-        if description:
-            payload["description"] = description.strip()
-        raw = self._request("POST", "/event-types", json=payload)
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, dict):
-            raise CalcomError("Unexpected Cal.com create event-type response")
-        return {
-            "id": data.get("id"),
-            "title": data.get("title"),
-            "slug": data.get("slug"),
-            "lengthInMinutes": data.get("lengthInMinutes") or data.get("length"),
-            "bookingUrl": data.get("bookingUrl"),
-        }
-
-    def delete_event_type(self, event_type_id: int | str) -> None:
-        """DELETE /event-types/{id}."""
-        safe_id = str(event_type_id).strip()
-        if not safe_id:
-            raise CalcomError("Cal.com event type id is required for delete")
-        self._request("DELETE", f"/event-types/{safe_id}")
-
+    # ------------------------------------------------------------------ webhooks
     def list_webhooks(self) -> list[dict[str, Any]]:
-        raw = self._request("GET", "/webhooks")
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if not isinstance(data, list):
-            return []
-        return [item for item in data if isinstance(item, dict)]
+        data = _inner(self._run("CAL_RETRIEVE_WEBHOOKS_LIST", {"take": 100}))
+        return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
 
     def create_webhook(
         self,
@@ -272,97 +183,83 @@ class CalcomClient:
         secret: str | None = None,
         active: bool = True,
     ) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+        arguments: dict[str, Any] = {
             "subscriberUrl": subscriber_url.strip(),
             "triggers": triggers,
             "active": active,
         }
         if secret:
-            payload["secret"] = secret
-        raw = self._request("POST", "/webhooks", json=payload)
-        data = raw.get("data") if isinstance(raw, dict) else None
+            arguments["secret"] = secret
+        data = _inner(self._run("CAL_POST_WEBHOOK_EVENT", arguments))
         if not isinstance(data, dict):
             raise CalcomError("Unexpected Cal.com create webhook response")
         return data
 
     def delete_webhook(self, webhook_id: int | str) -> None:
-        self._request("DELETE", f"/webhooks/{webhook_id}")
+        self._run("CAL_DELETE_WEBHOOK_BY_ID", {"webhookId": str(webhook_id)})
 
-    def cancel_booking(
-        self,
-        uid: str,
-        *,
-        reason: str = "FreedomBot journey reset",
-    ) -> None:
-        """Cancel a Cal.com booking by uid (best-effort across API shapes)."""
+    # ------------------------------------------------------------------ bookings
+    @staticmethod
+    def _booking_summary(raw: Any) -> dict[str, Any]:
+        """The few booking fields we store, from a reschedule or get response."""
+        data = _inner(raw)
+        if isinstance(data, list):
+            data = data[0] if data else None
+        if not isinstance(data, dict) or not data.get("uid"):
+            raise CalcomError("Unexpected Cal.com booking response")
+        return {
+            "uid": str(data.get("uid")),
+            "id": str(data["id"]) if data.get("id") is not None else None,
+            "status": data.get("status"),
+            "start": data.get("start") or data.get("startTime"),
+            "end": data.get("end") or data.get("endTime"),
+            "meetingUrl": data.get("meetingUrl"),
+            "location": data.get("location"),
+        }
+
+    def cancel_booking(self, uid: str, *, reason: str = "FreedomBot journey reset") -> None:
+        """Cancel a booking. One that is already gone or already cancelled counts as done."""
         cleaned = (uid or "").strip()
         if not cleaned:
             raise CalcomError("Booking uid is required", http_status=422)
-        payload = {"cancellationReason": reason}
-        errors: list[str] = []
-        for path in (
-            f"/bookings/{cleaned}/cancel",
-            f"/bookings/{cleaned}/cancellations",
-        ):
-            try:
-                self._request("POST", path, json=payload)
-                return
-            except CalcomError as exc:
-                errors.append(f"{path}:{exc.http_status}")
-                # Already gone / already cancelled is success for rewind.
-                if exc.http_status in {404, 400, 409}:
-                    detail = (exc.message or "").lower()
-                    if (
-                        exc.http_status == 404
-                        or "cancel" in detail
-                        or "already" in detail
-                        or "not found" in detail
-                    ):
-                        return
-                continue
-        # Last resort: DELETE booking resource.
         try:
-            self._request("DELETE", f"/bookings/{cleaned}")
-            return
+            self._run("CAL_CANCEL_BOOKING_VIA_UID", {"bookingUid": cleaned, "cancellationReason": reason})
         except CalcomError as exc:
-            errors.append(f"DELETE:/bookings/{cleaned}:{exc.http_status}")
-            if exc.http_status in {404, 400, 409}:
+            if _is_gone(exc):
                 return
-            raise CalcomError(
-                f"Could not cancel Cal.com booking ({', '.join(errors)})",
-                http_status=exc.http_status,
-            ) from exc
+            raise
+
+    def reschedule_booking(self, uid: str, *, start_utc: str, reason: str | None = None) -> dict[str, Any]:
+        """Move a booking. Cal.com returns the new booking (new uid)."""
+        cleaned = (uid or "").strip()
+        if not cleaned:
+            raise CalcomError("Booking uid is required", http_status=422)
+        arguments: dict[str, Any] = {"bookingUid": cleaned, "start": start_utc}
+        if reason:
+            arguments["reschedulingReason"] = reason
+        return self._booking_summary(self._run("CAL_RESCHEDULE_BOOKING_BY_UID", arguments))
+
+    def get_booking_record(self, uid: str) -> dict[str, Any]:
+        cleaned = (uid or "").strip()
+        if not cleaned:
+            raise CalcomError("Booking uid is required", http_status=422)
+        data = _inner(self._run("CAL_RETRIEVE_BOOKING_DETAILS_BY_UID", {"bookingUid": cleaned}))
+        if isinstance(data, list):
+            data = data[0] if data else None
+        if not isinstance(data, dict) or not data.get("uid"):
+            raise CalcomError("Unexpected Cal.com booking response")
+        return data
+
+    def get_booking(self, uid: str) -> dict[str, Any]:
+        return self._booking_summary(self.get_booking_record(uid))
 
     def list_bookings(self, *, take: int = 25, status: str | None = "upcoming") -> list[dict[str, Any]]:
-        """List bookings (API version may return a list or {bookings: [...]})."""
-        path = f"/bookings?take={int(take)}"
+        """Bookings. ``status=None`` means every status."""
         if status:
-            path = f"{path}&status={status}"
-        # Prefer the newer bookings API shape that includes metadata clearly.
-        url = f"{self.base_url}{path}"
-        try:
-            with httpx.Client(timeout=20.0) as client:
-                response = client.request(
-                    "GET",
-                    url,
-                    headers={
-                        **self._headers(),
-                        "cal-api-version": "2024-08-13",
-                    },
-                )
-        except httpx.HTTPError as exc:
-            logger.warning("Cal.com HTTP error: %s", exc.__class__.__name__)
-            raise CalcomError("Cal.com request failed", http_status=502) from exc
-        if response.status_code >= 400:
-            # Fall back to default client version.
-            raw = self._request("GET", path)
+            statuses = [_STATUS_ALIASES.get(status.lower(), status.lower())]
         else:
-            raw = response.json() if response.content else None
-        data = raw.get("data") if isinstance(raw, dict) else None
-        if isinstance(data, list):
-            return [item for item in data if isinstance(item, dict)]
+            statuses = list(ALL_STATUSES)
+        data = _inner(self._run("CAL_FETCH_ALL_BOOKINGS", {"take": int(take), "status": statuses}))
         if isinstance(data, dict):
-            bookings = data.get("bookings")
-            if isinstance(bookings, list):
-                return [item for item in bookings if isinstance(item, dict)]
-        return []
+            data = data.get("bookings") or data.get("data") or []
+        return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []

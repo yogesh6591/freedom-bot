@@ -10,9 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from acquisition.api import acquisition as acquisition_api
 from acquisition.api import assessment as assessment_api
 from acquisition.api import calcom_webhooks as calcom_webhooks_api
-from acquisition.api import campaigns as campaigns_api
 from acquisition.api import dev_layout as dev_layout_api
-from acquisition.api import integrations as integrations_api
 from acquisition.api import outbound as outbound_api
 from acquisition.api import prospects as prospects_api
 from acquisition.api import stripe_test as stripe_test_api
@@ -21,10 +19,11 @@ from acquisition.api import ui_acquisition_database as ui_acquisition_database_r
 from acquisition.api import ui_acquisition_live as ui_acquisition_live_routes  # noqa: E402
 from acquisition.api import ui_assessments as ui_assessment_routes
 from acquisition.api import ui_auth as ui_auth_routes
-from acquisition.api import ui_campaigns as ui_campaign_routes
 from acquisition.api import ui_integrations as ui_integrations_routes
 from acquisition.api import ui_journey as ui_journey_routes
 from acquisition.api import ui_outbound as ui_outbound_routes
+from acquisition.api import ui_outreach as ui_outreach_routes
+from acquisition.api import ui_sending as ui_sending_routes
 from acquisition.api import ui_prospecting as ui_prospecting_routes
 from acquisition.auth.admin import AdminAuthError, assert_admin_auth_config, install_admin_exception_handlers
 from acquisition.config import api_docs_url_kwargs, get_settings, is_non_production_environment
@@ -87,20 +86,18 @@ app.include_router(ui_auth_routes.router)
 app.include_router(assessment_api.router)
 app.include_router(acquisition_api.router)
 app.include_router(calcom_webhooks_api.router)
-app.include_router(outbound_api.webhook_router)
 # TEMPORARY Stripe TEST success/cancel (payment verified server-side; not public pricing)
 app.include_router(stripe_test_api.router)
 
 # Admin-protected routers
 app.include_router(prospects_api.router)
-app.include_router(campaigns_api.router)
-app.include_router(integrations_api.router)
 app.include_router(outbound_api.admin_router)
 app.include_router(dev_layout_api.router)
 app.include_router(ui_routes.router)
-app.include_router(ui_campaign_routes.router)
 app.include_router(ui_integrations_routes.router)
 app.include_router(ui_outbound_routes.router)
+app.include_router(ui_outreach_routes.router)
+app.include_router(ui_sending_routes.router)
 app.include_router(ui_prospecting_routes.router)
 app.include_router(ui_assessment_routes.router)
 app.include_router(ui_journey_routes.router)

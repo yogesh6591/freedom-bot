@@ -74,15 +74,6 @@
           </div>
           <p>{{ payload.amount_label or '—' }}</p>
         </div>
-        {% if payload.recurring_label %}
-        <div class="rcpt-item rcpt-item--mute">
-          <div>
-            <strong>Ongoing support</strong>
-            <span>Not charged on this payment</span>
-          </div>
-          <p>{{ payload.recurring_label }}<small>/mo</small></p>
-        </div>
-        {% endif %}
       </div>
 
       <div class="rcpt-dash" aria-hidden="true"></div>

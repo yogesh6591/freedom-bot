@@ -33,12 +33,12 @@ def _settings(client, **overrides) -> ClientSettings:
     return ClientSettings.from_dict({**control.get_client(client.id).settings.to_dict(), **overrides})
 
 
-def _visible(client, ctx, settings=None, *, campaign_allowed=True):
+def _visible(client, ctx, settings=None, *, outreach_allowed=True):
     settings = settings or _settings(client)
     scope = RunScope(ctx=ctx, settings=settings, domain="general")
     packs = _packs_for(settings, "")
     with tenant_scope(ctx):
-        return visible_tools(scope, packs, campaign_allowed=campaign_allowed), scope, packs
+        return visible_tools(scope, packs, outreach_allowed=outreach_allowed), scope, packs
 
 
 # --------------------------------------------------------------------------- bundles
@@ -68,25 +68,25 @@ def test_v2_visibility_equals_the_current_assistant_surface(client_scratch, ctx_
     with tenant_scope(ctx):
         current = {getattr(t, "name", None) for t in build_unified_tools(scope, packs)[0]}
     registered = {t for t in visible if t not in MERGED}
-    campaign = {t for t in registered if TOOL_META[t].domain == "campaign"}
-    assert registered - campaign == current - WRAPPED
+    outreach = {t for t in registered if TOOL_META[t].domain == "outreach"}
+    assert registered - outreach == current - WRAPPED
 
 
 @pytest.mark.parametrize("who", ["viewer", "drafter", "approver", "operator"])
-def test_non_admins_never_see_admin_or_campaign_domains(client_scratch, ctx_factory, who):
+def test_non_admins_never_see_admin_or_outreach_domains(client_scratch, ctx_factory, who):
     visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, who))
     menu = domain_menu(visible)
-    assert not [d for d in menu if d.startswith("admin_") or d == "campaign"], menu
-    assert not [t for t in visible if t.startswith("admin_") or TOOL_META[t].domain == "campaign"]
+    assert not [d for d in menu if d.startswith("admin_") or d == "outreach"], menu
+    assert not [t for t in visible if t.startswith("admin_") or TOOL_META[t].domain == "outreach"]
 
 
-def test_admins_see_admin_domains_and_campaign_only_where_allowed(client_scratch, ctx_factory):
+def test_admins_see_admin_domains_and_outreach_only_where_allowed(client_scratch, ctx_factory):
     admin = ctx_factory(client_scratch, "admin")
     visible, _, _ = _visible(client_scratch, admin)
     menu = domain_menu(visible)
-    assert {"admin_users", "admin_permissions", "campaign"} <= set(menu)
-    no_campaign, _, _ = _visible(client_scratch, admin, campaign_allowed=False)
-    assert "campaign" not in domain_menu(no_campaign)
+    assert {"admin_users", "admin_permissions", "outreach"} <= set(menu)
+    no_outreach, _, _ = _visible(client_scratch, admin, outreach_allowed=False)
+    assert "outreach" not in domain_menu(no_outreach)
 
 
 @pytest.mark.parametrize("who", ROLES)
@@ -149,21 +149,17 @@ def test_load_tools_adds_only_visible_tools_and_logs_each_miss(client_scratch, c
     assert [m["domain"] for m in loader.misses] == ["admin_users", "calendar", "nonsense"]
 
 
-def test_load_tools_never_loads_the_campaign_tools_and_says_to_send_that_part_separately(client_scratch, ctx_factory):
-    from bizos.agents.routing import CAMPAIGN_ELSEWHERE
-
+def test_load_tools_loads_outreach_for_an_admin_and_hides_it_from_everyone_else(client_scratch, ctx_factory):
     visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "admin"))
-    assert "send_approved" in visible  # an admin can see them; they are still not loaded here
+    assert "send_approved" in visible
     loader = ToolLoader.for_route(Route(domains=["crm"], kind="task"), visible)
-    before = list(loader.loaded)
-    added, message = loader.load_tools("campaign")
-    assert added == [] and loader.loaded == before and message == CAMPAIGN_ELSEWHERE
-    assert "separate message" in message and "only work inside" not in message
-    assert loader.misses[-1] == {"domain": "campaign", "added": []}
+    added, message = loader.load_tools("outreach")
+    assert added and set(added) <= visible and "Loaded" in message
+    assert "send_approved" in added
+    assert loader.misses[-1]["domain"] == "outreach" and loader.misses[-1]["added"] == added
 
-    # Not an admin: the campaign tools are not theirs, so they are told plainly, as for any other domain.
     viewer, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "viewer"))
-    added, message = ToolLoader.for_route(Route(domains=["crm"], kind="task"), viewer).load_tools("campaign")
+    added, message = ToolLoader.for_route(Route(domains=["crm"], kind="task"), viewer).load_tools("outreach")
     assert added == [] and "not available" in message
 
 

@@ -1,4 +1,4 @@
-"""Outbound channel abstraction — email via Instantly; chat/SMS unconfigured stubs."""
+"""Outbound channel abstraction — email via Gmail; chat/SMS unconfigured stubs."""
 
 from __future__ import annotations
 
@@ -30,15 +30,15 @@ class OutboundChannelAdapter(ABC):
         raise NotImplementedError
 
 
-class InstantlyEmailChannel(OutboundChannelAdapter):
+class GmailEmailChannel(OutboundChannelAdapter):
     channel = OutboundChannel.EMAIL
 
     def status(self) -> ChannelStatus:
         return ChannelStatus(
             channel=OutboundChannel.EMAIL,
             configured=True,
-            provider_name="Instantly",
-            message="Email outbound is implemented via Instantly API V2.",
+            provider_name="Gmail",
+            message="Email outbound is implemented via Gmail.",
         )
 
 
@@ -57,7 +57,7 @@ class UnconfiguredChannel(OutboundChannelAdapter):
 
 def list_channel_statuses() -> list[ChannelStatus]:
     return [
-        InstantlyEmailChannel().status(),
+        GmailEmailChannel().status(),
         UnconfiguredChannel(OutboundChannel.CHAT).status(),
         UnconfiguredChannel(OutboundChannel.SMS).status(),
     ]

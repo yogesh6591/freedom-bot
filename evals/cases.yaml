@@ -391,8 +391,8 @@
   user: {name: "Meena", roles: [DRAFTER]}
   expected_domains: []
   expected_tool_calls: []
-  forbidden_tool_calls: [send_approved, approve_move, email_send_message]
-  expected_hidden: [update_selection, show_contacts, show_campaigns, propose_email, approve_move, send_approved, show_campaign_people, show_prospects, pause_campaign, resume_campaign, delete_campaign, delete_prospect, remove_from_campaign, set_person_details, choose_email_scope, refuse_bulk_change]
+  forbidden_tool_calls: [send_approved, email_send_message]
+  expected_hidden: [propose_email, send_approved, query_records, delete_prospects, set_person_details, refuse_bulk_change, show_sent_emails, show_assessment, choose_recipients, cancel_sending, set_qualification]
   expected_outcome: not_permitted
 
 - id: clarify_no_referent_001
@@ -783,11 +783,11 @@
       window: ["9:00 am", "5:00 pm"]
       draft: {email_subject: "Hello", email_body: "Hi Nina"}
     contacts: [{id: C-310, name: "Raj Mehta", email: "raj@acme.com", company: "Acme"}]
-  expected_domains: [campaign, crm]
+  expected_domains: [outreach, crm]
   expected_tool_calls: [send_approved, crm_create_note]
   expected_gates: {send_approved: run, crm_create_note: approval}
   forbidden_tool_calls: [email_send_message]
-  expected_outcome: [handed_off, run, approval]
+  expected_outcome: [run, approval]
 
 - id: campaign_mixed_router_miss_001
   # The router misses campaign. v2 must not load the campaign tools; it does the CRM part and tells
@@ -799,7 +799,7 @@
     contacts: [{id: C-310, name: "Raj Mehta", email: "raj@acme.com", company: "Acme"}]
   expected_tool_calls: [crm_create_note]
   expected_gates: {crm_create_note: approval}
-  forbidden_tool_calls: [send_approved, approve_move, email_send_message]
+  forbidden_tool_calls: [send_approved, email_send_message]
   expected_reply_contains: ["separate message"]
   expected_outcome: approval
 
@@ -30820,176 +30820,61 @@
     synced_search: run
   expected_outcome: answer
 
-# ---------------------------------------------------------------- campaign listing / pause / delete (new tools)
+# ---------------------------------------------------------------- outreach listing / delete
 
-- id: t_show_campaign_people_001
-  query: Who is in the snowflake campaign?
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [show_campaign_people]
-  expected_gates: {show_campaign_people: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_show_campaign_people_002
-  query: Who is in the snowflake campaign?
-  user: {name: Meena, roles: [DRAFTER]}
-  expected_tool_calls: []
-  expected_hidden: [show_campaign_people]
-  expected_outcome: not_permitted
-
-- id: t_show_campaign_people_003
-  query: snowflake mein kaun hai
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [show_campaign_people]
-  expected_gates: {show_campaign_people: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_show_prospects_001
+- id: t_query_records_001
   query: How many prospects do we have?
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [show_prospects]
-  expected_gates: {show_prospects: run}
-  expected_outcome: [handed_off, answer]
+  expected_domains: [outreach]
+  expected_tool_calls: [query_records]
+  expected_gates: {query_records: run}
+  expected_outcome: answer
 
-- id: t_show_prospects_002
+- id: t_query_records_002
   query: How many prospects do we have?
   user: {name: Meena, roles: [DRAFTER]}
   expected_tool_calls: []
-  expected_hidden: [show_prospects]
+  expected_hidden: [query_records]
   expected_outcome: not_permitted
 
-- id: t_show_prospects_003
+- id: t_query_records_003
   query: kitne prospects hain
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [show_prospects]
-  expected_gates: {show_prospects: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_pause_campaign_001
-  query: Pause the snowflake campaign
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [pause_campaign]
-  expected_gates: {pause_campaign: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_pause_campaign_002
-  query: Pause the snowflake campaign
-  user: {name: Meena, roles: [DRAFTER]}
-  expected_tool_calls: []
-  expected_hidden: [pause_campaign]
-  expected_outcome: not_permitted
-
-- id: t_pause_campaign_003
-  query: snowflake pause kar do
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [pause_campaign]
-  expected_gates: {pause_campaign: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_resume_campaign_001
-  query: Resume the snowflake campaign
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [resume_campaign]
-  expected_gates: {resume_campaign: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_resume_campaign_002
-  query: Resume the snowflake campaign
-  user: {name: Meena, roles: [DRAFTER]}
-  expected_tool_calls: []
-  expected_hidden: [resume_campaign]
-  expected_outcome: not_permitted
-
-- id: t_resume_campaign_003
-  query: snowflake campaign restart kar do
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [resume_campaign]
-  expected_gates: {resume_campaign: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_delete_campaign_001
-  query: Delete the snowflake campaign
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [delete_campaign]
-  expected_gates: {delete_campaign: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_delete_campaign_002
-  query: Delete the snowflake campaign
-  user: {name: Meena, roles: [DRAFTER]}
-  expected_tool_calls: []
-  expected_hidden: [delete_campaign]
-  expected_outcome: not_permitted
-
-- id: t_delete_campaign_003
-  query: snowflake campaign delete kar do
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [delete_campaign]
-  expected_gates: {delete_campaign: run}
-  expected_outcome: [handed_off, answer]
+  expected_domains: [outreach]
+  expected_tool_calls: [query_records]
+  expected_gates: {query_records: run}
+  expected_outcome: answer
 
 - id: t_delete_prospect_001
   query: Delete the prospect nina@acme.example.com
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [delete_prospect]
-  expected_gates: {delete_prospect: run}
-  expected_outcome: [handed_off, answer]
+  expected_domains: [outreach]
+  expected_tool_calls: [delete_prospects]
+  expected_gates: {delete_prospects: run}
+  expected_outcome: answer
 
 - id: t_delete_prospect_002
   query: Delete the prospect nina@acme.example.com
   user: {name: Meena, roles: [DRAFTER]}
   expected_tool_calls: []
-  expected_hidden: [delete_prospect]
+  expected_hidden: [delete_prospects]
   expected_outcome: not_permitted
 
 - id: t_delete_prospect_003
   query: nina prospect delete kar do
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [delete_prospect]
-  expected_gates: {delete_prospect: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_remove_from_campaign_001
-  query: Remove Nina from snowflake
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [remove_from_campaign]
-  expected_gates: {remove_from_campaign: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_remove_from_campaign_002
-  query: Remove Nina from snowflake
-  user: {name: Meena, roles: [DRAFTER]}
-  expected_tool_calls: []
-  expected_hidden: [remove_from_campaign]
-  expected_outcome: not_permitted
-
-- id: t_remove_from_campaign_003
-  query: Nina ko snowflake se hata do
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [remove_from_campaign]
-  expected_gates: {remove_from_campaign: run}
-  expected_outcome: [handed_off, answer]
+  expected_domains: [outreach]
+  expected_tool_calls: [delete_prospects]
+  expected_gates: {delete_prospects: run}
+  expected_outcome: answer
 
 - id: t_set_person_details_001
   query: Raj's last name is Mehta
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
+  expected_domains: [outreach]
   expected_tool_calls: [set_person_details]
   expected_gates: {set_person_details: run}
-  expected_outcome: [handed_off, answer]
+  expected_outcome: answer
 
 - id: t_set_person_details_002
   query: Raj's last name is Mehta
@@ -31001,41 +30886,18 @@
 - id: t_set_person_details_003
   query: Raj ka naam set kar do, last name Mehta
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
+  expected_domains: [outreach]
   expected_tool_calls: [set_person_details]
   expected_gates: {set_person_details: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_choose_email_scope_001
-  query: Yes, change the first email for everyone still waiting
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [choose_email_scope]
-  expected_gates: {choose_email_scope: run}
-  expected_outcome: [handed_off, answer]
-
-- id: t_choose_email_scope_002
-  query: Yes, change the first email for everyone still waiting
-  user: {name: Meena, roles: [DRAFTER]}
-  expected_tool_calls: []
-  expected_hidden: [choose_email_scope]
-  expected_outcome: not_permitted
-
-- id: t_choose_email_scope_003
-  query: haan, sab ke liye change karo
-  user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
-  expected_tool_calls: [choose_email_scope]
-  expected_gates: {choose_email_scope: run}
-  expected_outcome: [handed_off, answer]
+  expected_outcome: answer
 
 - id: t_refuse_bulk_change_001
   query: Delete all prospects
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
+  expected_domains: [outreach]
   expected_tool_calls: [refuse_bulk_change]
   expected_gates: {refuse_bulk_change: run}
-  expected_outcome: [handed_off, answer]
+  expected_outcome: answer
 
 - id: t_refuse_bulk_change_002
   query: Delete all prospects
@@ -31047,7 +30909,7 @@
 - id: t_refuse_bulk_change_003
   query: sab delete kar do
   user: {name: Anita, id: u_1, roles: [ADMIN]}
-  expected_domains: [campaign]
+  expected_domains: [outreach]
   expected_tool_calls: [refuse_bulk_change]
   expected_gates: {refuse_bulk_change: run}
   expected_outcome: [handed_off, answer]
@@ -31293,4 +31155,27 @@
       web_read: {url: 'https://initech.example/careers', title: Careers, text: 'Open roles: Backend Engineer, Account Executive, Ops Analyst.'}
   expected_tool_calls: [web_search, web_read]
   expected_gates: {web_search: run, web_read: run}
+  expected_outcome: answer
+
+- id: t_set_qualification_001
+  query: Approve Shubham's assessment
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [outreach]
+  expected_tool_calls: [set_qualification]
+  expected_gates: {set_qualification: run}
+  expected_outcome: answer
+
+- id: t_set_qualification_002
+  query: Approve Shubham's assessment
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_tool_calls: []
+  expected_hidden: [set_qualification]
+  expected_outcome: not_permitted
+
+- id: t_set_qualification_003
+  query: Shubham ko unqualified kar do
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [outreach]
+  expected_tool_calls: [set_qualification]
+  expected_gates: {set_qualification: run}
   expected_outcome: answer

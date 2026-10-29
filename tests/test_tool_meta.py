@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from app.assistant.assistant import CAMPAIGN_TOOLS, _packs_for
+from app.assistant.assistant import _packs_for
 from bizos.agents.merged_tools import MERGED, WRAPPED
 from bizos.agents.tool_args import schema_for_tool
 from bizos.agents.tool_meta import DOMAINS, GATE_TEXT, TOOL_META, render
@@ -40,9 +40,8 @@ CONFUSABLE = [
     ("email_create_draft", "email_send_message"),
     ("crm_update_contact_field", "crm_bulk_update_contacts"),
     ("crm_update_contact_field", "crm_tag_lead"),
-    ("crm_update_contact_field", "update_selection"),
     ("crm_search_contacts", "crm_search_companies", "crm_search_deals"),
-    ("crm_search_contacts", "show_contacts"),
+    ("crm_search_contacts", "query_records"),
     ("crm_create_task", "support_create_ticket"),
     ("admin_list_users", "crm_search_contacts"),
     ("admin_update_user", "admin_set_user_status"),
@@ -57,9 +56,22 @@ CONFUSABLE = [
     ("approvals_decide", "approvals_cancel"),
     ("youtube_my_channel", "youtube_video", "youtube_search_videos"),
     ("finance_draft_invoice", "finance_propose_adjustment"),
-    ("show_campaign_people", "show_prospects"),
-    ("pause_campaign", "resume_campaign", "delete_campaign"),
-    ("delete_prospect", "remove_from_campaign"),
+    ("query_records", "show_assessment", "show_sent_emails"),
+    ("query_records", "choose_recipients"),
+    ("query_records", "show_prospect"),
+    ("propose_email", "choose_recipients"),
+    ("delete_prospects", "refuse_bulk_change"),
+    ("update_prospects", "delete_prospects", "refuse_bulk_change"),
+    ("show_assessment", "set_qualification"),
+    ("set_qualification", "rerun_qualification"),
+    ("rerun_qualification", "reset_journey"),
+    ("reset_journey", "cancel_booking"),
+    ("record_consultation", "set_handoff_status"),
+    ("reschedule_booking", "cancel_booking"),
+    ("create_payment_offer", "send_payment_link"),
+    ("update_journey_settings", "edit_case_study", "publish_journey"),
+    ("update_journey_settings", "edit_video_link"),
+    ("edit_case_study", "edit_video_link"),
 ]
 
 HINGLISH = re.compile(r"\b(ko|kar do|kya|kab|hai|hain|bhej|bana|dhundo|daal|kaun|hata|mein|kis|bhejo|haan|karo)\b")
@@ -78,8 +90,19 @@ def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
     assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
-    assert len(VISIBLE) == 100  # refuse_bulk_change; youtube_transcript, integration_* (4), web_search, web_read
-    assert {n for n in NAMES if TOOL_META[n].domain == "campaign"} == {t["function"]["name"] for t in CAMPAIGN_TOOLS}
+    assert len(VISIBLE) == 111  # outreach 27; youtube_transcript, integration_* (4), web_search, web_read
+    assert {n for n in NAMES if TOOL_META[n].domain == "outreach"} == {
+        "choose_recipients", "propose_email", "set_person_details", "send_approved",
+        "cancel_sending", "show_sent_emails",
+        "query_records", "show_prospect", "add_prospects", "update_prospects",
+        "delete_prospects", "refuse_bulk_change",
+        "show_assessment", "set_qualification", "rerun_qualification", "reset_journey",
+        "record_consultation", "set_handoff_status",
+        "reschedule_booking", "cancel_booking",
+        "create_payment_offer", "send_payment_link",
+        "show_journey_settings", "update_journey_settings", "edit_case_study",
+        "edit_video_link", "publish_journey",
+    }
 
 
 @pytest.mark.parametrize("name", NAMES)
@@ -126,9 +149,6 @@ def test_id_fields_and_prerequisites_are_real(name):
     props = set((schema_for_tool(name) or {}).get("properties") or {})
     if name in MERGED:
         props = set(MERGED[name].schema["properties"])
-    campaign = next((t for t in CAMPAIGN_TOOLS if t["function"]["name"] == name), None)
-    if campaign:
-        props = set(campaign["function"]["parameters"].get("properties") or {})
     assert set(meta.id_fields) <= props, (name, set(meta.id_fields) - props)
     for prior in meta.requires_prior + meta.suggested_prior:
         assert prior in VISIBLE and prior != name, (name, prior)

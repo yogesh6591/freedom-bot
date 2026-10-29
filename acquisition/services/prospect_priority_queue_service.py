@@ -13,10 +13,6 @@ from acquisition.config import Settings, get_settings
 from acquisition.models.campaign import CampaignProspect, OutreachStatus, PurchaseOutcome
 from acquisition.models.prospect import AcquisitionStatus, Prospect
 from acquisition.models.replies import ReplyConversation
-from acquisition.services.outreach_conflict_service import (
-    find_active_outreach_conflict,
-    normalize_outreach_email,
-)
 from acquisition.services.prospect_identity import is_placeholder_email
 from acquisition.services.prospecting_rules_service import (
     ProspectingRulesService,
@@ -45,8 +41,12 @@ class QueueEntry:
     exclusion_reasons: list[str] = field(default_factory=list)
 
 
+def _normalize_email(email: str | None) -> str:
+    return (email or "").strip().lower()
+
+
 class ProspectPriorityQueueService:
-    """Select and rank prospects ready for autonomous Instantly activation."""
+    """Select and rank prospects ready for outreach activation."""
 
     def __init__(self, db: Session, *, settings: Settings | None = None) -> None:
         self.db = db
@@ -80,16 +80,6 @@ class ProspectPriorityQueueService:
             exclusions.append("opted_out_or_bounced")
         if self._has_active_conversation(prospect):
             exclusions.append("active_conversation_exists")
-
-        conflict = find_active_outreach_conflict(
-            self.db,
-            prospect_id=prospect.id,
-            email=prospect.email,
-        )
-        if conflict is not None:
-            exclusions.append(f"active_outreach_conflict:{conflict.blocking_campaign_name}")
-        else:
-            reasons.append("no_active_outreach_conflict")
 
         if prospect.priority_score is None:
             exclusions.append("missing_priority_score")
@@ -173,7 +163,7 @@ class ProspectPriorityQueueService:
         return max(0, min(configured, hard))
 
     def _is_customer(self, prospect: Prospect) -> bool:
-        email = normalize_outreach_email(prospect.email)
+        email = _normalize_email(prospect.email)
         stmt = (
             select(CampaignProspect)
             .options(selectinload(CampaignProspect.prospect))
@@ -183,12 +173,12 @@ class ProspectPriorityQueueService:
             if link.prospect_id == prospect.id:
                 return True
             other = link.prospect
-            if other and email and normalize_outreach_email(other.email) == email:
+            if other and email and _normalize_email(other.email) == email:
                 return True
         return False
 
     def _is_opted_out_or_bounced(self, prospect: Prospect) -> bool:
-        email = normalize_outreach_email(prospect.email)
+        email = _normalize_email(prospect.email)
         terminal = {OutreachStatus.UNSUBSCRIBED, OutreachStatus.BOUNCED}
         stmt = select(CampaignProspect).options(selectinload(CampaignProspect.prospect))
         for link in self.db.scalars(stmt).all():
@@ -197,7 +187,7 @@ class ProspectPriorityQueueService:
             if link.prospect_id == prospect.id:
                 return True
             other = link.prospect
-            if other and email and normalize_outreach_email(other.email) == email:
+            if other and email and _normalize_email(other.email) == email:
                 return True
         return False
 

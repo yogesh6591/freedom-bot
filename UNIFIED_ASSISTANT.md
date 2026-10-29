@@ -1,31 +1,26 @@
-# One Agno assistant for company work and outbound campaigns
+# One Agno assistant for company work and acquisition
 
-`app/assistant/assistant.py` (ONE file: company tools, campaign tools, prompt, agent) builds ONE Agno `Agent` per request. It sees every tool the user's role,
-the workspace mode and the policy engine allow (CRM, email, calendar, memory, approvals, admin, ...)
-and, for admins, the campaign tools (`update_selection`, `show_contacts`, `show_campaigns`,
-`propose_email`, `approve_move`, `send_approved`). The model decides which to use.
+There is one chatbot. `app/assistant/v2.py` runs every turn: regulated-data refusal and grounding, the router
+(which tool areas the message is about), tool loading, ONE executor Agno `Agent` whose every tool call goes through
+the guard, and a reply composed from tool results. There is no separate "Acquisition mode" and no switch in the UI.
 
-Everything lives in `app/assistant/assistant.py`; its header explains the five parts. Permissions/risk per tool stay in `bizos/rbac/registry.py`; the policy engine in `bizos/tools/base.py`.
+For an admin every turn carries an `OutreachSession` (`app/outreach/session.py`): the chosen recipients and the
+email draft, saved with the turn. The `outreach` tool area covers acquisition: prospects (count, search, show, add,
+edit, delete), emails and follow-ups, the sent-email log, assessments, bookings (read, move, cancel), one-time payment
+offers, and the prospect journey page. The router sends a message there when it is about prospects; a pending draft
+keeps short replies ("send", "yes") in that area.
 
-Approach (same as the standalone campaign bot, now on Agno):
+Rules that do not change:
 
-* The model decides; code enforces. RBAC, the policy engine, approvals and audit run inside every tool.
-* Every tool call carries a `why`. Every reply is `{message, explanation}`; the explanation is the
-  developer trace (admins see it with the **Developer** switch in the chat header).
-* Campaign choices are committed with `update_selection` and kept between turns
-  (`chat_messages.meta.state`), so the bot never re-asks.
-* One person = one active campaign. Tool results carry a tier per person (`free`, `move_*`, `refuse_*`);
-  moving someone needs a yes in a LATER turn (`approve_move`). Unsubscribed/bounced/replied people are
-  always refused. Similar campaign names (`snowflak` vs `snowflake`) always trigger the question.
-* Self-check: platform checks (persona, restricted areas, conflicts, package scope, false action claims)
-  and the campaign checks run on the draft; the model is told what fired and rewrites its own reply
-  (max 2 times). Only if it still fails does the platform's fixed wording replace it.
+* The model decides, code enforces. RBAC (`bizos/rbac/registry.py`), the policy engine, approvals and audit run
+  inside every tool. Outreach tools are admin-only.
+* Every tool call carries a `why`; every reply is `{message, explanation}`. Admins see both with the Developer switch.
+* A change that touches more than one person, or cannot be undone, asks for one yes (`app/outreach/confirm.py`): the
+  first call changes nothing, the second call carries the user's yes in a later message. "Delete everyone" is refused.
+* People book their own call after they qualify; the chat cannot book for them or email a booking link. A payment
+  offer needs a qualified person with a confirmed booking. Payments are one-time (Stripe Checkout).
+* Times are Chicago time (`app/outreach/chicago.py`) and replies say so.
 * Regulated data (PHI, cards, children) is refused before any model call.
-* Edited emails (pencil on the email card) are saved into the committed state, so what is sent is what was edited.
 
-Settings: `MODEL_ID`, `MODEL_REASONING_EFFORT` (empty = omit; auto-fallback to `none`, then omitted),
-`ASSISTANT_ENGINE=legacy` restores the old per-domain agent.
-
-Tests: `tests/test_unified_assistant.py` runs the real Agno agent against a scripted OpenAI-compatible
-server. Needs Postgres, `SECRET_ENCRYPTION_KEY`, and the `acquisition` database migrated
-(`alembic -c acquisition_alembic.ini upgrade head`, `DATABASE_URL` set).
+Settings: `MODEL_ID`, `MODEL_REASONING_EFFORT`, `EXECUTOR_MODEL_ID`. `ASSISTANT_ENGINE=legacy` restores the old
+per-domain agent.

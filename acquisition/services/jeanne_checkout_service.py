@@ -95,10 +95,9 @@ def offer_checkout(
     link: CampaignProspect,
     *,
     amount: Any,
-    recurring_amount: Any = None,
     currency: str = "USD",
 ) -> dict[str, Any]:
-    """Jeanne offers post-consult checkout to the prospect (creates the public link)."""
+    """Jeanne offers post-consult checkout to the prospect (creates the public link). One-time payment only."""
     if not _booked(link):
         raise JeanneCheckoutError(
             "Checkout can only be offered after a confirmed booking.",
@@ -117,16 +116,13 @@ def offer_checkout(
     offer_amount = _money(amount)
     if offer_amount is None:
         raise JeanneCheckoutError("Enter the customized investment amount.", code="amount_required")
-    recurring = _money(recurring_amount)
     currency_norm = (currency or "USD").strip().upper()[:3] or "USD"
 
     link.checkout_offer_amount = offer_amount
-    link.checkout_offer_recurring_amount = recurring
     link.checkout_offer_currency = currency_norm
     link.checkout_offered_at = datetime.now(timezone.utc)
     # Keep proposed amount visible in admin revenue fields until Stripe overwrites on pay.
     link.revenue_amount = offer_amount
-    link.recurring_revenue_amount = recurring
     link.revenue_currency = currency_norm
     if link.purchase_outcome in {PurchaseOutcome.DID_NOT_PURCHASE, PurchaseOutcome.PURCHASED}:
         link.purchase_outcome = PurchaseOutcome.NOT_RECORDED
@@ -142,7 +138,6 @@ def offer_checkout(
         "campaign_prospect_id": str(link.id),
         "checkout_url": checkout_url,
         "amount": str(offer_amount),
-        "recurring_amount": str(recurring) if recurring is not None else None,
         "currency": currency_norm,
         "offered_at": link.checkout_offered_at.isoformat() if link.checkout_offered_at else None,
     }
@@ -186,11 +181,6 @@ def public_checkout_payload(link: CampaignProspect, *, settings: Settings | None
         amount = link.checkout_offer_amount
         currency = (link.checkout_offer_currency or "USD").upper()
 
-    if already_paid and link.recurring_revenue_amount is not None:
-        recurring = link.recurring_revenue_amount
-    else:
-        recurring = link.checkout_offer_recurring_amount
-
     paid_at = link.purchased_at
     session_ref = (link.stripe_checkout_session_id or "").strip()
     receipt_code = session_ref[-10:].upper() if len(session_ref) >= 10 else (session_ref.upper() or None)
@@ -202,10 +192,8 @@ def public_checkout_payload(link: CampaignProspect, *, settings: Settings | None
         "offered": offered,
         "already_paid": already_paid,
         "amount": float(amount) if amount is not None else None,
-        "recurring_amount": float(recurring) if recurring is not None else None,
         "currency": currency,
         "amount_label": _format_money(amount, currency) if amount is not None else None,
-        "recurring_label": _format_money(recurring, currency) if recurring is not None else None,
         "payments_enabled": checkout_payments_enabled(cfg),
         "handoff_status": link.handoff_status,
         "purchased_at": paid_at,
@@ -236,7 +224,7 @@ def create_prospect_checkout_session(
     db_sess = object_session(link)
     if not checkout_payments_enabled(cfg, db_sess):
         raise JeanneCheckoutError(
-            "Checkout payments are not configured (need Stripe under Integrations or STRIPE_ENABLED + sk_test_ key).",
+            "Checkout payments are not configured (set STRIPE_SECRET_KEY and STRIPE_ENABLED=true in the server .env).",
             code="stripe_disabled",
             http_status=503,
         )
@@ -347,15 +335,6 @@ def complete_paid_checkout(
     link = db.get(CampaignProspect, link_id)
     if link is None:
         return result
-
-    # Copy offered recurring onto the purchase record when Stripe only charged one-time.
-    if (
-        link.purchase_outcome == PurchaseOutcome.PURCHASED
-        and link.checkout_offer_recurring_amount is not None
-        and link.recurring_revenue_amount is None
-    ):
-        link.recurring_revenue_amount = link.checkout_offer_recurring_amount
-        db.add(link)
 
     if link.purchase_outcome == PurchaseOutcome.PURCHASED and link.handoff_status in {
         HandoffStatus.NOT_STARTED.value,

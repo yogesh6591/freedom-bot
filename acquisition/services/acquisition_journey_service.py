@@ -410,8 +410,9 @@ class AcquisitionJourneyService:
             video_url = settings.demo_video_url.strip() or None
         embed_kind = "none"
         if video_url:
-            lower = video_url.lower()
-            embed_kind = "iframe" if lower.endswith((".html", ".htm")) or "placeholder" in lower else "video"
+            from acquisition.services.demo_video_storage import demo_player
+
+            video_url, embed_kind = demo_player(video_url)
         return {
             "token": token,
             "journey_stage": link.journey_stage.value,
@@ -692,12 +693,9 @@ class AcquisitionJourneyService:
         video_enabled = bool(settings.after_booking_video_enabled) and bool(video_url)
         embed_kind = "none"
         if video_url:
-            lower = video_url.lower()
-            embed_kind = (
-                "iframe"
-                if lower.endswith((".html", ".htm")) or "youtube.com" in lower or "youtu.be" in lower
-                else "video"
-            )
+            from acquisition.services.demo_video_storage import demo_player
+
+            video_url, embed_kind = demo_player(video_url)
         from acquisition.time_format import format_meeting_card, split_prep_blocks
         from acquisition.timezones import platform_timezone_name
 

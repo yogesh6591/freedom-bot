@@ -93,7 +93,9 @@ def _env_file(client, *, db_host: str, api_port: int, ui_port: int) -> str:
             f"CORS_ORIGINS=http://localhost:{ui_port}",
             f"AGENTOS_URL=http://127.0.0.1:{api_port}",
             "OPENAI_API_KEY=",
-            "MODEL_ID=gpt-4.1-mini",
+            "ASSISTANT_MODEL=openai:gpt-6-luna",
+            "ASSISTANT_REASONING_EFFORT=medium",
+            "MODEL_ID=openai:gpt-6-luna",
             "",
         ]
     )

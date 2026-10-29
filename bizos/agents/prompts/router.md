@@ -40,9 +40,17 @@ Do not clarify when:
 ## Disambiguation
 - "user", "account", "login", "access", "role", "deactivate", "suspend", "reset password" → admin_users.
   "contact", "lead", "customer", "client" → crm.
+  A "prospect" is a person in the acquisition list (people we email, who take the assessment, book a call and pay):
+  anything about prospects, their emails, assessments, bookings or payments → outreach, not crm. If it is unclear
+  whether a person is a CRM contact or a prospect and the user did not say, the recent messages decide; else ask.
+  Some things exist only for prospects: payment offers and links, assessments and qualification, approve or unapprove, the journey page, and moving or cancelling a prospect's booking. These always go to outreach, even when the user does not say the person is a prospect. Ask 'prospect or CRM?' only for things both systems have, such as looking a person up or emailing them.
 - Who may use a tool, or whether a tool needs approval → admin_permissions, not that tool's own domain.
 - Turning a whole domain pack on or off for the workspace → admin_setup.
-- Emailing one or a few named people → email. Campaigns, bulk outreach, "selected contacts" → campaign.
+- Emailing one or a few named people → email. Emailing prospects (outreach), follow-ups to prospects,
+  "did we email X", the prospect list (count, search, add, edit, delete), assessment progress of a prospect,
+  approve or unapprove an assessment, consultation bookings (read, move, cancel), payment offers
+  and links for prospects, the prospect journey page settings (case studies, videos, publish),
+  "stop sending" → outreach.
 - Remembering or correcting company facts, SOPs or decisions → memory. "Remember that Acme renews in
   March" is a fact for everyone → memory; "add/log a note on Acme (or Raj, or a deal)" → crm.
 - Policy questions → the domain that owns the policy, plus memory when unsure: discounts, refunds,
@@ -122,8 +130,11 @@ Do not clarify when:
 "Suspend Ravi's login"
 → {"domains":["admin_users"],"kind":"task","entities":{"user":"Ravi"},"clarify":null}
 
-"Send the approved campaign emails"   (admin; campaign is only listed for admins)
-→ {"domains":["campaign"],"kind":"task","entities":{},"clarify":null}
+"Email Nina and Raj about the assessment"   (admin; outreach is only listed for admins)
+→ {"domains":["outreach"],"kind":"task","entities":{"contacts":"Nina, Raj"},"clarify":null}
+
+"Has Nina finished the assessment?"   (admin)
+→ {"domains":["outreach"],"kind":"question","entities":{"contact":"Nina"},"clarify":null}
 
 "Approve Meena's expense request"
 → {"domains":["approvals"],"kind":"task","entities":{"requester":"Meena","type":"expense"},"clarify":null}

@@ -12,9 +12,6 @@ from sqlalchemy.orm import Session
 from acquisition.db.session import get_db
 from acquisition.models.replies import ReplyConversation
 from acquisition.models.settings import AIReplySettings
-from acquisition.services.campaign_activation_service import ActivationError, CampaignActivationService
-from acquisition.services.campaign_service import CampaignNotFoundError
-from acquisition.services.lead_sync_service import LeadSyncError, LeadSyncService
 from acquisition.templating import create_templates
 from acquisition.auth.admin import require_admin_html_request
 
@@ -154,95 +151,6 @@ def retired_old_engine(request: Request):
     return _retired_engine(request)
 
 
-@router.post("/campaigns/{campaign_id}/instantly/leads/sync", response_model=None)
-def ui_sync_leads(
-    campaign_id: uuid.UUID,
-    db: Session = Depends(get_db),
-):
-    try:
-        LeadSyncService(db).sync_campaign_leads(campaign_id)
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=customers&flash=leads_synced",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-    except (CampaignNotFoundError, LeadSyncError):
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=customers&flash=leads_sync_error",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
 
 
-@router.post(
-    "/campaigns/{campaign_id}/prospects/{prospect_id}/instantly/sync",
-    response_model=None,
-)
-def ui_sync_one_lead(
-    campaign_id: uuid.UUID,
-    prospect_id: uuid.UUID,
-    db: Session = Depends(get_db),
-):
-    try:
-        LeadSyncService(db).sync_one_lead(campaign_id, prospect_id)
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=customers&flash=lead_synced",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-    except (CampaignNotFoundError, LeadSyncError):
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=customers&flash=leads_sync_error",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
 
-
-@router.post("/campaigns/{campaign_id}/sending-accounts", response_model=None)
-def ui_save_sending_accounts(
-    campaign_id: uuid.UUID,
-    selected_emails: Annotated[list[str] | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
-    emails = selected_emails or []
-    try:
-        CampaignActivationService(db).save_sending_accounts(campaign_id, emails)
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=launch&flash=accounts_saved",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-    except (CampaignNotFoundError, ActivationError):
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=launch&flash=accounts_error",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-
-@router.post("/campaigns/{campaign_id}/activate", response_model=None)
-def ui_activate(
-    campaign_id: uuid.UUID,
-    confirm: Annotated[str | None, Form()] = None,
-    db: Session = Depends(get_db),
-):
-    try:
-        CampaignActivationService(db).activate(campaign_id, confirm=confirm == "true")
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=launch&flash=activated",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-    except (CampaignNotFoundError, ActivationError):
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=launch&flash=activate_error",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-
-
-@router.post("/campaigns/{campaign_id}/pause", response_model=None)
-def ui_pause(campaign_id: uuid.UUID, db: Session = Depends(get_db)):
-    try:
-        CampaignActivationService(db).pause(campaign_id)
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=launch&flash=paused",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )
-    except (CampaignNotFoundError, ActivationError):
-        return RedirectResponse(
-            url=f"/campaigns/{campaign_id}?tab=launch&flash=pause_error",
-            status_code=status.HTTP_303_SEE_OTHER,
-        )

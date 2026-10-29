@@ -60,8 +60,7 @@ class ChatRequest(BaseModel):
 class EditMessageRequest(BaseModel):
     message_id: str = Field(min_length=1, max_length=80)
     message: str = Field(min_length=1, max_length=20000)
-    #: Same pin as ChatRequest.domain — acquisition keeps an edited turn on
-    #: the campaign assistant instead of the v2 ops pipeline.
+    #: Same as ChatRequest.domain.
     domain: str = AUTO
 
 
@@ -121,12 +120,7 @@ def chat_context(
 def _sending_accounts(ctx: TenantContext) -> list[str]:
     if not ctx.is_admin:
         return []
-    try:
-        from app.assistant.assistant import sending_account_emails
-
-        return sending_account_emails()
-    except Exception:
-        return []
+    return []  # outreach sends from the company Gmail, not from a list of sending accounts
 
 
 def _open_alerts(settings: ClientSettings, ctx: TenantContext) -> list[dict[str, Any]]:
@@ -170,7 +164,7 @@ def update_email_draft(
     body: EmailDraftUpdate, ctx: TenantContext = Depends(current_context)
 ) -> dict[str, str]:
     """Save an email the user edited in the chat. The next turn sends this version."""
-    from app.assistant.assistant import edit_draft
+    from app.outreach.card import edit_draft
 
     with bound(ctx):
         try:
@@ -211,7 +205,8 @@ def update_email_card(
     Names typed for a person belong to that person's email only. With ``name_scope="forever"`` the
     stored name is also replaced, so every later campaign uses it.
     """
-    from app.assistant.assistant import edit_draft, replace_person_name
+    from app.outreach.card import edit_draft
+    from app.outreach.records import replace_person_name
 
     if body.subject is not None and not body.subject.strip():
         raise HTTPException(status_code=422, detail="Subject and body are required")
@@ -251,67 +246,27 @@ def _engine() -> str:
     return os.environ.get("ASSISTANT_ENGINE", "unified").strip().lower()
 
 
-def _is_campaign_conversation(saved: dict[str, Any]) -> bool:
-    """True when this thread was handled by the campaign assistant (``assistant.reply``).
-
-    v2 ops turns store ``engine: agno-v2``. Campaign turns store ``engine: agno`` and/or
-    ``domain: acquisition``. Edit/replay looks at the saved thread, including the tail
-    about to be replaced, so a first-message edit still stays on the campaign path.
-    """
-    for message in saved.get("messages") or []:
-        if (message.get("domain") or "").strip().lower() == "acquisition":
-            return True
-        meta = message.get("meta") or {}
-        if isinstance(meta, dict) and meta.get("engine") == "agno":
-            return True
-    return False
-
-
 def _edit_chat_request(body: EditMessageRequest, ctx: TenantContext, session_id: str) -> ChatRequest:
-    """Same ChatRequest a new turn would send, with the campaign pin restored from history.
-
-    The UI may post ``domain=auto``. Campaign chats still have to hit ``assistant.reply``
-    so replay loads the saved selection/draft state instead of the v2 ops pipeline.
-    """
+    """Same ChatRequest a new turn would send. Acquisition is part of the one assistant, so nothing is pinned."""
     domain = (body.domain or AUTO).strip().lower() or AUTO
-    if domain == AUTO and ctx.is_admin:
-        try:
-            saved = chat_history.get_session(ctx, session_id)
-        except chat_history.SessionNotFound:
-            saved = {"messages": []}
-        if _is_campaign_conversation(saved):
-            domain = "acquisition"
+    if domain == "acquisition":
+        domain = AUTO
     return ChatRequest(message=body.message, session_id=session_id, domain=domain)
 
 
 def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings,
               emit: Optional[Callable[[dict], None]] = None) -> dict[str, Any]:
-    """Pick the assistant for this turn.
+    """Every chat turn goes through the routed pipeline (``app.assistant.v2``).
 
-    Admin chat with ``domain=acquisition`` always uses the campaign assistant
-    (``app.assistant.assistant``). Everything else uses the v2 pipeline when
-    ``AGENT_PIPELINE_V2`` is on, otherwise the same campaign assistant or the
-    legacy per-domain agent. ``emit`` streams progress from the v2 pipeline; the other assistants
-    send only their final reply.
+    ``ASSISTANT_ENGINE=legacy`` keeps the old per-domain agent as an emergency path.
+    ``emit`` streams progress from the v2 pipeline.
     """
     from app.assistant import v2
 
-    pinned = (body.domain or AUTO).strip().lower()
-    if pinned == "acquisition" and ctx.is_admin:
-        from app.assistant.assistant import reply
-
-        with bound(ctx):
-            return reply(body, ctx, settings)
-    if v2.enabled():  # AGENT_PIPELINE_V2: the routed pipeline (off by default)
-        with bound(ctx):
-            # Only a streamed turn passes emit, so the normal call is unchanged.
-            return v2.handle(body, ctx, settings, **({"emit": emit} if emit else {}))
-    if _engine() != "legacy":
-        from app.assistant.assistant import reply
-
-        with bound(ctx):
-            return reply(body, ctx, settings)
-    return _legacy_chat(body, ctx, settings)
+    if _engine() == "legacy":
+        return _legacy_chat(body, ctx, settings)
+    with bound(ctx):
+        return v2.handle(body, ctx, settings, **({"emit": emit} if emit else {}))
 
 
 @router.post("")

@@ -1,12 +1,10 @@
-"""Outbound API routes: leads, activation, webhooks, assessment, settings, replies."""
+"""Outbound API routes: assessment, settings, replies."""
 
 from __future__ import annotations
 
-import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -16,60 +14,15 @@ from acquisition.db.session import get_db
 from acquisition.models.campaign import CampaignProspect
 from acquisition.models.replies import ReplyConversation
 from acquisition.models.settings import AIReplySettings
-from acquisition.schemas.campaign import CampaignDetail
 from acquisition.services.assessment_service import AssessmentEventError, AssessmentEventService
-from acquisition.services.assessment_tokens import build_assessment_url
-from acquisition.services.campaign_activation_service import ActivationError, CampaignActivationService
-from acquisition.services.campaign_service import CampaignNotFoundError, CampaignService
-from acquisition.services.lead_sync_service import LeadSyncError, LeadSyncService
-from acquisition.services.webhook_ingestion_service import WebhookAuthError, WebhookIngestionService
-from acquisition.api.campaigns import _to_detail
 from acquisition.auth.admin import require_admin_api
 
-webhook_router = APIRouter(tags=["outbound-webhooks"])
 admin_router = APIRouter(tags=["outbound"], dependencies=[Depends(require_admin_api)])
 router = admin_router  # backward-compatible alias
 
 
-def get_lead_sync(db: Session = Depends(get_db)) -> LeadSyncService:
-    return LeadSyncService(db)
-
-
-def get_activation(db: Session = Depends(get_db)) -> CampaignActivationService:
-    return CampaignActivationService(db)
-
-
-def get_webhook(db: Session = Depends(get_db)) -> WebhookIngestionService:
-    return WebhookIngestionService(db)
-
-
 def get_assessment(db: Session = Depends(get_db)) -> AssessmentEventService:
     return AssessmentEventService(db)
-
-
-class LeadSyncResponse(BaseModel):
-    campaign_id: uuid.UUID
-    synced: int
-    failed: int
-    skipped: int
-    message: str
-
-
-class SendingAccountsResponse(BaseModel):
-    items: list[dict[str, Any]]
-
-
-class SaveSendingAccountsRequest(BaseModel):
-    emails: list[str] = Field(default_factory=list)
-
-
-class ActivateRequest(BaseModel):
-    confirm: bool = False
-
-
-class ActivationBlockersResponse(BaseModel):
-    blockers: list[str]
-    can_activate: bool
 
 
 class AIReplySettingsUpdate(BaseModel):
@@ -92,122 +45,6 @@ class AIReplySettingsRead(BaseModel):
 
 class AssessmentStartedRequest(BaseModel):
     token: str = Field(..., min_length=8)
-
-
-@router.post("/api/campaigns/{campaign_id}/instantly/leads/sync", response_model=LeadSyncResponse)
-def sync_leads(
-    campaign_id: uuid.UUID,
-    service: LeadSyncService = Depends(get_lead_sync),
-) -> LeadSyncResponse:
-    try:
-        result = service.sync_campaign_leads(campaign_id)
-    except CampaignNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except LeadSyncError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
-    return LeadSyncResponse(
-        campaign_id=result.campaign_id,
-        synced=result.synced,
-        failed=result.failed,
-        skipped=result.skipped,
-        message=result.message,
-    )
-
-
-@router.get("/api/integrations/instantly/accounts", response_model=SendingAccountsResponse)
-def list_accounts(service: CampaignActivationService = Depends(get_activation)) -> SendingAccountsResponse:
-    try:
-        accounts = service.list_sending_accounts()
-    except ActivationError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
-    return SendingAccountsResponse(
-        items=[
-            {"email": a.email, "status": a.status, "provider_code": a.provider_code}
-            for a in accounts
-        ]
-    )
-
-
-@router.put("/api/campaigns/{campaign_id}/sending-accounts", response_model=CampaignDetail)
-def save_sending_accounts(
-    campaign_id: uuid.UUID,
-    payload: SaveSendingAccountsRequest,
-    service: CampaignActivationService = Depends(get_activation),
-) -> CampaignDetail:
-    try:
-        campaign = service.save_sending_accounts(campaign_id, payload.emails)
-    except CampaignNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ActivationError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
-    return _to_detail(campaign)
-
-
-@router.get("/api/campaigns/{campaign_id}/activation-blockers", response_model=ActivationBlockersResponse)
-def activation_blockers(
-    campaign_id: uuid.UUID,
-    service: CampaignActivationService = Depends(get_activation),
-) -> ActivationBlockersResponse:
-    try:
-        blockers = service.activation_blockers(campaign_id)
-    except CampaignNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return ActivationBlockersResponse(blockers=blockers, can_activate=not blockers)
-
-
-@router.post("/api/campaigns/{campaign_id}/activate", response_model=CampaignDetail)
-def activate_campaign(
-    campaign_id: uuid.UUID,
-    payload: ActivateRequest,
-    service: CampaignActivationService = Depends(get_activation),
-) -> CampaignDetail:
-    try:
-        campaign = service.activate(campaign_id, confirm=payload.confirm)
-    except CampaignNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ActivationError as exc:
-        detail: dict | str
-        if exc.missing:
-            detail = {"message": exc.message, "missing": exc.missing}
-        else:
-            detail = exc.message
-        raise HTTPException(status_code=exc.http_status, detail=detail) from exc
-    return _to_detail(campaign)
-
-
-@router.post("/api/campaigns/{campaign_id}/pause", response_model=CampaignDetail)
-def pause_campaign(
-    campaign_id: uuid.UUID,
-    service: CampaignActivationService = Depends(get_activation),
-) -> CampaignDetail:
-    try:
-        campaign = service.pause(campaign_id)
-    except CampaignNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ActivationError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
-    return _to_detail(campaign)
-
-
-@webhook_router.post("/api/webhooks/instantly")
-async def instantly_webhook(
-    request: Request,
-    authorization: str | None = Header(default=None),
-    service: WebhookIngestionService = Depends(get_webhook),
-) -> dict[str, Any]:
-    try:
-        service.verify_authorization(authorization)
-    except WebhookAuthError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
-    payload = await request.json()
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=422, detail="Webhook payload must be a JSON object")
-    return service.ingest(payload)
-
-
-@router.post("/api/outreach/poll-replies")
-def poll_replies(service: WebhookIngestionService = Depends(get_webhook)) -> dict[str, int]:
-    return service.poll_recent_emails()
 
 
 @router.post("/api/assessment/started")

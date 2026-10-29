@@ -2,28 +2,22 @@
 Reply Composer (v2 pipeline)
 ============================
 
-The acknowledgement is built from the request's tool results, never from what the model says
-happened (docs/agent/ARCHITECTURE.md §5.10). The model's text is only a lead-in or the answer to a
-question.
+The user-facing reply is the model's own words. Tool results stay in the tool log for the model; they
+are never pasted into the reply (no check marks, tool titles, or instructions meant for the model).
 
-    ✅ Update deal stage: stage set to won (D-2231)
-    ⏳ Send email is waiting for approval (act_118)
-    📝 Send email was saved as a draft for review (act_119)
-    ❌ Draft invoice: No pending billables for 'Acme'
-
-Only writes get a line; reads are part of the answer. If no write succeeded, the lead-in never claims
-that something was done, sent, created or saved, and it only mentions approval when something is
-actually waiting for approval. Done-claims are _DONE below: the assistant's own actions ("I've saved",
-"has been added", "your call is scheduled"), never plain facts ("the renewal is scheduled for March").
-Approval claims are the platform's (bizos/agents/claims.py). A question keeps only its asking part
-("I've sent it, anything else?" -> "Anything else?").
+If no write succeeded, the lead-in never claims that something was done, sent, created or saved, and
+it only mentions approval when something is actually waiting for approval. Done-claims are _DONE
+below: the assistant's own actions ("I've saved", "has been added", "your call is scheduled"), never
+plain facts ("the renewal is scheduled for March"). Approval claims are the platform's
+(bizos/agents/claims.py). A question keeps only its asking part ("I've sent it, anything else?" ->
+"Anything else?").
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable
 
 from bizos.agents.claims import _APPROVAL_CLAIM
 from bizos.agents.tool_result import ToolResult
@@ -154,36 +148,30 @@ class Acknowledgement:
     pending_approval: bool
 
 
-def _title(tool: str) -> str:
-    spec = get_spec(tool)
-    return spec.title if spec else tool
-
-
 def _is_write(tool: str) -> bool:
     return bool(getattr(get_spec(tool), "write", False))
 
 
-def _line(result: ToolResult) -> Optional[str]:
-    ref = f" ({result.ref})" if result.ref else ""
-    title = _title(result.tool)
-    if result.status == "success":
-        return f"✅ {title}: {result.summary}{ref}" if result.summary else f"✅ {title}{ref}"
-    if result.status == "pending" and result.pending_kind == "approval":
-        return f"⏳ {title} is waiting for approval{ref}"
-    if result.status == "pending":
-        return f"📝 {title} was saved as a draft for review{ref}"
-    return f"❌ {title}: {result.summary or 'it did not complete'}"
-
-
 def compose(lead_in: str, results: Iterable[ToolResult], *, task: bool = True) -> Acknowledgement:
-    """The reply: the model's lead-in (cleaned of false claims) plus one line per write result.
+    """The reply: the model's own words, cleaned of false claims when a write did not succeed.
 
-    ``task`` is False for a question: an answer may truthfully say a record "was created" in March, so
-    only a task's lead-in is cleaned of done-claims.
+    Write results are not appended. ``task`` is False for a question: an answer may truthfully say a
+    record "was created" in March, so only a task's lead-in is cleaned of done-claims.
+    A successful show_assessment result is the labelled report the user asked to see; keep it.
     """
+    results = list(results)
     writes = [r for r in results if _is_write(r.tool)]
     wrote = any(r.status == "success" for r in writes)
     pending_approval = any(r.status == "pending" and r.pending_kind == "approval" for r in writes)
+    reports = []
+    for r in results:
+        if r.tool != "show_assessment" or r.status != "success":
+            continue
+        body = r.data if isinstance(r.data, str) else r.summary
+        if (body or "").strip():
+            reports.append(body)
+    if reports and not wrote:
+        return Acknowledgement(reports[-1], False, pending_approval)
 
     text = (lead_in or "").strip()
     if not wrote and (task or writes):
@@ -193,14 +181,7 @@ def compose(lead_in: str, results: Iterable[ToolResult], *, task: bool = True) -
         if not text and writes:
             text = NOTHING_DONE if not any(r.status == "pending" for r in writes) else ""
 
-    lines: list[str] = []
-    for result in writes:
-        line = _line(result)
-        if line and line not in lines:
-            lines.append(line)
-    body = "\n".join(lines)
-    reply = "\n\n".join(part for part in (text, body) if part)
-    return Acknowledgement(reply or NOTHING_DONE, wrote, pending_approval)
+    return Acknowledgement(text or NOTHING_DONE, wrote, pending_approval)
 
 
 #: Words that may start a claim (done or approval). A sentence holding one is held back while it streams.

@@ -75,9 +75,18 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         stop_sync = sync_scheduler.start()
     except Exception as exc:  # noqa: BLE001 - the API must start even if the sync loop cannot
         log_warning(f"bizos: integration sync not started: {exc}")
+    stop_outreach = None
+    try:
+        from app.outreach import sender as outreach_sender
+
+        stop_outreach = outreach_sender.start()
+    except Exception as exc:  # noqa: BLE001 - the API must start even if the email sender cannot
+        log_warning(f"bizos: outreach sender not started: {exc}")
     try:
         yield
     finally:
+        if stop_outreach:
+            stop_outreach()
         if stop_sync:
             stop_sync()
         registry.dispose_all()

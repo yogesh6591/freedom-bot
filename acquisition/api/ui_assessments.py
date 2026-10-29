@@ -38,7 +38,6 @@ from acquisition.services.jeanne_checkout_service import (
     mark_handoff,
     offer_checkout,
 )
-from acquisition.services.webhook_ingestion_service import WebhookIngestionService
 from acquisition.services.pre_call_brief_service import BRIEF_STATUS_READY, PreCallBriefService
 from acquisition.services.stripe_test_service import (
     StripeTestError,
@@ -210,14 +209,6 @@ def assessment_detail(
         initial_tab = "overview"
 
     email_delivery = resolve_email_delivery(db, link)
-    # If still queued, refresh from Instantly so Sent flips once mail actually left.
-    if email_delivery["status"] == "queued":
-        try:
-            WebhookIngestionService(db).poll_recent_emails()
-            db.refresh(link)
-            email_delivery = resolve_email_delivery(db, link)
-        except Exception:  # noqa: BLE001 — UI must still render if Instantly is down
-            pass
 
     return templates.TemplateResponse(
         request,
@@ -628,7 +619,6 @@ async def assessment_checkout_offer(
             db,
             link,
             amount=form.get("checkout_offer_amount"),
-            recurring_amount=form.get("checkout_offer_recurring_amount"),
             currency=str(form.get("checkout_offer_currency") or "USD"),
         )
         flash = "checkout_offered"

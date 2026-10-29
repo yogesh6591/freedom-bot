@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Sent emails{% endblock %}
+{% block page_heading %}Sent emails{% endblock %}
+
+{% block page_lede %}
+<p class="page-lede">Every email the chatbot has sent or queued, one row per person.</p>
+{% endblock %}
+
+{% block top_actions %}
+{% if waiting %}
+<form method="post" action="/outreach/stop">
+  <button class="btn btn-secondary" type="submit">Stop sending ({{ waiting }} waiting)</button>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block flash %}
+  {% if flash == 'stopped' %}<div class="flash">Stopped. Emails that had not gone out were cancelled.</div>{% endif %}
+{% endblock %}
+
+{% block content %}
+<section class="panel toolbar-panel">
+  <div class="table-meta">
+    <span>{{ sent_today }} sent today (limit {{ daily_ceiling }})</span>
+    <span>{{ waiting }} waiting{% if waiting %} · about {{ eta_minutes }} min to finish{% endif %}</span>
+    <span>{{ sent_total }} sent in total</span>
+    <span>{{ failed }} failed</span>
+    <span>Background sending: {{ "on" if worker_on else "off" }}</span>
+  </div>
+  <form class="filters filters-compact" method="get" action="/outreach">
+    <label class="field">
+      <span>Show</span>
+      <select name="state" onchange="this.form.submit()">
+        <option value="">All</option>
+        <option value="queued" {% if state == 'queued' %}selected{% endif %}>Waiting</option>
+        <option value="sent" {% if state == 'sent' %}selected{% endif %}>Sent</option>
+        <option value="failed" {% if state == 'failed' %}selected{% endif %}>Failed</option>
+      </select>
+    </label>
+  </form>
+</section>
+
+{% if total == 0 %}
+  <div class="state state-empty">
+    <h2>No emails yet</h2>
+    <p>Ask the chatbot to write an email to someone. After you approve it, it shows up here.</p>
+  </div>
+{% else %}
+  <section class="panel table-panel">
+    <div class="table-meta"><span>{{ total }} email{% if total != 1 %}s{% endif %}</span></div>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Person</th>
+            <th>To</th>
+            <th>Subject</th>
+            <th>Kind</th>
+            <th>Status</th>
+            <th>Queued</th>
+            <th>Sent</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          {% set e = row.email %}
+          <tr>
+            <td><a href="/prospects/{{ row.prospect.id }}">{{ row.prospect.executive_name }}</a><br><small>{{ row.prospect.company }}</small></td>
+            <td>{{ e.to_email }}</td>
+            <td title="{{ e.body }}">{{ e.subject }}</td>
+            <td>{{ "Follow-up" if e.kind == "follow_up" else "First email" }}</td>
+            <td>
+              {% if e.status == 'sent' %}<span class="status-badge status-approved">Sent</span>
+              {% elif e.status in ('queued', 'sending') %}<span class="status-badge status-draft">Waiting</span>
+              {% elif e.status == 'failed' %}<span class="status-badge status-error" title="{{ e.error }}">Failed</span>
+              {% else %}<span class="status-badge status-draft">{{ e.status|capitalize }}</span>{% endif %}
+              {% if e.error and e.status != 'sent' %}<br><small>{{ e.error }}</small>{% endif %}
+            </td>
+            <td>{{ e.queued_at.strftime("%d %b %H:%M") if e.queued_at else "" }}</td>
+            <td>{{ e.sent_at.strftime("%d %b %H:%M") if e.sent_at else "" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if total > page_size %}
+    <div class="table-meta">
+      {% if page > 1 %}<a class="btn btn-ghost" href="/outreach?page={{ page - 1 }}{% if state %}&state={{ state }}{% endif %}">Newer</a>{% endif %}
+      {% if page * page_size < total %}<a class="btn btn-ghost" href="/outreach?page={{ page + 1 }}{% if state %}&state={{ state }}{% endif %}">Older</a>{% endif %}
+    </div>
+    {% endif %}
+  </section>
+{% endif %}
+{% endblock %}

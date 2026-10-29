@@ -116,7 +116,11 @@
         function checkOnce() {
           if (inFlight) return Promise.resolve(false);
           inFlight = true;
-          return fetch(statusUrl, {
+          var url = statusUrl;
+          if (awaitingConfirm) {
+            url += (statusUrl.indexOf("?") >= 0 ? "&" : "?") + "sync=1";
+          }
+          return fetch(url, {
             credentials: "same-origin",
             cache: "no-store",
             headers: { Accept: "application/json" },

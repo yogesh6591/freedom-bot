@@ -41,6 +41,8 @@ from acquisition.models.prospect import (
     ProspectResearchSource,
 )
 from acquisition.models.prospecting import ProspectingRulesRow, ProspectingRulesVersion
+from acquisition.models.outreach import SentEmail
+from acquisition.models.outreach_settings import OutreachSettings
 from acquisition.models.replies import ProviderEvent, ReplyConversation, ReplyMessage
 from acquisition.models.settings import AIReplySettings
 
@@ -90,4 +92,6 @@ __all__ = [
     "ReplyConversation",
     "ReplyMessage",
     "ReplyMessageDirection",
+    "OutreachSettings",
+    "SentEmail",
 ]

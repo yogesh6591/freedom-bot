@@ -291,7 +291,12 @@ def checkout_pay(
         raise _http_error(
             AcquisitionJourneyError("Checkout is available after your consultation booking.", http_status=403)
         )
+    from acquisition.prefix_middleware import url_prefix
+
     public_base = str(request.base_url).rstrip("/")
+    prefix = url_prefix()
+    if prefix and not public_base.endswith(prefix):
+        public_base += prefix
     try:
         created = create_prospect_checkout_session(link, public_base=public_base)
     except JeanneCheckoutError as exc:
@@ -348,9 +353,10 @@ def checkout_success(
 def booking_status_api(
     token: str,
     journey: AcquisitionJourneyService = Depends(get_journey),
+    sync: bool = False,
 ) -> dict[str, Any]:
     try:
-        return journey.booking_status_payload(token)
+        return journey.booking_status_payload(token, sync=sync)
     except (AcquisitionJourneyError, AssessmentEventError) as exc:
         raise _http_error(exc) from exc
 

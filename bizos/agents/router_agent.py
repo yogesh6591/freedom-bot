@@ -9,14 +9,13 @@ The router is a fast model with structured output (:class:`~bizos.agents.routing
 no memory. ``memory_search`` on the raw query runs in parallel with it, through the normal policy
 check, so the executor prompt can carry company context.
 
-Model: ``ROUTER_MODEL_ID`` (``provider:model``), falling back to ``MODEL_ID``.
+Model: ``ASSISTANT_MODEL`` with ``ASSISTANT_REASONING_EFFORT`` (``ROUTER_MODEL_ID`` optional override).
 """
 
 from __future__ import annotations
 
 import contextvars
 import logging
-import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
@@ -41,15 +40,13 @@ class RouteResult:
 
 
 def router_model():
+    from app.assistant.assistant import _model, _openai_model
     from bizos import settings as app_settings
 
-    mid = (os.environ.get("ROUTER_MODEL_ID") or "").strip() or app_settings.model_id()
-    provider, _, name = mid.partition(":")
-    if provider == "openai" and name:
-        from agno.models.openai import OpenAIChat
-
-        return OpenAIChat(id=name)
-    return mid
+    override = app_settings.router_model_id()
+    if override:
+        return _openai_model(override, None)
+    return _model(app_settings.assistant_reasoning_effort())
 
 
 def _fallback(reason: str) -> RouteResult:

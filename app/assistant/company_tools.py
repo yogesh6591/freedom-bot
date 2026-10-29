@@ -2315,8 +2315,6 @@ def youtube_video_comments(scope: RunScope, args: dict[str, Any]) -> ConnectorRe
     )
 
 
-
-
 @effect("youtube_transcript")
 def youtube_transcript(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     from bizos.connectors import composio as composio_conn
@@ -2474,3 +2472,7 @@ def web_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
         return ConnectorResult.failure(str(exc))
     return ConnectorResult(ok=True, data=data, summary=f"read {data['url']} ({data['characters']} characters"
                                                        + ("; cut" if data["truncated"] else "") + ")")
+
+
+import app.outreach.effects  # noqa: F401
+

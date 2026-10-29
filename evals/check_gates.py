@@ -56,7 +56,7 @@ def gates_and_visible(client, case: dict) -> tuple[dict[str, str], frozenset[str
         packs = current._packs_for(settings, AUTO)
         with bound(ctx):
             scope = RunScope(ctx=ctx, settings=settings)
-            visible = visible_tools(scope, packs, campaign_allowed=ctx.is_admin)
+            visible = visible_tools(scope, packs, outreach_allowed=ctx.is_admin)
             gates: dict[str, str] = {}
             for tool in tools:
                 args: dict[str, Any] = {**((case.get("expected_args") or {}).get(tool) or {}),

@@ -168,13 +168,48 @@ def openai_api_key() -> str | None:
     return getenv("OPENAI_API_KEY", "").strip() or None
 
 
-def model_id() -> str:
-    """Chat model for Agno. Must be ``provider:model`` (e.g. ``openai:gpt-4.1-mini``)."""
-    raw = getenv("MODEL_ID", "openai:gpt-4.1-mini").strip()
-    if raw and ":" not in raw:
-        # Older env files used bare ids; Agno 3 requires a provider prefix.
+def assistant_model() -> str:
+    """Agno chat model (executor, router, legacy Agent). ``provider:model``.
+
+    ``ASSISTANT_MODEL`` wins, then ``MODEL_ID``, then ``openai:gpt-6-luna``.
+    """
+    raw = getenv("ASSISTANT_MODEL", "").strip() or getenv("MODEL_ID", "").strip() or "openai:gpt-6-luna"
+    if ":" not in raw:
         return f"openai:{raw}"
-    return raw or "openai:gpt-4.1-mini"
+    return raw
+
+
+def model_id() -> str:
+    """Chat model for Agno. Same as :func:`assistant_model`."""
+    return assistant_model()
+
+
+def assistant_reasoning_effort() -> str | None:
+    """Reasoning effort for the Agno assistant (default medium).
+
+    ``none`` / ``off`` omits the parameter (chat completions). Reasoning models
+    need a real value and the Responses API.
+    """
+    raw = (
+        getenv("ASSISTANT_REASONING_EFFORT", "") or getenv("MODEL_REASONING_EFFORT", "")
+    ).strip().casefold()
+    if not raw:
+        return "medium"
+    if raw in ("none", "off", "false", "0"):
+        return None
+    if raw in ("minimal", "low", "medium", "high"):
+        return raw
+    return "medium"
+
+
+def executor_model_id() -> str:
+    """Optional ops-executor override (``provider:model``). Empty = :func:`assistant_model`."""
+    return getenv("EXECUTOR_MODEL_ID", "").strip()
+
+
+def router_model_id() -> str:
+    """Optional router override (``provider:model``). Empty = :func:`assistant_model`."""
+    return getenv("ROUTER_MODEL_ID", "").strip()
 
 
 def llm_vendor() -> str:

@@ -1,4 +1,4 @@
-"""Assessment lifecycle events: started / completed (stops Instantly outreach on start)."""
+"""Assessment lifecycle events: started / completed ."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from acquisition.integrations.instantly.errors import InstantlyError
 from acquisition.models.campaign import (
     AssessmentStatus,
     CampaignProspect,
@@ -16,8 +15,6 @@ from acquisition.models.campaign import (
     ReplyAIStatus,
 )
 from acquisition.models.replies import ReplyConversation
-from acquisition.services.instantly_lead_control import stop_instantly_lead_outreach
-from acquisition.services.instantly_service import InstantlyService
 
 
 class AssessmentEventError(Exception):
@@ -30,9 +27,8 @@ class AssessmentEventError(Exception):
 class AssessmentEventService:
     """Lifecycle hooks for assessment progress on a campaign prospect link."""
 
-    def __init__(self, db: Session, *, instantly_service: InstantlyService | None = None) -> None:
+    def __init__(self, db: Session) -> None:
         self.db = db
-        self.instantly_service = instantly_service or InstantlyService(db=db)
 
     def resolve_link(self, token: str) -> CampaignProspect:
         cleaned = (token or "").strip()
@@ -75,12 +71,6 @@ class AssessmentEventService:
         self.db.commit()
         self.db.refresh(link)
 
-        if link.campaign:
-            try:
-                client = self.instantly_service.get_api_client()
-                stop_instantly_lead_outreach(client, campaign=link.campaign, link=link)
-            except InstantlyError:
-                pass
         return link
 
     def assessment_completed(self, token: str) -> CampaignProspect:

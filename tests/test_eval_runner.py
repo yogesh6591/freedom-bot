@@ -370,14 +370,16 @@ def test_the_current_assistant_pipeline_on_the_scripted_model(fake_model, client
 
     case = {**NOTE, "fixtures": {"contacts": [{"id": "C-310", "name": "Raj Mehta", "email": "raj@acme.com"}]}}
     SCRIPT[:] = [
+        {"content": json.dumps({"domains": ["crm"], "kind": "task", "entities": {}, "clarify": None})},
         {"tool_calls": [{"name": "crm_search_contacts", "arguments": {"query": "Raj"}}]},
         {"tool_calls": [{"name": "crm_create_note", "arguments": {"contact_id": "C-310", "body": "Called"}}]},
         {"content": "The note is waiting for approval."},
     ] + [{"content": "ok"}] * 5
     result = run_case(client_scratch, case, "current")
     assert result["error"] is None, result["error"]
-    assert [c["tool"] for c in result["calls"]][:2] == ["crm_search_contacts", "crm_create_note"]
-    assert result["route"] is None and result["router_skipped"]
+    tools = [c["tool"] for c in result["calls"] if c.get("tool") in {"crm_search_contacts", "crm_create_note"}]
+    assert tools[:2] == ["crm_search_contacts", "crm_create_note"]
+    assert result["router_skipped"]
     assert "crm_create_note" in result["visible"]
     assert score(case, result)["checks"]["gate:crm_create_note"][0]
 

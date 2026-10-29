@@ -37,7 +37,7 @@ class StripeTestError(Exception):
 
 
 def _resolve_stripe_secret(settings: Settings | None = None, db: Session | None = None) -> str:
-    """DB integration credentials first, then STRIPE_SECRET_KEY env."""
+    """The STRIPE_SECRET_KEY from the server .env."""
     from acquisition.services.stripe_service import StripeService
 
     cfg = settings or get_settings()
@@ -83,10 +83,10 @@ def stripe_test_ui_block_reason(
     if stripe_test_ui_enabled(settings, db):
         return None
     if not _resolve_stripe_enabled(settings, db):
-        return "Enable Stripe under Integrations (or set STRIPE_ENABLED=true)."
+        return "Set STRIPE_ENABLED=true in the server .env."
     secret = _resolve_stripe_secret(settings, db)
     if not secret:
-        return "Add a Stripe secret key under Integrations (or STRIPE_SECRET_KEY)."
+        return "Set STRIPE_SECRET_KEY in the server .env."
     if not secret.startswith("sk_test_"):
         return "Dummy Stripe only accepts TEST keys starting with sk_test_."
     return "Dummy Stripe checkout is not configured."

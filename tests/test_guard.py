@@ -289,10 +289,10 @@ def test_v2_is_never_less_strict_than_the_current_path(client_scratch, ctx_facto
     looser = []
     with tenant_scope(ctx):
         offered_today = {getattr(t, "name", None) for t in build_unified_tools(scope, packs)[0]}
-        v2_visible = visible_tools(scope, packs, campaign_allowed=False)
+        v2_visible = visible_tools(scope, packs, outreach_allowed=False)
         for tool in sorted(MODEL_TOOLS):
-            if TOOL_META[tool].domain == "campaign":
-                continue  # covered by tests/test_campaign_policy.py
+            if TOOL_META[tool].domain == "outreach":
+                continue  # admin-only in the acquisition chat; not on the current surface
             args = dict(SAMPLE_ARGS.get(tool, {}))
             if tool == "admin_update_user":
                 args["user"] = viewer_email

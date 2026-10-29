@@ -40,6 +40,7 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 | Tools | Separating rule |
 |---|---|
 | email_send_message / propose_email / send_approved | One-off email to named people vs drafting a campaign email (admins) vs sending an approved campaign batch (admins) |
+| show_assessment / set_qualification | Reading one person's assessment result vs changing it (approve or unapprove) |
 | email_create_draft / email_send_message | Save for review vs send now |
 | crm_update_contact_field / crm_bulk_update_contacts | One field on one contact (by ID or email) vs one field on every contact in a lifecycle stage, or `"ALL"` contacts |
 | crm_bulk_update_contacts / (search + crm_update_contact_field per contact) | Bulk filters by lifecycle stage only. "All Acme contacts" is a company, not a stage: search, then update each one |

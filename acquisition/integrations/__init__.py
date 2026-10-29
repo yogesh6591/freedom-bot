@@ -1,1 +1,1 @@
-"""Instantly integration package."""
+"""External integration packages (Cal.com)."""

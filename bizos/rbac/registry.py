@@ -41,6 +41,7 @@ CATEGORY_INTEGRATIONS = "integrations"
 CATEGORY_RESEARCH = "research"
 CATEGORY_ADMIN = "admin"
 CATEGORY_CAMPAIGN = "campaign"
+CATEGORY_OUTREACH = "outreach"
 
 
 @dataclass(frozen=True)
@@ -215,6 +216,19 @@ def _campaign(name: str, title: str, description: str, *, write: bool = False) -
         view_min_role=Role.ADMIN,
         tags=frozenset({"write" if write else "read", "campaign"}),
         # The campaign selection and draft live only in the chat turn, so a queued call could never run.
+        not_queueable=_CAMPAIGN_NOT_QUEUEABLE,
+    )
+
+
+def _outreach(name: str, title: str, description: str, *, write: bool = False, external: bool = False) -> ToolSpec:
+    """A chat tool for the acquisition work (email, records, assessments, bookings, payments, journey)."""
+    return _spec(
+        name, title, description, CATEGORY_OUTREACH, ("general",),
+        write=write, external=write and external,
+        risk=RiskLevel.MEDIUM if write else RiskLevel.LOW,
+        permissions=matrix.ADMIN_ONLY, admin_config=write, view_min_role=Role.ADMIN,
+        tags=frozenset({"write" if write else "read", "outreach"}),
+        # The recipients, draft and pending yes/no live only in the chat turn, so a queued call could never run.
         not_queueable=_CAMPAIGN_NOT_QUEUEABLE,
     )
 
@@ -993,53 +1007,45 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         integration="n8n",
         tags=frozenset({"write", "n8n", "external"}),
     ),
-    # ------------------------------------------------------------ campaign
-    # The admin-only outbound campaign flow (app/assistant/assistant.py, CampaignSession).
-    # Declared under "general" so the domain-selected packs never pick them up; the
-    # assistant adds them for admins only. All but send_approved change nothing except
-    # the conversation's saved selection, so they are reads to the policy check and work
-    # in every mode, as before. send_approved is the admin's own authority, like the
-    # Administration page: it skips the mode queue (Advise still forbids it), and the
-    # human gate is the user's own approval of the email card, checked in CampaignSession.
-    *(
-        _campaign(name, title, description)
-        for name, title, description in (
-            ("update_selection", "Commit campaign selection",
-             "Save the recipients, campaign and daily send window the user chose in this conversation."),
-            ("show_contacts", "Show campaign contacts", "Show the saved prospects table so the user can pick."),
-            ("show_campaigns", "Show campaigns", "Show the saved campaigns table so the user can pick one."),
-            ("propose_email", "Propose campaign email",
-             "Build the campaign email draft from the committed selection and show it for approval."),
-            ("approve_move", "Approve moving prospects",
-             "Record the user's yes to moving people out of another campaign into this one."),
-            ("show_campaign_people", "Show people in a campaign",
-             "List the people in one campaign with name, email and status. Read-only."),
-            ("show_prospects", "Show workspace prospects",
-             "Count or list every saved prospect, with campaign membership. Read-only."),
-            ("pause_campaign", "Pause a campaign",
-             "Pause a campaign so it stops sending until resumed."),
-            ("resume_campaign", "Resume a campaign",
-             "Resume a paused campaign so sending can start again."),
-            ("delete_campaign", "Delete a campaign",
-             "Delete a campaign from FreedomBot and Instantly. People stay in the workspace."),
-            ("delete_prospect", "Delete a prospect",
-             "Delete one person from the workspace and stop their Instantly leads."),
-            ("remove_from_campaign", "Remove from campaign",
-             "Take one person out of one campaign. They stay in the workspace."),
-            ("set_person_details", "Set person details",
-             "Save a first name, last name or company for one chosen recipient."),
-            ("choose_email_scope", "Choose email change scope",
-             "Record that the user chose to change the campaign first email for everyone not yet emailed."),
-            ("refuse_bulk_change", "Refuse bulk delete",
-             "Tell the user bulk delete is not supported and ask for one prospect or campaign. Read-only."),
-        )
-    ),
-    _campaign(
-        "send_approved",
-        "Send approved campaign email",
-        "Create the campaign and send the email the user approved to the committed recipients.",
-        write=True,
-    ),
+    # ------------------------------------------------------------ outreach
+    # ADMIN only; reads are LOW risk; the writes that change outgoing mail or data are MEDIUM.
+    # Declared under "general" so the domain-selected packs never pick them up; v2 adds them for
+    # admins in the acquisition chat. The human gate is the user's approval of the card
+    # (OutreachSession.send_approved).
+    # -- email (the card)
+    _outreach("choose_recipients", "Choose recipients", "Set who the next email goes to."),
+    _outreach("propose_email", "Propose outreach email", "Write the email and show it on the card. Sends nothing."),
+    _outreach("set_person_details", "Set person details", "Save a name or company for one chosen recipient."),
+    _outreach("send_approved", "Send approved email", "Queue the approved email, one per person, for background sending.", write=True, external=True),
+    _outreach("cancel_sending", "Stop sending", "Cancel emails that are queued but not sent.", write=True),
+    _outreach("show_sent_emails", "Show sent emails", "The log of emails sent or waiting to send. Read-only."),
+    # -- records (reads)
+    _outreach("query_records", "Query records", "Count, list or group people, emails, bookings or payments with filters. Read-only."),
+    _outreach("show_prospect", "Show one prospect", "Everything stored about one person with their status. Read-only."),
+    # -- records (changes)
+    _outreach("add_prospects", "Add prospects", "Save one or many new people.", write=True),
+    _outreach("update_prospects", "Update prospects", "Change fields on one person, or on a named or filtered group after a yes.", write=True),
+    _outreach("delete_prospects", "Delete prospects", "Delete named people and their email log after a yes.", write=True),
+    _outreach("refuse_bulk_change", "Refuse bulk change", "Tell the user changing everyone at once is not supported. Read-only."),
+    # -- assessments
+    _outreach("show_assessment", "Show assessment progress", "Where one person is in the assessment journey. Read-only."),
+    _outreach("set_qualification", "Approve or unapprove an assessment", "Set a finished assessment to qualified or unqualified, like the admin switch.", write=True),
+    _outreach("rerun_qualification", "Re-run qualification", "Run the AI qualification again on a finished assessment.", write=True),
+    _outreach("reset_journey", "Reset a journey", "Rewind one person to the start of the assessment journey.", write=True),
+    _outreach("record_consultation", "Record attendance", "Record whether a booked person showed up.", write=True),
+    _outreach("set_handoff_status", "Set handoff status", "Set the delivery handoff status for one person.", write=True),
+    # -- bookings (Cal.com)
+    _outreach("reschedule_booking", "Reschedule a booking", "Move a confirmed Cal.com booking.", write=True, external=True),
+    _outreach("cancel_booking", "Cancel a booking", "Cancel a confirmed Cal.com booking.", write=True, external=True),
+    # -- payments (Stripe, one time)
+    _outreach("create_payment_offer", "Create a payment offer", "Set the one-time amount a booked person can pay.", write=True),
+    _outreach("send_payment_link", "Email a payment link", "Email a person their one-time payment link.", write=True, external=True),
+    # -- journey content
+    _outreach("show_journey_settings", "Show journey settings", "The journey sections, case studies and video links. Read-only."),
+    _outreach("update_journey_settings", "Update journey settings", "Change journey text and section switches.", write=True),
+    _outreach("edit_case_study", "Edit a case study", "Add, change, make live or draft, or delete a case study.", write=True),
+    _outreach("edit_video_link", "Edit a video link", "Add, change, make live or draft, or delete an after-booking video link.", write=True),
+    _outreach("publish_journey", "Publish the journey", "Make Proof, Demo, Value and Calendar live for prospects.", write=True),
 )
 
 TOOLS_BY_NAME: Mapping[str, ToolSpec] = MappingProxyType({s.name: s for s in TOOL_SPECS})

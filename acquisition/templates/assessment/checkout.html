@@ -98,15 +98,6 @@
           </div>
           <p class="checkout-line-amt">{{ payload.amount_label or '—' }}</p>
         </div>
-        {% if payload.recurring_label %}
-        <div class="checkout-line checkout-line--muted">
-          <div class="checkout-line-copy">
-            <strong>Ongoing support</strong>
-            <span>Tracked for delivery · not charged on this checkout</span>
-          </div>
-          <p class="checkout-line-amt">{{ payload.recurring_label }}<span class="checkout-per">/mo</span></p>
-        </div>
-        {% endif %}
       </div>
 
       <div class="checkout-total">

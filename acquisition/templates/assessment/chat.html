@@ -229,11 +229,17 @@
       errorEl.textContent = msg || "";
     }
 
+    function resultPath() {
+      var path = (window.location.pathname || "").replace(/\/$/, "");
+      if (path.slice(-7) === "/result") return path;
+      return path + "/result";
+    }
+
     function applySession(data, { animate } = { animate: false }) {
       messages = data.messages || messages;
       syncProgress(messages);
       if (data.completed) {
-        window.location.href = "/a/" + encodeURIComponent(token) + "/result";
+        window.location.href = resultPath();
         return;
       }
       const assistant = lastAssistant(messages);
@@ -310,7 +316,7 @@
         }
         if (data.completed) {
           setBusy(true);
-          window.location.href = "/a/" + encodeURIComponent(token) + "/result";
+          window.location.href = resultPath();
           return;
         }
         applySession(data, { animate: true });

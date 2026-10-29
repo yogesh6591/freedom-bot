@@ -86,6 +86,29 @@ def _obj(
     return schema
 
 
+#: Column names the query tool accepts, for the model. Keep in step with app/outreach/datasets.py.
+_PEOPLE_COLUMNS = (
+    "executive_name, email, company, executive_title, website, linkedin_url, revenue_band, headcount_band, source, "
+    "fit_note, added_at, status, emails_sent, emails_queued, last_emailed_at, outreach_status, "
+    "assessment_page_opened_at, assessment_status, assessment_started_at, assessment_completed_at, qualification, "
+    "journey_stage, booking_status, meeting_start, consultation_show, checkout_offer_amount, checkout_offered_at, "
+    "purchase_outcome, amount_paid, purchased_at, handoff_status"
+)
+_EMAIL_COLUMNS = "person, to_email, company, subject, status, kind, queued_at, sent_at, error"
+_STATUS_VALUES = (
+    "not_emailed, email_queued, emailed, opened_page, started_assessment, finished_assessment, booked, "
+    "booking_cancelled, unsubscribed, bounced"
+)
+#: Journey setting names, for the model. Keep in step with app/outreach/journey_tools.py.
+_JOURNEY_SETTINGS = (
+    "demo_enabled, demo_require_watch, demo_video_url (a YouTube, Vimeo or direct https video link), demo_title, demo_description, value_enabled, value_heading, "
+    "value_investment_text, budget_question, budget_label_ready, budget_label_unclear, budget_label_not_ready, "
+    "value_continue_button_text, calendar_enabled, booking_url, after_booking_video_enabled, "
+    "after_booking_video_url (a YouTube, Vimeo or direct https video link), after_booking_video_heading, after_booking_video_intro, after_booking_video_script, after_booking_prep_heading, "
+    "after_booking_prep_body, after_booking_prep_note"
+)
+
+
 #: Fallback when a tool has no dedicated schema: allow any named fields.
 OPEN_OBJECT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -681,6 +704,186 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["event"],
     ),
+    "show_sent_emails": _obj({
+        "who": _s("Optional name or email; empty = latest across everyone"),
+        "limit": _i("How many rows (default 10, max 30)"),
+    }),
+    "choose_recipients": _obj({
+        "people": {
+            "type": "array", "description": "Each person by saved name or by typed email",
+            "items": {"type": "object", "properties": {
+                "email": {"type": "string", "description": "Typed email address, if the user gave one"},
+                "name": _s("Name as the user wrote it"),
+                "company": _s("Company, only if the user stated it"),
+            }, "additionalProperties": False},
+        },
+        "mode": _enum("replace (default), add or remove", ["replace", "add", "remove"]),
+    }, ["people"]),
+    "propose_email": _obj({
+        "subject": _s("Subject; use {{firstName}} / {{companyName}} blanks, never a real name"),
+        "body": _s("Body; blanks for people's details; keep {{assessment_url}} where the link goes"),
+        "change_evidence": _s("The user's own words asking for the change, when they had edited the draft"),
+        "per_person": {
+            "type": "array",
+            "description": "Only when different people should get different wording: one item per person. People not listed get the shared subject and body.",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "email": {"type": "string", "description": "That person's email"},
+                    "subject": _s("Subject for this person; blanks, never a real name"),
+                    "body": _s("Body for this person; blanks; keep {{assessment_url}} where the link goes"),
+                },
+                "required": ["email", "subject", "body"],
+                "additionalProperties": False,
+            },
+        },
+        "new_thread": {"type": "boolean", "description": "True only when the user wants a brand-new email instead of a follow-up in the earlier conversation. Leave out otherwise."},
+        "same_for_all": {"type": "boolean", "description": "True ONLY when the user clearly wants identical text for everyone (they said same, identical, one email for all). Words like different, separate, individual, own, unique or each mean per_person instead. If the user did not say, use per_person."},
+    }, []),
+    "set_person_details": _obj({
+        "email": _s("One chosen recipient's email"),
+        "first_name": _s("First name"), "last_name": _s("Last name"), "company": _s("Company"),
+        "evidence": _s("The user's own words giving this detail"),
+    }, ["email", "evidence"]),
+    "send_approved": _obj({"approval_evidence": _s("The user's own words approving, copied from their latest message")},
+                          ["approval_evidence"]),
+    "cancel_sending": _obj({}),
+    # ------------------------------------------------------------------ outreach: records
+    "query_records": _obj({
+        "dataset": _enum("What to look at: people (default), emails (sent or waiting), bookings, payments",
+                         ["people", "emails", "bookings", "payments"]),
+        "filters": {
+            "type": "array",
+            "description": "Conditions that must all hold. Leave out to match everything.",
+            "items": _obj({
+                "field": _s(
+                    "Column name, or 'search' to look across name, email and company (forgives typos). "
+                    f"people/bookings/payments columns: {_PEOPLE_COLUMNS}. emails columns: {_EMAIL_COLUMNS}."),
+                "op": _enum("equals (default), not_equals, contains (forgives typos in names, emails and companies), "
+                            "gt, gte, lt, lte, between (needs value2), is_empty, not_empty",
+                            ["equals", "not_equals", "contains", "gt", "gte", "lt", "lte", "between", "is_empty", "not_empty"]),
+                "value": _s(f"The value. Dates: YYYY-MM-DD (the whole day, Chicago time), a full date and time, today, "
+                            f"yesterday or tomorrow. status is one of: {_STATUS_VALUES}"),
+                "value2": _s("Upper end for between"),
+            }, ["field"]),
+        },
+        "columns": _arr("Up to 8 columns to show. Leave out for a sensible default."),
+        "sort_by": _s("Column to sort by (default: newest first)"),
+        "sort_dir": _enum("asc or desc", ["asc", "desc"]),
+        "group_by": _s("Count rows per value of this column instead of listing them (for example status or booking_status)"),
+        "limit": _i("Rows to show (default 20, max 50)"),
+        "offset": _i("Rows to skip, to see the next page"),
+        "count_only": {"type": "boolean", "description": "Only return how many match"},
+    }),
+    "show_prospect": _obj({"who": _s("Name or email; leave empty to use the person already chosen")}),
+    "add_prospects": _obj({
+        "people": {
+            "type": "array", "description": "Each new person (up to 100). Each needs a name and an email.",
+            "items": _obj({
+                "executive_name": _s("Full name (or give first_name and last_name)"),
+                "first_name": _s("First name"), "last_name": _s("Last name"),
+                "email": _s("Email address"), "company": _s("Company"), "executive_title": _s("Job title"),
+                "website": _s("Company website"), "linkedin_url": _s("LinkedIn profile URL"),
+                "revenue_band": _s("Revenue band, as written"), "headcount_band": _s("Headcount band, as written"),
+                "source": _s("Where this person came from"), "fit_note": _s("Free note on why they fit"),
+            }),
+        },
+    }, ["people"]),
+    "update_prospects": _obj({
+        "changes": _obj({
+            "executive_name": _s("Full name"), "first_name": _s("First name"), "last_name": _s("Last name"),
+            "email": _s("Email address"), "company": _s("Company"), "executive_title": _s("Job title"),
+            "website": _s("Company website"), "linkedin_url": _s("LinkedIn profile URL"),
+            "revenue_band": _s("Revenue band"), "headcount_band": _s("Headcount band"),
+            "source": _s("Source"), "fit_note": _s("Fit note"),
+        }),
+        "people": _arr("Names or emails of the people to change (one person changes at once; more ask yes first)"),
+        "where": {
+            "type": "array",
+            "description": "Instead of people: a filter that picks the group (same shape as query_records filters). Needs at least one condition.",
+            "items": _obj({"field": _s("Column name or 'search'"), "op": _s("equals, contains, ..."), "value": _s("Value"),
+                           "value2": _s("Upper end for between")}, ["field"]),
+        },
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }, ["changes"]),
+    "delete_prospects": _obj({
+        "people": _arr("Names or emails of the people to delete (up to 25)"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }, ["people"]),
+    "refuse_bulk_change": _obj({}),
+    # ------------------------------------------------------------------ outreach: assessments
+    "show_assessment": _obj({
+        "who": _s("Name or email of the person; leave empty to use the person already chosen"),
+        "details": {"type": "boolean", "description": "True only when the user asks for the details or the full report"},
+        "include_brief": {"type": "boolean", "description": "Also include the pre-call brief"},
+    }, []),
+    "set_qualification": _obj({
+        "who": _s("Name or email of the person; leave empty to use the person already chosen"),
+        "result": _enum("The new result: qualified (approve) or unqualified (unapprove). There is no pending option here.", ["qualified", "unqualified"]),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }, ["result"]),
+    "rerun_qualification": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }),
+    "reset_journey": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }),
+    "record_consultation": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "outcome": _enum("Did they attend?", ["showed", "no_show", "not_recorded"]),
+    }, ["outcome"]),
+    "set_handoff_status": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "status": _enum("Delivery handoff stage", ["not_started", "ready", "handed_off"]),
+    }, ["status"]),
+    # ------------------------------------------------------------------ outreach: bookings
+    "reschedule_booking": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "start": _s("New start time in Chicago time as YYYY-MM-DD HH:MM (24-hour), for example 2026-11-05 14:30"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }, ["start"]),
+    "cancel_booking": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }),
+    # ------------------------------------------------------------------ outreach: payments
+    "create_payment_offer": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "amount": _f("The one-time amount in US dollars, for example 5000"),
+    }, ["amount"]),
+    "send_payment_link": _obj({
+        "who": _s("Name or email; leave empty to use the person already chosen"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }),
+    # ------------------------------------------------------------------ outreach: journey content
+    "show_journey_settings": _obj({}),
+    "update_journey_settings": _obj({
+        "changes": {
+            "type": "object",
+            "description": f"Setting name -> new value. Settings: {_JOURNEY_SETTINGS}. On/off settings take true or false; empty text clears it.",
+            "additionalProperties": True,
+        },
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }, ["changes"]),
+    "edit_case_study": _obj({
+        "action": _enum("What to do", ["add", "edit", "go_live", "make_draft", "delete"]),
+        "which": _s("Title of the case study (not needed when adding)"),
+        "title": _s("Title"), "client_display_name": _s("Client name shown to prospects"),
+        "problem": _s("The problem"), "change": _s("What changed"), "measurable_result": _s("The measurable result"),
+        "display_order": _i("Order in the list, lowest first"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }, ["action"]),
+    "edit_video_link": _obj({
+        "action": _enum("What to do", ["add", "edit", "go_live", "make_draft", "delete"]),
+        "which": _s("Title of the video link (not needed when adding)"),
+        "title": _s("Title"), "url": _s("YouTube link"), "display_order": _i("Order in the list, lowest first"),
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }, ["action"]),
+    "publish_journey": _obj({
+        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+    }),
 }
 
 

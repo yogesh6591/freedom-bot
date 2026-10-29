@@ -53,8 +53,9 @@ def bound_scope(scope: RunScope, tool: str, packs: list[DomainPack]) -> RunScope
     """The scope the live assistant binds ``tool`` to: the first pack that lets it through.
 
     Mirrors :func:`bizos.agents.surface.visible_specs_by_pack`. A tool in no pack (the
-    campaign tools) keeps ``scope``. A tool no pack lets through is evaluated in its first
-    pack, where it is denied.
+    outreach tools) keeps ``scope``. A tool no pack lets through is evaluated in its first
+    pack, where it is denied. ``pack_scope`` copies every RunScope field, including
+    ``campaign_session``, so the outreach session v2.handle attached is not dropped.
     """
     from bizos.agents.surface import _visible, pack_scope
 
@@ -69,7 +70,10 @@ def bound_scope(scope: RunScope, tool: str, packs: list[DomainPack]) -> RunScope
         first = first or candidate
         if spec.implemented and _visible(candidate, spec):
             return candidate
-    return first or scope
+    bound = first or scope
+    if bound is not scope and bound.campaign_session is None and scope.campaign_session is not None:
+        bound.campaign_session = scope.campaign_session
+    return bound
 
 
 def dry_run_for_user(
@@ -82,17 +86,17 @@ def dry_run_for_user(
 def is_visible(scope: RunScope, tool: str, packs: list[DomainPack]) -> bool:
     """Whether the live assistant would show ``tool`` to this user (the policy check, no arguments).
 
-    Like the live surface, a tool must be in one of ``packs`` (the campaign tools, which belong to no
+    Like the live surface, a tool must be in one of ``packs`` (the outreach tools, which belong to no
     pack, are the exception). No preconditions are run, so a tool is never hidden just because
     arguments are missing.
     """
     from bizos.agents.surface import _visible
-    from bizos.rbac.registry import CATEGORY_CAMPAIGN
+    from bizos.rbac.registry import CATEGORY_OUTREACH
 
     spec = get_spec(tool)
     if spec is None or not spec.implemented:
         return False
-    if spec.category != CATEGORY_CAMPAIGN and not any(spec in p.tool_specs() for p in packs):
+    if spec.category != CATEGORY_OUTREACH and not any(spec in p.tool_specs() for p in packs):
         return False
     return _visible(bound_scope(scope, tool, packs), spec)
 

@@ -24,20 +24,21 @@
         var tries = 0;
         function tick() {
           tries += 1;
-          fetch("/api/assessment/{{ token }}/booking")
+          fetch("/api/assessment/{{ token }}/booking?sync=1")
             .then(function (r) { return r.json(); })
             .then(function (data) {
               if (data && data.confirmed) {
                 window.location.reload();
                 return;
               }
-              if (tries < 40) window.setTimeout(tick, 1500);
+              var wait = tries < 80 ? 1500 : 4000;
+              window.setTimeout(tick, wait);
             })
             .catch(function () {
-              if (tries < 40) window.setTimeout(tick, 2000);
+              window.setTimeout(tick, tries < 80 ? 2000 : 4000);
             });
         }
-        window.setTimeout(tick, 1200);
+        window.setTimeout(tick, 800);
       })();
     </script>
     {% else %}

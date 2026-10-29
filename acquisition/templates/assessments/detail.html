@@ -59,6 +59,7 @@
 {% set value_ok = acq.value_state == 'completed' %}
 {% set cal_ok = acq.calendar_eligible %}
 {% set book_ok = booked %}
+{% set paid = link.purchase_outcome.value == 'purchased' %}
 {% set email_delivery = email_delivery if email_delivery is defined else {'status': 'not_sent', 'label': 'Not sent', 'done': false, 'sent_at': none} %}
 {% set email_sent = email_delivery.status == 'sent' %}
 {% set email_queued = email_delivery.status == 'queued' %}
@@ -168,7 +169,7 @@
       method="post"
       action="/assessments/{{ link.id }}/reset-journey"
       class="ad-rewind-form"
-      onsubmit="return confirm('Rewind this journey like a time machine?\n\nClears assessment chat, results, qualification, proof/demo/value progress, and local email reply threads.\nCancels the Cal.com booking (when still cancellable) and clears local booking fields.\nKeeps the prospect, campaign link, Instantly lead, assessment URL, and Instantly send history (so old emails are not auto-answered again).');"
+      onsubmit="return confirm('Rewind this journey like a time machine?\n\nClears assessment chat, results, qualification, proof/demo/value progress, and local email reply threads.\nCancels the Cal.com booking (when still cancellable) and clears local booking fields.\nKeeps the prospect, campaign link, assessment URL, and sent-email history (so old emails are not auto-answered again).');"
     >
       <button type="submit" class="ad-capsule-btn" title="Rewind assessment and booking to the start">
         <span class="ad-capsule-ring" aria-hidden="true">
@@ -331,6 +332,16 @@
       <span class="ad-status-value">{% if book_ok %}Confirmed{% elif acq.booking_status == 'cancelled' %}Cancelled{% else %}Not booked{% endif %}</span>
       {% if link.booked_at %}
       <time class="ad-status-date">{{ format_datetime(link.booked_at) }}</time>
+      {% endif %}
+    </div>
+    <div class="ad-status-item {% if paid %}is-done{% endif %}">
+      <div class="ad-status-track" aria-hidden="true">
+        <span class="ad-status-dot">{% if paid %}✓{% endif %}</span>
+      </div>
+      <span class="ad-status-label">Payment</span>
+      <span class="ad-status-value">{% if paid %}Paid{% elif link.checkout_offered_at %}Awaiting{% else %}Not offered{% endif %}</span>
+      {% if link.purchased_at %}
+      <time class="ad-status-date">{{ format_datetime(link.purchased_at) }}</time>
       {% endif %}
     </div>
   </section>
@@ -588,7 +599,11 @@
     </article>
     {% else %}
     <article class="ad-card">
+      {% if paid %}
+      <p class="muted">This call was cancelled. The Stripe payment stays on file — open the <button type="button" class="ad-linkish" data-ad-goto="payment">Payment</button> tab.</p>
+      {% else %}
       <p class="muted">Payment and checkout appear on the <button type="button" class="ad-linkish" data-ad-goto="payment">Payment</button> tab after booking is confirmed.</p>
+      {% endif %}
     </article>
     {% endif %}
 
@@ -598,7 +613,7 @@
   {% set paid = link.purchase_outcome.value == 'purchased' %}
   {% set offered = link.checkout_offered_at is not none and link.checkout_offer_amount is not none %}
   <section class="ad-panel{% if initial_tab == 'payment' %} is-active{% endif %}" id="ad-panel-payment" role="tabpanel" data-ad-panel="payment"{% if initial_tab != 'payment' %} hidden{% endif %}>
-    {% if not book_ok %}
+    {% if not book_ok and not paid %}
     <article class="ad-card">
       <h2 class="ad-card-title">Payment</h2>
       <p class="muted">Checkout opens after a confirmed booking. Confirm the meeting on the Booking tab first.</p>
@@ -644,25 +659,6 @@
             {% endif %}
           </p>
         </section>
-
-        <section class="pay-box pay-box--planned" aria-labelledby="pay-planned-title">
-          <h3 id="pay-planned-title" class="pay-box-title">Planned monthly</h3>
-          <p class="pay-box-amount pay-box-amount--muted">
-            {% if paid and link.recurring_revenue_amount is not none %}
-            {{ format_money(link.recurring_revenue_amount, link.revenue_currency) }}
-            {% elif offered and link.checkout_offer_recurring_amount is not none %}
-            {{ format_money(link.checkout_offer_recurring_amount, link.checkout_offer_currency) }}
-            {% else %}
-            —
-            {% endif %}
-            {% if (paid and link.recurring_revenue_amount is not none) or (offered and link.checkout_offer_recurring_amount is not none) %}
-            <span class="pay-per">/ month</span>
-            {% endif %}
-          </p>
-          <p class="pay-box-meta">
-            Tracking only — Stripe does not charge this monthly yet.
-          </p>
-        </section>
       </div>
 
       <div class="pay-handoff-row">
@@ -693,7 +689,7 @@
     <article class="ad-card">
       <h2 class="ad-card-title">Offer checkout</h2>
       <p class="muted small">
-        After the consult, set amounts and send the prospect their private Stripe link. Only the one-time amount is charged now.
+        After the consult, set the amount and send the prospect their private Stripe link.
         {% if offered %}
         <span class="pay-meta-line">Offer last set {{ format_datetime(link.checkout_offered_at) }}</span>
         {% endif %}
@@ -705,12 +701,6 @@
             <input name="checkout_offer_amount" type="number" step="0.01" min="0" required
               value="{{ link.checkout_offer_amount if link.checkout_offer_amount is not none else '' }}"
               placeholder="25000.00">
-          </label>
-          <label class="field">
-            <span>Monthly ongoing (optional, not charged yet)</span>
-            <input name="checkout_offer_recurring_amount" type="number" step="0.01" min="0"
-              value="{{ link.checkout_offer_recurring_amount if link.checkout_offer_recurring_amount is not none else '' }}"
-              placeholder="3000.00">
           </label>
           <label class="field">
             <span>Currency</span>
@@ -846,7 +836,7 @@
         <span class="status-badge status-{{ reply_conversation.status.value }}">{{ reply_conversation.status.value|replace('_', ' ')|title }}</span>
         {% endif %}
       </div>
-      <p class="muted small">Instantly email thread for this prospect. AI inbound reply behavior is configured under Engine &amp; AI.</p>
+      <p class="muted small">Email thread for this prospect. AI inbound reply behavior is configured under Engine &amp; AI.</p>
       {% if reply_conversation and reply_conversation.messages %}
       <div class="reply-thread-messages">
         {% for message in reply_conversation.messages %}

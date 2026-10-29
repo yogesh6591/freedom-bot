@@ -46,6 +46,10 @@ class AcquisitionPrefixMiddleware(BaseHTTPMiddleware):
             "fetch('/",
             "url('/",
             'url("/',
+            'location.href = "/',
+            "location.href = '/",
+            'data-fb-booking-status-url="/',
+            'data-fb-booked-url="/',
         ):
             text = text.replace(needle, needle[:-1] + prefix + "/")
         text = text.replace(prefix + prefix, prefix)

@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from acquisition.integrations.calcom.client import CalcomClient, CalcomError
-from acquisition.services.calcom_service import CalcomService
+from acquisition.services.calcom_service import NOT_CONNECTED, CalcomService
 
 logger = logging.getLogger(__name__)
 
@@ -19,23 +19,19 @@ def calcom_admin_context(
     *,
     include_events: bool = True,
 ) -> dict[str, Any]:
-    """Status (+ optional event types). Full API key never returned."""
+    """Status (+ optional event types) of the Cal.com connected through Composio."""
     service = CalcomService(db=db)
     summary = service.get_summary()
     ctx: dict[str, Any] = {
         "calcom": summary,
-        "calcom_key_configured": summary.api_key_configured,
+        "calcom_key_configured": summary.configured,  # name kept: journey.html reads it
         "calcom_account": None,
         "calcom_event_types": [],
         "calcom_error": None,
         "calcom_settings": settings_row,
     }
-    if not summary.api_key_configured:
-        ctx["calcom_error"] = (
-            "Add a Cal.com API key below to connect."
-            if not include_events
-            else "Connect Cal.com under Integrations first."
-        )
+    if not summary.configured:
+        ctx["calcom_error"] = NOT_CONNECTED
         return ctx
     try:
         client = CalcomClient(db=db)

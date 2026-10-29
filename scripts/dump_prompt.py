@@ -22,20 +22,21 @@ from bizos.util.dotenv import load_dotenv
 load_dotenv()
 
 from app.api.deps import bound, run_scope  # noqa: E402
-from app.assistant.assistant import (  # noqa: E402
-    CampaignSession,
-    _described,
-    _packs_for,
-    build_campaign_tools,
-    build_prompt,
-    known_records,
-)
+from app.assistant.assistant import _packs_for  # noqa: E402
+from app.assistant.v2 import _executor_prompt  # noqa: E402
 from bizos.agents import grounding  # noqa: E402
 from bizos.agents.persona import AUTO  # noqa: E402
-from bizos.agents.surface import build_unified_tools  # noqa: E402
+from bizos.agents.routing import (  # noqa: E402
+    Route,
+    ToolLoader,
+    render_playbooks,
+    visible_tools,
+)
+from bizos.agents.tool_meta import TOOL_META  # noqa: E402
 from bizos.control import store as control  # noqa: E402
 from bizos import settings as app_settings  # noqa: E402
 from bizos.types import Role  # noqa: E402
+from bizos.util.timeutil import workspace_zone  # noqa: E402
 
 OUT = ROOT / "prompt_full.txt"
 MESSAGE = "hello"
@@ -68,10 +69,6 @@ def _admin(client):
     return next((u for u in admins if (u.email or "").startswith("admin@")), admins[0])
 
 
-def _tool_name(fn) -> str:
-    return str(getattr(fn, "name", None) or getattr(fn, "__name__", "") or "")
-
-
 def main() -> int:
     client = _workspace()
     user = _admin(client)
@@ -82,36 +79,22 @@ def main() -> int:
         scope = run_scope(ctx, settings, domain="general", session_id="ses_dump_prompt")
         packs = _packs_for(settings, AUTO)
         grounded = grounding.analyze(ctx, MESSAGE, settings.enabled_domains)
-        tools, _domains = build_unified_tools(scope, packs)
-        try:
-            records = known_records(ctx)
-        except Exception as exc:  # noqa: BLE001
-            return _fail(
-                f"Could not load campaign records from the acquisition database "
-                f"({type(exc).__name__}: {exc}). CAMPAIGN_SECTION would be missing; "
-                "fix the database connection and rerun. Nothing was written."
-            )
-        if not records:
-            return _fail(
-                "known_records returned nothing, so this turn would not include "
-                "CAMPAIGN_SECTION. Nothing was written."
-            )
-        session = CampaignSession(ctx, records, {}, send_block="")
-        session.user_message = MESSAGE
-        session.user_texts = [MESSAGE]
-        campaign_tools = _described(build_campaign_tools(session))
-        tools = tools + campaign_tools
-        prompt = build_prompt(
-            ctx=ctx,
-            settings=settings,
-            scope=scope,
-            packs=packs,
-            grounded_text=grounded.text,
-            session=session,
-            records=records,
+        visible = visible_tools(scope, packs, outreach_allowed=True)
+        loader = ToolLoader.for_route(Route(domains=["outreach"], kind="task"), visible)
+        playbooks = render_playbooks(
+            sorted({TOOL_META[t].domain for t in loader.loaded if t in TOOL_META}),
+            visible,
+            timezone=workspace_zone(settings).key,
+        )
+        prompt = _executor_prompt(
+            ctx,
+            settings,
+            memory_context="(nothing relevant recorded)",
+            playbooks=playbooks,
+            grounded=grounded.text,
         )
 
-    names = [_tool_name(fn) for fn in tools if _tool_name(fn)]
+    names = list(loader.loaded)
     role = ", ".join(sorted(str(r) for r in ctx.roles))
     header = (
         f"time: {datetime.now().astimezone().isoformat(timespec='seconds')}\n"

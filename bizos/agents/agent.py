@@ -70,7 +70,7 @@ def build_agent(
     """
     if not app_settings.llm_available():
         raise ModelNotConfigured(
-            "Chat requires a model. Set OPENAI_API_KEY (and MODEL_ID) to enable it. "
+            "Chat requires a model. Set OPENAI_API_KEY (and ASSISTANT_MODEL) to enable it. "
             "Memory, approvals, audit and the connectors work without one."
         )
 
@@ -92,6 +92,7 @@ def build_agent(
 
         scope.requested_mode = narrowest(scope.requested_mode, *ceilings)
 
+    from app.assistant.assistant import _model
     from bizos.agents import grounding
 
     prompt = agent_instructions.render(
@@ -110,7 +111,7 @@ def build_agent(
     return Agent(
         name=agent_instructions.assistant_name(scope.settings),
         id="bizos-assistant",
-        model=app_settings.model_id(),
+        model=_model(app_settings.assistant_reasoning_effort()),
         user_id=scope.ctx.user_id,
         session_id=session_id,
         db=workspace_db(scope.ctx),

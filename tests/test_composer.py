@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from bizos.agents.composer import NOTHING_DONE, compose
 from bizos.agents.tool_result import ToolResult
-from bizos.rbac.registry import get_spec
 
 
 def r(tool, status, summary="", kind=None, ref=None):
     return ToolResult(tool=tool, status=status, summary=summary, pending_kind=kind, ref=ref)
 
 
-def test_one_line_per_write_and_reads_stay_out():
+def test_writes_are_not_pasted_into_the_reply():
     ack = compose("Here you go.", [
         r("crm_search_deals", "success", "1 deal(s)"),
         r("crm_update_deal_stage", "success", "stage set to won", ref="D-2231"),
@@ -19,13 +18,9 @@ def test_one_line_per_write_and_reads_stay_out():
         r("calendar_create_event", "pending", "", "draft", "act_119"),
         r("finance_draft_invoice", "error", "No pending billables for 'Acme'"),
     ])
-    lines = ack.text.splitlines()
-    assert lines[0] == "Here you go."
-    assert f"✅ {get_spec('crm_update_deal_stage').title}: stage set to won (D-2231)" in lines
-    assert any(l.startswith("⏳ ") and "waiting for approval (act_118)" in l for l in lines)
-    assert any(l.startswith("📝 ") and "draft for review (act_119)" in l for l in lines)
-    assert any(l.startswith("❌ ") and "No pending billables" in l for l in lines)
-    assert not any("deal(s)" in l for l in lines)
+    assert ack.text == "Here you go."
+    assert "✅" not in ack.text and "⏳" not in ack.text and "📝" not in ack.text and "❌" not in ack.text
+    assert "Update deal stage" not in ack.text and "deal(s)" not in ack.text
     assert ack.wrote and ack.pending_approval
 
 
@@ -45,14 +40,16 @@ def test_pending_work_is_not_called_done_and_approval_is_only_claimed_when_true(
     pending = compose("Done, I've sent it. It is now awaiting approval.",
                       [r("email_send_message", "pending", "", "approval", "act_1")])
     assert "sent it" not in pending.text and "Done" not in pending.text
-    assert "waiting for approval (act_1)" in pending.text
+    assert "awaiting approval" in pending.text
+    assert "✅" not in pending.text and "⏳" not in pending.text
     draft_only = compose("It is now awaiting approval.", [r("email_send_message", "pending", "", "draft", "act_2")])
-    assert "awaiting approval" not in draft_only.text and "draft for review" in draft_only.text
+    assert "awaiting approval" not in draft_only.text
+    assert "📝" not in draft_only.text
 
 
 def test_a_failed_or_denied_write_says_nothing_changed():
     ack = compose("I've drafted the invoice.", [r("finance_draft_invoice", "error", "No pending billables")])
-    assert ack.text.startswith(NOTHING_DONE) and "❌" in ack.text and "drafted" not in ack.text
+    assert ack.text.startswith(NOTHING_DONE) and "❌" not in ack.text and "drafted" not in ack.text
 
 
 def test_answers_to_questions_keep_their_facts():
@@ -101,3 +98,18 @@ def test_asking_clauses_future_wording_and_pending_requests_are_not_claims():
     claimed = compose("The note has been added and is awaiting approval before it can be recorded.",
                       [r("crm_create_note", "pending", "", "approval", "act_8")]).text
     assert "has been added" not in claimed
+
+
+def test_assessment_status_keeps_the_labelled_report():
+    report = (
+        "Shubham <a@b.com>\n"
+        "Overall: Unqualified (assessment finished Oct 28)\n"
+        "Set manually by an admin (the AI's own reasoning below may point the other way)."
+    )
+    ack = compose(
+        "Shubham is unqualified because of several concerns in one long paragraph.",
+        [ToolResult(tool="show_assessment", status="success", summary=report.splitlines()[0], data=report)],
+        task=False,
+    )
+    assert ack.text == report
+    assert "Overall:" in ack.text and "Set manually by an admin" in ack.text

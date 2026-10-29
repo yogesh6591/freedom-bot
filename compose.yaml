@@ -62,8 +62,10 @@ services:
       COMPOSIO_CACHE_DIR: /app/.composio-cache
       # FB-043: shared secret for the checkout/contract sale webhook.
       SALE_WEBHOOK_SECRET: ${SALE_WEBHOOK_SECRET:-}
-      MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
-      EXECUTOR_MODEL_ID: ${EXECUTOR_MODEL_ID:-openai:gpt-5.5}
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-openai:gpt-6-luna}
+      ASSISTANT_REASONING_EFFORT: ${ASSISTANT_REASONING_EFFORT:-medium}
+      MODEL_ID: ${MODEL_ID:-openai:gpt-6-luna}
+      EXECUTOR_MODEL_ID: ${EXECUTOR_MODEL_ID:-}
       ROUTER_MODEL_ID: ${ROUTER_MODEL_ID:-}
       # Meaning-based memory search (pgvector + OpenAI embeddings). off disables it.
       MEMORY_VECTOR_SEARCH: ${MEMORY_VECTOR_SEARCH:-on}
@@ -81,7 +83,7 @@ services:
       GEMINI_MODEL_ID: ${GEMINI_MODEL_ID:-}
       AGENT_PIPELINE_V2: ${AGENT_PIPELINE_V2:-}
       # Optional: none | low | medium | high. Leave unset for models that reject it with tools.
-      MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-}
+      MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-medium}
       # Acquisition runs in this process, on its own database.
       DATABASE_URL: postgresql+psycopg://${DB_USER:-bizos}:${DB_PASS:-bizos}@db:5432/${ACQUISITION_DB_NAME:-acquisition}
       ACQUISITION_URL_PREFIX: /acquire
@@ -90,7 +92,6 @@ services:
       ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH}
       SECRET_KEY: ${ACQUISITION_SECRET_KEY:-dev-local-acquisition-session-key-0001}
       INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
-      CALCOM_API_KEY: ${CALCOM_API_KEY:-}
       CALCOM_API_BASE_URL: ${CALCOM_API_BASE_URL:-https://api.cal.com/v2}
       CALCOM_WEBHOOK_SECRET: ${CALCOM_WEBHOOK_SECRET:-}
     ports:

@@ -257,31 +257,3 @@ class CampaignListResponse(BaseModel):
 
 class CampaignReadyError(BaseModel):
     missing: list[str]
-
-
-class InstantlyPreviewStep(BaseModel):
-    order: int
-    label: str
-    subject: str
-    delay_label: str
-    delay_hours: int
-
-
-class InstantlyCampaignPreviewResponse(BaseModel):
-    name: str
-    schedule_label: str
-    timezone: str
-    window_start: str
-    window_end: str
-    days_label: str
-    steps: list[InstantlyPreviewStep]
-
-
-class InstantlySyncResponse(BaseModel):
-    campaign_id: uuid.UUID
-    instantly_campaign_id: str | None
-    sync_status: InstantlySyncStatus
-    last_synced_at: datetime | None
-    sync_error: str | None
-    created: bool
-    message: str

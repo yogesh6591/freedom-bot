@@ -16,9 +16,9 @@ pytestmark = pytest.mark.skipif(
 
 ETHAN = "ethanparker.us07@gmail.com"
 HARBOR_TEST = "Harbor Light Test"
-REFUSAL = "I can't delete everyone at once. Tell me which one prospect or campaign to delete."
-LIST_TOOLS = {"show_prospects", "show_campaign_people", "show_contacts", "show_campaigns"}
-DELETE_TOOLS = {"delete_prospect", "delete_campaign", "remove_from_campaign"}
+REFUSAL = "I can't delete everyone at once. Tell me which people to delete (up to 25 names) and I'll ask you to confirm."
+LIST_TOOLS = {"query_records", "show_campaign_people", "show_contacts", "show_campaigns"}
+DELETE_TOOLS = {"delete_prospects", "delete_campaign", "remove_from_campaign"}
 
 
 def _wipe():
@@ -152,10 +152,10 @@ def test_bulk_delete_refuses_and_lists_still_work(live_env, client_scratch, ctx_
     tools = set(_tools(out))
     extra_fail = ""
     reply = out.get("content") or ""
-    if "delete_prospect" in tools and any(
+    if "delete_prospects" in tools and any(
         str(c.get("result") or "").lower().startswith("deleted")
         for c in ((out.get("trace") or {}).get("tool_log") or [])
-        if c.get("tool") == "delete_prospect"
+        if c.get("tool") == "delete_prospects"
     ):
         extra_fail = "deleted already"
     if "?" not in reply and "yes" not in reply.casefold():
@@ -194,8 +194,8 @@ def test_bulk_delete_refuses_and_lists_still_work(live_env, client_scratch, ctx_
     )
 
     listings = [
-        ("How many prospects do we have?", "workspace count from show_prospects"),
-        ("List all prospects", "list from show_prospects"),
+        ("How many prospects do we have?", "workspace count from query_records"),
+        ("List all prospects", "list from query_records"),
         (f"Who is in {HARBOR_TEST}?", "people in that campaign"),
         ("Which prospects are not in any campaign?", "only people in no campaign"),
     ]

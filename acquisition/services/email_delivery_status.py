@@ -1,7 +1,4 @@
-"""Honest Instantly email delivery state for admin UI.
-
-Syncing a lead to Instantly is not the same as Instantly sending mail.
-"""
+"""Email delivery state for the admin pages, read from our own sent-email log."""
 
 from __future__ import annotations
 
@@ -11,10 +8,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from acquisition.models.campaign import CampaignProspect, LeadSyncStatus, OutreachStatus
-from acquisition.models.replies import ProviderEvent
+from acquisition.models.campaign import CampaignProspect, OutreachStatus
+from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENDING, STATUS_SENT, SentEmail
 
-# Statuses that imply Instantly has already contacted the lead (or tried).
+# Journey states that only happen after we emailed the person.
 _CONTACTED_OUTREACH = frozenset(
     {
         OutreachStatus.REPLIED,
@@ -26,46 +23,31 @@ _CONTACTED_OUTREACH = frozenset(
 )
 
 
-def first_email_sent_at(db: Session, link_id: Any) -> datetime | None:
-    event = db.scalar(
-        select(ProviderEvent)
-        .where(
-            ProviderEvent.provider == "instantly",
-            ProviderEvent.event_type == "email_sent",
-            ProviderEvent.campaign_prospect_id == link_id,
-        )
-        .order_by(ProviderEvent.created_at.asc())
+def first_email_sent_at(db: Session, prospect_id: Any) -> datetime | None:
+    return db.scalar(
+        select(SentEmail.sent_at)
+        .where(SentEmail.prospect_id == prospect_id, SentEmail.status == STATUS_SENT)
+        .order_by(SentEmail.sent_at.asc())
         .limit(1)
     )
-    if event is None:
-        return None
-    return event.processed_at or event.created_at
 
 
 def resolve_email_delivery(db: Session, link: CampaignProspect) -> dict[str, Any]:
     """Return status: sent | queued | not_sent plus labels for the status strip."""
-    sent_at = first_email_sent_at(db, link.id)
+    sent_at = first_email_sent_at(db, link.prospect_id)
     outreach = link.outreach_status
     if sent_at is not None or (outreach is not None and outreach in _CONTACTED_OUTREACH):
-        return {
-            "status": "sent",
-            "label": "Sent",
-            "done": True,
-            "sent_at": sent_at,
-        }
+        return {"status": "sent", "label": "Sent", "done": True, "sent_at": sent_at}
 
-    synced = bool(link.instantly_lead_id) or link.sync_status == LeadSyncStatus.SYNCED
-    if synced:
-        return {
-            "status": "queued",
-            "label": "Queued in Instantly",
-            "done": False,
-            "sent_at": None,
-        }
+    waiting = db.scalar(
+        select(SentEmail.id)
+        .where(
+            SentEmail.prospect_id == link.prospect_id,
+            SentEmail.status.in_([STATUS_QUEUED, STATUS_SENDING]),
+        )
+        .limit(1)
+    )
+    if waiting is not None:
+        return {"status": "queued", "label": "Waiting to be sent", "done": False, "sent_at": None}
 
-    return {
-        "status": "not_sent",
-        "label": "Not sent",
-        "done": False,
-        "sent_at": None,
-    }
+    return {"status": "not_sent", "label": "Not sent", "done": False, "sent_at": None}

@@ -40,7 +40,7 @@ ALWAYS_ON = ("memory_search", "synced_search", "integration_find_action", "integ
 Domain = Literal[
     "memory", "approvals", "crm", "email", "calendar", "finance", "ops", "youtube",
     "admin_setup", "admin_launch", "admin_alerts", "admin_users", "admin_permissions",
-    "admin_commercial", "campaign", "integrations", "research",
+    "admin_commercial", "outreach", "integrations", "research",
 ]
 
 #: What the router reads for each domain (ARCHITECTURE.md §7).
@@ -48,7 +48,7 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "memory": "Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts (policy, contract and brand questions also need finance or ops)",
     "approvals": "Approval requests: list, view, submit, approve/reject/request changes, cancel",
     "crm": "Contacts, companies, deals: search, view, notes, tasks, tags, create contacts, update contact fields, bulk updates by lifecycle stage, deal stages, delete records",
-    "email": "Email: search and read threads, draft, send to named people",
+    "email": "Email: search and read threads, draft, send to named people who are NOT prospects of the acquisition program",
     "calendar": "Meetings: list, check availability, create, reschedule, cancel",
     "finance": "Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments",
     "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations",
@@ -59,9 +59,9 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "admin_users": "BizOS login accounts: list, create, roles and data access, suspend or reactivate, password reset",
     "admin_permissions": "Tool rules: which roles can use a tool, and tightening how it runs",
     "admin_commercial": "Pricing, resale rules, consulting quotes, change orders",
+    "outreach": "Acquisition (admins only): prospects (count, search, show, add, edit, delete), emails to prospects and follow-ups, the sent-email log, assessment progress and reports, approve or unapprove, bookings (read, move, cancel), payment offers, the prospect journey page",
     "integrations": "Anything else in the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion or any other connected platform) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it",
     "research": "The public web: research a company or person, news, job posts, read a web page",
-    "campaign": "Outbound email campaigns (admins only): pick prospects, pick or create a campaign and send window, propose the email, approve moving people between campaigns, send after approval",
 }
 
 #: Tools from other domains a bundle also loads (ARCHITECTURE.md §7).
@@ -99,12 +99,12 @@ class Route(BaseModel):
 # --------------------------------------------------------------------------- visibility
 
 
-def visible_tools(scope: RunScope, packs: list[DomainPack], *, campaign_allowed: bool) -> frozenset[str]:
+def visible_tools(scope: RunScope, packs: list[DomainPack], *, outreach_allowed: bool) -> frozenset[str]:
     """Every v2 tool this user may be shown in this request.
 
     A registered tool is visible when the policy check (no arguments, no preconditions) does not deny it.
-    A merged tool is visible when at least one old tool it maps to is. Campaign tools also need
-    ``campaign_allowed`` (an admin in the general or acquisition chat), as in the current assistant.
+    A merged tool is visible when at least one old tool it maps to is. Outreach tools also need
+    ``outreach_allowed`` (an admin).
     """
     wrapped_ok = set(allowed_old_tools(scope, packs))
     out: set[str] = set()
@@ -112,8 +112,8 @@ def visible_tools(scope: RunScope, packs: list[DomainPack], *, campaign_allowed:
         if name in MERGED:
             if schema_for(name, wrapped_ok) is not None:
                 out.add(name)
-        elif TOOL_META[name].domain == "campaign":
-            if campaign_allowed and is_visible(scope, name, packs):
+        elif TOOL_META[name].domain == OUTREACH:
+            if outreach_allowed and is_visible(scope, name, packs):
                 out.add(name)
         elif is_visible(scope, name, packs):
             out.add(name)
@@ -154,13 +154,7 @@ def tools_for_route(domains: list[str], visible: frozenset[str]) -> list[str]:
     return loaded
 
 
-CAMPAIGN = "campaign"
-#: What the executor is told when it asks for the campaign tools mid-request.
-CAMPAIGN_ELSEWHERE = (
-    "Campaign requests are handled on their own, not in this request, so no campaign tools were loaded. "
-    "Finish the other parts of the request. Then tell the user that the campaign part was not done, and "
-    "that they should send it as a separate message (for example \"send the approved campaign emails\")."
-)
+OUTREACH = "outreach"
 
 
 @dataclass
@@ -179,10 +173,9 @@ class ToolLoader:
     def load_tools(self, domain: str) -> tuple[list[str], str]:
         """Add a domain the router missed. Returns (newly loaded tools, message for the model)."""
         domain = str(domain or "").strip().casefold()
-        handed_off = domain == CAMPAIGN and any(t in self.visible for t in home_tools(domain))
         added = (
             [t for t in bundle(domain) if t in self.visible and t not in self.loaded]
-            if domain in DOMAINS and not handed_off else []
+            if domain in DOMAINS else []
         )
         self.loaded.extend(added)
         self.misses.append({"domain": domain, "added": added})
@@ -191,9 +184,6 @@ class ToolLoader:
             return [], f"There is no {domain!r} domain. Domains: {', '.join(domain_menu(self.visible))}."
         if not any(t in self.visible for t in home_tools(domain)):
             return [], f"The {domain} tools are not available to this user, so say so plainly."
-        if handed_off:
-            # The campaign flow runs only in a turn of its own (it is handed to the current assistant).
-            return [], CAMPAIGN_ELSEWHERE
         if not added:
             return [], f"The {domain} tools are already loaded."
         return added, f"Loaded {', '.join(added)}."
@@ -231,7 +221,7 @@ def clean_route(route: Route, menu: list[str]) -> Route:
 # --------------------------------------------------------------------------- playbooks
 
 _TOOL_WORD = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
-#: Every tool name a playbook line could mention (old, merged and campaign tools).
+#: Every tool name a playbook line could mention (old, merged and outreach tools).
 KNOWN_TOOLS: frozenset[str] = frozenset({s.name for s in TOOL_SPECS} | set(MERGED) | {LOAD_TOOLS})
 
 

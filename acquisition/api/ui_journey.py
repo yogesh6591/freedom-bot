@@ -15,6 +15,7 @@ from acquisition.integrations.calcom.client import CalcomError
 from acquisition.models.acquisition import AssessmentCaseStudy, CaseStudyContentStatus
 from acquisition.services.acquisition_journey_service import AcquisitionJourneyService
 from acquisition.services.calcom_admin import apply_calcom_event_selection, calcom_admin_context
+from acquisition.services.journey_publish_service import JourneyPublishError, publish_journey
 from acquisition.services.demo_video_storage import (
     DemoVideoUploadError,
     is_placeholder_demo_url,
@@ -200,50 +201,12 @@ def journey_settings_save(
 
 
 @router.post("/settings/journey/publish")
-def journey_publish(
-    journey: AcquisitionJourneyService = Depends(get_journey),
-    db: Session = Depends(get_db),
-) -> RedirectResponse:
+def journey_publish(db: Session = Depends(get_db)) -> RedirectResponse:
     """Make Proof / Demo / Value / Calendar live for prospects."""
-    row = journey.get_settings()
-    studies = journey.list_all_case_studies()
-
-    real_studies = [
-        s
-        for s in studies
-        if not (
-            str(getattr(s, "content_status", "") or "").lower() == "test"
-            or (s.title or "").upper().startswith("TEST CASE STUDY")
-            or "replace before production" in (s.title or "").lower()
-        )
-    ]
-    has_video = bool((row.demo_video_url or "").strip()) and not is_placeholder_demo_url(
-        row.demo_video_url
-    )
-    if not real_studies or not has_video:
+    try:
+        publish_journey(db)
+    except JourneyPublishError:
         return _journey_redirect(flash="publish_error", tab="proof")
-
-    for study in studies:
-        is_test = (
-            str(getattr(study, "content_status", "") or "").lower() == "test"
-            or (study.title or "").upper().startswith("TEST CASE STUDY")
-            or "replace before production" in (study.title or "").lower()
-        )
-        if is_test:
-            study.enabled = False
-            db.add(study)
-            continue
-        study.enabled = True
-        study.content_status = CaseStudyContentStatus.APPROVED.value
-        db.add(study)
-
-    row.demo_enabled = True
-    row.demo_is_test_content = False
-    row.value_enabled = True
-    row.value_is_test_content = False
-    row.calendar_enabled = True
-    db.add(row)
-    db.commit()
     return _journey_redirect(flash="published", tab="proof")
 
 

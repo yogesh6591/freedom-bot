@@ -277,6 +277,7 @@ export interface EmailViewPerson {
 
 export interface EmailViewPreview {
   email: string
+  mode?: string
   subject: string
   body: string
 }
@@ -303,6 +304,8 @@ export interface EmailView {
 
 export interface AssistantTrace {
   engine?: string
+  model?: string
+  reasoning_effort?: string
   tool?: string
   explanation?: string
   tool_log?: AssistantTraceCall[]

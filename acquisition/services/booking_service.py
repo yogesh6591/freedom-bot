@@ -334,13 +334,20 @@ class BookingService:
                     select(CampaignProspect).where(CampaignProspect.assessment_token == token)
                 )
         if link is not None:
-            link.booking_status = BOOKING_STATUS_CANCELLED
-            self.db.add(link)
+            self.mark_cancelled(link)
         self._record_provider_event(
             event_id=event_id, event_type=trigger, link=link, summary=f"uid={uid}"
         )
         self.db.commit()
         return {"status": "cancelled", "token": link.assessment_token if link else None}
+
+    def mark_cancelled(self, link: CampaignProspect) -> None:
+        """Record that the booking was cancelled (the webhook and the chat both use this). Caller commits.
+
+        Purchase fields are never cleared here: a Stripe payment stays even if the call is cancelled.
+        """
+        link.booking_status = BOOKING_STATUS_CANCELLED
+        self.db.add(link)
 
     def _already_processed(self, event_id: str) -> bool:
         row = self.db.scalar(

@@ -15,7 +15,7 @@ Configurations (PIPELINES below):
     v2           the v2 pipeline as shipped behind AGENT_PIPELINE_V2 (router, guard, executor, composer).
     v2-norouter  the same executor, guard, composer and prompts with every visible tool loaded and no
                  router. Campaign turns need the router's hand-off, so campaign cases are skipped.
-    current      the flat baseline: the current assistant (reply()), as users get it with the flag off.
+    current      the flat baseline: the same v2.handle path (chat no longer has a second assistant).
                  Its old tool names are scored under the v2 names that replace them.
     v2-strong    v2 with a stronger executor model; the router stays on the small model.
 
@@ -55,7 +55,7 @@ import yaml  # noqa: E402
 #: The configurations a run can compare.
 #:   v2           the v2 pipeline as shipped (router, guard, executor, composer).
 #:   v2-norouter  the same executor, guard, composer and prompts with every visible tool loaded; no router.
-#:   current      the flat baseline: the current assistant (reply()), as users get it with the flag off.
+#:   current      the flat baseline: the same v2.handle path (chat no longer has a second assistant).
 #:   v2-strong    v2 with a stronger executor model (STRONG_EXECUTOR); the router stays on the small model.
 PIPELINES = ("v2", "v2-norouter", "current", "v2-strong")
 STRONG_EXECUTOR = "openai:gpt-4.1"
@@ -67,10 +67,19 @@ CASES = ROOT / "evals" / "cases.yaml"
 REPORTS = ROOT / "evals" / "reports"
 ALL_AREAS = frozenset({"finance", "legal", "hr", "exec", "salary", "ops"})
 ROLE_USER = {"ADMIN": "admin", "OPERATOR": "operator", "APPROVER": "approver", "DRAFTER": "drafter", "VIEWER": "viewer"}
-CAMPAIGN_TOOLS = frozenset({"update_selection", "show_contacts", "show_campaigns", "propose_email", "approve_move",
-                            "send_approved", "show_campaign_people", "show_prospects", "pause_campaign",
-                            "resume_campaign", "delete_campaign", "delete_prospect", "remove_from_campaign",
-                            "set_person_details", "choose_email_scope", "refuse_bulk_change"})
+OUTREACH_TOOLS = frozenset({
+    "choose_recipients", "propose_email", "set_person_details", "send_approved",
+    "cancel_sending", "show_sent_emails",
+    "query_records", "show_prospect", "add_prospects", "update_prospects",
+    "delete_prospects", "refuse_bulk_change",
+    "show_assessment", "set_qualification", "rerun_qualification", "reset_journey",
+    "record_consultation", "set_handoff_status",
+    "book_call", "reschedule_booking", "cancel_booking", "send_booking_link",
+    "create_payment_offer", "send_payment_link",
+    "show_journey_settings", "update_journey_settings", "edit_case_study",
+    "edit_video_link", "publish_journey",
+})
+CAMPAIGN_TOOLS = OUTREACH_TOOLS  # kept name for is_campaign_case callers
 
 
 CANARIES = ROOT / "evals" / "canaries.yaml"
@@ -92,7 +101,7 @@ def load_cases(selector: str = "") -> list[dict]:
 def is_campaign_case(case: dict) -> bool:
     named = set(case.get("expected_domains") or []) | {
         alt for t in case.get("expected_tool_calls") or [] for alt in str(t).split(" x")[0].split("|")}
-    return "campaign" in named or bool(named & CAMPAIGN_TOOLS) or "handed_off" in str(case.get("expected_outcome"))
+    return "outreach" in named or "campaign" in named or bool(named & CAMPAIGN_TOOLS) or "handed_off" in str(case.get("expected_outcome"))
 
 
 # --------------------------------------------------------------------------- workspace
@@ -260,7 +269,6 @@ def campaign_turn(state: dict) -> tuple[str, str]:
 
 def patch_world(mp, world, fixtures: dict) -> None:
     """Every effect answers from the world; prechecks and risk inputs that read systems use it too."""
-    import app.assistant.assistant as current
     import bizos.util.timeutil as timeutil
     from bizos.tools import base as tools_base
     from evals.world import CONNECTED
@@ -268,11 +276,10 @@ def patch_world(mp, world, fixtures: dict) -> None:
     for name in list(tools_base.EFFECTS):
         mp.setitem(tools_base.EFFECTS, name, world.effect(name))
     mp.setitem(tools_base.RISK_INPUTS, "crm_bulk_update_contacts", world.bulk_inputs)
-    # Company tools moved out of assistant.py (campaign-only now) into company_tools.py.
+    # Company tools live in company_tools.py.
     import app.assistant.company_tools as company
 
     mp.setattr(company, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
-    mp.setattr(current, "known_records", lambda ctx=None: world.campaign_records())
     mp.setattr(company, "_find_user", world.find_user(company._find_user))
     mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     # App-action prechecks look actions up in Composio; evals classify by name and never reach it.
@@ -354,14 +361,6 @@ def run_case(client, case: dict, pipeline: str) -> dict:
         mp.setattr(tools_base, "guarded_call", recorded_guarded)
         mp.setattr(surface, "guarded_call", recorded_guarded)
 
-        real_reply = current.reply
-
-        def handed(body, ctx, settings):
-            run["handed_off"] = True
-            return real_reply(body, ctx, settings)
-
-        mp.setattr(current, "reply", handed)
-
         real_clean, real_prefetch = v2.clean_route, v2.route_and_prefetch
 
         def clean(route, menu):
@@ -396,7 +395,7 @@ def run_case(client, case: dict, pipeline: str) -> dict:
             mp.setenv("ROUTER_MODEL_ID", os.environ.get("ROUTER_MODEL_ID") or app_model_id())
 
         if pipeline == "v2-norouter":
-            everything = [d for d in routing.DOMAINS if d != "campaign"]
+            everything = list(routing.DOMAINS)
             mp.setattr(v2, "route_query", lambda prompt, query, **k: RouteResult(
                 routing.Route(domains=[], kind="task")))
             real_for_route = routing.ToolLoader.for_route
@@ -432,7 +431,7 @@ def run_case(client, case: dict, pipeline: str) -> dict:
                 shown = {model_name(spec.name, {})[0] for spec, _, _ in surface.visible_specs_by_pack(scope, packs)}
                 run["visible"] = sorted(shown | (CAMPAIGN_TOOLS if ctx.is_admin else set()))
             else:
-                run["visible"] = sorted(routing.visible_tools(scope, packs, campaign_allowed=ctx.is_admin))
+                run["visible"] = sorted(routing.visible_tools(scope, packs, outreach_allowed=ctx.is_admin))
             session_id = None
             prior = list(case.get("history") or [])
             if prior or fixtures.get("campaign_state"):
@@ -445,7 +444,7 @@ def run_case(client, case: dict, pipeline: str) -> dict:
                                              domain="general", meta=meta)
             started = time.monotonic()
             body = ChatRequest(message=case["query"], session_id=session_id)
-            out = real_reply(body, ctx, settings) if pipeline == "current" else v2.handle(body, ctx, settings)
+            out = v2.handle(body, ctx, settings)
             run["seconds"] = round(time.monotonic() - started, 1)
         run["content"] = out.get("content") or ""
     except Exception as exc:  # noqa: BLE001 - a crash is a failed case, not a failed run

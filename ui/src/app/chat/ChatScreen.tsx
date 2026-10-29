@@ -5,8 +5,8 @@
  *
  * One company conversation (FB-034): the server routes each turn to the domain
  * it is about, inside one session, so context carries from strategy to
- * operations to finance. Admins can pin the turn to Acquisition, which uses
- * the campaign assistant instead of the ops pipeline.
+ * operations to finance. Acquisition (prospects, emails, assessments,
+ * bookings, payments) is part of the same assistant for admins: no switch.
  */
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -25,7 +25,6 @@ import {
   History,
   LogOut,
   Mail,
-  Megaphone,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
@@ -432,6 +431,8 @@ function TurnTrace({
         Developer
       </div>
       <TraceRow label="Engine" value={(trace.engine || '').trim() || '—'} />
+      <TraceRow label="Model" value={(trace.model || '').trim() || '—'} />
+      <TraceRow label="Reasoning" value={(trace.reasoning_effort || '').trim() || '—'} />
       <TraceRow label="Tool" value={lastTool} tool />
       <TraceRow label="Explanation" value={traceValue(trace.explanation) || '—'} />
       <TraceRow label="Domain" value={(response?.domain || '').trim() || '—'} />
@@ -665,8 +666,7 @@ function whenLabel(iso: string | null): string {
 }
 
 function ChatView({ home }: { home: boolean }) {
-  const { me, hasRole, logout } = useSession()
-  const canAcquire = hasRole('ADMIN')
+  const { me, logout } = useSession()
   // Home chat (/chat, lib/panel.ts): conversations in a sidebar and nothing but the chat.
   const chatHome = home
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -695,7 +695,6 @@ function ChatView({ home }: { home: boolean }) {
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [developer, setDeveloper] = useState(false)
   const [debug, setDebug] = useDebug()
-  const [acquisition, setAcquisition] = useState(false)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const editRef = useRef<HTMLTextAreaElement>(null)
@@ -716,13 +715,12 @@ function ChatView({ home }: { home: boolean }) {
 
   const refreshContext = useCallback(async () => {
     try {
-      const domain = canAcquire && acquisition ? 'acquisition' : 'auto'
-      const data = await api.get<ChatContext>(`/api/chat/context?domain=${domain}`)
+      const data = await api.get<ChatContext>('/api/chat/context?domain=auto')
       setContext(data)
     } catch {
       // Context is informational; chat still works without it.
     }
-  }, [acquisition, canAcquire])
+  }, [])
 
   useEffect(() => {
     void refreshContext()
@@ -731,10 +729,8 @@ function ChatView({ home }: { home: boolean }) {
   useEffect(() => {
     try {
       setDeveloper(localStorage.getItem('bizos:chat:developer') === 'on')
-      setAcquisition(localStorage.getItem('bizos:chat:acquisition') === 'on')
     } catch {
       setDeveloper(false)
-      setAcquisition(false)
     }
   }, [])
 
@@ -885,23 +881,6 @@ function ChatView({ home }: { home: boolean }) {
     remember(undefined)
   }
 
-  function toggleAcquisition() {
-    setAcquisition((current) => {
-      const next = !current
-      try {
-        localStorage.setItem('bizos:chat:acquisition', next ? 'on' : 'off')
-      } catch {
-        // The toggle still works for this visit.
-      }
-      return next
-    })
-    startNewConversation()
-  }
-
-  function engineDomain(): 'acquisition' | undefined {
-    return canAcquire && acquisition ? 'acquisition' : undefined
-  }
-
   async function attachMessageIds(id: string, nextTurns: Turn[]) {
     try {
       const detail = await api.get<ChatSessionDetail>(
@@ -933,7 +912,7 @@ function ChatView({ home }: { home: boolean }) {
     setError(null)
     setEditingId(null)
     setTurns((prev) => [...prev, { role: 'user', content: message }])
-    const body = { message, session_id: sessionId, domain: engineDomain() ?? 'auto' }
+    const body = { message, session_id: sessionId, domain: 'auto' }
     try {
       let data: (ChatResponse & { response?: string }) | null = null
       setLive({ status: '', text: '' })
@@ -989,7 +968,7 @@ function ChatView({ home }: { home: boolean }) {
     try {
       const data = await api.post<ChatResponse & { response?: string }>(
         `/api/chat/sessions/${encodeURIComponent(sessionId)}/edit`,
-        { message_id: turn.id, message, domain: engineDomain() ?? 'auto' }
+        { message_id: turn.id, message, domain: 'auto' }
       )
       const nextTurns = [...kept, assistantTurnFrom(data)]
       setSessionId(data.session_id)
@@ -1351,42 +1330,12 @@ function ChatView({ home }: { home: boolean }) {
                 </span>
                 <span className="flex items-center gap-1.5 text-[11px] text-muted">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden />
-                  {canAcquire && acquisition ? 'Acquisition' : 'Ready'}
+                  Ready
                 </span>
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
             {chatHome && <ApprovalsMenu approvals={approvals} />}
-            {canAcquire && (
-              <button
-                type="button"
-                role="switch"
-                aria-checked={acquisition}
-                aria-label="Acquisition"
-                title={acquisition ? 'Acquisition is on' : 'Turn on Acquisition'}
-                onClick={toggleAcquisition}
-                className={`inline-flex h-9 items-center gap-2 rounded-full pl-3 pr-1.5 text-[12.5px] font-semibold tracking-tight transition-all duration-200 ${
-                  acquisition
-                    ? 'bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500 text-white shadow-[0_10px_22px_-10px_rgba(79,70,229,0.9)]'
-                    : 'border border-white/80 bg-white/70 text-secondary shadow-sm backdrop-blur hover:border-violet-200 hover:text-primary dark:border-white/10 dark:bg-white/5'
-                }`}
-              >
-                <Megaphone size={14} strokeWidth={2.2} aria-hidden />
-                <span className="hidden sm:inline">Acquisition</span>
-                <span
-                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full ${
-                    acquisition ? 'bg-white/25' : 'bg-black/10 dark:bg-white/15'
-                  }`}
-                  aria-hidden
-                >
-                  <span
-                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
-                      acquisition ? 'translate-x-[18px]' : 'translate-x-[2px]'
-                    }`}
-                  />
-                </span>
-              </button>
-            )}
             {!chatHome && (
             <>
             <button
@@ -1511,7 +1460,7 @@ function ChatView({ home }: { home: boolean }) {
                 Opening conversation…
               </p>
             )}
-            {!restoring && turns.length === 0 && chatHome && !(canAcquire && acquisition) && (
+            {!restoring && turns.length === 0 && chatHome && (
               <div className="w-full pb-10">
                 <div className="mb-8 flex flex-col items-center text-center">
                   <span className="assistant-orb mb-5 h-14 w-14 rounded-full" aria-hidden />
@@ -1548,7 +1497,7 @@ function ChatView({ home }: { home: boolean }) {
                 </div>
               </div>
             )}
-            {!restoring && turns.length === 0 && !(chatHome && !(canAcquire && acquisition)) && (
+            {!restoring && turns.length === 0 && !chatHome && (
               <div className="w-full pb-6">
                 <div className="mb-6 flex flex-col items-center text-center">
                   <span className="assistant-orb mb-4 h-16 w-16 rounded-full" aria-hidden />
