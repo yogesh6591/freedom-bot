@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,6 +18,10 @@ from acquisition.services.assessment_service import AssessmentEventError, Assess
 from acquisition.services.personalized_value_service import PersonalizedValueService
 
 logger = logging.getLogger(__name__)
+
+# Calendar hold polls every 500ms with sync=1; do not hit Cal.com on every tick.
+_CALCOM_SYNC_COOLDOWN_SEC = 2.0
+_last_calcom_sync: dict[str, float] = {}
 
 _BUDGET_OUTCOMES = frozenset({"ready", "not_ready", "unclear", "not_assessed"})
 
@@ -751,11 +756,14 @@ class AcquisitionJourneyService:
             "show_youtube": bool(youtube),
         }
 
-    def booking_status_payload(self, token: str) -> dict[str, Any]:
+    def booking_status_payload(self, token: str, *, sync: bool = False) -> dict[str, Any]:
         link, _profile = self.resolve(token)
         from acquisition.services.booking_service import BookingService
 
-        confirmed = BookingService(self.db).is_booking_confirmed(link)
+        booking = BookingService(self.db)
+        if sync and not booking.is_booking_confirmed(link):
+            self._sync_booking_from_calcom(token, link)
+        confirmed = booking.is_booking_confirmed(link)
         return {
             "token": token,
             "confirmed": confirmed,
@@ -763,6 +771,33 @@ class AcquisitionJourneyService:
             "booked_at": link.booked_at.isoformat() if link.booked_at else None,
             "meeting_start": link.meeting_start.isoformat() if link.meeting_start else None,
         }
+
+    def _sync_booking_from_calcom(self, token: str, link: CampaignProspect) -> None:
+        """Pull a missed Cal.com booking for this assessment token (webhook backup)."""
+        from acquisition.services.calcom_webhook_service import (
+            CalcomWebhookService,
+            CalcomWebhookServiceError,
+        )
+
+        now = time.monotonic()
+        last = _last_calcom_sync.get(token, 0.0)
+        if now - last < _CALCOM_SYNC_COOLDOWN_SEC:
+            return
+        _last_calcom_sync[token] = now
+        try:
+            CalcomWebhookService(self.db).reconcile_for_token(token)
+            self.db.refresh(link)
+        except CalcomWebhookServiceError:
+            logger.warning(
+                "Could not sync booking from Cal.com for token prefix=%s",
+                (token or "")[:12],
+            )
+        except Exception:
+            logger.warning(
+                "Could not sync booking from Cal.com for token prefix=%s",
+                (token or "")[:12],
+                exc_info=True,
+            )
 
     def list_all_youtube_links(self) -> list:
         from acquisition.models.acquisition import AfterBookingYoutubeLink

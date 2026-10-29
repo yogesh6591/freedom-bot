@@ -180,6 +180,68 @@ def test_reconcile_for_token_matches_attendee_email(monkeypatch):
     assert seen["uid"] == "u1"
 
 
+def test_booking_status_payload_accepts_sync(monkeypatch):
+    from acquisition.services import acquisition_journey_service as journey_mod
+
+    class Link:
+        booking_status = "not_booked"
+        booked_at = None
+        meeting_start = None
+
+    class FakeDb:
+        def refresh(self, _obj):
+            return None
+
+    class FakeBooking:
+        def __init__(self, db):
+            pass
+
+        def is_booking_confirmed(self, link):
+            return link.booking_status == "confirmed"
+
+    called = {"n": 0}
+
+    class FakeWebhook:
+        def __init__(self, db):
+            pass
+
+        def reconcile_for_token(self, token, *, take=25):
+            called["n"] += 1
+            called["token"] = token
+            return {"status": "ok"}
+
+    monkeypatch.setattr(journey_mod, "_last_calcom_sync", {})
+    monkeypatch.setattr("acquisition.services.booking_service.BookingService", FakeBooking)
+    monkeypatch.setattr(
+        "acquisition.services.calcom_webhook_service.CalcomWebhookService",
+        FakeWebhook,
+    )
+    svc = journey_mod.AcquisitionJourneyService(FakeDb())
+    link = Link()
+    monkeypatch.setattr(svc, "resolve", lambda token: (link, None))
+
+    idle = svc.booking_status_payload("tok_sync")
+    assert idle["confirmed"] is False
+    assert called["n"] == 0
+
+    waiting = svc.booking_status_payload("tok_sync", sync=True)
+    assert waiting["confirmed"] is False
+    assert called["n"] == 1
+    assert called["token"] == "tok_sync"
+
+    # Cooldown: a second immediate sync must not hit Cal.com again.
+    svc.booking_status_payload("tok_sync", sync=True)
+    assert called["n"] == 1
+
+    link.booking_status = "confirmed"
+    from datetime import datetime, timezone
+
+    link.booked_at = datetime(2026, 10, 29, tzinfo=timezone.utc)
+    done = svc.booking_status_payload("tok_sync", sync=True)
+    assert done["confirmed"] is True
+    assert called["n"] == 1
+
+
 def test_webhook_service_and_page(monkeypatch):
     from acquisition.db.session import SessionLocal
     from acquisition.services.calcom_webhook_service import CalcomWebhookService
