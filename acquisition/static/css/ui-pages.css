@@ -1980,29 +1980,32 @@
 .runs-table td, .runs-table th { white-space: nowrap; }
 .runs-table td:first-child strong { display: block; }
 
-/* ---------- Integrations card = button reset ---------- */
+/* ---------- Integrations cards ---------- */
 .integrations-grid-boxes {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   align-items: stretch;
+  margin-bottom: 1.1rem;
 }
 .integration-card {
   position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
-  min-height: 100%;
-  height: 100%;
 }
 .integration-card-actions {
-  position: absolute;
-  top: 0.65rem;
-  right: 0.65rem;
-  z-index: 2;
-  display: inline-flex;
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.2rem;
+  gap: 0.4rem;
+  margin-top: auto;
+  padding-top: 0.15rem;
+}
+.integration-card-actions form {
+  display: inline;
+  margin: 0;
 }
 .integration-card-icon {
   display: inline-grid;
@@ -2037,32 +2040,60 @@
 .integration-box {
   display: flex;
   flex-direction: column;
+  gap: 0.7rem;
   width: 100%;
   flex: 1 1 auto;
-  height: 100%;
-  min-height: 7.5rem;
+  min-height: 0;
   margin: 0;
   box-sizing: border-box;
   cursor: default;
   transition: border-color 160ms var(--ease), transform 160ms var(--ease), box-shadow 160ms var(--ease);
 }
 .integration-box img.integration-mark {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   background: transparent;
-  border-radius: 11px;
-  flex: 0 0 auto;
+  border-radius: 10px;
+  flex: 0 0 36px;
 }
 .integration-box-body {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  gap: 0.3rem;
-  padding-right: 4.5rem;
+  gap: 0.35rem;
+  padding-right: 0;
   min-height: 0;
 }
-.integration-box-top { justify-content: flex-start; gap: 0.5rem; }
+.integration-box-top {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+.integration-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 650;
+}
+.integration-form .checkbox-inline {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+.integration-form .checkbox-inline input {
+  width: 16px;
+  height: 16px;
+  margin: 0.15rem 0 0;
+  flex: 0 0 auto;
+}
+.integration-form .checkbox-inline span {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: 0;
+}
 .integration-box-desc {
   flex: 0 0 auto;
   min-height: 0;
@@ -2090,10 +2121,14 @@
   color: var(--text-2);
   line-height: 1.35;
 }
-.integration-form .field > span {
+.integration-form .field:not(.checkbox-inline) > span {
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
+}
+
+@media (max-width: 860px) {
+  .integrations-grid-boxes { grid-template-columns: 1fr; }
 }
 
 /* Integrations revoke confirm (page-scoped dialog) */

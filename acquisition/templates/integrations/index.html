@@ -26,20 +26,20 @@
 <section class="integrations-grid-boxes" aria-label="Available integrations">
   <article class="integration-card">
     <div class="integration-box">
+      <div class="integration-box-top">
+        <span class="integration-name">Gmail (outreach email)</span>
+        {% if email.ready and email.worker_on %}
+          <span class="status-badge status-approved">Sending is on</span>
+        {% elif email.ready %}
+          <span class="status-badge status-draft">Ready, sending is off</span>
+        {% else %}
+          <span class="status-badge status-draft">Not ready</span>
+        {% endif %}
+      </div>
       <div class="integration-box-body">
-        <div class="integration-box-top">
-          <span class="integration-name">Gmail (outreach email)</span>
-          {% if email.ready and email.worker_on %}
-            <span class="status-badge status-approved">Sending is on</span>
-          {% elif email.ready %}
-            <span class="status-badge status-draft">Ready, sending is off</span>
-          {% else %}
-            <span class="status-badge status-draft">Not ready</span>
-          {% endif %}
-        </div>
         <p class="integration-box-desc">
           {% if email.sender_gmail %}Sending from {{ email.sender_gmail }}.{% else %}No Gmail connected yet. Use Connect Gmail in the chat app, Integrations.{% endif %}
-          {% if not email.ready and email.reason %}<br>{{ email.reason }}{% endif %}
+          {% if not email.ready and email.reason %} {{ email.reason }}{% endif %}
         </p>
         <p class="integration-box-desc"><a href="#sending-settings">Sending settings</a> · <a href="/outreach">Sent emails</a></p>
       </div>
@@ -48,84 +48,84 @@
 
   <article class="integration-card">
     <div class="integration-box">
-      <img class="integration-mark" src="/static/img/integrations/openai.svg" alt="" width="36" height="36">
+      <div class="integration-box-top">
+        <img class="integration-mark" src="/static/img/integrations/openai.svg" alt="" width="36" height="36">
+        <span class="integration-name">OpenAI</span>
+        {% if openai.configured %}
+          <span class="status-badge status-approved">Server key</span>
+        {% else %}
+          <span class="status-badge status-draft">Not set</span>
+        {% endif %}
+      </div>
       <div class="integration-box-body">
-        <div class="integration-box-top">
-          <span class="integration-name">OpenAI</span>
-          {% if openai.configured %}
-            <span class="status-badge status-approved">Server key</span>
-          {% else %}
-            <span class="status-badge status-draft">Not set</span>
-          {% endif %}
-        </div>
         <p class="integration-box-desc">AI replies &amp; assessments{% if openai.configured %} · model {{ openai.model }}{% endif %}</p>
         <p class="integration-box-desc">Set <code>OPENAI_API_KEY</code>, <code>OPENAI_MODEL</code> and <code>AI_REPLY_PROVIDER=openai</code> in the server .env, then restart.</p>
       </div>
+      <div class="integration-card-actions">
+        <button class="btn btn-secondary btn-sm" type="button" hx-post="/integrations/openai/test" hx-target="#openai-status" hx-swap="innerHTML" hx-indicator="#openai-loading">Test</button>
+        <span id="openai-loading" class="htmx-indicator">Checking…</span>
+      </div>
+      <div id="openai-status" class="integration-status-area"></div>
     </div>
-    <div class="integration-card-actions">
-      <button class="btn btn-secondary" type="button" hx-post="/integrations/openai/test" hx-target="#openai-status" hx-swap="innerHTML" hx-indicator="#openai-loading">Test</button>
-      <span id="openai-loading" class="htmx-indicator">Checking…</span>
-    </div>
-    <div id="openai-status" class="integration-status-area"></div>
   </article>
 
   <article class="integration-card">
     <div class="integration-box">
-      <img class="integration-mark" src="/static/img/integrations/calcom.svg" alt="" width="36" height="36">
+      <div class="integration-box-top">
+        <img class="integration-mark" src="/static/img/integrations/calcom.svg" alt="" width="36" height="36">
+        <span class="integration-name">Cal.com</span>
+        {% if calcom.configured and not calcom_error %}
+          <span class="status-badge status-approved">Connected</span>
+        {% elif calcom.configured %}
+          <span class="status-badge status-pending">Error</span>
+        {% else %}
+          <span class="status-badge status-draft">Not connected</span>
+        {% endif %}
+      </div>
       <div class="integration-box-body">
-        <div class="integration-box-top">
-          <span class="integration-name">Cal.com</span>
-          {% if calcom.configured and not calcom_error %}
-            <span class="status-badge status-approved">Connected</span>
-          {% elif calcom.configured %}
-            <span class="status-badge status-pending">Error</span>
-          {% else %}
-            <span class="status-badge status-draft">Not connected</span>
-          {% endif %}
-        </div>
         <p class="integration-box-desc">Booking calendar, through Composio</p>
         <p class="integration-box-desc">
           {% if calcom_account %}{{ calcom_account.name or calcom_account.username }}{% if calcom_account.username %} · @{{ calcom_account.username }}{% endif %}
           {% elif calcom.configured %}Connected by {{ calcom.account or 'a workspace user' }}.
           {% else %}Connect Cal.com in the chat app, Integrations (no API key is typed here).{% endif %}
-          {% if calcom_error and calcom.configured %}<br>{{ calcom_error }}{% endif %}
+          {% if calcom_error and calcom.configured %} {{ calcom_error }}{% endif %}
         </p>
       </div>
+      <div class="integration-card-actions">
+        <button class="btn btn-secondary btn-sm" type="button" hx-post="/integrations/calcom/test" hx-target="#calcom-status" hx-swap="innerHTML" hx-indicator="#calcom-loading">Test</button>
+        <span id="calcom-loading" class="htmx-indicator">Checking…</span>
+        {% if calcom.configured %}
+        <form method="post" action="/integrations/calcom/webhook/register"><button class="btn btn-secondary btn-sm" type="submit">Register webhook</button></form>
+        <form method="post" action="/integrations/calcom/webhook/reconcile"><button class="btn btn-secondary btn-sm" type="submit">Sync bookings</button></form>
+        {% endif %}
+      </div>
+      <div id="calcom-status" class="integration-status-area"></div>
     </div>
-    <div class="integration-card-actions">
-      <button class="btn btn-secondary" type="button" hx-post="/integrations/calcom/test" hx-target="#calcom-status" hx-swap="innerHTML" hx-indicator="#calcom-loading">Test</button>
-      <span id="calcom-loading" class="htmx-indicator">Checking…</span>
-      {% if calcom.configured %}
-      <form method="post" action="/integrations/calcom/webhook/register" style="display:inline"><button class="btn btn-secondary" type="submit">Register webhook</button></form>
-      <form method="post" action="/integrations/calcom/webhook/reconcile" style="display:inline"><button class="btn btn-secondary" type="submit">Sync bookings</button></form>
-      {% endif %}
-    </div>
-    <div id="calcom-status" class="integration-status-area"></div>
   </article>
 
   <article class="integration-card">
     <div class="integration-box">
-      <img class="integration-mark" src="/static/img/integrations/stripe.svg" alt="" width="36" height="36">
+      <div class="integration-box-top">
+        <img class="integration-mark" src="/static/img/integrations/stripe.svg" alt="" width="36" height="36">
+        <span class="integration-name">Stripe</span>
+        {% if stripe.configured and stripe.enabled %}
+          <span class="status-badge status-approved">Server key</span>
+        {% elif stripe.configured %}
+          <span class="status-badge status-pending">Disabled</span>
+        {% else %}
+          <span class="status-badge status-draft">Not set</span>
+        {% endif %}
+      </div>
       <div class="integration-box-body">
-        <div class="integration-box-top">
-          <span class="integration-name">Stripe</span>
-          {% if stripe.configured and stripe.enabled %}
-            <span class="status-badge status-approved">Server key</span>
-          {% elif stripe.configured %}
-            <span class="status-badge status-pending">Disabled</span>
-          {% else %}
-            <span class="status-badge status-draft">Not set</span>
-          {% endif %}
-        </div>
         <p class="integration-box-desc">Checkout payments{% if stripe.configured %} · {{ stripe.currency|upper }}{% if stripe.key_hint %} · key {{ stripe.key_hint }}{% endif %}{% endif %}</p>
         <p class="integration-box-desc">Set <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>, <code>STRIPE_CURRENCY</code> and <code>STRIPE_ENABLED=true</code> in the server .env, then restart.{% if stripe.configured and not stripe.webhook_secret_set %} The webhook secret is missing.{% endif %}</p>
       </div>
+      <div class="integration-card-actions">
+        <button class="btn btn-secondary btn-sm" type="button" hx-post="/integrations/stripe/test" hx-target="#stripe-status" hx-swap="innerHTML" hx-indicator="#stripe-loading">Test</button>
+        <span id="stripe-loading" class="htmx-indicator">Checking…</span>
+      </div>
+      <div id="stripe-status" class="integration-status-area"></div>
     </div>
-    <div class="integration-card-actions">
-      <button class="btn btn-secondary" type="button" hx-post="/integrations/stripe/test" hx-target="#stripe-status" hx-swap="innerHTML" hx-indicator="#stripe-loading">Test</button>
-      <span id="stripe-loading" class="htmx-indicator">Checking…</span>
-    </div>
-    <div id="stripe-status" class="integration-status-area"></div>
   </article>
 </section>
 
@@ -142,11 +142,9 @@
         <span>Opt-out line (shown above the address)</span>
         <input type="text" name="optout_line" value="{{ email.optout_line }}" maxlength="300">
       </label>
-      <label class="field full">
-        <span>
-          <input type="checkbox" name="worker_enabled" value="1" {% if email.worker_on %}checked{% endif %}>
-          Sending is on (emails you approve in the chat go out in the background, one every {{ email.gap_seconds }} seconds, up to {{ email.daily_ceiling }} a day)
-        </span>
+      <label class="field full checkbox-inline">
+        <input type="checkbox" name="worker_enabled" value="1" {% if email.worker_on %}checked{% endif %}>
+        <span>Sending is on (emails you approve in the chat go out in the background, one every {{ email.gap_seconds }} seconds, up to {{ email.daily_ceiling }} a day)</span>
       </label>
     </div>
     <div class="form-actions">
