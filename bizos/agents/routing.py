@@ -48,7 +48,7 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "memory": "Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts (policy, contract and brand questions also need finance or ops)",
     "approvals": "Approval requests: list, view, submit, approve/reject/request changes, cancel",
     "crm": "Contacts, companies, deals: search, view, notes, tasks, tags, create contacts, update contact fields, bulk updates by lifecycle stage, deal stages, delete records",
-    "email": "Email: search and read threads, draft, send to named people who are NOT prospects of the acquisition program",
+    "email": "Email: search and read threads, draft, reply in existing threads and email named CRM contacts; a first email to someone given only by email address belongs to outreach",
     "calendar": "Meetings: list, check availability, create, reschedule, cancel",
     "finance": "Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments",
     "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations",
