@@ -1,8 +1,8 @@
 """Journey content: settings text, case studies, video links, and publish.
 
 Covers what the admin Journey settings page edits, except file uploads (videos and posters are uploaded in the
-admin panel). Text edits are immediate. Anything that makes content live for prospects (turning a section on,
-a case study or link going live, publish) and anything deleted asks the user for one yes first.
+admin panel). Text edits, section switches, links, and making a video link live are immediate. Making a case
+study live, publishing, and anything deleted asks the user for one yes first.
 """
 
 from __future__ import annotations
@@ -142,9 +142,9 @@ def show_journey_settings(call: Call) -> str:
 
 
 # ------------------------------------------------------------------------------------------------ settings
-@tool("update_journey_settings", "changes", "approval_evidence")
-def update_journey_settings(call: Call, changes: Optional[dict] = None, approval_evidence: str = "") -> str:
-    """Change journey text and section switches. Switching a section on or off asks for a yes."""
+@tool("update_journey_settings", "changes")
+def update_journey_settings(call: Call, changes: Optional[dict] = None) -> str:
+    """Change journey text and section switches."""
     if not isinstance(changes, dict) or not changes:
         raise ToolError(f"changes is empty. Settings: {', '.join(SETTING_KEYS)}.")
     unknown = [k for k in changes if k not in BY_KEY]
@@ -167,15 +167,6 @@ def update_journey_settings(call: Call, changes: Optional[dict] = None, approval
             values["demo_require_watch"] = flags["demo_require_watch"] = False
             side_note = " Must-watch is turned off, because it cannot be tracked on a YouTube or Vimeo link."
 
-    asks = {k: v for k, v in values.items() if BY_KEY[k].kind in ("flag", "link")}
-    if asks:
-        shown = ", ".join(
-            f"{BY_KEY[k].label} -> {('on' if v else 'off') if BY_KEY[k].kind == 'flag' else (v or 'cleared')}"
-            for k, v in asks.items())
-        stop = call.confirmed(action_key("journey_settings", values), approval_evidence,
-                              f"Change what prospects see now: {shown}?{side_note}")
-        if stop:
-            return stop
     for key, value in values.items():
         setting = BY_KEY[key]
         setattr(row, setting.column, value)
@@ -311,12 +302,11 @@ def edit_video_link(call: Call, action: str = "", which: str = "", title: str = 
         call.db.add(link)
         call.db.commit()
         return f"Video link {link.title!r} is now a draft (hidden)."
-    verb = "delete" if action == "delete" else "make live"
-    stop = call.confirmed(action_key(f"video_{action}", str(link.id)), approval_evidence,
-                          f"{verb.capitalize()} the video link {link.title!r}?")
-    if stop:
-        return stop
     if action == "delete":
+        stop = call.confirmed(action_key("video_delete", str(link.id)), approval_evidence,
+                              f"Delete the video link {link.title!r}?")
+        if stop:
+            return stop
         call.db.delete(link)
         call.db.commit()
         return f"Deleted video link {link.title!r}."

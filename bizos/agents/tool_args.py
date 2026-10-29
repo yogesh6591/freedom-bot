@@ -820,7 +820,6 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "set_qualification": _obj({
         "who": _s("Name or email of the person; leave empty to use the person already chosen"),
         "result": _enum("The new result: qualified (approve) or unqualified (unapprove). There is no pending option here.", ["qualified", "unqualified"]),
-        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
     }, ["result"]),
     "rerun_qualification": _obj({
         "who": _s("Name or email; leave empty to use the person already chosen"),
@@ -842,7 +841,6 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "reschedule_booking": _obj({
         "who": _s("Name or email; leave empty to use the person already chosen"),
         "start": _s("New start time in Chicago time as YYYY-MM-DD HH:MM (24-hour), for example 2026-11-05 14:30"),
-        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
     }, ["start"]),
     "cancel_booking": _obj({
         "who": _s("Name or email; leave empty to use the person already chosen"),
@@ -865,7 +863,6 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "description": f"Setting name -> new value. Settings: {_JOURNEY_SETTINGS}. On/off settings take true or false; empty text clears it.",
             "additionalProperties": True,
         },
-        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
     }, ["changes"]),
     "edit_case_study": _obj({
         "action": _enum("What to do", ["add", "edit", "go_live", "make_draft", "delete"]),

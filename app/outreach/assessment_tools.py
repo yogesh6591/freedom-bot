@@ -185,8 +185,8 @@ def _current(profile: AssessmentProfile) -> str:
     return getattr(profile.qualification_status, "value", str(profile.qualification_status))
 
 
-@tool("set_qualification", "who", "result", "approval_evidence")
-def set_qualification(call: Call, who: str = "", result: str = "", approval_evidence: str = "") -> str:
+@tool("set_qualification", "who", "result")
+def set_qualification(call: Call, who: str = "", result: str = "") -> str:
     """Approve (qualified) or unapprove (unqualified) a finished assessment, like the admin switch."""
     from acquisition.services.acquisition_journey_service import AcquisitionJourneyService
 
@@ -197,11 +197,6 @@ def set_qualification(call: Call, who: str = "", result: str = "", approval_evid
     current = _current(profile)
     if current == result:
         return f"{p.executive_name} is already {result}. Nothing changed."
-    key = action_key("qualify", {"id": str(p.id), "to": result})
-    stop = call.confirmed(key, approval_evidence,
-                          f"Set {p.executive_name} <{p.email}> to {result} (now {current})? This is the same as the admin switch.")
-    if stop:
-        return stop
     new_status = QualificationStatus(result)
     qual = dict(profile.qualification or empty_qualification())
     qual["status"] = qual["assessment_status"] = new_status.value

@@ -1,8 +1,8 @@
 """Cal.com bookings: move or cancel a booking that already exists.
 
 The person books their own slot after qualifying; the team never books for them. Reading bookings is
-``query_records`` (dataset bookings). Every change here asks the user for one yes first,
-because Cal.com emails the guest. Times are Chicago time, and replies say so.
+``query_records`` (dataset bookings). Cancelling asks the user for one yes first, because Cal.com
+emails the guest. Times are Chicago time, and replies say so.
 """
 
 from __future__ import annotations
@@ -69,18 +69,12 @@ def _cal_error(exc: CalcomError) -> ToolError:
 
 
 # ------------------------------------------------------------------------------------------------ reschedule
-@tool("reschedule_booking", "who", "start", "approval_evidence")
-def reschedule_booking(call: Call, who: str = "", start: str = "", approval_evidence: str = "") -> str:
+@tool("reschedule_booking", "who", "start")
+def reschedule_booking(call: Call, who: str = "", start: str = "") -> str:
     """Move a confirmed booking to a new Chicago-time slot; Cal.com emails the guest."""
     p, link = _confirmed_booking(call, who)
     when = _future(start)
     old = chicago.fmt_time(link.meeting_start)
-    key = action_key("reschedule", {"id": str(p.id), "from": link.calcom_booking_uid, "to": when.isoformat()})
-    stop = call.confirmed(key, approval_evidence,
-                          f"Move {p.executive_name}'s call from {old} to {chicago.fmt_time(when)} {chicago.TZ_LABEL}? "
-                          "Cal.com emails them the change.")
-    if stop:
-        return stop
     minutes = int((link.meeting_end - link.meeting_start).total_seconds() // 60) if link.meeting_end and link.meeting_start \
         else (_settings(call).calcom_event_duration_minutes or DEFAULT_MINUTES)
     try:

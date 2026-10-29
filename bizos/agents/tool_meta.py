@@ -919,11 +919,10 @@ TOOL_META: dict[str, AgentMeta] = {
     """), id_fields=("who",)),
     "set_qualification": M("outreach", d("""
         Set a finished assessment to qualified or unqualified, like the admin switch. Approving means
-        qualified; unapproving means unqualified. Always asks yes/no first.
+        qualified; unapproving means unqualified.
         Use when: the user wants to approve or unapprove a person's assessment result.
         Don't use: reading the result -> show_assessment; re-judging -> rerun_qualification.
         Needs: who if named (name or email); leave who empty for the person already chosen.
-        approval_evidence on the second call, copied from their yes.
         Effect: the result is changed. {gate}
     """)),
     "rerun_qualification": M("outreach", d("""
@@ -960,7 +959,6 @@ TOOL_META: dict[str, AgentMeta] = {
     # ------------------------------------------------------------------ outreach: bookings
     "reschedule_booking": M("outreach", d("""
         Move someone's confirmed Cal.com booking to a new Chicago-time slot. They get the change by email.
-        Asks yes/no first.
         Use when: "move Nina's call to Friday 3pm", "reschedule Raj", "call aage kar do".
         Don't use: no booking yet -> the person books themselves after qualifying; dropping the call -> cancel_booking; reading bookings -> query_records.
         Needs: who (name or email) and start as YYYY-MM-DD HH:MM Chicago time.
@@ -1000,7 +998,7 @@ TOOL_META: dict[str, AgentMeta] = {
     """)),
     "update_journey_settings": M("outreach", d("""
         Change journey text and switches: demo, value, budget answers, booking link, after-booking video and
-        preparation text. Switching a section on or off asks yes/no first. No file uploads.
+        preparation text. No file uploads.
         Use when: "change the demo title", "turn off the value page", "booking link badal do".
         Don't use: case studies -> edit_case_study; video links -> edit_video_link; going live in one go -> publish_journey.
         Needs: changes, setting names with their new values.
@@ -1014,8 +1012,7 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: the case study changes. {gate}
     """)),
     "edit_video_link": M("outreach", d("""
-        Add, change, make live or draft, or delete a YouTube link shown after booking. Going live and deleting
-        ask yes/no first.
+        Add, change, make live or draft, or delete a YouTube link shown after booking. Deleting asks yes/no first.
         Use when: "add this YouTube link", "make the prep video live", "video link hata do".
         Don't use: case studies -> edit_case_study; other journey text -> update_journey_settings.
         Needs: action, plus which (its title) unless adding; a YouTube url when adding.
