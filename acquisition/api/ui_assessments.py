@@ -324,6 +324,7 @@ def assessment_pre_call_brief(
                 "brief_error": (profile.pre_call_brief_error if profile else result.get("error")),
                 "generated_at": (profile.pre_call_brief_generated_at if profile else None),
                 "flash": request.query_params.get("flash") or "brief_failed",
+                "standalone": True,
             },
             status_code=200,
         )
@@ -340,6 +341,7 @@ def assessment_pre_call_brief(
             "brief_error": None,
             "generated_at": profile.pre_call_brief_generated_at,
             "flash": request.query_params.get("flash"),
+            "standalone": True,
         },
     )
 

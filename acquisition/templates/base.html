@@ -27,7 +27,7 @@
     })();
   </script>
   <link rel="stylesheet" href="/static/css/ui.css?v=13">
-  <link rel="stylesheet" href="/static/css/ui-pages.css?v=25">
+  <link rel="stylesheet" href="/static/css/ui-pages.css?v=26">
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
   {% if request.session.get('admin_authenticated') %}
   <meta name="csrf-token" content="{{ request.session.get('csrf_token', '') }}">
@@ -37,7 +37,8 @@
 <body>
   {% set auth_role = request.session.get('auth_role') or 'admin' %}
   {% set is_owner_nav = auth_role == 'acquisition_owner' %}
-  <div class="app-shell">
+  <div class="app-shell{% if standalone %} standalone{% endif %}">
+        {% if not standalone %}
         <aside class="sidebar" aria-label="Primary">
       <div class="brand">
         <div class="brand-lockup">
@@ -139,6 +140,7 @@
         <div class="sidebar-env">{{ 'Owner view' if is_owner_nav else 'Admin' }}<br><span>by Cepoch</span></div>
       </div>
     </aside>
+        {% endif %}
 
     <div class="main">
       {% block topbar %}

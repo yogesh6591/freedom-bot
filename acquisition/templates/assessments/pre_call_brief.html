@@ -14,11 +14,7 @@
 {{- format_admin_value(value)|replace('-', '–') -}}
 {%- endmacro %}
 
-{% block topbar %}
-<header class="pcb-topbar">
-  <a class="pcb-back" href="/assessments/{{ link.id }}">← Assessment</a>
-</header>
-{% endblock %}
+{% block topbar %}{% endblock %}
 
 {% block flash %}
   {% if flash == 'brief_ready' %}

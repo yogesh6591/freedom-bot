@@ -2230,3 +2230,15 @@ a.journey-add-btn:not(.btn) {
   text-decoration: none;
 }
 a.journey-add-btn:not(.btn):hover { filter: brightness(1.08); }
+
+/* Standalone (no sidebar), e.g. pre-call brief opened in a new tab */
+.app-shell.standalone {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell.standalone .main,
+.app-shell.standalone .content {
+  max-width: 1200px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+}
