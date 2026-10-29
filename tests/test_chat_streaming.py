@@ -119,3 +119,19 @@ def test_v2_receives_the_emitter(client_a, ctx_factory, monkeypatch):
     sink = []
     chat._dispatch(chat.ChatRequest(message="hi"), ctx_factory(client_a, "admin"), client_a.settings, sink.append)
     assert seen["emit"] == sink.append
+
+
+def test_a_long_quiet_turn_gets_keep_alives(app_client, client_a, monkeypatch):
+    import time
+
+    import app.api.chat as chat
+
+    def slow(body, ctx, settings, emit=None):
+        time.sleep(0.2)
+        return {"session_id": "ses_2", "content": "done"}
+
+    monkeypatch.setattr(chat, "KEEPALIVE_SEC", 0.05)
+    monkeypatch.setattr(chat, "_dispatch", slow)
+    response = app_client.post("/api/chat/stream", json={"message": "long job"},
+                               headers={"Authorization": f"Bearer {_token(app_client, client_a)}"})
+    assert ": keep-alive" in response.text and _events(response)[-1]["type"] == "done"

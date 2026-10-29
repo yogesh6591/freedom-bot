@@ -3,7 +3,7 @@
 One chat turn:
   pre-model refusals + grounding (the same functions the current assistant calls)
   -> visibility filter -> router (+ memory_search in parallel) -> tool loading
-  -> one executor Agent (fresh per request, tool_call_limit 25) whose every tool call goes through the guard
+  -> one executor Agent (fresh per request, tool_call_limit 60) whose every tool call goes through the guard
   -> reply composed from tool results.
 
 The rules live in plain modules under bizos/agents (routing, guard, merged_tools, composer, tool_meta);
@@ -56,7 +56,12 @@ from bizos.util.ids import new_id
 
 log = logging.getLogger(__name__)
 
-TOOL_CALL_LIMIT = 25
+TOOL_CALL_LIMIT = 60
+#: Added to the reply when a request used every tool call it had.
+CALL_LIMIT_NOTE = (
+    f"I reached the limit of {TOOL_CALL_LIMIT} steps for one message, and some steps are still left. "
+    "Say \"continue\" and I will carry on with the remaining steps."
+)
 #: Added to the executor prompt when a data question was answered without looking anything up.
 FRESH_LOOKUP_NOTE = (
     "## This turn needs fresh data\n"
@@ -382,6 +387,11 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
             continue
         break
 
+    if calls_left <= 0:
+        # The step limit stopped the work: say so, so the user can carry on in the next message
+        # (Recent work keeps what was done, and the guard keeps finished writes from running twice).
+        trace["call_limit_reached"] = True
+        text = (text.rstrip() + "\n\n" if text.strip() else "") + CALL_LIMIT_NOTE
     trace.update(loaded=loader.loaded, load_tools_misses=loader.misses)
     return _respond(ctx, scope, body, session_id, saved, text=text, before=before, guard=guard, trace=trace,
                     task=route.kind == "task")

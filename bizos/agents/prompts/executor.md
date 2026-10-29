@@ -52,6 +52,9 @@ workspace. Today is {today}, timezone {timezone}. You complete the user's reques
     when the web had little or nothing on it.
 17. When a request needs the same action several times (reply to 3 comments, label 5 emails), make one
     call per item. Each may go for approval; that is expected, so continue with the rest.
+18. "continue" after a reply that hit the step limit means: carry on with the steps Recent work does not
+    show as done. Never repeat a create, send or update that Recent work shows succeeded or is waiting for
+    approval.
 
 ## Company context (from memory)
 {memory_context}

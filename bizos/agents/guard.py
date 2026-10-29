@@ -52,10 +52,19 @@ V2_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 #: Calls of one read tool allowed per request before the executor is told to stop and answer or ask.
-READ_REPEAT_LIMIT = 3
+READ_REPEAT_LIMIT = 5
 #: Research and app reads legitimately take more steps (several searches, pages or app reads); every
 #: other read keeps READ_REPEAT_LIMIT. Identical calls are still answered from the earlier result.
-READ_REPEAT_LIMITS = {"integration_read_action": 8, "web_search": 5, "web_read": 6, "youtube_transcript": 4}
+READ_REPEAT_LIMITS = {
+    # One search per app and per action in multi-app workflows (Sheets, Drive, Outlook, Calendar...).
+    "integration_find_action": 12,
+    "integration_read_action": 15,
+    "youtube_video": 8,
+    "youtube_search_videos": 6,
+    "web_search": 6,
+    "web_read": 8,
+    "youtube_transcript": 5,
+}
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 

@@ -313,3 +313,14 @@ def test_small_talk_is_not_forced_into_a_lookup(fake_model, client_scratch, ctx_
     SCRIPT[:] = [route(kind="chitchat"), final("Hello! How can I help?")]
     out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "hi")
     assert effects.names() == [] and "fresh_lookup_forced" not in out["trace"]
+
+
+def test_hitting_the_step_limit_says_how_to_carry_on(fake_model, client_scratch, ctx_factory, effects, monkeypatch):
+    from app.assistant import v2
+
+    monkeypatch.setattr(v2, "TOOL_CALL_LIMIT", 2)
+    SCRIPT[:] = [route("crm", kind="question"), call("crm_search_contacts", query="Raj"),
+                 call("crm_search_contacts", query="Priya"), final("Raj is at Acme.")]
+    out = ask(ctx_factory(client_scratch, "admin"), _settings(client_scratch), "find Raj and Priya")
+    assert effects.names() == ["crm_search_contacts", "crm_search_contacts"]
+    assert out["trace"]["call_limit_reached"] is True and 'Say "continue"' in out["content"]
