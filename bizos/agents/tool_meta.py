@@ -911,7 +911,8 @@ TOOL_META: dict[str, AgentMeta] = {
     # ------------------------------------------------------------------ outreach: assessments
     "show_assessment": M("outreach", d("""
         Show where one person is in the assessment: the result first, then a few one-line bullets (why,
-        problem, cost, emails, booking). Set details for strengths, concerns and quotes. Read-only.
+        problem, cost, emails, booking). Set details for strengths, concerns and quotes. Set include_brief
+        for a link to the pre-call brief. Read-only.
         Use when: "did Nina start the assessment", "has Raj finished", "assessment ka status batao", "give me the details".
         Don't use: counting everyone -> query_records; emails sent -> show_sent_emails; changing the result ->
         set_qualification.

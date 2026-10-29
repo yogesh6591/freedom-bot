@@ -162,8 +162,8 @@ def full_report(p: Prospect, s: dict, em: dict, include_brief: bool) -> str:
             lines.append("- Still unanswered: " + _clip(", ".join(map(str, missing)), 200))
     if s.get("pre_call_brief_status"):
         lines.append(f"- Pre-call brief: {s['pre_call_brief_status']}")
-        if include_brief and s.get("pre_call_brief"):
-            lines += [f"  - {_words(k)}: {_clip(v, 300)}" for k, v in s["pre_call_brief"].items()]
+        if include_brief and s.get("brief_url"):
+            lines.append(f"- Open the pre-call brief in a new tab: {s['brief_url']}")
     return "\n".join(lines)
 
 

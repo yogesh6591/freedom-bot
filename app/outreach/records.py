@@ -118,9 +118,13 @@ def assessment_stage(db: Session, prospect_id: uuid.UUID) -> dict:
         select(AssessmentConversation).where(AssessmentConversation.campaign_prospect_id == link.id)
     )
     profile = db.scalar(select(AssessmentProfile).where(AssessmentProfile.campaign_prospect_id == link.id))
+    from acquisition.config import get_settings
+
+    base = (get_settings().public_base_url or "").rstrip("/")
     out = {
         "has_link": True,
         "link": build_assessment_url(link.assessment_token),
+        "brief_url": f"{base}/assessments/{link.id}/pre-call-brief",
         "page_opened_at": conv.created_at if conv is not None else None,
         "assessment_status": link.assessment_status.value,
         "started_at": link.assessment_started_at,
