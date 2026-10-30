@@ -28,7 +28,6 @@ from acquisition.services.assessment_extraction import (
     parse_extractor_json,
 )
 from acquisition.services.booking_service import BOOKING_STATUS_CONFIRMED
-from acquisition.services.openai_service import OpenAIService
 
 logger = logging.getLogger(__name__)
 
@@ -1139,8 +1138,7 @@ class PreCallBriefService:
 
     def _default_openai_call(self, input_messages: list[dict[str, str]]) -> str:
         settings = get_settings()
-        openai = OpenAIService(db=self.db, settings=settings)
-        api_key, _stored_model = openai.resolve_credentials()
+        api_key = (settings.openai_api_key or "").strip()
         if not api_key:
             raise RuntimeError("no_openai")
         from openai import OpenAI

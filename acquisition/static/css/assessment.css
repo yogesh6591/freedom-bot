@@ -221,34 +221,6 @@ html, body {
   color: var(--assess-muted);
 }
 
-/* Developer demo mode indicator — fixed bottom-right, easy for you, quiet for prospects */
-.assess-mode-dot {
-  position: fixed;
-  right: 10px;
-  bottom: 10px;
-  z-index: 40;
-  display: block;
-  width: 5px;
-  height: 5px;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  border-radius: 50%;
-  cursor: default;
-  box-shadow: 0 0 0 1px rgba(12, 27, 42, 0.1);
-  appearance: none;
-  -webkit-appearance: none;
-}
-.assess-mode-dot.is-ai {
-  background: #22c55e; /* green — live AI */
-}
-.assess-mode-dot.is-unqualified {
-  background: #ef4444; /* red — static unqualified */
-}
-.assess-mode-dot.is-qualified {
-  background: #2563eb; /* blue — static qualified */
-}
-
 .assess-stage {
   display: flex;
   align-items: center;

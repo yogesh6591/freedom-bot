@@ -56,7 +56,6 @@ from acquisition.services.assessment_extraction import (
     validate_conversation_focus,
 )
 from acquisition.services.assessment_service import AssessmentEventError, AssessmentEventService
-from acquisition.services.openai_service import OpenAIService
 
 logger = logging.getLogger(__name__)
 
@@ -104,28 +103,12 @@ class AssessmentChatService:
             "has_result": bool(profile.result_payload),
         }
 
-    def ensure_greeting(
-        self, token: str, *, demo_static: str | None = None
-    ) -> dict[str, Any]:
-        from acquisition.services.demo_static_assessment import (
-            ensure_static_greeting,
-            normalize_demo_static,
-        )
-
+    def ensure_greeting(self, token: str) -> dict[str, Any]:
         link = self.events.resolve_link(token)
         if link.assessment_status == AssessmentStatus.COMPLETED:
             return self.get_session(token)
         conversation = self._get_or_create_conversation(link)
-        profile = self._get_or_create_profile(link, conversation)
-        outcome = normalize_demo_static(demo_static)
-        if outcome:
-            return ensure_static_greeting(
-                chat=self,
-                token=token,
-                link=link,
-                conversation=conversation,
-                outcome=outcome,
-            )
+        self._get_or_create_profile(link, conversation)
         messages = self._ordered_messages(conversation.id)
         if messages:
             return self.get_session(token)
@@ -139,9 +122,7 @@ class AssessmentChatService:
         self.db.commit()
         return self.get_session(token)
 
-    def send_message(
-        self, token: str, content: str, *, demo_static: str | None = None
-    ) -> dict[str, Any]:
+    def send_message(self, token: str, content: str) -> dict[str, Any]:
         cleaned = (content or "").strip()
         if not cleaned:
             raise AssessmentChatError("Message is required", http_status=422, code="empty")
@@ -158,23 +139,6 @@ class AssessmentChatService:
 
         conversation = self._get_or_create_conversation(link)
         profile = self._get_or_create_profile(link, conversation)
-
-        from acquisition.services.demo_static_assessment import (
-            apply_static_turn,
-            normalize_demo_static,
-        )
-
-        outcome = normalize_demo_static(demo_static)
-        if outcome:
-            return apply_static_turn(
-                chat=self,
-                token=token,
-                link=link,
-                conversation=conversation,
-                profile=profile,
-                content=cleaned,
-                outcome=outcome,
-            )
 
         messages = self._ordered_messages(conversation.id)
 
@@ -479,8 +443,9 @@ class AssessmentChatService:
         return "- " + "\n- ".join(lines) + "\n"
 
     def _call_responses(self, input_messages: list[dict[str, str]]) -> str:
-        openai = OpenAIService(db=self.db, settings=self.settings)
-        api_key, _stored_model = openai.resolve_credentials()
+        # Assessment needs the API key only. AI_REPLY_PROVIDER=openai is the inbound
+        # email auto-reply switch and must not turn the public assessment off.
+        api_key = (self.settings.openai_api_key or "").strip()
         if not api_key:
             raise AssessmentChatError(
                 "Assessment AI is temporarily unavailable.",

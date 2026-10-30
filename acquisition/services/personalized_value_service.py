@@ -23,7 +23,6 @@ from acquisition.models.assessment import (
 )
 from acquisition.models.campaign import CampaignProspect
 from acquisition.services.assessment_extraction import field_display, normalize_structured_state
-from acquisition.services.openai_service import OpenAIService
 
 logger = logging.getLogger(__name__)
 
@@ -253,8 +252,7 @@ class PersonalizedValueService:
         self, input_messages: list[dict[str, str]]
     ) -> str:
         settings = get_settings()
-        openai = OpenAIService(db=self.db, settings=settings)
-        api_key, _model = openai.resolve_credentials()
+        api_key = (settings.openai_api_key or "").strip()
         if not api_key:
             raise RuntimeError("no_openai")
         from openai import OpenAI

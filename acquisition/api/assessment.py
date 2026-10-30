@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -26,12 +26,6 @@ def get_assessment_chat(db: Session = Depends(get_db)) -> AssessmentChatService:
 
 class AssessmentMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=8000)
-    # Developer demo only: "unqualified" | "qualified" (hidden client gesture).
-    demo_static: str | None = Field(default=None, max_length=32)
-
-
-class AssessmentGreetingRequest(BaseModel):
-    demo_static: str | None = Field(default=None, max_length=32)
 
 
 @router.get("/a/{token}", response_class=HTMLResponse)
@@ -40,8 +34,6 @@ def assessment_chat_page(
     token: str,
     service: AssessmentChatService = Depends(get_assessment_chat),
 ) -> HTMLResponse:
-    from acquisition.services.demo_static_assessment import public_answer_bank
-
     try:
         session = service.get_session(token)
     except AssessmentEventError as exc:
@@ -60,7 +52,6 @@ def assessment_chat_page(
             "token": token,
             "session": session,
             "brand": BRAND,
-            "demo_static_answers": public_answer_bank(),
         },
     )
 
@@ -105,11 +96,10 @@ def assessment_session(
 @router.post("/api/assessment/{token}/greeting")
 def assessment_greeting(
     token: str,
-    payload: AssessmentGreetingRequest = Body(default_factory=AssessmentGreetingRequest),
     service: AssessmentChatService = Depends(get_assessment_chat),
 ) -> dict[str, Any]:
     try:
-        return service.ensure_greeting(token, demo_static=payload.demo_static)
+        return service.ensure_greeting(token)
     except AssessmentEventError as exc:
         raise _http_error(exc) from exc
     except AssessmentChatError as exc:
@@ -123,9 +113,7 @@ def assessment_send_message(
     service: AssessmentChatService = Depends(get_assessment_chat),
 ):
     try:
-        return service.send_message(
-            token, payload.content, demo_static=payload.demo_static
-        )
+        return service.send_message(token, payload.content)
     except AssessmentEventError as exc:
         raise _http_error(exc) from exc
     except AssessmentChatError as exc:
