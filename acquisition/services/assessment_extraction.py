@@ -37,15 +37,24 @@ For EVERY assessment field you update (including headcount), return a strict obj
   "field_name": {
     "status": "known|unknown|declined|not_applicable|missing",
     "value": <concrete value or null>,
-    "evidence_quote": "<exact quote from the latest USER message>"
+    "evidence_quote": "<exact quote from a USER message>"
   }
 
+READ THE WHOLE CONVERSATION EVERY TURN:
+- Every turn, check every field that is still missing in the existing state against ALL user messages so far,
+  not only the latest one. If any earlier or the latest user message already answers a missing field, fill it now.
+- A field is known when the user's own words state it or directly imply it (for example, describing themselves
+  as the founder or owner states that they can decide; "about thirty of us" states headcount). Quote the words
+  that support it. Do not go beyond what their words support.
+- One rich answer commonly fills many fields: fill every field the conversation supports.
+
 Rules for all fields:
-- known requires a non-empty value AND evidence_quote copied from the latest USER message.
-- unknown|declined|not_applicable require value=null AND evidence_quote from the latest USER message.
+- known requires a non-empty value AND evidence_quote copied from a USER message in the conversation.
+- unknown|declined|not_applicable require value=null AND evidence_quote from a USER message in the conversation.
 - status=missing or omit the field: no update.
 - Do NOT set source / evidence_message_id / provenance (backend owns those).
-- evidence_quote must be an exact substring of the latest USER message (assistant text is never evidence).
+- evidence_quote must be an exact substring of one USER message in the conversation (assistant text is never evidence).
+  Prefer the most recent user message that supports the field.
 - One user message may update multiple fields; each field needs its own evidence_quote
   (quotes may reuse the same sentence when it genuinely supports multiple fields).
 - Normalize values semantically when helpful (e.g. tools list, "ten to fifteen hours" → "10–15 hours per week").
@@ -55,7 +64,7 @@ HEADCOUNT (same evidence object, plus scope):
   "headcount": {
     "status": "known|unknown|declined|not_applicable|missing",
     "value": <integer or null>,
-    "evidence_quote": "<exact quote from the latest USER message>",
+    "evidence_quote": "<exact quote from a USER message>",
     "scope": "company|team|unknown"
   }
 Additional headcount rules:
@@ -96,7 +105,7 @@ AUTHORITY (special value enum when status=known):
   "authority": {
     "status": "known|unknown|declined|not_applicable|missing",
     "value": "decision_maker|influencer|not_decision_maker|unknown",
-    "evidence_quote": "<exact quote from the latest USER message>"
+    "evidence_quote": "<exact quote from a USER message>"
   }
 Authority value meanings (semantic — do not use keyword shortcuts):
 - decision_maker: user can make / finalize the purchase or change decision
@@ -115,7 +124,7 @@ Also include:
   (true only if a useful CAIO snapshot can be produced without guessing)
 
 CRITICAL RULES:
-- OMIT any field that has no NEW explicit evidence in the latest USER message.
+- OMIT a field only when no USER message in the conversation gives evidence for it.
 - Do NOT set status "unknown" merely because information is absent.
 - Absence means leave the field out of the JSON so it stays missing.
 - Never clear a previously known concrete value with a bare null / missing write.
@@ -192,8 +201,37 @@ CONVERSATION_FOCUS_STATE_KEY = "_conversation_focus_state"
 STRUCTURED_KEYS = STRUCTURED_FIELD_KEYS
 _READY_LINE = re.compile(rf"(?im)^\s*{ASSESSMENT_READY_MARKER}\s*$")
 
-# Required assessment fields for completion coverage (resolved ≠ missing).
-REQUIRED_ASSESSMENT_FIELDS = STRUCTURED_FIELD_KEYS
+# Must-have fields: the assessment ends when all of these are resolved (resolved ≠ missing).
+# They cover the qualification criteria plus what the result and the pre-call brief need.
+REQUIRED_ASSESSMENT_FIELDS = (
+    "company",
+    "goals",
+    "revenue_range",
+    "headcount",
+    "functions",
+    "workflows",
+    "pain_points",
+    "time_cost_impact",
+    "bottlenecks",
+    "change_readiness",
+    "ai_readiness",
+    "authority",
+)
+# Nice-to-have fields: asked only when they fit naturally; never block finishing.
+OPTIONAL_ASSESSMENT_FIELDS = tuple(
+    key for key in STRUCTURED_FIELD_KEYS if key not in REQUIRED_ASSESSMENT_FIELDS
+)
+
+# What the prospect sees: topics with a tick once every field in the topic has an answer.
+# A tick means "we got the answer"; it says nothing about qualification.
+PROGRESS_TOPICS = (
+    ("business", "Your business", ("company", "goals", "functions")),
+    ("size", "Size and scale", ("revenue_range", "headcount")),
+    ("operations", "How work runs", ("workflows", "bottlenecks")),
+    ("problems", "Problems and cost", ("pain_points", "time_cost_impact")),
+    ("readiness", "Readiness for change", ("change_readiness", "ai_readiness")),
+    ("decision", "Decision making", ("authority",)),
+)
 
 # Fixed opening. Completion uses required-field coverage + semantic focus depth.
 ASSESSMENT_OPENING_QUESTION = (
@@ -417,6 +455,10 @@ def build_current_assessment_state(structured_state: dict[str, Any] | None) -> d
     return {
         "resolved_fields": resolved,
         "missing_fields": missing,
+        # Nice to have: ask only if it fits naturally; never needed to finish.
+        "optional_missing_fields": [
+            key for key in OPTIONAL_ASSESSMENT_FIELDS if not is_resolved(data[key])
+        ],
         # Alias retained for any prompt/tests that still say unresolved_fields.
         "unresolved_fields": missing,
         "current_business_issue": focus.get("current_focus_label"),
@@ -436,6 +478,33 @@ def build_current_assessment_state(structured_state: dict[str, Any] | None) -> d
     }
 
 
+def assessment_progress(state: dict[str, Any] | None) -> dict[str, Any]:
+    """Prospect-safe progress: topics with a tick once every field in the topic has an answer.
+
+    No field names, values or qualification signals are exposed. A tick only means
+    "we got the answer".
+    """
+    data = normalize_structured_state(state)
+    topics = [
+        {
+            "key": key,
+            "label": label,
+            "done": all(is_resolved(data[name]) for name in fields),
+        }
+        for key, label, fields in PROGRESS_TOPICS
+    ]
+    answered = sum(1 for t in topics if t["done"])
+    required = list(REQUIRED_ASSESSMENT_FIELDS)
+    got = sum(1 for key in required if is_resolved(data[key]))
+    return {
+        "topics": topics,
+        "answered": answered,
+        "total": len(topics),
+        "remaining": len(topics) - answered,
+        "percent": int(round(100 * got / len(required))) if required else 100,
+    }
+
+
 def is_ready_for_completion(
     state: dict[str, Any] | None,
     *,
@@ -446,19 +515,15 @@ def is_ready_for_completion(
     assistant_ready_signal: bool = False,
     assistant_message: str | None = None,
 ) -> bool:
-    """Complete when required fields are resolved AND diagnostic depth is satisfied.
+    """Complete as soon as every must-have field has an answer.
 
-    - Always require all required fields resolved.
-    - If a meaningful business problem was identified (conversation_focus), also require
-      root_cause_understood and impact_understood.
-    - If no material problem exists, field coverage alone may complete.
+    The must-haves already include the problems, their cost and the bottlenecks, so there is no
+    separate root-cause / impact gate. Nice-to-have fields never block finishing.
     No question-count gate; no assessment_ready flag.
     """
     del turn_meta, question_count, force_hard_limit, ai_sufficient
     del assistant_ready_signal, assistant_message
-    if not required_assessment_coverage(state):
-        return False
-    return diagnostic_depth_satisfied(state)
+    return required_assessment_coverage(state)
 
 
 def empty_assistant_turn_meta(*, available: bool = True) -> dict[str, Any]:
@@ -585,26 +650,42 @@ def sanitize_extraction_patch(
     existing: dict[str, Any] | None = None,
     user_message_id: str | None = None,
     user_message_role: str | None = None,
+    user_messages: list[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Drop invented / unevidenced extractor updates before merge.
 
     All assessment fields require grounded evidence_quote (no NL keyword gates).
-    Headcount keeps additional scope=company protection.
+    The quote may come from the latest user message or from any earlier user message
+    (``user_messages`` = [(message_id, text), ...] oldest first); provenance points at the
+    message that really contains it. Headcount keeps additional scope=company protection.
     """
     if not isinstance(patch, dict):
         return {}
     current = normalize_structured_state(existing)
     user_text = latest_user_message or ""
+    pool = list(user_messages or [])
     cleaned: dict[str, Any] = {}
+
+    def _source(entry: Any) -> tuple[str, str | None]:
+        """The user message (text, id) that contains this entry's evidence quote."""
+        quote = entry.get("evidence_quote") if isinstance(entry, dict) else None
+        if isinstance(quote, str) and quote.strip():
+            if evidence_quote_in_user_message(quote, user_text):
+                return user_text, user_message_id
+            for mid, text in reversed(pool):
+                if evidence_quote_in_user_message(quote, text):
+                    return text, mid
+        return user_text, user_message_id
 
     if "assessment_sufficient" in patch:
         cleaned["assessment_sufficient"] = bool(patch.get("assessment_sufficient"))
 
     if "headcount" in patch:
+        hc_text, hc_id = _source(patch.get("headcount"))
         headcount_entry = sanitize_headcount_extraction(
             patch.get("headcount"),
-            user_message_text=user_text,
-            user_message_id=user_message_id,
+            user_message_text=hc_text,
+            user_message_id=hc_id,
             user_message_role=user_message_role,
             existing_headcount=current.get("headcount"),
         )
@@ -616,11 +697,12 @@ def sanitize_extraction_patch(
             continue
         if key not in patch:
             continue
+        field_text, field_id = _source(patch.get(key))
         entry = sanitize_structured_field_extraction(
             patch.get(key),
             field_key=key,
-            user_message_text=user_text,
-            user_message_id=user_message_id,
+            user_message_text=field_text,
+            user_message_id=field_id,
             user_message_role=user_message_role,
         )
         if entry is not None:

@@ -39,6 +39,7 @@ from acquisition.services.assessment_extraction import (
     ASSESSMENT_OPENING_QUESTION,
     EXTRACTOR_INSTRUCTIONS,
     apply_conversation_focus_metadata,
+    assessment_progress,
     build_current_assessment_state,
     concrete_value,
     field_display,
@@ -59,7 +60,7 @@ from acquisition.services.assessment_service import AssessmentEventError, Assess
 
 logger = logging.getLogger(__name__)
 
-ASSESSMENT_MODEL = "gpt-5.6-luna"
+ASSESSMENT_MODEL = "gpt-6-luna"
 ASSESSMENT_REASONING = {"effort": "medium"}
 
 
@@ -101,6 +102,8 @@ class AssessmentChatService:
             "messages": [self._message_dict(m) for m in messages],
             "completed": link.assessment_status == AssessmentStatus.COMPLETED,
             "has_result": bool(profile.result_payload),
+            # Topics with a tick once we have an answer (no field names or values).
+            "progress": assessment_progress(profile.structured_state),
         }
 
     def ensure_greeting(self, token: str) -> dict[str, Any]:
@@ -303,7 +306,13 @@ class AssessmentChatService:
         user_message_role: str | None = None,
     ) -> bool:
         messages = self._ordered_messages(conversation.id)
-        history = "\n".join(f"{m.role.value}: {m.content}" for m in messages[-20:])
+        # The whole conversation (capped) so answers given earlier are never lost.
+        history = "\n".join(f"{m.role.value}: {m.content}" for m in messages[-80:])
+        user_pool = [
+            (str(m.id), m.content)
+            for m in messages
+            if m.role == AssessmentMessageRole.USER and (m.content or "").strip()
+        ]
         existing = normalize_structured_state(profile.structured_state)
         existing_summary = {
             k: {"status": field_display(v)["status"], "value": concrete_value(v)}
@@ -336,6 +345,7 @@ class AssessmentChatService:
             existing=profile.structured_state,
             user_message_id=user_message_id,
             user_message_role=user_message_role,
+            user_messages=user_pool,
         )
         profile.structured_state = merge_structured_state(profile.structured_state, cleaned)
         focus_state = apply_conversation_focus_metadata(focus_prev, focus_meta)
@@ -387,9 +397,13 @@ class AssessmentChatService:
             f"{focus_rule}"
             f"{revenue_rule}"
             "- Generate ONE next natural diagnostic question.\n"
-            "- Main goal: obtain still-missing required information with the fewest natural "
-            "questions while doing a real CAIO diagnostic (symptoms → root cause → impact → "
-            "dependencies/bottlenecks).\n"
+            "- Main goal: obtain the still-missing required information (missing_fields) with the fewest "
+            "natural questions. Every question should aim at one or two missing items, so the assessment "
+            "ends in as few turns as possible.\n"
+            "- Before asking, re-read the whole conversation: anything the prospect already said, even "
+            "earlier or in passing, counts as answered. Never ask for it again.\n"
+            "- optional_missing_fields are nice to have: ask about them only when they fit the "
+            "conversation naturally, and never to delay finishing.\n"
             "- Combine multiple unresolved fields into one useful question whenever natural.\n"
             "- Never run a field-by-field checklist or make the prospect feel they are filling a form.\n"
             "- Do not re-ask resolved fields (known / unknown / declined / not_applicable).\n"
@@ -437,8 +451,9 @@ class AssessmentChatService:
             )
         else:
             lines.append(
-                "If root cause or impact is still unclear, continue digging naturally on this issue. "
-                "There is no fixed follow-up count — stop only when both are sufficiently understood."
+                "Stay on this issue only while a still-missing required item (for example its cost, "
+                "bottleneck or root cause) needs it; as soon as those are answered, ask about another "
+                "missing item. Do not dig for detail the assessment does not need."
             )
         return "- " + "\n- ".join(lines) + "\n"
 

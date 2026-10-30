@@ -34,7 +34,7 @@
   {%- set f = fields_by_key.get(key) -%}
   {%- if f -%}
   <div class="ad-sbi-field ad-sbi-field--{{ mode }}{% if f.value is none %} is-empty{% endif %}">
-    <dt>{{ f.label }}</dt>
+    <dt>{{ f.label }} <span class="status-badge status-{{ f.status }}">{{ f.status_label }}</span></dt>
     <dd>
       {%- if f.value is none -%}—{%- elif mode == 'chips' -%}{{ sbi_chips(f.value) }}{%- else -%}{{ format_admin_value(f.value) }}{%- endif -%}
     </dd>
@@ -480,7 +480,7 @@
       <div class="ad-sbi">
         <section class="ad-sbi-group">
           <div class="ad-sbi-company">
-            <span class="ad-sbi-kicker">Company</span>
+            <span class="ad-sbi-kicker">Company{% if company_field %} <span class="status-badge status-{{ company_field.status }}">{{ company_field.status_label }}</span>{% endif %}</span>
             <p class="ad-sbi-company-name">
               {% if company_field and company_field.value is not none %}
                 {{ format_admin_value(company_field.value) }}

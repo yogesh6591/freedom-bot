@@ -10,8 +10,10 @@ from sqlalchemy.orm import Session
 
 from acquisition.models.assessment import AssessmentConversation, AssessmentProfile
 from acquisition.models.campaign import AssessmentStatus, CampaignProspect, OutreachStatus
+from acquisition.models.journey import STRUCTURED_FIELD_KEYS
 from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENT
 from acquisition.models.prospect import Prospect
+from acquisition.services.assessment_extraction import field_display, normalize_structured_state
 from acquisition.services.assessment_tokens import build_assessment_url, split_executive_name
 from acquisition.services import outreach_service as svc
 
@@ -109,6 +111,20 @@ def email_state(db: Session, prospect_id: uuid.UUID) -> dict:
     }
 
 
+def structured_answers_and_missing(raw_state: dict | None) -> tuple[list[dict], list[str]]:
+    """Answers captured so far, and stored fields that still have no answer."""
+    data = normalize_structured_state(raw_state)
+    captured: list[dict] = []
+    missing: list[str] = []
+    for key in STRUCTURED_FIELD_KEYS:
+        display = field_display(data[key])
+        if display["value"] is not None:
+            captured.append({"key": key, "value": display["value"]})
+        else:
+            missing.append(key)
+    return captured, missing
+
+
 def assessment_stage(db: Session, prospect_id: uuid.UUID) -> dict:
     """Where the person is in the assessment journey. Page-open is not email-click tracking."""
     link = link_row(db, prospect_id)
@@ -139,6 +155,9 @@ def assessment_stage(db: Session, prospect_id: uuid.UUID) -> dict:
         out["qualification"] = profile.qualification or {}
         out["result"] = profile.result_payload or {}
         out["structured_state"] = profile.structured_state or {}
+        captured, missing = structured_answers_and_missing(profile.structured_state)
+        out["captured_fields"] = captured
+        out["missing_fields"] = missing
         out["pre_call_brief_status"] = profile.pre_call_brief_status
         out["pre_call_brief"] = profile.pre_call_brief_data or {}
     return out

@@ -17,7 +17,7 @@ from acquisition.models.campaign import (
     HandoffStatus,
     PurchaseOutcome,
 )
-from acquisition.models.journey import QualificationStatus, empty_qualification
+from acquisition.models.journey import STRUCTURED_FIELD_KEYS, QualificationStatus, empty_qualification
 from acquisition.models.replies import ReplyConversation
 from acquisition.services.acquisition_journey_service import AcquisitionJourneyService
 from acquisition.services.acquisition_kpi_service import build_acquisition_kpis
@@ -169,7 +169,7 @@ def assessment_detail(
     )
     state = normalize_structured_state(profile.structured_state if profile else None)
     fields = []
-    for key in state:
+    for key in STRUCTURED_FIELD_KEYS:
         display = field_display(state[key])
         fields.append(
             {

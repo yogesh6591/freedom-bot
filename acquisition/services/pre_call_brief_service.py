@@ -31,7 +31,7 @@ from acquisition.services.booking_service import BOOKING_STATUS_CONFIRMED
 
 logger = logging.getLogger(__name__)
 
-PRE_CALL_BRIEF_MODEL = "gpt-5.6-luna"
+PRE_CALL_BRIEF_MODEL = "gpt-6-luna"
 PRE_CALL_BRIEF_REASONING = {"effort": "medium"}
 BRIEF_STATUS_READY = "ready"
 BRIEF_STATUS_FAILED = "failed"

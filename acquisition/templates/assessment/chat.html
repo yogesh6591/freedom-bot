@@ -8,6 +8,17 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/assessment.css?v=73">
+  <style>
+    .assess-topics { list-style: none; margin: 0.75rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .assess-topic { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.65rem; border-radius: 999px;
+      font-size: 0.78rem; font-weight: 600; color: var(--assess-muted); background: rgba(255, 255, 255, 0.6);
+      border: 1px solid var(--assess-line); transition: color 0.2s, background 0.2s, border-color 0.2s; }
+    .assess-topic-mark { width: 1rem; height: 1rem; border-radius: 50%; border: 1.5px solid var(--assess-line);
+      display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; line-height: 1; }
+    .assess-topic.is-done { color: var(--assess-teal-deep); background: var(--assess-mist); border-color: var(--assess-teal); }
+    .assess-topic.is-done .assess-topic-mark { background: var(--assess-teal); border-color: var(--assess-teal); color: #fff; }
+    .assess-topics-note { margin: 0.45rem 0 0; font-size: 0.78rem; color: var(--assess-muted); }
+  </style>
 </head>
 <body class="assess">
 <div class="assess-bg" aria-hidden="true">
@@ -29,6 +40,8 @@
         <div class="assess-progress-track">
           <div class="assess-progress-fill" id="progress-fill" style="width: 8%"></div>
         </div>
+        <ul class="assess-topics" id="progress-topics" aria-label="What we have covered so far" hidden></ul>
+        <p class="assess-topics-note" id="progress-note" hidden></p>
       </div>
     </header>
 
@@ -75,6 +88,7 @@
   (function () {
     const token = {{ token|tojson }};
     const initialMessages = {{ session.messages|tojson }};
+    const initialProgress = {{ (session.progress or none)|tojson }};
 
     const panel = document.getElementById("assess-panel");
     const leadEl = document.getElementById("lead-text");
@@ -82,6 +96,8 @@
     const stepLabel = document.getElementById("step-label");
     const progressFill = document.getElementById("progress-fill");
     const progressLabel = document.getElementById("progress-label");
+    const topicsEl = document.getElementById("progress-topics");
+    const topicsNote = document.getElementById("progress-note");
     const form = document.getElementById("assessment-form");
     const input = document.getElementById("assessment-input");
     const sendBtn = document.getElementById("assessment-send");
@@ -105,13 +121,50 @@
       }).length;
     }
 
-    function syncProgress(list) {
+    // A tick means we have your answer for that topic (it says nothing about the outcome).
+    function renderTopics(progress) {
+      if (!progress || !Array.isArray(progress.topics) || !progress.topics.length) return false;
+      topicsEl.innerHTML = "";
+      progress.topics.forEach(function (topic) {
+        const li = document.createElement("li");
+        li.className = "assess-topic" + (topic.done ? " is-done" : "");
+        const mark = document.createElement("span");
+        mark.className = "assess-topic-mark";
+        mark.setAttribute("aria-hidden", "true");
+        mark.textContent = topic.done ? "✓" : "";
+        const label = document.createElement("span");
+        label.textContent = topic.label + (topic.done ? " (answered)" : "");
+        li.appendChild(mark);
+        li.appendChild(label);
+        topicsEl.appendChild(li);
+      });
+      topicsEl.hidden = false;
+      const left = Number(progress.remaining || 0);
+      topicsNote.hidden = false;
+      topicsNote.textContent = left <= 0
+        ? "Everything we need is covered. Finishing up."
+        : left === 1
+          ? "One topic left. A tick means we have your answer, nothing more."
+          : left + " topics left. A tick means we have your answer, nothing more.";
+      return true;
+    }
+
+    function syncProgress(list, progress) {
       const asked = assistantCount(list);
       turn = Math.max(1, asked);
-      const pct = Math.min(92, 8 + asked * 10);
+      const hasTopics = renderTopics(progress);
+      const pct = hasTopics && typeof progress.percent === "number"
+        ? Math.max(8, Math.min(100, progress.percent))
+        : Math.min(92, 8 + asked * 10);
       progressFill.style.width = pct + "%";
       stepLabel.textContent = "Question " + turn;
-      progressLabel.textContent = asked <= 1 ? "Getting started" : "In progress · question " + turn;
+      if (hasTopics) {
+        progressLabel.textContent = asked <= 1 && progress.answered === 0
+          ? "Getting started"
+          : progress.answered + " of " + progress.total + " topics covered";
+      } else {
+        progressLabel.textContent = asked <= 1 ? "Getting started" : "In progress · question " + turn;
+      }
     }
 
     function splitLeadAndQuestion(text) {
@@ -189,7 +242,7 @@
 
     function applySession(data, { animate } = { animate: false }) {
       messages = data.messages || messages;
-      syncProgress(messages);
+      syncProgress(messages, data.progress);
       if (data.completed) {
         window.location.href = resultPath();
         return;
@@ -255,7 +308,7 @@
     });
 
     if (lastAssistant(messages)) {
-      syncProgress(messages);
+      syncProgress(messages, initialProgress);
       showQuestion(lastAssistant(messages).content, { animate: false });
     } else {
       ensureGreeting();

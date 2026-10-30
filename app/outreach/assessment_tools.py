@@ -87,6 +87,47 @@ def _result_line(s: dict) -> str:
     return "Has not opened the assessment page"
 
 
+def _field_answer_text(value: Any) -> str:
+    if isinstance(value, list):
+        parts = [str(item).strip() for item in value if str(item).strip()]
+        return ", ".join(parts)
+    return str(value).strip()
+
+
+def _captured_and_missing(s: dict) -> tuple[list[str], list[str]]:
+    captured_rows = s.get("captured_fields")
+    missing_rows = s.get("missing_fields")
+    if captured_rows is None or missing_rows is None:
+        captured_rows, missing_rows = records.structured_answers_and_missing(
+            s.get("structured_state") or {}
+        )
+    captured: list[str] = []
+    for item in captured_rows or []:
+        if isinstance(item, dict):
+            key = _words(item.get("key") or "")
+            value = _clip(_field_answer_text(item.get("value")), 120)
+            if key and value:
+                captured.append(f"{key}: {value}")
+        elif item:
+            captured.append(str(item))
+    missing = [_words(key) for key in (missing_rows or []) if str(key).strip()]
+    return captured, missing
+
+
+def _in_progress_answer_lines(s: dict) -> list[str]:
+    if s.get("assessment_status") != "started":
+        return []
+    captured, missing = _captured_and_missing(s)
+    lines: list[str] = []
+    if captured:
+        lines.append("Answers so far:")
+        lines.extend(f"- {item}" for item in captured)
+    if missing:
+        lines.append("Still missing:")
+        lines.append("- " + _clip(", ".join(missing), 220))
+    return lines
+
+
 def _progress_lines(s: dict, em: dict) -> list[str]:
     opened = f"; page opened {chicago.fmt_day(s['page_opened_at'])}" if s.get("page_opened_at") else "; page not opened"
     booking = s["booking_status"] if s["booking_status"] not in ("", None) else "not_booked"
@@ -110,6 +151,7 @@ def short_report(p: Prospect, s: dict, em: dict) -> str:
         lines.append(f"- Cost: {_clip(res['observed_impact'], 110)}")
     if not finished:
         lines.append(f"- Stage: {_words(s['journey_stage'])}")
+        lines.extend(_in_progress_answer_lines(s))
     return "\n".join(lines + _progress_lines(s, em))
 
 
@@ -156,10 +198,7 @@ def full_report(p: Prospect, s: dict, em: dict, include_brief: bool) -> str:
     lines += _progress_lines(s, em)
     lines.append(f"- Journey stage: {_words(s['journey_stage'])}")
     if s["assessment_status"] == "started":
-        state = s.get("structured_state") or {}
-        missing = state.get("missing_fields") or state.get("missing") or []
-        if missing:
-            lines.append("- Still unanswered: " + _clip(", ".join(map(str, missing)), 200))
+        lines.extend(_in_progress_answer_lines(s))
     if s.get("pre_call_brief_status"):
         lines.append(f"- Pre-call brief: {s['pre_call_brief_status']}")
         if include_brief and s.get("brief_url"):
