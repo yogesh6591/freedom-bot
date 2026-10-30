@@ -86,8 +86,16 @@ def build_calendar_embed_url(
     if not base:
         return ""
     settings = get_settings()
-    public = (settings.public_base_url or "").rstrip("/")
-    success = f"{public}/a/{quote(token, safe='')}/booked"
+    success = ""
+    try:
+        from acquisition.services.assessment_tokens import PublicRedirectError, public_redirect_base
+
+        public = public_redirect_base(settings=settings)
+        success = f"{public}/a/{quote(token, safe='')}/booked"
+    except PublicRedirectError:
+        public = (settings.public_base_url or "").rstrip("/")
+        if public:
+            success = f"{public}/a/{quote(token, safe='')}/booked"
     from acquisition.timezones import platform_timezone_name
 
     tz = platform_timezone_name()
@@ -100,8 +108,9 @@ def build_calendar_embed_url(
         "timeFormat=12",
         "lang=en",
         f"metadata[fb_token]={quote(token, safe='')}",
-        f"successRedirectUrl={quote(success, safe='')}",
     ]
+    if success:
+        parts.append(f"successRedirectUrl={quote(success, safe='')}")
     name = (guest_name or "").strip()
     email = (guest_email or "").strip()
     if name:

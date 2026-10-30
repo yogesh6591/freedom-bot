@@ -212,29 +212,13 @@ def booked_page(
     request: Request,
     token: str,
     journey: AcquisitionJourneyService = Depends(get_journey),
+    uid: str | None = None,
+    bookingUid: str | None = None,
 ) -> HTMLResponse:
+    booking_uid = (uid or bookingUid or "").strip() or None
     try:
-        payload = journey.enter_booked(token)
+        payload = journey.load_booked_page(token, uid=booking_uid)
     except (AcquisitionJourneyError, AssessmentEventError) as exc:
-        # Not confirmed yet — show confirming/poll state when calendar-eligible,
-        # otherwise gated error.
-        try:
-            link, profile = journey.resolve(token)
-            if journey.can_access_calendar(link, profile):
-                return templates.TemplateResponse(
-                    request,
-                    "assessment/booked.html",
-                    _journey_page_ctx(
-                        token=token,
-                        payload={
-                            "confirming": True,
-                            "token": token,
-                            "booking_status": getattr(link, "booking_status", "not_booked"),
-                        },
-                    ),
-                )
-        except Exception:  # noqa: BLE001
-            pass
         return _gate_error_page(request, exc)
     return templates.TemplateResponse(
         request,
@@ -351,9 +335,12 @@ def booking_status_api(
     token: str,
     journey: AcquisitionJourneyService = Depends(get_journey),
     sync: bool = False,
+    uid: str | None = None,
+    bookingUid: str | None = None,
 ) -> dict[str, Any]:
+    booking_uid = (uid or bookingUid or "").strip() or None
     try:
-        return journey.booking_status_payload(token, sync=sync)
+        return journey.booking_status_payload(token, sync=sync, uid=booking_uid)
     except (AcquisitionJourneyError, AssessmentEventError) as exc:
         raise _http_error(exc) from exc
 

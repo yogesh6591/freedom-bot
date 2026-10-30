@@ -205,9 +205,10 @@ def test_booking_status_payload_accepts_sync(monkeypatch):
         def __init__(self, db):
             pass
 
-        def reconcile_for_token(self, token, *, take=25):
+        def reconcile_for_token(self, token, *, take=25, uid=None):
             called["n"] += 1
             called["token"] = token
+            called["uid"] = uid
             return {"status": "ok"}
 
     monkeypatch.setattr(journey_mod, "_last_calcom_sync", {})

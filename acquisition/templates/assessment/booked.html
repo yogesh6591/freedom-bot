@@ -22,9 +22,19 @@
     <script>
       (function () {
         var tries = 0;
+        var bookingUid = "";
+        try {
+          var pageParams = new URLSearchParams(window.location.search || "");
+          bookingUid = (pageParams.get("uid") || pageParams.get("bookingUid") || "").trim();
+        } catch (err) {}
+        function statusUrl() {
+          var url = "/api/assessment/{{ token }}/booking?sync=1";
+          if (bookingUid) url += "&uid=" + encodeURIComponent(bookingUid);
+          return url;
+        }
         function tick() {
           tries += 1;
-          fetch("/api/assessment/{{ token }}/booking?sync=1")
+          fetch(statusUrl())
             .then(function (r) { return r.json(); })
             .then(function (data) {
               if (data && data.confirmed) {

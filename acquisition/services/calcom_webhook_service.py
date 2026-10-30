@@ -174,7 +174,9 @@ class CalcomWebhookService:
             applied.append({"uid": row.get("uid"), "token_prefix": token[:12], "result": result.get("status")})
         return {"status": "ok", "applied": applied, "skipped": skipped, "checked": len(bookings)}
 
-    def reconcile_for_token(self, token: str, *, take: int = 25) -> dict[str, Any]:
+    def reconcile_for_token(
+        self, token: str, *, take: int = 25, uid: str | None = None
+    ) -> dict[str, Any]:
         """Confirm this assessment token from Cal.com when the webhook never arrived."""
         wanted = (token or "").strip()
         if not wanted:
@@ -194,44 +196,81 @@ class CalcomWebhookService:
         if prospect is not None:
             prospect_email = str(getattr(prospect, "email", "") or "").strip().lower()
 
-        bookings = self.client.list_bookings(take=take, status=None)
         booking = BookingService(self.db)
         applied: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
-        for row in bookings:
-            if not _booking_is_active(row):
-                skipped.append({"uid": row.get("uid"), "reason": "inactive"})
-                continue
-            found = extract_fb_token(row.get("metadata")) or extract_fb_token(row.get("responses"))
-            emails = _attendee_emails(row)
-            if not found and not emails:
-                uid = str(row.get("uid") or "").strip()
-                if uid:
-                    try:
-                        detail = self.client.get_booking_record(uid)
-                        if isinstance(detail, dict):
-                            row = {**row, **detail}
-                    except CalcomError:
-                        pass
-                found = extract_fb_token(row.get("metadata")) or extract_fb_token(row.get("responses"))
-                emails = _attendee_emails(row)
-            if found and found != wanted:
-                skipped.append({"uid": row.get("uid"), "reason": "other_token"})
-                continue
-            if not found:
-                if prospect_email and prospect_email in emails:
-                    found = wanted
-                else:
-                    skipped.append({"uid": row.get("uid"), "reason": "missing_fb_token"})
+        checked = 0
+
+        def consume(rows: list[dict[str, Any]]) -> bool:
+            nonlocal checked
+            for row in rows:
+                checked += 1
+                if not _booking_is_active(row):
+                    skipped.append({"uid": row.get("uid"), "reason": "inactive"})
                     continue
-            result = booking.handle_calcom_webhook(
-                _webhook_payload_from_booking(row, token=found),
-                event_id=_event_id_from_booking(row),
-            )
-            applied.append({"uid": row.get("uid"), "token_prefix": found[:12], "result": result.get("status")})
-            if result.get("status") in {"confirmed", "already_confirmed"}:
-                break
-        return {"status": "ok", "applied": applied, "skipped": skipped, "checked": len(bookings)}
+                found = extract_fb_token(row.get("metadata")) or extract_fb_token(
+                    row.get("responses")
+                )
+                emails = _attendee_emails(row)
+                if not found and not emails:
+                    row_uid = str(row.get("uid") or "").strip()
+                    if row_uid:
+                        try:
+                            detail = self.client.get_booking_record(row_uid)
+                            if isinstance(detail, dict):
+                                row = {**row, **detail}
+                        except CalcomError:
+                            pass
+                    found = extract_fb_token(row.get("metadata")) or extract_fb_token(
+                        row.get("responses")
+                    )
+                    emails = _attendee_emails(row)
+                if found and found != wanted:
+                    skipped.append({"uid": row.get("uid"), "reason": "other_token"})
+                    continue
+                if not found:
+                    if prospect_email and prospect_email in emails:
+                        found = wanted
+                    else:
+                        skipped.append({"uid": row.get("uid"), "reason": "missing_fb_token"})
+                        continue
+                result = booking.handle_calcom_webhook(
+                    _webhook_payload_from_booking(row, token=found),
+                    event_id=_event_id_from_booking(row),
+                )
+                applied.append(
+                    {
+                        "uid": row.get("uid"),
+                        "token_prefix": found[:12],
+                        "result": result.get("status"),
+                    }
+                )
+                if result.get("status") in {"confirmed", "already_confirmed"}:
+                    return True
+            return False
+
+        wanted_uid = (uid or "").strip()
+        if wanted_uid:
+            try:
+                detail = self.client.get_booking_record(wanted_uid)
+            except CalcomError:
+                detail = None
+            if isinstance(detail, dict) and consume([detail]):
+                return {
+                    "status": "ok",
+                    "applied": applied,
+                    "skipped": skipped,
+                    "checked": checked,
+                }
+
+        bookings = self.client.list_bookings(take=take, status=None)
+        consume(bookings)
+        return {
+            "status": "ok",
+            "applied": applied,
+            "skipped": skipped,
+            "checked": checked,
+        }
 
     def _find_matching(self, url: str) -> dict[str, Any] | None:
         try:

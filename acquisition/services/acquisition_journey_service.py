@@ -681,6 +681,28 @@ class AcquisitionJourneyService:
 
         return BookingService(self.db).is_booking_confirmed(link)
 
+    def load_booked_page(self, token: str, *, uid: str | None = None) -> dict[str, Any]:
+        """Welcome page payload. If Cal.com already booked, confirm before rendering."""
+        try:
+            payload = self.enter_booked(token)
+            payload.setdefault("confirming", False)
+            return payload
+        except AcquisitionJourneyError:
+            link, profile = self.resolve(token)
+            if not self.can_access_calendar(link, profile):
+                raise
+            self.booking_status_payload(token, sync=True, uid=uid)
+            try:
+                payload = self.enter_booked(token)
+                payload.setdefault("confirming", False)
+                return payload
+            except AcquisitionJourneyError:
+                return {
+                    "confirming": True,
+                    "token": token,
+                    "booking_status": getattr(link, "booking_status", "not_booked"),
+                }
+
     def enter_booked(self, token: str) -> dict[str, Any]:
         link, profile = self.resolve(token)
         from acquisition.services.booking_service import BookingService
@@ -756,13 +778,16 @@ class AcquisitionJourneyService:
             "show_youtube": bool(youtube),
         }
 
-    def booking_status_payload(self, token: str, *, sync: bool = False) -> dict[str, Any]:
+    def booking_status_payload(
+        self, token: str, *, sync: bool = False, uid: str | None = None
+    ) -> dict[str, Any]:
         link, _profile = self.resolve(token)
         from acquisition.services.booking_service import BookingService
 
         booking = BookingService(self.db)
-        if sync and not booking.is_booking_confirmed(link):
-            self._sync_booking_from_calcom(token, link)
+        booking_uid = (uid or "").strip() or None
+        if (sync or booking_uid) and not booking.is_booking_confirmed(link):
+            self._sync_booking_from_calcom(token, link, uid=booking_uid)
         confirmed = booking.is_booking_confirmed(link)
         return {
             "token": token,
@@ -772,20 +797,24 @@ class AcquisitionJourneyService:
             "meeting_start": link.meeting_start.isoformat() if link.meeting_start else None,
         }
 
-    def _sync_booking_from_calcom(self, token: str, link: CampaignProspect) -> None:
+    def _sync_booking_from_calcom(
+        self, token: str, link: CampaignProspect, *, uid: str | None = None
+    ) -> None:
         """Pull a missed Cal.com booking for this assessment token (webhook backup)."""
         from acquisition.services.calcom_webhook_service import (
             CalcomWebhookService,
             CalcomWebhookServiceError,
         )
 
-        now = time.monotonic()
-        last = _last_calcom_sync.get(token, 0.0)
-        if now - last < _CALCOM_SYNC_COOLDOWN_SEC:
-            return
-        _last_calcom_sync[token] = now
+        wanted_uid = (uid or "").strip() or None
+        if not wanted_uid:
+            now = time.monotonic()
+            last = _last_calcom_sync.get(token, 0.0)
+            if now - last < _CALCOM_SYNC_COOLDOWN_SEC:
+                return
+            _last_calcom_sync[token] = now
         try:
-            CalcomWebhookService(self.db).reconcile_for_token(token)
+            CalcomWebhookService(self.db).reconcile_for_token(token, uid=wanted_uid)
             self.db.refresh(link)
         except CalcomWebhookServiceError:
             logger.warning(

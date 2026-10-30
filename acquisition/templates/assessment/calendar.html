@@ -69,11 +69,20 @@
         var stopped = false;
         var holdShown = false;
         var awaitingConfirm = false;
+        var allowSync = false;
+        var bookingUid = "";
         var inFlight = false;
         var currentInterval = pollMs;
 
+        try {
+          var pageParams = new URLSearchParams(window.location.search || "");
+          bookingUid = (pageParams.get("uid") || pageParams.get("bookingUid") || "").trim();
+          if (bookingUid) allowSync = true;
+        } catch (err) {}
+
         function showHold() {
           awaitingConfirm = true;
+          allowSync = true;
           currentInterval = fastPollMs;
           if (holdShown || !holdEl) return;
           holdShown = true;
@@ -91,34 +100,57 @@
 
         function redirectBooked() {
           stopPolling();
-          window.location.replace(bookedUrl);
+          var next = bookedUrl;
+          if (bookingUid && next.indexOf("uid=") < 0) {
+            next += (next.indexOf("?") >= 0 ? "&" : "?") + "uid=" + encodeURIComponent(bookingUid);
+          }
+          window.location.replace(next);
+        }
+
+        function eventName(raw) {
+          if (!raw) return "";
+          if (typeof raw === "string") return raw;
+          var nested = "";
+          if (raw.data && typeof raw.data === "object") {
+            nested = String(raw.data.type || raw.data.action || "");
+          }
+          if (raw.detail && typeof raw.detail === "object") {
+            nested = nested || String(raw.detail.type || "");
+          }
+          return String(raw.type || raw.action || raw.event || nested || "");
+        }
+
+        function extractUid(raw) {
+          if (!raw || typeof raw !== "object") return "";
+          var bags = [raw, raw.data, raw.detail];
+          if (raw.data && typeof raw.data === "object") bags.push(raw.data.booking);
+          if (raw.detail && typeof raw.detail === "object") bags.push(raw.detail.data);
+          for (var i = 0; i < bags.length; i++) {
+            var bag = bags[i];
+            if (!bag || typeof bag !== "object") continue;
+            var value = bag.uid || bag.bookingUid || bag.booking_uid;
+            if (value) return String(value);
+          }
+          return "";
         }
 
         function looksLikeBookingEvent(raw) {
-          var text = "";
-          try {
-            if (typeof raw === "string") text = raw;
-            else if (raw && typeof raw === "object") {
-              text = JSON.stringify(raw);
-              if (raw.type) text += " " + String(raw.type);
-              if (raw.action) text += " " + String(raw.action);
-              if (raw.event) text += " " + String(raw.event);
-              if (raw.data && raw.data.type) text += " " + String(raw.data.type);
-            }
-          } catch (err) {
-            return false;
-          }
-          return /bookingSuccessful|booking_success|BOOKING_CREATED|booking.?confirm|__booking|meeting.?scheduled/i.test(
-            text
-          );
+          var name = eventName(raw).toLowerCase();
+          if (name.indexOf("bookingsuccessful") !== -1) return true;
+          if (name.indexOf("booking_created") !== -1) return true;
+          if (name.indexOf("booking_success") !== -1) return true;
+          return false;
         }
 
         function checkOnce() {
           if (inFlight) return Promise.resolve(false);
           inFlight = true;
           var url = statusUrl;
-          if (awaitingConfirm) {
-            url += (statusUrl.indexOf("?") >= 0 ? "&" : "?") + "sync=1";
+          var query = [];
+          if (allowSync || awaitingConfirm || bookingUid) query.push("sync=1");
+          if (bookingUid) query.push("uid=" + encodeURIComponent(bookingUid));
+          if (query.length) {
+            url += (statusUrl.indexOf("?") >= 0 ? "&" : "?") + query.join("&");
           }
           return fetch(url, {
             credentials: "same-origin",
@@ -169,8 +201,19 @@
 
         // Soft UX only — never treat iframe events as booking proof.
         window.addEventListener("message", function (event) {
-          if (!looksLikeBookingEvent(event && event.data)) return;
+          var raw = event && event.data;
+          if (raw && typeof raw === "object" && String(raw.originator || "") === "CAL") {
+            allowSync = true;
+          }
+          var uid = extractUid(raw);
+          if (uid) bookingUid = uid;
+          if (!looksLikeBookingEvent(raw)) return;
           showHold();
+          checkOnce();
+        });
+
+        window.addEventListener("blur", function () {
+          allowSync = true;
           checkOnce();
         });
 
