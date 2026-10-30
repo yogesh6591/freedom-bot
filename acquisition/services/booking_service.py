@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import quote, urlencode, urlparse
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -79,18 +79,79 @@ def calendar_embed_parts(booking_url: str) -> dict[str, str]:
     return {"cal_link": path, "cal_origin": origin or "https://cal.com"}
 
 
-def calendar_success_url(token: str, *, settings: Any | None = None) -> str:
+def _public_assessment_url(path: str, *, settings: Any | None = None) -> str:
     cfg = settings or get_settings()
+    suffix = path if path.startswith("/") else f"/{path}"
     try:
         from acquisition.services.assessment_tokens import PublicRedirectError, public_redirect_base
 
         public = public_redirect_base(settings=cfg)
-        return f"{public}/a/{quote(token, safe='')}/booked"
+        return f"{public}{suffix}"
     except PublicRedirectError:
         public = (cfg.public_base_url or "").rstrip("/")
         if public:
-            return f"{public}/a/{quote(token, safe='')}/booked"
+            return f"{public}{suffix}"
         return ""
+
+
+def calendar_success_url(token: str, *, settings: Any | None = None) -> str:
+    return _public_assessment_url(f"/a/{quote(token, safe='')}/booked", settings=settings)
+
+
+def calendar_capture_url(*, settings: Any | None = None) -> str:
+    """Token-less URL Cal.com can redirect to after any booking on the event type."""
+    return _public_assessment_url("/a/booking-complete", settings=settings)
+
+
+def attendee_emails(row: dict[str, Any] | None) -> set[str]:
+    emails: set[str] = set()
+    if not isinstance(row, dict):
+        return emails
+    attendees = row.get("attendees")
+    if isinstance(attendees, list):
+        for item in attendees:
+            if isinstance(item, dict):
+                email = str(item.get("email") or "").strip().lower()
+                if email:
+                    emails.add(email)
+            elif isinstance(item, str) and "@" in item:
+                emails.add(item.strip().lower())
+    for key in ("email", "attendeeEmail"):
+        raw = row.get(key)
+        if isinstance(raw, str) and "@" in raw:
+            emails.add(raw.strip().lower())
+    responses = row.get("responses")
+    if isinstance(responses, dict):
+        nested = responses.get("email")
+        if isinstance(nested, dict):
+            nested = nested.get("value")
+        if isinstance(nested, str) and "@" in nested:
+            emails.add(nested.strip().lower())
+    return emails
+
+
+def find_link_by_attendee_emails(db: Session, emails: set[str]) -> CampaignProspect | None:
+    """Match a waiting assessment prospect to Cal.com attendee emails."""
+    cleaned = {item.strip().lower() for item in emails if item and "@" in item}
+    if not cleaned:
+        return None
+    from acquisition.models.prospect import Prospect
+
+    rows = list(
+        db.scalars(
+            select(CampaignProspect)
+            .join(Prospect, CampaignProspect.prospect_id == Prospect.id)
+            .where(func.lower(Prospect.email).in_(sorted(cleaned)))
+            .where(CampaignProspect.assessment_token.is_not(None))
+            .order_by(CampaignProspect.last_activity_at.desc().nullslast())
+        ).all()
+    )
+    waiting = [
+        row
+        for row in rows
+        if str(row.booking_status or "").strip().lower() != BOOKING_STATUS_CONFIRMED
+    ]
+    return (waiting or rows)[0] if (waiting or rows) else None
 
 
 def build_calendar_embed_url(
@@ -275,6 +336,9 @@ class BookingService:
         if not token:
             # Some payloads nest metadata under responses
             token = extract_fb_token(body.get("responses")) if isinstance(body.get("responses"), dict) else None
+        if not token:
+            link = find_link_by_attendee_emails(self.db, attendee_emails(body))
+            token = (getattr(link, "assessment_token", None) or "").strip() or None
         if not token:
             self._record_provider_event(
                 event_id=event_id,

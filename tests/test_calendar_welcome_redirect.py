@@ -4,7 +4,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from acquisition.services.acquisition_journey_service import AcquisitionJourneyError
-from acquisition.services.booking_service import build_calendar_embed_url, calendar_embed_parts
+from acquisition.services.booking_service import (
+    build_calendar_embed_url,
+    calendar_capture_url,
+    calendar_embed_parts,
+)
 from acquisition.services.calcom_webhook_service import CalcomWebhookService
 
 
@@ -56,6 +60,18 @@ def test_calendar_embed_uses_public_success_url(monkeypatch):
     assert parts == {"cal_link": "jeanne/intro", "cal_origin": "https://cal.com"}
 
 
+def test_calendar_capture_url_is_tokenless(monkeypatch):
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example/acquire")
+    from acquisition.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        url = calendar_capture_url()
+    finally:
+        get_settings.cache_clear()
+    assert url == "https://app.example/acquire/a/booking-complete"
+
+
 def test_reconcile_for_token_uses_uid_when_provided(monkeypatch):
     from acquisition.services import calcom_webhook_service as mod
 
@@ -81,7 +97,7 @@ def test_reconcile_for_token_uses_uid_when_provided(monkeypatch):
                 "attendees": [{"email": "raj@x.com"}],
             }
 
-        def list_bookings(self, *, take=25, status=None):
+        def list_bookings(self, *, take=25, status=None, attendee_email=None, event_type_id=None):
             seen["listed"] = True
             return []
 
@@ -128,7 +144,7 @@ def test_reconcile_for_token_ignores_uid_for_another_prospect(monkeypatch):
                 "attendees": [{"email": "other@x.com"}],
             }
 
-        def list_bookings(self, *, take=25, status=None):
+        def list_bookings(self, *, take=25, status=None, attendee_email=None, event_type_id=None):
             seen["listed"] += 1
             return []
 
@@ -178,7 +194,7 @@ def test_reconcile_for_token_claims_unmapped_uid(monkeypatch):
                 "attendees": [{"email": "other@x.com"}],
             }
 
-        def list_bookings(self, *, take=25, status=None):
+        def list_bookings(self, *, take=25, status=None, attendee_email=None, event_type_id=None):
             seen["listed"] = True
             return []
 
@@ -272,3 +288,51 @@ def test_load_booked_page_confirms_before_welcome(monkeypatch):
     assert payload["welcome_heading"] == "A quick welcome before your meeting"
     assert states["synced"] == {"token": "tok_abc", "sync": True, "uid": "book_1"}
     assert states["n"] == 2
+
+
+def test_booking_complete_page_breaks_out_of_iframe():
+    capture = (ROOT / "acquisition/templates/assessment/booking_complete.html").read_text(
+        encoding="utf-8"
+    )
+    assert "window.top" in capture
+    assert "booking-complete" in (ROOT / "acquisition/api/acquisition.py").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_complete_booking_from_redirect_uses_uid(monkeypatch):
+    from acquisition.services.acquisition_journey_service import AcquisitionJourneyService
+
+    called = {}
+
+    class FakeClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        def get_booking_record(self, uid):
+            called["fetched"] = uid
+            return {
+                "uid": uid,
+                "metadata": {"fb_token": "tok_abc"},
+                "attendees": [{"email": "raj@x.com"}],
+            }
+
+    class FakeWebhook:
+        def __init__(self, db, client=None):
+            pass
+
+        def reconcile_for_token(self, token, uid=None):
+            called["token"] = token
+            called["uid"] = uid
+            return {"status": "ok"}
+
+    monkeypatch.setattr("acquisition.integrations.calcom.client.CalcomClient", FakeClient)
+    monkeypatch.setattr(
+        "acquisition.services.calcom_webhook_service.CalcomWebhookService",
+        FakeWebhook,
+    )
+    token = AcquisitionJourneyService(SimpleNamespace()).complete_booking_from_redirect(
+        uid="book_1"
+    )
+    assert token == "tok_abc"
+    assert called == {"fetched": "book_1", "token": "tok_abc", "uid": "book_1"}

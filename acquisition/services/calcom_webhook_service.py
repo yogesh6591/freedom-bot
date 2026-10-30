@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 from acquisition.config import get_settings
 from acquisition.integrations.calcom.client import CalcomClient, CalcomError
 from acquisition.models.campaign import CampaignProspect
-from acquisition.services.booking_service import BookingService, extract_fb_token
+from acquisition.services.booking_service import (
+    BookingService,
+    attendee_emails,
+    extract_fb_token,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,31 +32,6 @@ _INACTIVE_BOOKING_STATUSES = frozenset({"cancelled", "canceled", "rejected"})
 def _booking_is_active(row: dict[str, Any]) -> bool:
     status = str(row.get("status") or "").strip().lower()
     return status not in _INACTIVE_BOOKING_STATUSES
-
-
-def _attendee_emails(row: dict[str, Any]) -> set[str]:
-    emails: set[str] = set()
-    attendees = row.get("attendees")
-    if isinstance(attendees, list):
-        for item in attendees:
-            if isinstance(item, dict):
-                email = str(item.get("email") or "").strip().lower()
-                if email:
-                    emails.add(email)
-            elif isinstance(item, str) and "@" in item:
-                emails.add(item.strip().lower())
-    for key in ("email", "attendeeEmail"):
-        raw = row.get(key)
-        if isinstance(raw, str) and "@" in raw:
-            emails.add(raw.strip().lower())
-    responses = row.get("responses")
-    if isinstance(responses, dict):
-        nested = responses.get("email")
-        if isinstance(nested, dict):
-            nested = nested.get("value")
-        if isinstance(nested, str) and "@" in nested:
-            emails.add(nested.strip().lower())
-    return emails
 
 
 def _event_id_from_booking(row: dict[str, Any]) -> str:
@@ -124,12 +103,16 @@ class CalcomWebhookService:
         existing = self._find_matching(url)
         if existing:
             existing_secret = str(existing.get("secret") or "").strip()
+            event_hook = self._ensure_event_type_webhook_quiet(
+                url, secret=existing_secret or secret_value
+            )
             return {
                 "status": "already_registered",
                 "id": existing.get("id"),
                 "subscriber_url": url,
                 "secret": existing_secret or None,
                 "secret_created": False,
+                "event_type_webhook": event_hook,
                 "message": "Cal.com webhook already points at this URL.",
             }
 
@@ -142,12 +125,14 @@ class CalcomWebhookService:
             secret=secret_value,
             active=True,
         )
+        event_hook = self._ensure_event_type_webhook_quiet(url, secret=secret_value)
         return {
             "status": "registered",
             "id": created.get("id"),
             "subscriber_url": url,
             "secret": secret_value,
             "secret_created": created_secret,
+            "event_type_webhook": event_hook,
             "message": "Cal.com webhook registered.",
         }
 
@@ -211,7 +196,7 @@ class CalcomWebhookService:
                 found = extract_fb_token(row.get("metadata")) or extract_fb_token(
                     row.get("responses")
                 )
-                emails = _attendee_emails(row)
+                emails = attendee_emails(row)
                 if not found and not emails:
                     row_uid = str(row.get("uid") or "").strip()
                     if row_uid:
@@ -224,7 +209,7 @@ class CalcomWebhookService:
                     found = extract_fb_token(row.get("metadata")) or extract_fb_token(
                         row.get("responses")
                     )
-                    emails = _attendee_emails(row)
+                    emails = attendee_emails(row)
                 if found and found != wanted:
                     skipped.append({"uid": row.get("uid"), "reason": "other_token"})
                     continue
@@ -277,13 +262,82 @@ class CalcomWebhookService:
                     "checked": checked,
                 }
 
-        bookings = self.client.list_bookings(take=take, status=None)
+        bookings = self.client.list_bookings(
+            take=take,
+            status=None,
+            attendee_email=prospect_email or None,
+            event_type_id=self._selected_event_type_id(),
+        )
         consume(bookings)
         return {
             "status": "ok",
             "applied": applied,
             "skipped": skipped,
             "checked": checked,
+        }
+
+    def ensure_event_type_webhook(self, event_type_id: int | str) -> dict[str, Any] | None:
+        """Event-type webhooks fire for embed bookings; the user-level hook often does not."""
+        url = self.webhook_url()
+        if not url.startswith("https://"):
+            return None
+        secret = (self.settings.calcom_webhook_secret or "").strip() or None
+        return self._register_event_type_webhook(event_type_id, url, secret=secret)
+
+    def _selected_event_type_id(self) -> str | None:
+        try:
+            from acquisition.models.acquisition import JourneySettings
+
+            row = self.db.get(JourneySettings, 1)
+        except Exception:
+            return None
+        raw = (getattr(row, "calcom_event_type_id", None) or "").strip() if row is not None else ""
+        return raw or None
+
+    def _ensure_event_type_webhook_quiet(
+        self, url: str, *, secret: str | None
+    ) -> dict[str, Any] | None:
+        event_id = self._selected_event_type_id()
+        if not event_id:
+            return None
+        try:
+            return self._register_event_type_webhook(event_id, url, secret=secret)
+        except (CalcomError, CalcomWebhookServiceError) as exc:
+            logger.warning("Could not register Cal.com event-type webhook: %s", exc)
+            return {"status": "error", "message": str(exc)}
+
+    def _register_event_type_webhook(
+        self,
+        event_type_id: int | str,
+        url: str,
+        *,
+        secret: str | None,
+    ) -> dict[str, Any]:
+        try:
+            existing = self.client.list_event_type_webhooks(event_type_id)
+        except CalcomError as exc:
+            raise CalcomWebhookServiceError(exc.message, http_status=exc.http_status) from exc
+        for row in existing:
+            if str(row.get("subscriberUrl") or "").rstrip("/") == url.rstrip("/"):
+                return {
+                    "status": "already_registered",
+                    "id": row.get("id"),
+                    "subscriber_url": url,
+                }
+        try:
+            created = self.client.create_event_type_webhook(
+                event_type_id=event_type_id,
+                subscriber_url=url,
+                triggers=BOOKING_TRIGGERS,
+                secret=secret,
+                active=True,
+            )
+        except CalcomError as exc:
+            raise CalcomWebhookServiceError(exc.message, http_status=exc.http_status) from exc
+        return {
+            "status": "registered",
+            "id": created.get("id"),
+            "subscriber_url": url,
         }
 
     def _find_matching(self, url: str) -> dict[str, Any] | None:

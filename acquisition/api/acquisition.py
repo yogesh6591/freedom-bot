@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -204,6 +205,30 @@ def calendar_page(
         request,
         "assessment/calendar.html",
         _journey_page_ctx(token=token, payload=payload),
+    )
+
+
+@router.get("/a/booking-complete", response_class=HTMLResponse)
+def booking_complete_page(
+    request: Request,
+    journey: AcquisitionJourneyService = Depends(get_journey),
+    uid: str | None = None,
+    bookingUid: str | None = None,
+    email: str | None = None,
+) -> HTMLResponse:
+    """Cal.com event-type successRedirectUrl lands here with uid/email, then we bounce to welcome."""
+    booking_uid = (uid or bookingUid or "").strip() or None
+    attendee = (email or "").strip() or None
+    token = journey.complete_booking_from_redirect(uid=booking_uid, email=attendee)
+    if token:
+        dest = f"/a/{quote(token, safe='')}/booked"
+        if booking_uid:
+            dest += f"?uid={quote(booking_uid, safe='')}"
+        return RedirectResponse(url=dest, status_code=303)
+    return templates.TemplateResponse(
+        request,
+        "assessment/booking_complete.html",
+        {"brand": BRAND, "uid": booking_uid or ""},
     )
 
 

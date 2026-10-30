@@ -75,12 +75,27 @@ def apply_calcom_event_selection(
     # Prospect is the sole booker; hide Cal.com "Add guests" / "Add another".
     # CC invitees are still attached via guests= on the embed URL.
     try:
-        client.ensure_event_booker_defaults(selected["id"])
+        from acquisition.services.booking_service import calendar_capture_url
+
+        client.ensure_event_booker_defaults(
+            selected["id"],
+            success_redirect_url=calendar_capture_url() or None,
+        )
     except CalcomError as exc:
         logger.warning(
             "Could not apply Cal.com booker defaults on event %s: %s",
             selected.get("id"),
             exc.message,
+        )
+    try:
+        from acquisition.services.calcom_webhook_service import CalcomWebhookService
+
+        CalcomWebhookService(db, client=client).ensure_event_type_webhook(selected["id"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Could not register Cal.com event-type webhook on event %s: %s",
+            selected.get("id"),
+            exc,
         )
     try:
         client.ensure_time_format(12)

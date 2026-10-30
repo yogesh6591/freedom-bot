@@ -70,8 +70,16 @@ def test_event_types():
         out = c.list_event_types(username="bob")
         assert out == [{"id": 1, "title": "Intro", "slug": "intro", "lengthInMinutes": 30, "bookingUrl": "https://cal.com/bob/intro", "description": None, "hidden": False}]
         assert c.ensure_event_booker_defaults("1")["disableGuests"] is True
+        assert c.ensure_event_booker_defaults(
+            "1", success_redirect_url="https://app.example/a/booking-complete"
+        )["disableGuests"] is True
     assert fake.calls[0][2] == {"username": "bob"}
     assert fake.calls[1][2] == {"id": 1, "disableGuests": True}
+    assert fake.calls[2][2] == {
+        "id": 1,
+        "disableGuests": True,
+        "successRedirectUrl": "https://app.example/a/booking-complete",
+    }
     with cm:
         with pytest.raises(CalcomError):
             c.ensure_event_booker_defaults("abc")
@@ -81,15 +89,29 @@ def test_webhooks():
     fake, cm = run({
         "CAL_RETRIEVE_WEBHOOKS_LIST": {"data": [{"id": 7, "subscriberUrl": "https://a/api/webhooks/calcom"}], "status": "success"},
         "CAL_POST_WEBHOOK_EVENT": {"data": {"id": "uuid-1", "active": True}, "status": "success"},
+        "CAL_CREATE_WEBHOOK_FOR_EVENT_TYPE": {"data": {"id": "et-1", "active": True}, "status": "success"},
         "CAL_DELETE_WEBHOOK_BY_ID": {"data": {"id": 7}},
     })
     with cm:
         c = client()
         assert c.list_webhooks()[0]["id"] == 7
         assert c.create_webhook(subscriber_url=" https://b ", triggers=["BOOKING_CREATED"], secret="s")["id"] == "uuid-1"
+        assert c.create_event_type_webhook(
+            event_type_id="9",
+            subscriber_url="https://b",
+            triggers=["BOOKING_CREATED"],
+            secret="s",
+        )["id"] == "et-1"
         c.delete_webhook(7)
     assert fake.calls[1][2] == {"subscriberUrl": "https://b", "triggers": ["BOOKING_CREATED"], "active": True, "secret": "s"}
-    assert fake.calls[2][2] == {"webhookId": "7"}
+    assert fake.calls[2][2] == {
+        "eventTypeId": 9,
+        "subscriberUrl": "https://b",
+        "triggers": ["BOOKING_CREATED"],
+        "active": True,
+        "secret": "s",
+    }
+    assert fake.calls[3][2] == {"webhookId": "7"}
 
 
 def test_bookings():
@@ -107,11 +129,15 @@ def test_bookings():
         assert c.get_booking("new")["uid"] == "new"
         assert len(c.list_bookings(take=5, status=None)) == 1
         c.list_bookings(take=5, status="accepted")
+        c.list_bookings(take=5, status="upcoming", attendee_email="a@b.com", event_type_id="9")
         c.cancel_booking("new", reason="x")
     assert fake.calls[0][2] == {"bookingUid": "old", "start": "2026-11-01T15:00:00Z", "reschedulingReason": "r"}
     assert fake.calls[2][2]["status"] == ["upcoming", "recurring", "past", "cancelled", "unconfirmed"]
+    assert fake.calls[2][2]["sortCreated"] == "desc"
     assert fake.calls[3][2]["status"] == ["upcoming"]
-    assert fake.calls[4][2] == {"bookingUid": "new", "cancellationReason": "x"}
+    assert fake.calls[4][2]["attendeeEmail"] == "a@b.com"
+    assert fake.calls[4][2]["eventTypeId"] == 9
+    assert fake.calls[5][2] == {"bookingUid": "new", "cancellationReason": "x"}
 
 
 def test_cancel_gone_is_ok_but_other_errors_raise():
@@ -149,8 +175,10 @@ def test_reconcile_for_token_matches_attendee_email(monkeypatch):
 
     class FakeClient:
         configured = True
+        seen = {}
 
-        def list_bookings(self, *, take=25, status=None):
+        def list_bookings(self, *, take=25, status=None, attendee_email=None, event_type_id=None):
+            FakeClient.seen = {"attendee_email": attendee_email, "event_type_id": event_type_id}
             return [
                 {
                     "uid": "u1",
@@ -178,6 +206,7 @@ def test_reconcile_for_token_matches_attendee_email(monkeypatch):
     assert out["applied"][0]["result"] == "confirmed"
     assert seen["token"] == "tok_abc"
     assert seen["uid"] == "u1"
+    assert FakeClient.seen["attendee_email"] == "raj@x.com"
 
 
 def test_booking_status_payload_accepts_sync(monkeypatch):
@@ -255,6 +284,8 @@ def test_webhook_service_and_page(monkeypatch):
         "CAL_POST_WEBHOOK_EVENT": {"data": {"id": "u"}},
         "CAL_DELETE_WEBHOOK_BY_ID": {"data": {}},
         "CAL_FETCH_ALL_BOOKINGS": {"data": []},
+        "CAL_RETRIEVE_WEBHOOKS_FOR_EVENT_TYPE": {"data": []},
+        "CAL_CREATE_WEBHOOK_FOR_EVENT_TYPE": {"data": {"id": "et"}},
     })
     db = SessionLocal()
     try:
@@ -267,3 +298,69 @@ def test_webhook_service_and_page(monkeypatch):
         db.close()
     acts = [a for _, a, _ in fake.calls]
     assert "CAL_DELETE_WEBHOOK_BY_ID" in acts and "CAL_POST_WEBHOOK_EVENT" in acts
+
+
+def test_ensure_event_type_webhook_registers_once(monkeypatch):
+    from types import SimpleNamespace
+
+    from acquisition.services.calcom_webhook_service import CalcomWebhookService
+
+    monkeypatch.setenv("PUBLIC_WEBHOOK_BASE_URL", "https://pub.example")
+    from acquisition.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        fake, cm = run(
+            {
+                "CAL_RETRIEVE_WEBHOOKS_FOR_EVENT_TYPE": {
+                    "data": [
+                        {
+                            "id": "et-existing",
+                            "subscriberUrl": "https://pub.example/api/webhooks/calcom",
+                        }
+                    ]
+                },
+                "CAL_CREATE_WEBHOOK_FOR_EVENT_TYPE": {"data": {"id": "et-new"}},
+            }
+        )
+        with cm:
+            out = CalcomWebhookService(
+                SimpleNamespace(), client=client()
+            ).ensure_event_type_webhook("7221902")
+        assert out["status"] == "already_registered"
+        assert out["id"] == "et-existing"
+        acts = [act for _, act, _ in fake.calls]
+        assert "CAL_CREATE_WEBHOOK_FOR_EVENT_TYPE" not in acts
+        assert fake.calls[0][2]["eventTypeId"] == 7221902
+    finally:
+        get_settings.cache_clear()
+
+
+def test_ensure_event_type_webhook_creates_when_missing(monkeypatch):
+    from types import SimpleNamespace
+
+    from acquisition.services.calcom_webhook_service import CalcomWebhookService
+
+    monkeypatch.setenv("PUBLIC_WEBHOOK_BASE_URL", "https://pub.example")
+    from acquisition.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        fake, cm = run(
+            {
+                "CAL_RETRIEVE_WEBHOOKS_FOR_EVENT_TYPE": {"data": []},
+                "CAL_CREATE_WEBHOOK_FOR_EVENT_TYPE": {"data": {"id": "et-new"}},
+            }
+        )
+        with cm:
+            out = CalcomWebhookService(
+                SimpleNamespace(), client=client()
+            ).ensure_event_type_webhook("7221902")
+        assert out["status"] == "registered"
+        assert out["id"] == "et-new"
+        create = [args for _, act, args in fake.calls if act == "CAL_CREATE_WEBHOOK_FOR_EVENT_TYPE"]
+        assert create[0]["eventTypeId"] == 7221902
+        assert create[0]["subscriberUrl"] == "https://pub.example/api/webhooks/calcom"
+        assert "BOOKING_CREATED" in create[0]["triggers"]
+    finally:
+        get_settings.cache_clear()

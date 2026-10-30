@@ -121,13 +121,22 @@ class CalcomClient:
         return self._update_profile({"timeFormat": desired})
 
     # ------------------------------------------------------------------ event types
-    def ensure_event_booker_defaults(self, event_type_id: int | str) -> dict[str, Any]:
-        """Hide the "Add guests" fields on an event type (the prospect is the only booker)."""
+    def ensure_event_booker_defaults(
+        self,
+        event_type_id: int | str,
+        *,
+        success_redirect_url: str | None = None,
+    ) -> dict[str, Any]:
+        """Hide guest fields and send the booker to our capture URL after a booking."""
         try:
             event_id = int(str(event_type_id).strip())
         except ValueError:
             raise CalcomError("Cal.com event type id must be a number", http_status=422) from None
-        data = _inner(self._run("CAL_EDIT_EVENT_TYPE_BY_ID", {"id": event_id, "disableGuests": True}))
+        arguments: dict[str, Any] = {"id": event_id, "disableGuests": True}
+        redirect = (success_redirect_url or "").strip()
+        if redirect:
+            arguments["successRedirectUrl"] = redirect
+        data = _inner(self._run("CAL_EDIT_EVENT_TYPE_BY_ID", arguments))
         event = data.get("event_type") if isinstance(data, dict) else None
         if not isinstance(event, dict):
             raise CalcomError("Unexpected Cal.com update event-type response")
@@ -136,6 +145,7 @@ class CalcomClient:
             "disableGuests": event.get("disableGuests"),
             "slug": event.get("slug"),
             "title": event.get("title"),
+            "successRedirectUrl": event.get("successRedirectUrl"),
         }
 
     def list_event_types(self, *, username: str | None = None) -> list[dict[str, Any]]:
@@ -171,9 +181,24 @@ class CalcomClient:
         return out
 
     # ------------------------------------------------------------------ webhooks
+    @staticmethod
+    def _webhook_rows(data: Any) -> list[dict[str, Any]]:
+        payload = _inner(data)
+        if isinstance(payload, dict):
+            payload = payload.get("webhooks") or payload.get("data") or payload.get("items") or []
+        return [item for item in payload if isinstance(item, dict)] if isinstance(payload, list) else []
+
     def list_webhooks(self) -> list[dict[str, Any]]:
-        data = _inner(self._run("CAL_RETRIEVE_WEBHOOKS_LIST", {"take": 100}))
-        return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+        return self._webhook_rows(self._run("CAL_RETRIEVE_WEBHOOKS_LIST", {"take": 100}))
+
+    def list_event_type_webhooks(self, event_type_id: int | str) -> list[dict[str, Any]]:
+        try:
+            event_id = int(str(event_type_id).strip())
+        except ValueError:
+            raise CalcomError("Cal.com event type id must be a number", http_status=422) from None
+        return self._webhook_rows(
+            self._run("CAL_RETRIEVE_WEBHOOKS_FOR_EVENT_TYPE", {"eventTypeId": event_id, "take": 100})
+        )
 
     def create_webhook(
         self,
@@ -193,6 +218,32 @@ class CalcomClient:
         data = _inner(self._run("CAL_POST_WEBHOOK_EVENT", arguments))
         if not isinstance(data, dict):
             raise CalcomError("Unexpected Cal.com create webhook response")
+        return data
+
+    def create_event_type_webhook(
+        self,
+        *,
+        event_type_id: int | str,
+        subscriber_url: str,
+        triggers: list[str],
+        secret: str | None = None,
+        active: bool = True,
+    ) -> dict[str, Any]:
+        try:
+            event_id = int(str(event_type_id).strip())
+        except ValueError:
+            raise CalcomError("Cal.com event type id must be a number", http_status=422) from None
+        arguments: dict[str, Any] = {
+            "eventTypeId": event_id,
+            "subscriberUrl": subscriber_url.strip(),
+            "triggers": triggers,
+            "active": active,
+        }
+        if secret:
+            arguments["secret"] = secret
+        data = _inner(self._run("CAL_CREATE_WEBHOOK_FOR_EVENT_TYPE", arguments))
+        if not isinstance(data, dict):
+            raise CalcomError("Unexpected Cal.com create event-type webhook response")
         return data
 
     def delete_webhook(self, webhook_id: int | str) -> None:
@@ -253,13 +304,33 @@ class CalcomClient:
     def get_booking(self, uid: str) -> dict[str, Any]:
         return self._booking_summary(self.get_booking_record(uid))
 
-    def list_bookings(self, *, take: int = 25, status: str | None = "upcoming") -> list[dict[str, Any]]:
+    def list_bookings(
+        self,
+        *,
+        take: int = 25,
+        status: str | None = "upcoming",
+        attendee_email: str | None = None,
+        event_type_id: int | str | None = None,
+    ) -> list[dict[str, Any]]:
         """Bookings. ``status=None`` means every status."""
         if status:
             statuses = [_STATUS_ALIASES.get(status.lower(), status.lower())]
         else:
             statuses = list(ALL_STATUSES)
-        data = _inner(self._run("CAL_FETCH_ALL_BOOKINGS", {"take": int(take), "status": statuses}))
+        arguments: dict[str, Any] = {
+            "take": int(take),
+            "status": statuses,
+            "sortCreated": "desc",
+        }
+        email = (attendee_email or "").strip()
+        if email:
+            arguments["attendeeEmail"] = email
+        if event_type_id is not None and str(event_type_id).strip():
+            try:
+                arguments["eventTypeId"] = int(str(event_type_id).strip())
+            except ValueError:
+                raise CalcomError("Cal.com event type id must be a number", http_status=422) from None
+        data = _inner(self._run("CAL_FETCH_ALL_BOOKINGS", arguments))
         if isinstance(data, dict):
             data = data.get("bookings") or data.get("data") or []
         return [item for item in data if isinstance(item, dict)] if isinstance(data, list) else []

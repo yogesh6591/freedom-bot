@@ -611,6 +611,7 @@ class AcquisitionJourneyService:
         from acquisition.services.booking_service import (
             BookingService,
             build_calendar_embed_url,
+            calendar_capture_url,
             calendar_embed_parts,
             calendar_success_url,
         )
@@ -631,10 +632,28 @@ class AcquisitionJourneyService:
                 event_id = (getattr(settings, "calcom_event_type_id", None) or "").strip()
                 if event_id:
                     try:
-                        client.ensure_event_booker_defaults(event_id)
+                        client.ensure_event_booker_defaults(
+                            event_id,
+                            success_redirect_url=calendar_capture_url() or None,
+                        )
                     except CalcomError:
                         logger.warning(
                             "Could not apply Cal.com booker defaults on event %s",
+                            event_id,
+                            exc_info=False,
+                        )
+                    try:
+                        from acquisition.services.calcom_webhook_service import (
+                            CalcomWebhookService,
+                            CalcomWebhookServiceError,
+                        )
+
+                        CalcomWebhookService(self.db, client=client).ensure_event_type_webhook(
+                            event_id
+                        )
+                    except (CalcomError, CalcomWebhookServiceError):
+                        logger.warning(
+                            "Could not register Cal.com event-type webhook on event %s",
                             event_id,
                             exc_info=False,
                         )
@@ -699,6 +718,54 @@ class AcquisitionJourneyService:
         from acquisition.services.booking_service import BookingService
 
         return BookingService(self.db).is_booking_confirmed(link)
+
+    def complete_booking_from_redirect(
+        self, *, uid: str | None = None, email: str | None = None
+    ) -> str | None:
+        """Confirm from Cal.com's success redirect (uid/email query) and return the token."""
+        from acquisition.services.booking_service import (
+            attendee_emails,
+            extract_fb_token,
+            find_link_by_attendee_emails,
+        )
+        from acquisition.services.calcom_webhook_service import (
+            CalcomWebhookService,
+            CalcomWebhookServiceError,
+        )
+        from acquisition.integrations.calcom.client import CalcomClient, CalcomError
+
+        wanted_uid = (uid or "").strip() or None
+        attendee = (email or "").strip().lower() or None
+        token: str | None = None
+        emails: set[str] = set()
+        if attendee:
+            emails.add(attendee)
+
+        if wanted_uid:
+            try:
+                detail = CalcomClient(db=self.db).get_booking_record(wanted_uid)
+            except CalcomError:
+                detail = None
+            if isinstance(detail, dict):
+                token = extract_fb_token(detail.get("metadata")) or extract_fb_token(
+                    detail.get("responses")
+                )
+                emails |= attendee_emails(detail)
+
+        if not token:
+            link = find_link_by_attendee_emails(self.db, emails)
+            token = (getattr(link, "assessment_token", None) or "").strip() or None
+
+        if not token:
+            return None
+        try:
+            CalcomWebhookService(self.db).reconcile_for_token(token, uid=wanted_uid)
+        except CalcomWebhookServiceError:
+            logger.warning(
+                "Could not confirm Cal.com redirect booking for token prefix=%s",
+                token[:12],
+            )
+        return token
 
     def load_booked_page(self, token: str, *, uid: str | None = None) -> dict[str, Any]:
         """Welcome page payload. If Cal.com already booked, confirm before rendering."""
