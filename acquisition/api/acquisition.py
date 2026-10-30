@@ -208,7 +208,7 @@ def calendar_page(
     )
 
 
-@router.get("/a/booking-complete", response_class=HTMLResponse)
+@router.get("/booking-complete", response_class=HTMLResponse)
 def booking_complete_page(
     request: Request,
     journey: AcquisitionJourneyService = Depends(get_journey),

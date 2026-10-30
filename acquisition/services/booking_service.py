@@ -99,8 +99,11 @@ def calendar_success_url(token: str, *, settings: Any | None = None) -> str:
 
 
 def calendar_capture_url(*, settings: Any | None = None) -> str:
-    """Token-less URL Cal.com can redirect to after any booking on the event type."""
-    return _public_assessment_url("/a/booking-complete", settings=settings)
+    """Token-less URL Cal.com can redirect to after any booking on the event type.
+
+    This is not under ``/a/{token}`` because that pattern is the assessment chat page.
+    """
+    return _public_assessment_url("/booking-complete", settings=settings)
 
 
 def attendee_emails(row: dict[str, Any] | None) -> set[str]:

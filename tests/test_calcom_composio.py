@@ -71,14 +71,14 @@ def test_event_types():
         assert out == [{"id": 1, "title": "Intro", "slug": "intro", "lengthInMinutes": 30, "bookingUrl": "https://cal.com/bob/intro", "description": None, "hidden": False}]
         assert c.ensure_event_booker_defaults("1")["disableGuests"] is True
         assert c.ensure_event_booker_defaults(
-            "1", success_redirect_url="https://app.example/a/booking-complete"
+            "1", success_redirect_url="https://app.example/acquire/booking-complete"
         )["disableGuests"] is True
     assert fake.calls[0][2] == {"username": "bob"}
     assert fake.calls[1][2] == {"id": 1, "disableGuests": True}
     assert fake.calls[2][2] == {
         "id": 1,
         "disableGuests": True,
-        "successRedirectUrl": "https://app.example/a/booking-complete",
+        "successRedirectUrl": "https://app.example/acquire/booking-complete",
     }
     with cm:
         with pytest.raises(CalcomError):

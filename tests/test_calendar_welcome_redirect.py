@@ -69,7 +69,7 @@ def test_calendar_capture_url_is_tokenless(monkeypatch):
         url = calendar_capture_url()
     finally:
         get_settings.cache_clear()
-    assert url == "https://app.example/acquire/a/booking-complete"
+    assert url == "https://app.example/acquire/booking-complete"
 
 
 def test_reconcile_for_token_uses_uid_when_provided(monkeypatch):
@@ -295,7 +295,7 @@ def test_booking_complete_page_breaks_out_of_iframe():
         encoding="utf-8"
     )
     assert "window.top" in capture
-    assert "booking-complete" in (ROOT / "acquisition/api/acquisition.py").read_text(
+    assert '"/booking-complete"' in (ROOT / "acquisition/api/acquisition.py").read_text(
         encoding="utf-8"
     )
 
