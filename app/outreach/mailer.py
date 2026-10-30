@@ -1,7 +1,7 @@
 """Queue one fixed-wording email (a booking link, a payment link) through the same sender as outreach emails.
 
 The wording is written by code, not by the model, so only the link and the person's first name vary. The email
-goes out like any other: footer with opt-out and address, spacing and daily ceiling, and a reply inside the
+goes out like any other: spacing and daily ceiling, and a reply inside the
 earlier Gmail thread when the person was emailed before.
 """
 

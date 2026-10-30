@@ -88,9 +88,8 @@ class Settings(BaseSettings):
     outreach_daily_ceiling: int = 400          # max emails sent per local day
     outreach_gap_seconds: int = 25             # wait between two sends
     outreach_max_attempts: int = 3
-    # Every email carries these. Sending is refused while the address is blank.
-    outreach_optout_line: str = "Not interested? Reply 'unsubscribe' and I won't email you again."
-    outreach_business_address: str = ""        # e.g. "Cepoch, 123 Street, City, Country"
+    outreach_optout_line: str = ""
+    outreach_business_address: str = ""
     outreach_worker_enabled: bool = False      # background sender; off until you turn it on
     outreach_sender_user_id: str = ""          # user whose connected Gmail sends the emails
     outreach_poll_seconds: int = 5

@@ -286,7 +286,7 @@ class OutreachSession:
 
     # ------------------------------------------------------------------ send (queue)
     def _propose_per_person(self, db: Any, records: dict, fields: list, subject: str, body: str, per_person: list) -> str:
-        """A different subject and body for some or all recipients. Code still fills names, link and footer."""
+        """A different subject and body for some or all recipients. Code still fills names and the assessment link."""
         chosen = {str(r["email"]).casefold() for r in self.state["recipients"]}
         variants: dict[str, dict] = {}
         for item in per_person:

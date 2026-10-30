@@ -131,17 +131,9 @@
 
 <section class="panel" id="sending-settings">
   <h2>Sending</h2>
-  <p class="page-lede">Emails go out from the Gmail connected in the chat app. Everything an email needs besides the person is set here.</p>
+  <p class="page-lede">Emails go out from the Gmail connected in the chat app. Turn sending on or off here.</p>
   <form method="post" action="/integrations/sending" class="prospect-form integration-form">
     <div class="form-grid">
-      <label class="field full">
-        <span>Business address (shown in every email footer, required)</span>
-        <input type="text" name="business_address" value="{{ email.business_address }}" placeholder="Cepoch, street, city, state, zip" maxlength="400">
-      </label>
-      <label class="field full">
-        <span>Opt-out line (shown above the address)</span>
-        <input type="text" name="optout_line" value="{{ email.optout_line }}" maxlength="300">
-      </label>
       <label class="field full checkbox-inline">
         <input type="checkbox" name="worker_enabled" value="1" {% if email.worker_on %}checked{% endif %}>
         <span>Sending is on (emails you approve in the chat go out in the background, one every {{ email.gap_seconds }} seconds, up to {{ email.daily_ceiling }} a day)</span>

@@ -3,7 +3,7 @@
 * Whose Gmail: the Gmail connected in Composio sends. Nobody picks it or looks up an id. (If several
   users have a Gmail connected, an explicit sender saved in ``outreach_settings`` or OUTREACH_SENDER_USER_ID
   wins; otherwise the first one found is used.)
-* The footer and the on/off switch come from the Sending card on the Integrations page
+* The on/off switch comes from the Sending card on the Integrations page
   (table ``outreach_settings``). The OUTREACH_* env values are only a fallback.
 * One email at a time, spaced by OUTREACH_GAP_SECONDS, never more than OUTREACH_DAILY_CEILING a day
   (rules live in acquisition/services/outreach_service.py).
@@ -76,8 +76,6 @@ def _gmail_connector(ctx: Any):
 def readiness() -> tuple[bool, str]:
     """(ok, reason). Checked before anything is queued, so the user hears it immediately."""
     try:
-        if not _effective().business_address:
-            return False, "email cannot be sent yet: the business address for the footer is not set (Integrations page, Sending)"
         ctx = _sender_context()
         with _bind(ctx):
             _gmail_connector(ctx)

@@ -1,4 +1,4 @@
-"""Integrations page: the Sending card (which Gmail sends, footer, on/off)."""
+"""Integrations page: the Sending card (which Gmail sends, on/off)."""
 
 from __future__ import annotations
 
@@ -37,9 +37,6 @@ def sending_context(db: Session) -> dict:
         "reason": reason,
         "worker_on": eff.worker_enabled,
         "sender_gmail": sender_gmail,
-        "business_address": eff.business_address,
-        "optout_line": eff.optout_line,
-        "address_set": bool(eff.business_address),
         "daily_ceiling": cfg.outreach_daily_ceiling,
         "gap_seconds": cfg.outreach_gap_seconds,
     }
@@ -47,18 +44,17 @@ def sending_context(db: Session) -> dict:
 
 @router.post("/integrations/sending", response_model=None)
 def save_sending(
-    business_address: Annotated[str, Form()] = "",
-    optout_line: Annotated[str, Form()] = "",
     worker_enabled: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     want_on = worker_enabled is not None
-    keep_sender = store.effective(db).sender_user_id  # an explicit sender, if one was ever saved
+    current = store.effective(db)
+    keep_sender = current.sender_user_id  # an explicit sender, if one was ever saved
     store.save(
         db,
         sender_user_id=keep_sender,
-        business_address=business_address,
-        optout_line=optout_line,
+        business_address=current.business_address,
+        optout_line=current.optout_line,
         worker_enabled=False,  # switched on below only when everything is ready
         updated_by="admin",
     )
@@ -71,8 +67,8 @@ def save_sending(
             store.save(
                 db,
                 sender_user_id=keep_sender,
-                business_address=business_address,
-                optout_line=optout_line,
+                business_address=current.business_address,
+                optout_line=current.optout_line,
                 worker_enabled=True,
                 updated_by="admin",
             )

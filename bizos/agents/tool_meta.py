@@ -821,7 +821,7 @@ TOOL_META: dict[str, AgentMeta] = {
         Needs: a name or an email for each person.
     """)),
     "propose_email": M("outreach", d("""
-        Write one shared email, or different wording per person. Code fills names, link and footer;
+        Write one shared email, or different wording per person. Code fills names and the assessment link;
         never type a name into the text.
         Use when: recipients are chosen and the user wants the email written or changed.
         Don't use: sending -> send_approved; one quick email -> email_send_message; people -> choose_recipients.

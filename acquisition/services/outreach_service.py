@@ -99,12 +99,15 @@ def merge(template: str, values: dict[str, str]) -> str:
     return re.sub(r"[ \t]+([,.!?:;])", r"\1", out)
 
 
-def build_footer(optout_line: str, address: str) -> str:
-    if not (address or "").strip():
-        raise OutreachError(
-            "The business address for the email footer is not set (set it on the Integrations page, Sending)."
-        )
-    return f"\n\n--\n{optout_line.strip()}\n{address.strip()}"
+def without_legacy_footer(body: str, optout_line: str, address: str) -> str:
+    """Drop a previously appended opt-out/address suffix; leave any other body unchanged."""
+    parts = [p for p in ((optout_line or "").strip(), (address or "").strip()) if p]
+    if not parts:
+        return body
+    suffix = "\n\n--\n" + "\n".join(parts)
+    if body.endswith(suffix):
+        return body[: -len(suffix)]
+    return body
 
 
 def can_send_now(
@@ -219,9 +222,6 @@ def enqueue(
     Anyone already emailed gets ``kind=follow_up`` linked to their last email and
     reuses the same assessment link, unless ``new_thread`` is true.
     """
-    from acquisition.services.outreach_settings import effective
-    eff = effective(db)
-    footer = build_footer(eff.optout_line, eff.business_address)
     batch = batch_id or uuid.uuid4()
     rows: list[SentEmail] = []
     seen: set[uuid.UUID] = set()
@@ -242,7 +242,7 @@ def enqueue(
             )
         values = merge_values_for(prospect, link)
         subject = merge(subject_template, values)
-        body = merge(body_template, values) + footer
+        body = merge(body_template, values)
         previous = last_email_to(db, pid)
         threaded = bool(previous) and not new_thread
         if threaded:
@@ -315,6 +315,9 @@ def send_next(db: Session, send_fn: SendFn, *, now: Optional[datetime] = None) -
     if row.follow_up_of_id:
         prev = db.get(SentEmail, row.follow_up_of_id)
         thread_id = prev.gmail_thread_id if prev else None
+    from acquisition.services.outreach_settings import effective
+    footer = effective(db)
+    row.body = without_legacy_footer(row.body, footer.optout_line, footer.business_address)
     try:
         res = send_fn(row.to_email, row.subject, row.body, thread_id)
     except Exception as exc:  # never lose the row because the connector blew up
