@@ -190,7 +190,8 @@
             if (dump.indexOf("bookingsuccessful") !== -1) return true;
             if (dump.indexOf("booking_created") !== -1) return true;
             if (dump.indexOf("booking_success") !== -1) return true;
-            if (dump.indexOf("/booking/") !== -1) return true;
+            if (dump.indexOf("/booking") !== -1) return true;
+            if (dump.indexOf("videocallurl") !== -1) return true;
             if (dump.indexOf("paymentrequired") !== -1 && dump.indexOf("starttime") !== -1) return true;
           } catch (err) {}
           return false;
@@ -261,9 +262,13 @@
           if (guestEmail) config.email = guestEmail;
           if (successUrl) config.successRedirectUrl = successUrl;
           config.metadata = { fb_token: {{ token|tojson }} };
+          var embedLink = calLink;
+          if (successUrl) {
+            embedLink += (embedLink.indexOf("?") >= 0 ? "&" : "?") + "successRedirectUrl=" + encodeURIComponent(successUrl);
+          }
           window.Cal.ns.fb("inline", {
             elementOrSelector: "#fb-cal-inline",
-            calLink: calLink,
+            calLink: embedLink,
             layout: "month_view",
             config: config,
           });
@@ -367,6 +372,13 @@
           var fromCal = origin.indexOf("cal.com") !== -1 || origin.indexOf("cal.dev") !== -1;
           if (fromCal || (raw && typeof raw === "object" && String(raw.originator || "") === "CAL")) {
             allowSync = true;
+            var uid = extractUid(raw);
+            if (uid) {
+              bookingUid = uid;
+              showHold();
+              redirectBooked();
+              return;
+            }
           }
           if (looksLikeBookingEvent(raw)) onCalBooking(raw);
         });

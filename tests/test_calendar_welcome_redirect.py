@@ -34,6 +34,8 @@ def test_calendar_and_booked_pages_forward_booking_uid():
     assert "watchEmbedFrame" in calendar
     assert "window.top" in booked
     assert "hideBranding" in calendar
+    assert '"successRedirectUrl=" + encodeURIComponent(successUrl)' in calendar
+    assert "videocallurl" in calendar.lower()
 
 
 def test_calendar_embed_uses_public_success_url(monkeypatch):
