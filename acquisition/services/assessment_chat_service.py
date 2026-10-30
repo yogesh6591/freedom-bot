@@ -398,8 +398,9 @@ class AssessmentChatService:
             f"{revenue_rule}"
             "- Generate ONE next natural diagnostic question.\n"
             "- Main goal: obtain the still-missing required information (missing_fields) with the fewest "
-            "natural questions. Every question should aim at one or two missing items, so the assessment "
-            "ends in as few turns as possible.\n"
+            "natural questions. EVERY question must target one or more items listed in missing_fields "
+            "(missing_field_hints says what each one means in plain words). If missing_fields is not empty, "
+            "never ask about anything else. If one item is missing, ask for exactly that, directly.\n"
             "- Before asking, re-read the whole conversation: anything the prospect already said, even "
             "earlier or in passing, counts as answered. Never ask for it again.\n"
             "- optional_missing_fields are nice to have: ask about them only when they fit the "
@@ -445,9 +446,9 @@ class AssessmentChatService:
             lines.append("force_change_business_issue = true")
             lines.append(
                 "REQUIRED: root cause and impact for the current issue are sufficiently clear. "
-                "The next diagnostic question MUST move to a different business issue, "
-                "a broader scan, or another missing assessment area. "
-                "Do not continue depth on the same issue."
+                "The next question MUST NOT continue depth on the same issue; it MUST move to "
+                "a still-missing required item (see missing_fields). "
+                "Never ask a broader or nice-to-have question while a required item is still missing."
             )
         else:
             lines.append(

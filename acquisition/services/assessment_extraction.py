@@ -108,6 +108,11 @@ AUTHORITY (special value enum when status=known):
     "evidence_quote": "<exact quote from a USER message>"
   }
 Authority value meanings (semantic — do not use keyword shortcuts):
+- The user is speaking for their organization. When they say who owns or decides on this kind of change
+  (themselves, "our leadership", "the CEO and the team", "we decide"), that answers authority:
+  decision_maker if they are, belong to, or speak on behalf of that deciding group; influencer if they
+  describe a deciding person or group they are clearly not part of. Do not leave authority missing just
+  because they did not say the word "I".
 - decision_maker: user can make / finalize the purchase or change decision
 - influencer: user recommends or shapes the decision but someone else signs off
 - not_decision_maker: user clearly cannot decide / needs others with no influence path stated as primary
@@ -455,6 +460,7 @@ def build_current_assessment_state(structured_state: dict[str, Any] | None) -> d
     return {
         "resolved_fields": resolved,
         "missing_fields": missing,
+        "missing_field_hints": {key: FIELD_HINTS.get(key, key) for key in missing},
         # Nice to have: ask only if it fits naturally; never needed to finish.
         "optional_missing_fields": [
             key for key in OPTIONAL_ASSESSMENT_FIELDS if not is_resolved(data[key])
@@ -476,6 +482,23 @@ def build_current_assessment_state(structured_state: dict[str, Any] | None) -> d
             "force_change_business_issue": focus.get("force_change_business_issue"),
         },
     }
+
+
+# Plain-language meaning of each required item, so the question writer knows what to ask for.
+FIELD_HINTS: dict[str, str] = {
+    "company": "what the business does",
+    "goals": "what they are trying to achieve",
+    "revenue_range": "rough annual revenue band",
+    "headcount": "how many people work in the company",
+    "functions": "which teams or roles are involved in the area being discussed",
+    "workflows": "how the work is done today (manual steps, handoffs)",
+    "pain_points": "what is going wrong or slow",
+    "time_cost_impact": "what it costs them in time, money or missed opportunity",
+    "bottlenecks": "what blocks or holds things up",
+    "change_readiness": "how ready they are to change how they work",
+    "ai_readiness": "how open they are to AI or automation",
+    "authority": "who decides on a change like this, and whether the person answering is that person",
+}
 
 
 def assessment_progress(state: dict[str, Any] | None) -> dict[str, Any]:
