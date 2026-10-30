@@ -231,6 +231,20 @@ class CalcomWebhookService:
                 if not found:
                     if prospect_email and prospect_email in emails:
                         found = wanted
+                    elif wanted_uid and str(row.get("uid") or "").strip() == wanted_uid:
+                        owner = self.db.scalar(
+                            select(CampaignProspect).where(
+                                CampaignProspect.calcom_booking_uid == wanted_uid
+                            )
+                        )
+                        owner_token = (
+                            getattr(owner, "assessment_token", None) if owner is not None else None
+                        )
+                        if owner is None or owner_token == wanted:
+                            found = wanted
+                        else:
+                            skipped.append({"uid": row.get("uid"), "reason": "other_token"})
+                            continue
                     else:
                         skipped.append({"uid": row.get("uid"), "reason": "missing_fb_token"})
                         continue

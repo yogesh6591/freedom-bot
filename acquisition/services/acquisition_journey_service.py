@@ -600,7 +600,12 @@ class AcquisitionJourneyService:
                 http_status=503,
                 code="calendar_unconfigured",
             )
-        from acquisition.services.booking_service import BookingService, build_calendar_embed_url
+        from acquisition.services.booking_service import (
+            BookingService,
+            build_calendar_embed_url,
+            calendar_embed_parts,
+            calendar_success_url,
+        )
         from acquisition.integrations.calcom.client import CalcomClient, CalcomError
         from acquisition.timezones import platform_timezone_name
 
@@ -664,6 +669,7 @@ class AcquisitionJourneyService:
             guest_email=guest_email,
             cc_emails=cc_emails,
         )
+        parts = calendar_embed_parts(booking_url)
         booked = BookingService(self.db).is_booking_confirmed(link)
         # Eligible only: expose booking URL — never API key or unused event internals beyond URL.
         return {
@@ -671,6 +677,11 @@ class AcquisitionJourneyService:
             "journey_stage": link.journey_stage.value,
             "calendar_eligible": True,
             "calendar_url": embed_url,
+            "cal_link": parts["cal_link"] or None,
+            "cal_origin": parts["cal_origin"],
+            "guest_name": guest_name,
+            "guest_email": guest_email,
+            "success_url": calendar_success_url(token) or None,
             "event_title": (settings.calcom_event_title or "").strip() or None,
             "booking_confirmed": booked,
             "booked_page_url": f"/a/{token}/booked" if booked else None,

@@ -4,7 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from acquisition.services.acquisition_journey_service import AcquisitionJourneyError
-from acquisition.services.booking_service import build_calendar_embed_url
+from acquisition.services.booking_service import build_calendar_embed_url, calendar_embed_parts
 from acquisition.services.calcom_webhook_service import CalcomWebhookService
 
 
@@ -25,6 +25,9 @@ def test_calendar_and_booked_pages_forward_booking_uid():
     assert "data-fb-booked-url" in calendar
     assert "uid=" in booked
     assert "bookingUid" in booked
+    assert "app.cal.com/embed/embed.js" in calendar
+    assert "bookingSuccessfulV2" in calendar
+    assert "fb-cal-inline" in calendar
 
 
 def test_calendar_embed_uses_public_success_url(monkeypatch):
@@ -41,6 +44,8 @@ def test_calendar_embed_uses_public_success_url(monkeypatch):
         get_settings.cache_clear()
     assert "successRedirectUrl=" in url
     assert "https%3A%2F%2Fapp.example%2Facquire%2Fa%2Ftok_abc%2Fbooked" in url
+    parts = calendar_embed_parts("https://cal.com/jeanne/intro")
+    assert parts == {"cal_link": "jeanne/intro", "cal_origin": "https://cal.com"}
 
 
 def test_reconcile_for_token_uses_uid_when_provided(monkeypatch):
@@ -132,6 +137,60 @@ def test_reconcile_for_token_ignores_uid_for_another_prospect(monkeypatch):
     )
     assert out["applied"] == []
     assert seen["listed"] == 1
+
+
+def test_reconcile_for_token_claims_unmapped_uid(monkeypatch):
+    from acquisition.services import calcom_webhook_service as mod
+
+    class Link:
+        assessment_token = "tok_abc"
+        prospect = type("P", (), {"email": "raj@x.com"})()
+
+    class FakeDb:
+        def __init__(self):
+            self.calls = 0
+
+        def scalar(self, _q):
+            self.calls += 1
+            if self.calls == 1:
+                return Link()
+            return None
+
+    seen = {}
+
+    class FakeClient:
+        configured = True
+
+        def get_booking_record(self, uid):
+            return {
+                "uid": uid,
+                "status": "accepted",
+                "start": "2026-10-30T15:00:00Z",
+                "end": "2026-10-30T15:30:00Z",
+                "attendees": [{"email": "other@x.com"}],
+            }
+
+        def list_bookings(self, *, take=25, status=None):
+            seen["listed"] = True
+            return []
+
+    class FakeBooking:
+        def __init__(self, db):
+            pass
+
+        def handle_calcom_webhook(self, payload, *, event_id):
+            seen["token"] = payload["payload"]["metadata"]["fb_token"]
+            seen["uid"] = payload["payload"]["uid"]
+            return {"status": "confirmed"}
+
+    monkeypatch.setattr(mod, "BookingService", FakeBooking)
+    out = CalcomWebhookService(FakeDb(), client=FakeClient()).reconcile_for_token(
+        "tok_abc", uid="book_new"
+    )
+    assert out["applied"][0]["result"] == "confirmed"
+    assert seen["uid"] == "book_new"
+    assert seen["token"] == "tok_abc"
+    assert "listed" not in seen
 
 
 def test_booking_status_payload_forwards_uid(monkeypatch):

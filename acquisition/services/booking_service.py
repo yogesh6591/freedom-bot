@@ -8,7 +8,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -69,6 +69,30 @@ def extract_fb_token(metadata: Any) -> str | None:
     return None
 
 
+def calendar_embed_parts(booking_url: str) -> dict[str, str]:
+    """Public Cal.com origin + event path for the official embed (not a raw iframe)."""
+    parsed = urlparse((booking_url or "").strip())
+    path = (parsed.path or "").strip("/")
+    origin = ""
+    if parsed.scheme and parsed.netloc:
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+    return {"cal_link": path, "cal_origin": origin or "https://cal.com"}
+
+
+def calendar_success_url(token: str, *, settings: Any | None = None) -> str:
+    cfg = settings or get_settings()
+    try:
+        from acquisition.services.assessment_tokens import PublicRedirectError, public_redirect_base
+
+        public = public_redirect_base(settings=cfg)
+        return f"{public}/a/{quote(token, safe='')}/booked"
+    except PublicRedirectError:
+        public = (cfg.public_base_url or "").rstrip("/")
+        if public:
+            return f"{public}/a/{quote(token, safe='')}/booked"
+        return ""
+
+
 def build_calendar_embed_url(
     *,
     booking_url: str,
@@ -86,16 +110,7 @@ def build_calendar_embed_url(
     if not base:
         return ""
     settings = get_settings()
-    success = ""
-    try:
-        from acquisition.services.assessment_tokens import PublicRedirectError, public_redirect_base
-
-        public = public_redirect_base(settings=settings)
-        success = f"{public}/a/{quote(token, safe='')}/booked"
-    except PublicRedirectError:
-        public = (settings.public_base_url or "").rstrip("/")
-        if public:
-            success = f"{public}/a/{quote(token, safe='')}/booked"
+    success = calendar_success_url(token, settings=settings)
     from acquisition.timezones import platform_timezone_name
 
     tz = platform_timezone_name()

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/assessment.css?v=67">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=75">
 </head>
 <body class="assessment-body">
 <div class="assessment-shell assessment-shell--journey">
@@ -34,6 +34,9 @@
         data-fb-booking-status-url="/api/assessment/{{ token }}/booking"
         data-fb-booked-url="/a/{{ token }}/booked"
       >
+        {% if payload.cal_link %}
+        <div id="fb-cal-inline" class="assessment-calendar-embed"></div>
+        {% else %}
         <iframe
           class="assessment-calendar-embed"
           title="Book with Jeanne"
@@ -41,6 +44,7 @@
           loading="lazy"
           allow="camera; microphone; fullscreen"
         ></iframe>
+        {% endif %}
         <div id="fb-booking-hold" class="assessment-calendar-hold" hidden aria-live="polite" aria-busy="true">
           <div class="assessment-calendar-hold-card">
             <span class="assessment-calendar-hold-spinner" aria-hidden="true"></span>
@@ -56,6 +60,11 @@
 
         var statusUrl = root.getAttribute("data-fb-booking-status-url");
         var bookedUrl = root.getAttribute("data-fb-booked-url");
+        var calLink = {{ (payload.cal_link or none)|tojson }};
+        var calOrigin = {{ (payload.cal_origin or "https://cal.com")|tojson }};
+        var guestName = {{ (payload.guest_name or none)|tojson }};
+        var guestEmail = {{ (payload.guest_email or none)|tojson }};
+        var successUrl = {{ (payload.success_url or none)|tojson }};
         if (!statusUrl || !bookedUrl) return;
 
         var holdEl = document.getElementById("fb-booking-hold");
@@ -142,6 +151,67 @@
           return false;
         }
 
+        function onCalBooking(raw) {
+          var uid = extractUid(raw);
+          if (uid) bookingUid = uid;
+          if (!uid && !looksLikeBookingEvent(raw)) return;
+          showHold();
+          if (bookingUid) {
+            redirectBooked();
+            return;
+          }
+          checkOnce();
+        }
+
+        function mountCalEmbed() {
+          if (!calLink || !document.getElementById("fb-cal-inline")) return;
+          (function (C, A, L) {
+            var p = function (a, ar) { a.q.push(ar); };
+            var d = C.document;
+            C.Cal = C.Cal || function () {
+              var cal = C.Cal;
+              var ar = arguments;
+              if (!cal.loaded) {
+                cal.ns = {};
+                cal.q = cal.q || [];
+                d.head.appendChild(d.createElement("script")).src = A;
+                cal.loaded = true;
+              }
+              if (ar[0] === L) {
+                var api = function () { p(api, arguments); };
+                var namespace = ar[1];
+                api.q = api.q || [];
+                if (typeof namespace === "string") {
+                  cal.ns[namespace] = cal.ns[namespace] || api;
+                  p(cal.ns[namespace], ar);
+                  p(cal, ["initNamespace", namespace]);
+                } else p(cal, ar);
+                return;
+              }
+              p(cal, ar);
+            };
+          })(window, "https://app.cal.com/embed/embed.js", "init");
+          window.Cal("init", "fb", { origin: calOrigin || "https://cal.com" });
+          var config = { layout: "month_view" };
+          if (guestName) config.name = guestName;
+          if (guestEmail) config.email = guestEmail;
+          if (successUrl) config.successRedirectUrl = successUrl;
+          config.metadata = { fb_token: {{ token|tojson }} };
+          window.Cal.ns.fb("inline", {
+            elementOrSelector: "#fb-cal-inline",
+            calLink: calLink,
+            layout: "month_view",
+            config: config,
+          });
+          window.Cal.ns.fb("on", {
+            action: "bookingSuccessfulV2",
+            callback: function (event) {
+              var detail = event && event.detail ? event.detail : event;
+              onCalBooking(detail);
+            },
+          });
+        }
+
         function checkOnce() {
           if (inFlight) return Promise.resolve(false);
           inFlight = true;
@@ -205,11 +275,7 @@
           if (raw && typeof raw === "object" && String(raw.originator || "") === "CAL") {
             allowSync = true;
           }
-          var uid = extractUid(raw);
-          if (uid) bookingUid = uid;
-          if (!looksLikeBookingEvent(raw)) return;
-          showHold();
-          checkOnce();
+          if (looksLikeBookingEvent(raw) || extractUid(raw)) onCalBooking(raw);
         });
 
         window.addEventListener("blur", function () {
@@ -224,6 +290,8 @@
         window.addEventListener("focus", function () {
           checkOnce();
         });
+
+        mountCalEmbed();
 
         // First check immediately, then keep polling.
         checkOnce().then(function (done) {
