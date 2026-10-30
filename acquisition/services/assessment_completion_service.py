@@ -595,7 +595,10 @@ def build_qualification_transparency(
         # Value-stage budget outcome can leave an assessment-time "not assessed" reason.
         if key == "budget_readiness":
             budget_norm = str(raw or "").strip().lower()
-            if budget_norm == "ready" and reason and "not assessed" in reason.lower():
+            reason_l = (reason or "").lower()
+            if budget_norm == "ready" and reason and (
+                "not assessed" in reason_l or "not been assessed" in reason_l
+            ):
                 reason = "Marked ready during value / price conditioning."
             elif budget_norm == "not_assessed":
                 display = "Not assessed"

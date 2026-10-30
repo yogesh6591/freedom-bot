@@ -556,6 +556,14 @@ class AcquisitionJourneyService:
         # Never infer ready from economic_capacity / revenue.
         qual = dict(profile.qualification) if isinstance(profile.qualification, dict) else {}
         qual["budget_readiness"] = outcome
+        reasons = qual.get("signal_reasons")
+        reasons = dict(reasons) if isinstance(reasons, dict) else {}
+        reasons["budget_readiness"] = {
+            "ready": "Prospect said they are ready to discuss next steps on the value step.",
+            "unclear": "Prospect wants more context before discussing investment.",
+            "not_ready": "Prospect said not right now on the value step.",
+        }[outcome]
+        qual["signal_reasons"] = reasons
         profile.qualification = qual
         now = datetime.now(timezone.utc)
         link.value_context_completed_at = now
