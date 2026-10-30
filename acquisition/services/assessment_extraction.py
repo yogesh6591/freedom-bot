@@ -231,9 +231,9 @@ OPTIONAL_ASSESSMENT_FIELDS = tuple(
 # A tick means "we got the answer"; it says nothing about qualification.
 PROGRESS_TOPICS = (
     ("business", "Your business", ("company", "goals", "functions")),
-    ("size", "Size and scale", ("revenue_range", "headcount")),
     ("operations", "How work runs", ("workflows", "bottlenecks")),
     ("problems", "Problems and cost", ("pain_points", "time_cost_impact")),
+    ("size", "Size and scale", ("revenue_range", "headcount")),
     ("readiness", "Readiness for change", ("change_readiness", "ai_readiness")),
     ("decision", "Decision making", ("authority",)),
 )

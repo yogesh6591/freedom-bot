@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/assessment.css?v=79">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=80">
 </head>
 <body class="assess">
 <div class="assess-bg" aria-hidden="true">
@@ -38,15 +38,16 @@
                   <textarea
                     id="assessment-input"
                     name="content"
-                    rows="4"
+                    rows="8"
                     required
                     maxlength="8000"
                     placeholder="Share a clear, specific answer…"
                   ></textarea>
                 </div>
+                <p class="assess-answer-hint">A short answer is fine. Press Ctrl/Cmd + Enter to continue.</p>
                 <div class="assess-actions">
                   <p id="assessment-error" class="assess-error" hidden></p>
-                  <button id="assessment-send" class="assess-continue" type="submit">
+                  <button id="assessment-send" class="assess-continue" type="submit" disabled>
                     <span class="assess-continue-label">Continue</span>
                     <span class="assess-continue-arrow" aria-hidden="true">→</span>
                     <span class="assess-loader" aria-hidden="true"></span>
@@ -89,6 +90,12 @@
 
     let messages = Array.isArray(initialMessages) ? initialMessages.slice() : [];
     let turn = 0;
+    let inflight = false;
+
+    function syncSendEnabled() {
+      const empty = !(input.value || "").trim();
+      sendBtn.disabled = inflight || empty;
+    }
 
     function lastAssistant(list) {
       for (let i = list.length - 1; i >= 0; i--) {
@@ -112,12 +119,9 @@
         return false;
       }
       topicsEl.innerHTML = "";
-      let markedCurrent = false;
       progress.topics.forEach(function (topic) {
         const li = document.createElement("li");
-        const isCurrent = !topic.done && !markedCurrent;
-        if (isCurrent) markedCurrent = true;
-        li.className = "assess-topic" + (topic.done ? " is-done" : "") + (isCurrent ? " is-current" : "");
+        li.className = "assess-topic" + (topic.done ? " is-done" : "");
         const mark = document.createElement("span");
         mark.className = "assess-topic-mark";
         mark.setAttribute("aria-hidden", "true");
@@ -132,11 +136,6 @@
           const state = document.createElement("span");
           state.className = "assess-topic-state";
           state.textContent = "Answered";
-          copy.appendChild(state);
-        } else if (isCurrent) {
-          const state = document.createElement("span");
-          state.className = "assess-topic-state";
-          state.textContent = "Now";
           copy.appendChild(state);
         }
         li.appendChild(mark);
@@ -207,6 +206,7 @@
       window.setTimeout(function () {
         renderPrompt(next);
         input.value = "";
+        syncSendEnabled();
         panel.classList.remove("is-exit");
         panel.classList.add("is-enter");
         void panel.offsetWidth;
@@ -217,11 +217,12 @@
     }
 
     function setBusy(busy) {
-      sendBtn.disabled = busy;
+      inflight = busy;
       input.disabled = busy;
       panel.dataset.state = busy ? "busy" : "ready";
       sendBtn.classList.toggle("is-loading", busy);
       sendBtn.setAttribute("aria-busy", busy ? "true" : "false");
+      syncSendEnabled();
     }
 
     function showError(msg) {
@@ -295,12 +296,14 @@
       }
     });
 
+    input.addEventListener("input", syncSendEnabled);
     input.addEventListener("keydown", function (event) {
       if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        form.requestSubmit();
+        if (!sendBtn.disabled) form.requestSubmit();
       }
     });
+    syncSendEnabled();
 
     if (lastAssistant(messages)) {
       syncProgress(messages, initialProgress);
