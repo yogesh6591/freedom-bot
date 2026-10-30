@@ -43,7 +43,7 @@ DEV_USERS: tuple[tuple[str, str, tuple[Role, ...], tuple[str, ...]], ...] = (
     ("drafter@{domain}", "Dana", (Role.DRAFTER,), ()),
     ("approver@{domain}", "Avery", (Role.APPROVER,), ("finance", "legal", "exec")),
     ("operator@{domain}", "Omar", (Role.OPERATOR,), ("finance",)),
-    ("admin@{domain}", "Ada", (Role.ADMIN,), ()),
+    ("admin@{domain}", "Amelia", (Role.ADMIN,), ()),
     # --- department people (clear finance vs ops vs HR) ---
     ("finance@{domain}", "Fiona", (Role.OPERATOR,), ("finance",)),
     ("ops@{domain}", "Oscar", (Role.OPERATOR,), ("ops",)),

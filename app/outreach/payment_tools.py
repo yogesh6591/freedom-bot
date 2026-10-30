@@ -21,7 +21,7 @@ from acquisition.services.jeanne_checkout_service import (
     checkout_payments_enabled,
     offer_checkout,
 )
-from app.outreach import datasets, lookup, mailer, records
+from app.outreach import datasets, lookup, records
 from app.outreach.toolkit import Call, ToolError, tool
 
 CURRENCY = "USD"
@@ -69,13 +69,31 @@ def create_payment_offer(call: Call, who: str = "", amount: object = None) -> st
     return f"Offered {p.executive_name} one payment of {datasets.fmt_money(price)} {CURRENCY}{was}. Link: {url}{note}"
 
 
-def _payment_email(p: Prospect, link: CampaignProspect) -> tuple[str, str]:
+def _signer_name(call: Call) -> str:
+    """The signed-in user's display name, or the local part of their email."""
+    from bizos.control import store as control
+    from bizos.control.store import UserNotFound
+
+    if not call.user_id:
+        return ""
+    try:
+        user = control.get_user(call.user_id)
+    except UserNotFound:
+        return ""
+    name = (user.display_name or "").strip()
+    if name:
+        return name
+    email = (user.email or "").strip()
+    return email.split("@", 1)[0] if email else ""
+
+
+def _payment_email(p: Prospect, link: CampaignProspect, signer_name: str) -> tuple[str, str]:
     """The payment email as a template: ``{{firstName}}`` is filled in per person, the link is typed in."""
     price = datasets.fmt_money(link.checkout_offer_amount)
-    name = mailer.sign_off()
+    sign = f"Best,\n{signer_name}".rstrip()
     body = (f"Hi {{{{firstName}}}},\n\nThank you for your time. Here is the secure link for the one-time payment of "
             f"{price} {CURRENCY} we discussed:\n\n{build_checkout_url(link.assessment_token)}\n\n"
-            "If anything looks off, just reply to this email.\n" + (f"\n{name}" if name else ""))
+            f"If anything looks off, just reply to this email.\n\n{sign}")
     return "Your payment link", body.rstrip()
 
 
@@ -106,7 +124,7 @@ def send_payment_link(call: Call, who: str = "", approval_evidence: str = "") ->
     current = call.state.get("draft")
     if current and not current.get("payment"):
         raise ToolError("another email draft is already on the card. Send or cancel it first, then ask for the payment link.")
-    subject, body = _payment_email(p, link)
+    subject, body = _payment_email(p, link, _signer_name(call))
     call.state["recipients"] = [{"email": p.email, "name": p.executive_name}]
     call.state["draft"] = {
         "id": uuid.uuid4().hex[:10], "email_subject": subject, "email_body": body, "email_template": True,
