@@ -4,6 +4,9 @@ const acquisitionProxy = process.env.ACQUISITION_PROXY_URL || 'http://127.0.0.1:
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  experimental: {
+    proxyTimeout: 180000,
+  },
   async rewrites() {
     return [
       {
