@@ -26,8 +26,13 @@ def test_calendar_and_booked_pages_forward_booking_uid():
     assert "uid=" in booked
     assert "bookingUid" in booked
     assert "app.cal.com/embed/embed.js" in calendar
-    assert "bookingSuccessfulV2" in calendar
+    assert "bookingSuccessfulV2" in calendar or 'action: "*"' in calendar
     assert "fb-cal-inline" in calendar
+    assert 'action: "*"' in calendar
+    assert "uidFromEmbedFrame" in calendar
+    assert "fullType" in calendar
+    assert "watchEmbedFrame" in calendar
+    assert "window.top" in booked
 
 
 def test_calendar_embed_uses_public_success_url(monkeypatch):

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/assessment.css?v=75">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=76">
 </head>
 <body class="assessment-body">
 <div class="assessment-shell assessment-shell--journey">
@@ -116,51 +116,114 @@
           window.location.replace(next);
         }
 
-        function eventName(raw) {
-          if (!raw) return "";
-          if (typeof raw === "string") return raw;
-          var nested = "";
-          if (raw.data && typeof raw.data === "object") {
-            nested = String(raw.data.type || raw.data.action || "");
-          }
-          if (raw.detail && typeof raw.detail === "object") {
-            nested = nested || String(raw.detail.type || "");
-          }
-          return String(raw.type || raw.action || raw.event || nested || "");
+        function parsePayload(raw) {
+          if (typeof raw !== "string") return raw;
+          try { return JSON.parse(raw); } catch (err) { return raw; }
         }
 
-        function extractUid(raw) {
-          if (!raw || typeof raw !== "object") return "";
-          var bags = [raw, raw.data, raw.detail];
-          if (raw.data && typeof raw.data === "object") bags.push(raw.data.booking);
-          if (raw.detail && typeof raw.detail === "object") bags.push(raw.detail.data);
-          for (var i = 0; i < bags.length; i++) {
-            var bag = bags[i];
-            if (!bag || typeof bag !== "object") continue;
-            var value = bag.uid || bag.bookingUid || bag.booking_uid;
-            if (value) return String(value);
+        function extractUid(raw, depth) {
+          depth = depth || 0;
+          if (depth > 8 || raw == null) return "";
+          raw = parsePayload(raw);
+          if (typeof raw === "string") {
+            var marker = "/booking/";
+            var idx = raw.indexOf(marker);
+            if (idx >= 0) {
+              var rest = raw.slice(idx + marker.length).split("?")[0].split("#")[0].split("/")[0];
+              if (rest) return rest;
+            }
+            try {
+              var parsedUrl = new URL(raw, window.location.href);
+              var fromQuery = parsedUrl.searchParams.get("uid") || parsedUrl.searchParams.get("bookingUid") || parsedUrl.searchParams.get("booking_uid");
+              if (fromQuery && String(fromQuery).length >= 8) return String(fromQuery);
+            } catch (err) {}
+            return "";
+          }
+          if (typeof raw !== "object") return "";
+          if (Array.isArray(raw)) {
+            for (var i = 0; i < raw.length; i++) {
+              var nested = extractUid(raw[i], depth + 1);
+              if (nested) return nested;
+            }
+            return "";
+          }
+          var direct = raw.uid || raw.bookingUid || raw.booking_uid;
+          if (direct != null && String(direct).length >= 8) return String(direct);
+          var keys = ["data", "detail", "booking", "payload", "arg"];
+          for (var k = 0; k < keys.length; k++) {
+            if (raw[keys[k]]) {
+              var fromKey = extractUid(raw[keys[k]], depth + 1);
+              if (fromKey) return fromKey;
+            }
+          }
+          for (var key in raw) {
+            if (!Object.prototype.hasOwnProperty.call(raw, key)) continue;
+            if (typeof raw[key] === "object") {
+              var walked = extractUid(raw[key], depth + 1);
+              if (walked) return walked;
+            } else if (typeof raw[key] === "string" && String(raw[key]).indexOf("/booking/") >= 0) {
+              var fromPath = extractUid(raw[key], depth + 1);
+              if (fromPath) return fromPath;
+            }
           }
           return "";
         }
 
         function looksLikeBookingEvent(raw) {
-          var name = eventName(raw).toLowerCase();
+          raw = parsePayload(raw);
+          var name = "";
+          if (raw && typeof raw === "object") {
+            name = String(raw.fullType || raw.type || raw.action || raw.event || "");
+            if (raw.data && typeof raw.data === "object") {
+              name = name || String(raw.data.type || raw.data.action || "");
+            }
+            if (raw.detail && typeof raw.detail === "object") {
+              name = name || String(raw.detail.type || raw.detail.fullType || "");
+            }
+          }
+          name = name.toLowerCase();
           if (name.indexOf("bookingsuccessful") !== -1) return true;
           if (name.indexOf("booking_created") !== -1) return true;
           if (name.indexOf("booking_success") !== -1) return true;
+          try {
+            var dump = JSON.stringify(raw).toLowerCase();
+            if (dump.indexOf("bookingsuccessful") !== -1) return true;
+            if (dump.indexOf("booking_created") !== -1) return true;
+            if (dump.indexOf("booking_success") !== -1) return true;
+            if (dump.indexOf("/booking/") !== -1) return true;
+            if (dump.indexOf("paymentrequired") !== -1 && dump.indexOf("starttime") !== -1) return true;
+          } catch (err) {}
           return false;
         }
 
         function onCalBooking(raw) {
+          if (!looksLikeBookingEvent(raw)) return;
           var uid = extractUid(raw);
           if (uid) bookingUid = uid;
-          if (!uid && !looksLikeBookingEvent(raw)) return;
           showHold();
-          if (bookingUid) {
-            redirectBooked();
-            return;
+          redirectBooked();
+        }
+
+        function bindCalEvents() {
+          function handle(event) {
+            var detail = event && event.detail ? event.detail : event;
+            onCalBooking(detail);
+            onCalBooking(event);
           }
-          checkOnce();
+          try {
+            if (window.Cal) {
+              window.Cal("on", { action: "*", callback: handle });
+              if (window.Cal.ns && window.Cal.ns.fb) {
+                window.Cal.ns.fb("on", { action: "*", callback: handle });
+              }
+            }
+          } catch (err) {}
+        }
+
+        function uidFromEmbedFrame() {
+          var frame = document.querySelector("#fb-cal-inline iframe");
+          if (!frame) return "";
+          return extractUid(frame.getAttribute("src") || frame.src || "");
         }
 
         function mountCalEmbed() {
@@ -192,6 +255,7 @@
             };
           })(window, "https://app.cal.com/embed/embed.js", "init");
           window.Cal("init", "fb", { origin: calOrigin || "https://cal.com" });
+          bindCalEvents();
           var config = { layout: "month_view" };
           if (guestName) config.name = guestName;
           if (guestEmail) config.email = guestEmail;
@@ -203,17 +267,42 @@
             layout: "month_view",
             config: config,
           });
-          window.Cal.ns.fb("on", {
-            action: "bookingSuccessfulV2",
-            callback: function (event) {
-              var detail = event && event.detail ? event.detail : event;
-              onCalBooking(detail);
-            },
+          bindCalEvents();
+          watchEmbedFrame();
+        }
+
+        function watchEmbedFrame() {
+          var box = document.getElementById("fb-cal-inline");
+          if (!box || typeof MutationObserver === "undefined") return;
+          function claimFromFrame() {
+            var uid = uidFromEmbedFrame();
+            if (!uid) return;
+            bookingUid = uid;
+            showHold();
+            redirectBooked();
+          }
+          function bind(frame) {
+            if (!frame || frame.dataset.fbBound) return;
+            frame.dataset.fbBound = "1";
+            frame.addEventListener("load", claimFromFrame);
+          }
+          bind(box.querySelector("iframe"));
+          var observer = new MutationObserver(function () {
+            bind(box.querySelector("iframe"));
+            claimFromFrame();
           });
+          observer.observe(box, { childList: true, subtree: true, attributes: true, attributeFilter: ["src"] });
         }
 
         function checkOnce() {
           if (inFlight) return Promise.resolve(false);
+          var frameUid = uidFromEmbedFrame();
+          if (frameUid) {
+            bookingUid = frameUid;
+            showHold();
+            redirectBooked();
+            return Promise.resolve(true);
+          }
           inFlight = true;
           var url = statusUrl;
           var query = [];
@@ -269,13 +358,14 @@
           });
         }
 
-        // Soft UX only — never treat iframe events as booking proof.
         window.addEventListener("message", function (event) {
-          var raw = event && event.data;
-          if (raw && typeof raw === "object" && String(raw.originator || "") === "CAL") {
+          var raw = parsePayload(event && event.data);
+          var origin = String((event && event.origin) || "").toLowerCase();
+          var fromCal = origin.indexOf("cal.com") !== -1 || origin.indexOf("cal.dev") !== -1;
+          if (fromCal || (raw && typeof raw === "object" && String(raw.originator || "") === "CAL")) {
             allowSync = true;
           }
-          if (looksLikeBookingEvent(raw) || extractUid(raw)) onCalBooking(raw);
+          if (looksLikeBookingEvent(raw)) onCalBooking(raw);
         });
 
         window.addEventListener("blur", function () {
