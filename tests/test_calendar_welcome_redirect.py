@@ -33,6 +33,7 @@ def test_calendar_and_booked_pages_forward_booking_uid():
     assert "fullType" in calendar
     assert "watchEmbedFrame" in calendar
     assert "window.top" in booked
+    assert "hideBranding" in calendar
 
 
 def test_calendar_embed_uses_public_success_url(monkeypatch):
