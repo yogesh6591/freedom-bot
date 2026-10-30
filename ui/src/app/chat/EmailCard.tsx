@@ -536,6 +536,13 @@ function modeChipClass(mode: string): string {
   return 'bg-emerald-50 text-emerald-700 ring-emerald-200/80'
 }
 
+function recipientTypeLabel(mode?: string): string {
+  if (mode === 'Follow-up (same thread)') return 'Follow-up'
+  if (mode === 'New email (new thread)') return 'New email'
+  if (mode === 'First email') return 'First email'
+  return ''
+}
+
 export function EmailCard({
   view,
   sessionId,
@@ -573,8 +580,6 @@ export function EmailCard({
               }
             }
         )
-  const toLine = uniqueKeepOrder(previewPeople.map((person) => person.email)).join(', ') || '—'
-
   const [editing, setEditing] = useState(false)
   const [subject, setSubject] = useState(sharedSubject)
   const [body, setBody] = useState(sharedBody)
@@ -844,7 +849,36 @@ export function EmailCard({
       </div>
 
       <MailRow label="To">
-        <span className="break-words">{toLine}</span>
+        {previewPeople.length ? (
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+            {previewPeople.map((person, index) => {
+              const preview = previews.find(
+                (item) =>
+                  Boolean(item.email) &&
+                  Boolean(person.email) &&
+                  item.email.toLowerCase() === person.email.toLowerCase()
+              )
+              const typeLabel = recipientTypeLabel(preview?.mode)
+              return (
+                <span key={person.email || index} className="inline-flex max-w-full items-center gap-1.5">
+                  <span className="break-all">{person.email || '—'}</span>
+                  {typeLabel ? (
+                    <span
+                      className={`inline-flex shrink-0 items-center rounded-full px-1.5 py-0 text-[10px] font-medium tracking-wide ring-1 ring-inset ${modeChipClass(preview?.mode || '')}`}
+                    >
+                      {typeLabel}
+                    </span>
+                  ) : null}
+                  {index < previewPeople.length - 1 ? (
+                    <span className="text-[#5f6368]">,</span>
+                  ) : null}
+                </span>
+              )
+            })}
+          </span>
+        ) : (
+          <span className="break-words">—</span>
+        )}
       </MailRow>
 
       {previewPeople.length > 1 ? (

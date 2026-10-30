@@ -140,11 +140,6 @@ class OutreachSession:
             for c in chosen:
                 if c["company"]:
                     self.state.setdefault("overrides", {}).setdefault(c["email"].lower(), {})["company"] = c["company"]
-            firsts = sum(1 for ln in lines if "first email" in ln or "new address" in ln)
-            follow = sum(1 for ln in lines if "FOLLOW-UP" in ln)
-            if firsts and follow:
-                notes.append("These are mixed: some were emailed before, some not. One email cannot be both. "
-                             "Tell the user to send the first emails and the follow-ups separately, and keep one group.")
             if same_people and self.state.get("draft") and merged:
                 return ("recipients unchanged: " + ", ".join(r["email"] for r in merged) + ".\n"
                         "A draft is already on the card. If the user's latest message approves it, call send_approved now "
@@ -349,17 +344,12 @@ class OutreachSession:
             return f"error: not sent - {why}. Nothing was queued."
         db = self.db_factory()
         try:
-            ids, kinds = [], set()
+            ids = []
             for r in recips:
                 p = ensure_prospect(db, r["email"], r.get("name", ""),
                                     (self.state.get("overrides", {}).get(r["email"].lower(), {}) or {}).get("company", ""))
                 ids.append(p.id)
-                kinds.add(bool(svc.last_email_to(db, p.id)))
             new_thread = bool(draft.get("new_thread"))
-            if len(kinds) > 1 and not new_thread:
-                db.rollback()
-                return ("error: some of these people were emailed before and some not. Send first emails and "
-                        "follow-ups separately. Nothing was queued.")
             # Typed details (card / chat) are saved on the person so the merge uses them.
             for r, pid in zip(recips, ids):
                 typed = (self.state.get("overrides") or {}).get(r["email"].lower(), {})
