@@ -28,7 +28,10 @@ from acquisition.services.assessment_extraction import (
     field_display,
     normalize_structured_state,
 )
-from acquisition.services.assessment_journey_reset import reset_assessment_journey
+from acquisition.services.assessment_journey_reset import (
+    delete_assessment_link,
+    reset_assessment_journey,
+)
 from acquisition.services.assessment_tokens import build_assessment_url, public_redirect_base
 from acquisition.services.booking_service import BOOKING_STATUS_CONFIRMED
 from acquisition.services.email_delivery_status import resolve_email_delivery
@@ -410,6 +413,22 @@ async def assessment_reset_journey(
     reset_assessment_journey(db, link)
     return RedirectResponse(
         url=f"/assessments/{link_id}?flash=journey_reset#overview",
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+
+
+@router.post("/assessments/{link_id}/delete")
+async def assessment_delete(
+    link_id: uuid.UUID,
+    db: Session = Depends(get_db),
+) -> RedirectResponse:
+    """Admin: delete this assessment link. Prospect record stays."""
+    link = _load_assessment_link(db, link_id)
+    if link is None:
+        return RedirectResponse(url="/assessments?flash=not_found", status_code=status.HTTP_303_SEE_OTHER)
+    delete_assessment_link(db, link)
+    return RedirectResponse(
+        url="/assessments?flash=deleted",
         status_code=status.HTTP_303_SEE_OTHER,
     )
 

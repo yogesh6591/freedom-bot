@@ -110,6 +110,15 @@ TEST_CASE_STUDIES = [
     },
 ]
 
+ORIGINAL_PROOF_CASE_STUDIES = (DEFAULT_PROOF_CASE_STUDY, *ADDITIONAL_PROOF_CASE_STUDIES)
+ORIGINAL_PROOF_TITLES = {item["title"] for item in ORIGINAL_PROOF_CASE_STUDIES}
+PLACEHOLDER_PROOF_TITLES = frozenset(
+    {
+        "Faster claims handling",
+        *(item["title"] for item in TEST_CASE_STUDIES),
+    }
+)
+
 
 def seed_development_journey_content(db: Session, *, force: bool = False) -> None:
     """Idempotent seed. Ensures the default approved Cepoch-based proof exists."""
@@ -287,4 +296,74 @@ def seed_development_journey_content(db: Session, *, force: bool = False) -> Non
                     content_status=CaseStudyContentStatus.TEST.value,
                 )
             )
+    db.commit()
+
+
+def restore_original_journey_content(db: Session, *, restore_videos: bool = True) -> None:
+    """Put back the original approved proofs (and packaged demo/welcome videos).
+
+    Does not add TEST placeholders. Disables known placeholder proofs such as
+    the Acme Insurance sample. Videos are restored only when the packaged
+    executive demo file is present.
+    """
+    settings = db.get(JourneySettings, 1)
+    if settings is None:
+        settings = JourneySettings(id=1)
+        db.add(settings)
+        db.flush()
+
+    existing_by_title = {(s.title or ""): s for s in db.scalars(select(AssessmentCaseStudy)).all()}
+    for item in ORIGINAL_PROOF_CASE_STUDIES:
+        row = existing_by_title.get(item["title"])
+        if row is None:
+            db.add(
+                AssessmentCaseStudy(
+                    id=uuid.uuid4(),
+                    title=item["title"],
+                    client_display_name=item["client_display_name"],
+                    problem=item["problem"],
+                    change=item["change"],
+                    measurable_result=item["measurable_result"],
+                    display_order=item["display_order"],
+                    enabled=True,
+                    content_status=CaseStudyContentStatus.APPROVED.value,
+                )
+            )
+        else:
+            row.client_display_name = item["client_display_name"]
+            row.problem = item["problem"]
+            row.change = item["change"]
+            row.measurable_result = item["measurable_result"]
+            row.display_order = item["display_order"]
+            row.enabled = True
+            row.content_status = CaseStudyContentStatus.APPROVED.value
+            db.add(row)
+
+    for study in db.scalars(select(AssessmentCaseStudy)).all():
+        title = study.title or ""
+        if title in ORIGINAL_PROOF_TITLES:
+            continue
+        is_placeholder = (
+            title in PLACEHOLDER_PROOF_TITLES
+            or title.startswith("TEST CASE STUDY")
+            or study.content_status == CaseStudyContentStatus.TEST.value
+        )
+        if is_placeholder and study.enabled:
+            study.enabled = False
+            db.add(study)
+
+    if restore_videos:
+        packaged = packaged_executive_demo_url()
+        if packaged:
+            settings.demo_enabled = True
+            settings.demo_video_url = packaged
+            settings.demo_is_test_content = False
+            settings.demo_require_watch = True
+            if not (settings.demo_title or "").strip():
+                settings.demo_title = "FreedomBot walkthrough"
+            settings.after_booking_video_enabled = True
+            settings.after_booking_video_url = packaged
+            settings.after_booking_video_is_test = False
+            db.add(settings)
+
     db.commit()

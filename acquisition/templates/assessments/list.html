@@ -6,6 +6,7 @@
 {% endblock %}
 {% block flash %}
   {% if flash == 'not_found' %}<div class="flash flash-error">Assessment not found.</div>{% endif %}
+  {% if flash == 'deleted' %}<div class="flash">Assessment deleted.</div>{% endif %}
 {% endblock %}
 {% block content %}
 {% set k = kpis.totals if kpis else none %}
@@ -186,6 +187,14 @@
             </td>
             <td class="actions">
               <a class="btn btn-small btn-secondary" href="/assessments/{{ row.link.id }}">View</a>
+              <form
+                method="post"
+                action="/assessments/{{ row.link.id }}/delete"
+                class="inline-form"
+                onsubmit="return confirm('Delete this assessment?\n\nRemoves the conversation, results, and journey for this person.\nThe prospect record stays. Cal.com bookings are cancelled when still cancellable.');"
+              >
+                <button type="submit" class="btn btn-small btn-danger">Delete</button>
+              </form>
             </td>
           </tr>
           {% endfor %}

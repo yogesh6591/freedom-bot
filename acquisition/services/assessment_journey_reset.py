@@ -212,3 +212,20 @@ def reset_assessment_journey(db: Any, link: Any) -> Any:
     db.commit()
     db.refresh(link)
     return link
+
+
+def delete_assessment_link(db: Any, link: Any) -> None:
+    """Remove one assessment (campaign link + conversation). Keeps the prospect.
+
+    Cancels matching Cal.com bookings when still cancellable. Sent-email history
+    stays (campaign_prospect_id is cleared). The person can be linked again later.
+    """
+    cancelled = _cancel_cal_bookings_for_link(link)
+    if cancelled:
+        import logging
+
+        logging.getLogger(__name__).info(
+            "Assessment delete cancelled Cal.com booking(s): %s", ", ".join(cancelled)
+        )
+    db.delete(link)
+    db.commit()

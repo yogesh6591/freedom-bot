@@ -184,6 +184,28 @@
         </span>
       </button>
     </form>
+    <form
+      method="post"
+      action="/assessments/{{ link.id }}/delete"
+      class="ad-rewind-form"
+      onsubmit="return confirm('Delete this assessment?\n\nRemoves the conversation, results, and journey for this person.\nThe prospect record stays. Cal.com bookings are cancelled when still cancellable.');"
+    >
+      <button type="submit" class="ad-capsule-btn" title="Delete this assessment">
+        <span class="ad-capsule-ring" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6h18"/>
+            <path d="M8 6V4h8v2"/>
+            <path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6"/>
+            <path d="M14 11v6"/>
+          </svg>
+        </span>
+        <span class="ad-capsule-copy">
+          <strong>Delete assessment</strong>
+          <small>Keeps the prospect</small>
+        </span>
+      </button>
+    </form>
   </div>
 </header>
 {% endblock %}
