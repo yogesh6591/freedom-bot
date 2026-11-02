@@ -2,7 +2,7 @@
 
 /**
  * Approvals inside the chat: a bell in the chat header with the number of requests waiting for this user,
- * and a panel that opens as one more message in the conversation (never a separate screen).
+ * and a dropdown under it with one short line per request (the full text is in the line's tooltip).
  *
  * The bell polls GET /api/approvals/inbox. Approving or rejecting calls the normal approval endpoints, so
  * every server-side check (approver role, no self-approval, execute rights) still applies; the UI only
@@ -40,19 +40,19 @@ const DONE = new Set(['APPROVED', 'EXECUTING', 'COMPLETED', 'REJECTED', 'FAILED'
 function statusLabel(status: string): { text: string; tone: string } {
   switch (status) {
     case 'PENDING_APPROVAL':
-      return { text: 'Waiting for approval', tone: 'bg-amber-500/10 text-amber-700' }
+      return { text: 'Waiting', tone: 'bg-amber-500/10 text-amber-700' }
     case 'APPROVED':
       return { text: 'Approved', tone: 'bg-emerald-500/10 text-emerald-700' }
     case 'EXECUTING':
-      return { text: 'Approved, running', tone: 'bg-emerald-500/10 text-emerald-700' }
+      return { text: 'Running', tone: 'bg-emerald-500/10 text-emerald-700' }
     case 'COMPLETED':
-      return { text: 'Approved and done', tone: 'bg-emerald-500/10 text-emerald-700' }
+      return { text: 'Done', tone: 'bg-emerald-500/10 text-emerald-700' }
     case 'CANCELLED':
       return { text: 'Cancelled', tone: 'bg-black/5 text-secondary' }
     case 'REJECTED':
       return { text: 'Rejected', tone: 'bg-red-500/10 text-red-600' }
     case 'FAILED':
-      return { text: 'Approved, but failed', tone: 'bg-red-500/10 text-red-600' }
+      return { text: 'Failed', tone: 'bg-red-500/10 text-red-600' }
     case 'DRAFT':
       return { text: 'Draft', tone: 'bg-black/5 text-secondary' }
     default:
@@ -171,6 +171,14 @@ export function ApprovalBell({
   )
 }
 
+/** At most five words: the headline up to its first ":" or " — " ("Draft invoice for Acme Logistics"). */
+function shortTitle(item: ApprovalItem): string {
+  const full = (item.content?.headline || item.title || item.tool).trim()
+  const words = full.split(/\s+[—–-]\s+|:\s/)[0].split(/\s+/)
+  return words.length > 5 ? `${words.slice(0, 5).join(' ')}…` : words.join(' ')
+}
+
+/** One short line per request: what it is, its status, and Approve / Reject when it waits for this user. */
 function Card({
   item,
   decided,
@@ -182,63 +190,48 @@ function Card({
   busy?: boolean
   onDecide?: (kind: Decided['kind']) => void
 }) {
-  const status = statusLabel(item.status)
-  const fields = (item.content?.fields ?? []).slice(0, 6)
+  const status = decided
+    ? decided.kind === 'approved'
+      ? { text: 'Approved', tone: 'bg-emerald-500/10 text-emerald-700' }
+      : { text: 'Rejected', tone: 'bg-red-500/10 text-red-600' }
+    : statusLabel(item.status)
+  const full = [
+    item.content?.headline || item.title,
+    item.requested_by_name ? `Requested by ${item.requested_by_name}` : '',
+    decided?.note || (item.status === 'FAILED' ? item.error : '') || ''
+  ].filter(Boolean).join('\n')
   return (
-    <div className="rounded-xl border border-black/5 bg-white/80 p-3 dark:border-white/10 dark:bg-white/5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[14px] font-semibold text-primary">{item.content?.headline || item.title}</p>
-          <p className="mt-0.5 text-[12px] text-muted">
-            {item.requested_by_name ? `Requested by ${item.requested_by_name}` : item.tool}
-            {item.created_at ? ` · ${new Date(item.created_at).toLocaleString()}` : ''}
-          </p>
-        </div>
-        {decided ? (
-          <span
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-semibold ${
-              decided.kind === 'approved' ? 'bg-emerald-500/10 text-emerald-700' : 'bg-red-500/10 text-red-600'
-            }`}
-          >
-            {decided.kind === 'approved' ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-            {decided.kind === 'approved' ? 'Approved' : 'Rejected'}
-          </span>
-        ) : !onDecide ? (
-          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[12px] font-semibold ${status.tone}`}>{status.text}</span>
-        ) : null}
-      </div>
-      {fields.length > 0 && (
-        <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-[13px]">
-          {fields.map((f) => (
-            <div key={f.label} className="contents">
-              <dt className="text-muted">{f.label}</dt>
-              <dd className="min-w-0 break-words text-primary">{f.value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      {decided?.note ? <p className="mt-2 text-[12px] text-muted">{decided.note}</p> : null}
-      {item.status === 'FAILED' && item.error ? <p className="mt-2 text-[12px] text-red-600">{item.error}</p> : null}
+    <div
+      title={full}
+      className="flex items-center gap-2 rounded-lg border border-black/5 bg-white/80 px-2.5 py-1.5 dark:border-white/10 dark:bg-white/5"
+    >
+      <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary">{shortTitle(item)}</p>
       {onDecide && !decided ? (
-        <div className="mt-3 flex gap-2">
+        <>
           <button
             type="button"
             disabled={busy}
             onClick={() => onDecide('approved')}
-            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-[13px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+            aria-label={`Approve: ${item.content?.headline || item.title}`}
+            title="Approve"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
           >
-            <CheckCircle2 size={14} /> Approve
+            <CheckCircle2 size={15} aria-hidden />
           </button>
           <button
             type="button"
             disabled={busy}
             onClick={() => onDecide('rejected')}
-            className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-[13px] font-semibold text-secondary hover:border-red-300 hover:text-red-600 disabled:opacity-60"
+            aria-label={`Reject: ${item.content?.headline || item.title}`}
+            title="Reject"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-border text-secondary hover:border-red-300 hover:text-red-600 disabled:opacity-60"
           >
-            <XCircle size={14} /> Reject
+            <XCircle size={15} aria-hidden />
           </button>
-        </div>
-      ) : null}
+        </>
+      ) : (
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${status.tone}`}>{status.text}</span>
+      )}
     </div>
   )
 }
@@ -334,12 +327,12 @@ function ApprovalsPanel({
 
   const pending = inbox?.to_decide ?? []
   const waiting = [...pending, ...decidedItems.filter((d) => !pending.some((p) => p.id === d.id))]
-  const mine = (inbox?.mine ?? []).slice(0, 8)
+  const mine = (inbox?.mine ?? []).slice(0, 5)
   return (
     <div
       role="dialog"
       aria-label="Approvals"
-      className="absolute right-0 top-full z-40 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-border bg-background shadow-xl"
+      className="absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-border bg-background shadow-xl"
     >
       <div className="max-h-[70vh] overflow-y-auto px-4 py-3">
         <div className="mb-2 flex items-center justify-between">
@@ -352,7 +345,7 @@ function ApprovalsPanel({
         {inbox === null ? (
           <p className="text-[14px] text-muted">Loading…</p>
         ) : (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3">
             {inbox.can_decide ? (
               <section>
                 <p className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-secondary">
@@ -361,7 +354,7 @@ function ApprovalsPanel({
                 {waiting.length === 0 ? (
                   <p className="text-[14px] text-muted">Nothing is waiting for your approval.</p>
                 ) : (
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-1.5">
                     {waiting.map((item) => (
                       <Card key={item.id} item={item} decided={decided[item.id]} busy={busyId === item.id}
                             onDecide={(kind) => void decide(item, kind)} />
@@ -375,7 +368,7 @@ function ApprovalsPanel({
               {mine.length === 0 ? (
                 <p className="text-[14px] text-muted">You have no recent requests.</p>
               ) : (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-1.5">
                   {mine.map((item) => (
                     <Card key={item.id} item={item} />
                   ))}
