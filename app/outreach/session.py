@@ -20,7 +20,7 @@ import uuid
 from typing import Any, Callable, Optional
 
 from app.outreach import card, chicago
-from app.outreach.approval import CHANGE_VERB, WHOLE_EMAIL, approval_problem, user_said
+from app.outreach.approval import CHANGE_VERB, WHOLE_EMAIL, approval_problem, asks_to_change_subject, user_said
 from app.outreach.text import (
     _evidence_is_the_address,
     clean_field,
@@ -232,7 +232,7 @@ class OutreachSession:
                             "subject and a new body.")
             if prev and not WHOLE_EMAIL.search(self.latest):
                 # A small edit ("put the link in the middle", "make it shorter") must not rewrite the rest.
-                if not re.search(r"\b(subject|title|headline)\b", self.latest, re.I) and prev.get("email_subject") != subject:
+                if prev.get("email_subject") != subject and not asks_to_change_subject(self.latest):
                     return ("error: the user did not ask to change the subject. Call propose_email again with the subject "
                             f"exactly as it is: {prev.get('email_subject')!r}")
                 old_breaks = len(re.findall(r"\n\s*\n", prev.get("email_body") or ""))

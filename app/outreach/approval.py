@@ -77,3 +77,43 @@ def user_said(latest: str, evidence: str) -> bool:
     """The evidence is the user's own words from their latest message."""
     norm = lambda t: " ".join(str(t or "").casefold().split())  # noqa: E731
     return bool(norm(evidence)) and norm(evidence) in norm(latest)
+
+
+def asks_to_change_subject(latest: str) -> bool:
+    """True when the model says the latest message asks to change the email subject.
+
+    On any failure the answer is no: the current subject must stay.
+    """
+    try:
+        import json
+
+        from pydantic import BaseModel
+
+        from agno.models.message import Message
+        from app.assistant.assistant import _model
+
+        class _Decision(BaseModel):
+            decision: str
+
+        output = _model("low").response(
+            messages=[
+                Message(
+                    role="system",
+                    content="Does the user's latest message ask to change the email's subject line?",
+                ),
+                Message(role="user", content=json.dumps({"latest": latest})),
+            ],
+            response_format=_Decision,
+        )
+        parsed = getattr(output, "parsed", None)
+        if isinstance(parsed, _Decision):
+            decision = parsed.decision
+        elif isinstance(parsed, dict):
+            decision = parsed.get("decision")
+        else:
+            content = getattr(output, "content", None)
+            data = json.loads(content) if isinstance(content, str) else content
+            decision = (data or {}).get("decision") if isinstance(data, dict) else None
+        return str(decision or "").strip().casefold() == "yes"
+    except Exception:
+        return False
