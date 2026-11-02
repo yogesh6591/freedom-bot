@@ -21,14 +21,14 @@ import re
 import threading
 from typing import Any, Callable, Iterator, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, run_scope
 from bizos.actions import store as actions
-from bizos import chat_history
+from bizos import chat_attachments, chat_history
 from bizos.agents import grounding
 from bizos.agents.agent import ModelNotConfigured, build_agent
 from bizos.agents.claims import enforce_claims
@@ -57,6 +57,8 @@ class ChatRequest(BaseModel):
     previous_domain: Optional[str] = None
     #: May only narrow the workspace mode.
     execution_mode: Optional[str] = None
+    #: Files uploaded with POST /api/chat/attachments to send with this message.
+    attachment_ids: list[str] = Field(default_factory=list, max_length=chat_attachments.MAX_PER_MESSAGE)
 
 
 class EditMessageRequest(BaseModel):
@@ -279,6 +281,34 @@ def chat(
 ) -> dict[str, Any]:
     """One chat turn."""
     return _dispatch(body, ctx, settings)
+
+
+@router.post("/attachments", status_code=201)
+async def upload_attachment(
+    file: UploadFile = File(...),
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Attach a PDF, Word (.docx), CSV, Excel (.xlsx) or text file to the next chat message.
+
+    The text is read and checked now, with the same regulated-data rules as a typed message, so a file
+    the Order/DPA does not allow is refused before it is stored or reaches a model.
+    """
+    data = await file.read(chat_attachments.MAX_BYTES + 1)
+    filename = file.filename or "file"
+    try:
+        extracted = chat_attachments.extract(filename, data)
+    except chat_attachments.AttachmentError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with bound(ctx):
+        refusal = _regulated_data_refusal(extracted["text"], settings)
+        if refusal:
+            from app.assistant.assistant import _guardrail_audit
+
+            _guardrail_audit(ctx, run_scope(ctx, settings, domain="general"), "", f"ATTACHMENT_{refusal[0]}")
+            raise HTTPException(status_code=422, detail=f"{filename} was not attached. {refusal[1]}")
+        return chat_attachments.save(ctx, filename=filename, kind=extracted["kind"], size_bytes=len(data),
+                                     body=extracted["text"], meta=extracted["meta"])
 
 
 @router.post("/stream")
@@ -663,6 +693,7 @@ def delete_all_sessions(ctx: TenantContext = Depends(current_context)) -> dict[s
     """Remove every conversation belonging to the caller."""
     with bound(ctx):
         deleted = chat_history.delete_all_sessions(ctx)
+        chat_attachments.delete_session(ctx)
     return {"ok": True, "deleted": deleted}
 
 
@@ -674,6 +705,7 @@ def delete_session(session_id: str, ctx: TenantContext = Depends(current_context
             chat_history.delete_session(ctx, session_id)
         except chat_history.SessionNotFound as exc:
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
+        chat_attachments.delete_session(ctx, session_id)
     return {"ok": True}
 
 

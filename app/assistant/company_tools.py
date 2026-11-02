@@ -2474,5 +2474,29 @@ def web_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
                                                        + ("; cut" if data["truncated"] else "") + ")")
 
 
+# ------------------------------------------------------------------------------------------------
+# files  (bizos/chat_attachments.py) - files the user attached in the chat.
+# ------------------------------------------------------------------------------------------------
+
+
+@effect("attachment_read")
+def attachment_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    from bizos import chat_attachments
+
+    try:
+        data = chat_attachments.read(scope.ctx, str(args.get("attachment_id") or ""),
+                                     query=str(args.get("query") or ""), start=int(args.get("start") or 0))
+    except chat_attachments.AttachmentNotFound:
+        return ConnectorResult.failure("No attached file with that attachment_id; use one from the Attached files list")
+    more = " (more: read again with start=next_start)" if data.get("next_start") is not None else ""
+    if "rows" in data:
+        summary = f"read {len(data['rows'])} of {data['rows_total']} rows of {data['name']}{more}"
+    elif "passages" in data:
+        summary = f"found {len(data['passages'])} matching part(s) of {data['name']}"
+    else:
+        summary = f"read {data['name']}{more}"
+    return ConnectorResult(ok=True, data=data, summary=summary)
+
+
 import app.outreach.effects  # noqa: F401
 

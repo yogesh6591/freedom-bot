@@ -429,6 +429,14 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         ["query"],
     ),
     "web_read": _obj({"url": _s("Full public http(s) address, from web_search results or the user's message")}, ["url"]),
+    "attachment_read": _obj(
+        {
+            "attachment_id": _s("attachment_id from the Attached files list"),
+            "query": _s("Optional words to find in a long file; returns only the matching parts or rows"),
+            "start": _i("Optional character (text) or row (table) to continue from: next_start of the last read"),
+        },
+        ["attachment_id"],
+    ),
     "strategy_list_priorities": _obj({"query": _s("Optional search")}),
     "strategy_record_option": _obj(
         {

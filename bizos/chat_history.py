@@ -100,12 +100,13 @@ def record_turn(
     reply: str,
     domain: Optional[str],
     meta: dict[str, Any],
+    user_meta: Optional[dict[str, Any]] = None,
 ) -> None:
-    """Append one user message and the reply that was shown for it."""
+    """Append one user message and the reply that was shown for it (``user_meta``: e.g. its attached files)."""
     ensure_table(ctx)
     with workspace_connection(ctx) as conn:
         for role, content, extra in (
-            ("user", user_message, {}),
+            ("user", user_message, user_meta or {}),
             ("assistant", reply, meta),
         ):
             conn.execute(

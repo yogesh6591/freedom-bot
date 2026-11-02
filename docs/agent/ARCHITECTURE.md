@@ -348,6 +348,7 @@ domains.
 | youtube | YouTube: search videos, our channel and videos, one video's details and comments, video transcripts (summaries, what the speaker says) | youtube_search_videos, youtube_my_channel, youtube_video, youtube_transcript, + integration_write_action, integration_destructive_action |
 | integrations | Anything else in the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion or any other connected platform) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it | integration_find_action, integration_read_action, integration_write_action, integration_destructive_action |
 | research | The public web: research a company or person, news, job posts, read a web page | web_search, web_read, + crm_search_companies, crm_search_contacts |
+| files | Files the user attached in this chat (PDF, Word, CSV, Excel, text): summarise, answer questions about them, use their contents (e.g. the people or emails listed in them) | attachment_read |
 | admin_setup | Workspace config: overview, setup, settings, enable or disable domain packs | admin_workspace_overview, admin_get_setup, admin_apply_setup, admin_update_settings, admin_list_domains, admin_toggle_domain |
 | admin_launch | Go-live: launch checklist, mark items, sign-off, handoff readiness | admin_launch_checklist, admin_mark_launch_item, admin_launch_sign_off, admin_handoff_assessment |
 | admin_alerts | Workspace alerts: list, rescan, dismiss, alert baselines | admin_list_alerts, admin_scan_alerts, admin_dismiss_alert, admin_set_baselines |
@@ -361,6 +362,18 @@ domains.
 Always loaded, whatever the route: memory_search, synced_search, integration_find_action,
 integration_read_action, web_search, web_read and load_tools. crm, email and calendar bundles also load
 integration_write_action and integration_destructive_action.
+
+**Attached files** (bizos/chat_attachments.py): the chat's paperclip uploads a PDF, Word (.docx), CSV,
+Excel (.xlsx) or text file (10 MB) to `POST /api/chat/attachments`. Its text is extracted once and
+checked with the same regulated-data refusal as a typed message (PHI, card, child, biometric data), so a
+file the Order/DPA does not allow is refused before it is stored or reaches a model; stored text has
+identifiers scrubbed. A file belongs to its uploader (owner-only reads, client wall) and joins the
+conversation when its message is saved. While a conversation has files, attachment_read is loaded on
+every task or question, the router and executor see the file list (names and sizes, never content), and
+the attachment ids are known values. A message sent with files is routed to files even if it reads like
+small talk. attachment_read returns a text window, the parts matching a query, or table rows, plus every
+address in the file under `emails`: an uploaded file counts as the user's own words for provenance, so
+"email the people in this list" can use them; sending still goes through the policy check and approval.
 
 **App actions** (bizos/connectors/composio_actions.py): any of the ~470 Composio actions of the four
 connectable apps. Each action gets a tier, the strictest of its name (DELETE, SEND, TRASH, REPLY...) and

@@ -350,12 +350,24 @@ export interface ChatSessionSummary {
   updated_at: string | null
 }
 
+/** A file attached in the chat (POST /api/chat/attachments): what was read from it, never its text. */
+export interface ChatAttachment {
+  id: string
+  name: string
+  kind: 'pdf' | 'docx' | 'csv' | 'xlsx' | 'txt' | 'md'
+  size_bytes: number
+  pages?: number
+  rows?: number
+  characters?: number
+}
+
 export interface ChatSessionMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   domain: string | null
   meta: {
+    attachments?: ChatAttachment[]
     mode?: ExecutionMode
     tool_activity?: { tool: string; ok: boolean }[]
     awaiting_approval?: Partial<ActionRecord>[]

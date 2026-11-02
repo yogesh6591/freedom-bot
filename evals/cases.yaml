@@ -31157,6 +31157,61 @@
   expected_gates: {web_search: run, web_read: run}
   expected_outcome: answer
 
+- id: t_attachment_read_001
+  query: Summarise the attached brief in three bullet points
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    attachments:
+    - {id: att_eval_brief, name: brief.txt, text: 'Q4 plan. Focus on AI automation for small businesses. Launch two case studies. Hire one sales engineer.'}
+    results:
+      attachment_read: {attachment_id: att_eval_brief, name: brief.txt, kind: txt, emails: [], start: 0, content: 'Q4 plan. Focus on AI automation for small businesses. Launch two case studies. Hire one sales engineer.', next_start: null}
+  expected_tool_calls: [attachment_read]
+  expected_args:
+    attachment_read: {attachment_id: att_eval_brief}
+  expected_gates: {attachment_read: run}
+  expected_outcome: answer
+- id: t_attachment_read_002
+  query: How many people in this list are from Pune?
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    attachments:
+    - {id: att_eval_people, name: people.csv, text: "Name,Email,City\nPriya Shah,priya@example.com,Pune\nLee Wong,lee@example.org,Delhi\nAnil Rao,anil@example.net,Pune\n"}
+    results:
+      attachment_read: {attachment_id: att_eval_people, name: people.csv, kind: csv, emails: [priya@example.com, lee@example.org, anil@example.net], columns: [Name, Email, City], rows_total: 3, start: 0, rows: [{Name: Priya Shah, Email: priya@example.com, City: Pune}, {Name: Lee Wong, Email: lee@example.org, City: Delhi}, {Name: Anil Rao, Email: anil@example.net, City: Pune}], next_start: null}
+  expected_tool_calls: [attachment_read]
+  expected_args:
+    attachment_read: {attachment_id: att_eval_people}
+  expected_gates: {attachment_read: run}
+  expected_outcome: answer
+- id: t_attachment_read_003
+  query: What does the contract I attached say about payment terms?
+  user: {name: Meena, roles: [DRAFTER]}
+  fixtures:
+    attachments:
+    - {id: att_eval_contract, name: contract.txt, text: 'Master services agreement. Section 4 Payment terms. Invoices are due net 45 days from the invoice date.'}
+    results:
+      attachment_read: {attachment_id: att_eval_contract, name: contract.txt, kind: txt, emails: [], query: payment terms, parts_total: 1, passages: [{part: 1, text: 'Section 4 Payment terms. Invoices are due net 45 days from the invoice date.'}]}
+  expected_tool_calls: [attachment_read]
+  expected_args:
+    attachment_read: {attachment_id: att_eval_contract}
+  expected_gates: {attachment_read: run}
+  expected_outcome: answer
+- id: t_attachment_read_004
+  query: 'Email everyone in this list: our webinar is on Friday at 4 PM'
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    attachments:
+    - {id: att_eval_invitees, name: invitees.csv, text: "Name,Email\nPriya Shah,priya@example.com\nLee Wong,lee@example.org\n"}
+    results:
+      attachment_read: {attachment_id: att_eval_invitees, name: invitees.csv, kind: csv, emails: [priya@example.com, lee@example.org], columns: [Name, Email], rows_total: 2, start: 0, rows: [{Name: Priya Shah, Email: priya@example.com}, {Name: Lee Wong, Email: lee@example.org}], next_start: null}
+  expected_tool_calls: [attachment_read, email_send_message]
+  expected_args:
+    attachment_read: {attachment_id: att_eval_invitees}
+    email_send_message:
+      recipients: [priya@example.com, lee@example.org]
+  expected_gates: {attachment_read: run, email_send_message: approval}
+  expected_outcome: approval
+
 - id: t_set_qualification_001
   query: Approve Shubham's assessment
   user: {name: Anita, id: u_1, roles: [ADMIN]}

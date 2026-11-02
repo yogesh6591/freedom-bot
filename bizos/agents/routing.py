@@ -40,7 +40,7 @@ ALWAYS_ON = ("memory_search", "synced_search", "integration_find_action", "integ
 Domain = Literal[
     "memory", "approvals", "crm", "email", "calendar", "finance", "ops", "youtube",
     "admin_setup", "admin_launch", "admin_alerts", "admin_users", "admin_permissions",
-    "admin_commercial", "outreach", "integrations", "research",
+    "admin_commercial", "outreach", "integrations", "research", "files",
 ]
 
 #: What the router reads for each domain (ARCHITECTURE.md §7).
@@ -62,6 +62,7 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "outreach": "Acquisition (admins only): prospects (count, search, show, add, edit, delete), emails to prospects and follow-ups, the sent-email log, assessment progress and reports, approve or unapprove, bookings (read, move, cancel), payment offers, the prospect journey page",
     "integrations": "Anything else in the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion or any other connected platform) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it",
     "research": "The public web: research a company or person, news, job posts, read a web page",
+    "files": "Files the user attached in this chat (PDF, Word, CSV, Excel, text): summarise, answer questions about them, use their contents (e.g. the people or emails listed in them)",
 }
 
 #: Tools from other domains a bundle also loads (ARCHITECTURE.md §7).

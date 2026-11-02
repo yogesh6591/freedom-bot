@@ -107,6 +107,7 @@ GENERAL = DomainPack(
         "integration_destructive_action",
         "web_search",
         "web_read",
+        "attachment_read",
         "memory_get_fact",
         "memory_history",
         "approvals_list",

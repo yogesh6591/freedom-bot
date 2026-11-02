@@ -70,6 +70,10 @@ Do not clarify when:
   labels, analytics, HubSpot tickets) → integrations, plus the app's own domain when it helps find ids.
 - Researching a company or person, news, job posts, "is X a good fit", reading a website → research
   (plus crm when our records matter).
+- When the recent conversation lists attached files, "this file", "the PDF", "the sheet", "this list",
+  "these people" or a question about their content → files, plus the domain of what is done with the
+  contents (emailing the people listed → the domain the email rules above give; adding them to the CRM → crm).
+  Never clarify which file when only one is attached.
 - Hindi and Hinglish are routed exactly like English.
 
 ## Examples
@@ -90,6 +94,9 @@ Do not clarify when:
 
 "Find a 30-min slot with Priya next Tuesday and book it"
 → {"domains":["calendar","crm"],"kind":"task","entities":{"contact":"Priya","when":"next Tuesday","duration":"30 min"},"clarify":null}
+
+"Summarise this PDF" (a file is attached)
+→ {"domains":["files"],"kind":"question","entities":{},"clarify":null}
 
 "Who can delete CRM records?"
 → {"domains":["admin_permissions"],"kind":"question","entities":{"tool":"crm delete"},"clarify":null}

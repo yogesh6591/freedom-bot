@@ -298,6 +298,26 @@ def patch_world(mp, world, fixtures: dict) -> None:
         mp.setattr(timeutil, "datetime", Frozen)
 
 
+def attach_files(ctx, items: list[dict]) -> list[str]:
+    """``fixtures.attachments``: files sent with the case's message ({id, name, text}). Stored like an upload;
+    attachment_read itself answers from ``fixtures.results`` like every other tool."""
+    from sqlalchemy import text as sql
+
+    from bizos import chat_attachments
+    from bizos.tenancy.registry import workspace_connection
+
+    ids = []
+    for item in items:
+        data = str(item.get("text") or "").encode()
+        extracted = chat_attachments.extract(item["name"], data)
+        chat_attachments._ensure_table(ctx)
+        with workspace_connection(ctx) as conn:  # the same fixture id is reused by every run
+            conn.execute(sql("DELETE FROM chat_attachments WHERE id = :i"), {"i": item["id"]})
+        ids.append(chat_attachments.save(ctx, filename=item["name"], kind=extracted["kind"], size_bytes=len(data),
+                                         body=extracted["text"], meta=extracted["meta"], attachment_id=item["id"])["id"])
+    return ids
+
+
 def run_case(client, case: dict, pipeline: str) -> dict:
     from pytest import MonkeyPatch
 
@@ -442,8 +462,9 @@ def run_case(client, case: dict, pipeline: str) -> dict:
                     meta = {"state": fixtures["campaign_state"]} if fixtures.get("campaign_state") and n == len(pairs) - 1 else {}
                     chat_history.record_turn(ctx, session_id=session_id, user_message=said, reply=answered,
                                              domain="general", meta=meta)
+            attached = attach_files(ctx, fixtures.get("attachments") or [])
             started = time.monotonic()
-            body = ChatRequest(message=case["query"], session_id=session_id)
+            body = ChatRequest(message=case["query"], session_id=session_id, attachment_ids=attached)
             out = v2.handle(body, ctx, settings)
             run["seconds"] = round(time.monotonic() - started, 1)
         run["content"] = out.get("content") or ""

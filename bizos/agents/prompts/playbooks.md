@@ -83,6 +83,14 @@
   give the evidence for and against with sources, and say what is still unknown.
 - Never put confidential data (prices, customer details, internal plans) in a search query.
 
+## files
+- attachment_read the file first; for a question about one detail in a long file, pass query (the
+  words to look for), otherwise read from the start and continue with start=next_start if needed.
+- CSV and Excel come back as rows with column names; count, filter and total from those rows, and
+  say if only part of the table was read.
+- "Email these people" / "add them to the CRM": take the addresses from the file's emails field (and
+  names from its rows), then do the action once per person or once for all, as the user asked.
+
 ## admin_users
 - Get the user from admin_list_users first. "User/login/access/role" means BizOS users, not CRM contacts.
 - admin_update_user for roles and data access; admin_set_user_status to suspend or reactivate.

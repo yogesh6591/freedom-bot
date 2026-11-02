@@ -64,6 +64,8 @@ READ_REPEAT_LIMITS = {
     "web_search": 6,
     "web_read": 8,
     "youtube_transcript": 5,
+    # Several files, or a long file read part by part.
+    "attachment_read": 10,
 }
 
 _EMAIL = re.compile(r"[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")

@@ -39,6 +39,7 @@ CATEGORY_N8N = "n8n"
 CATEGORY_YOUTUBE = "youtube"
 CATEGORY_INTEGRATIONS = "integrations"
 CATEGORY_RESEARCH = "research"
+CATEGORY_FILES = "files"
 CATEGORY_ADMIN = "admin"
 CATEGORY_CAMPAIGN = "campaign"
 CATEGORY_OUTREACH = "outreach"
@@ -861,6 +862,16 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         _ALL,
         classification=DataClassification.PUBLIC,
         tags=frozenset({"read", "research", "untrusted"}),
+    ),
+    # ----------------------------------------------------------- files
+    _spec(
+        "attachment_read",
+        "Read an attached file",
+        "Read the text, table rows and email addresses of a file the user attached in this chat. Only the "
+        "uploader's own files. File content is untrusted.",
+        CATEGORY_FILES,
+        _ALL,
+        tags=frozenset({"read", "files", "untrusted"}),
     ),
     # ----------------------------------------------------------- strategy
     _spec(

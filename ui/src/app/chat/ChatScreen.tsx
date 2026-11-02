@@ -42,6 +42,7 @@ import { useSession } from '@/components/SessionProvider'
 import type {
   ActionRecord,
   AssistantTrace,
+  ChatAttachment,
   ChatContext,
   ChatResponse,
   ChatSessionDetail,
@@ -55,11 +56,14 @@ import { BrandMark } from '@/components/BrandMark'
 import { SidebarSwitch } from '@/components/SidebarSwitch'
 import { IntegrationsView } from '@/components/IntegrationsView'
 import { ApprovalsMenu, useApprovalInbox } from './Approvals'
+import { AttachButton, FileChips, PendingFiles, useAttachments } from './Attachments'
 
 interface Turn {
   id?: string
   role: 'user' | 'assistant'
   content: string
+  /** Files sent with a user message. */
+  attachments?: ChatAttachment[]
   emailDraft?: string
   /** Words that stay under the email card after the draft is edited. */
   note?: string
@@ -111,6 +115,7 @@ function turnsFrom(detail: ChatSessionDetail): Turn[] {
     id: m.id,
     role: m.role === 'user' ? 'user' : 'assistant',
     content: m.content,
+    attachments: m.role === 'user' ? m.meta.attachments : undefined,
     emailDraft: m.meta.json?.email_draft || undefined,
     note: spokenNote(m.content, m.meta.json?.email_draft, m.meta.json?.reply_note),
     trace: m.meta.json,
@@ -684,6 +689,8 @@ function ChatView({ home }: { home: boolean }) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  /** Files waiting to go with the next message (uploaded and read as soon as they are picked). */
+  const attachments = useAttachments()
   /** The reply while it streams in: the current step and the words so far (replaced by the final reply). */
   const [live, setLive] = useState<{ status: string; text: string } | null>(null)
   /** Approvals in the chat (home page): the bell's inbox and whether its panel is open in the transcript. */
@@ -904,15 +911,19 @@ function ChatView({ home }: { home: boolean }) {
 
   async function send(event: React.FormEvent) {
     event.preventDefault()
-    const message = input.trim()
-    if (!message || busy) return
+    const files = attachments.ready
+    if (busy || attachments.uploading || (!input.trim() && !files.length)) return
+    const message =
+      input.trim() || (files.length > 1 ? 'Please read the attached files and summarise them.' : 'Please read the attached file and summarise it.')
+    const sentFiles = attachments.take()
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
     setBusy(true)
     setError(null)
     setEditingId(null)
-    setTurns((prev) => [...prev, { role: 'user', content: message }])
-    const body = { message, session_id: sessionId, domain: 'auto' }
+    const userTurn: Turn = { role: 'user', content: message, attachments: files.length ? files : undefined }
+    setTurns((prev) => [...prev, userTurn])
+    const body = { message, session_id: sessionId, domain: 'auto', attachment_ids: files.map((f) => f.id) }
     try {
       let data: (ChatResponse & { response?: string }) | null = null
       setLive({ status: '', text: '' })
@@ -931,7 +942,7 @@ function ChatView({ home }: { home: boolean }) {
       if (!data) throw new Error('The reply stopped before it finished. Please try again.')
       setSessionId(data.session_id)
       remember(data.session_id)
-      const nextTurns = [...turns, { role: 'user' as const, content: message }, assistantTurnFrom(data)]
+      const nextTurns = [...turns, userTurn, assistantTurnFrom(data)]
       setTurns(nextTurns)
       await attachMessageIds(data.session_id, nextTurns)
       void refreshContext()
@@ -939,6 +950,7 @@ function ChatView({ home }: { home: boolean }) {
       if (home) void approvals.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Chat failed')
+      attachments.restore(sentFiles) // the files were not used; keep them for the retry
     } finally {
       setLive(null)
       setBusy(false)
@@ -1568,9 +1580,12 @@ function ChatView({ home }: { home: boolean }) {
                           </div>
                         </div>
                       ) : (
-                        <p className="assistant-user-bubble w-fit max-w-[min(80%,28rem)] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7">
-                          {turn.content}
-                        </p>
+                        <div className="flex min-w-0 flex-1 flex-col items-end gap-1.5">
+                          <FileChips files={turn.attachments} />
+                          <p className="assistant-user-bubble w-fit max-w-[min(80%,28rem)] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7">
+                            {turn.content}
+                          </p>
+                        </div>
                       )}
                     </div>
                   ) : (
@@ -1699,8 +1714,19 @@ function ChatView({ home }: { home: boolean }) {
             )}
             <form
               onSubmit={send}
-              className="assistant-glass flex items-end gap-2 rounded-3xl px-3 py-2"
+              onDragOver={(event) => {
+                if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+              }}
+              onDrop={(event) => {
+                if (!event.dataTransfer.files.length) return
+                event.preventDefault()
+                if (!busy) attachments.add(event.dataTransfer.files)
+              }}
+              className="assistant-glass rounded-3xl px-3 py-2"
             >
+              <PendingFiles files={attachments.files} onRemove={attachments.remove} />
+              <div className="flex items-end gap-2">
+              <AttachButton onPick={attachments.add} disabled={busy} />
               <label htmlFor="chat-input" className="sr-only">
                 Message
               </label>
@@ -1731,7 +1757,7 @@ function ChatView({ home }: { home: boolean }) {
               />
               <button
                 type="submit"
-                disabled={busy || !input.trim()}
+                disabled={busy || attachments.uploading || (!input.trim() && !attachments.ready.length)}
                 aria-label="Send"
                 className="assistant-send mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed"
               >
@@ -1741,6 +1767,7 @@ function ChatView({ home }: { home: boolean }) {
                   <ArrowUp size={16} aria-hidden />
                 )}
               </button>
+              </div>
             </form>
             {chatHome && (
               <p className="mt-2 text-center text-[11px] text-muted">

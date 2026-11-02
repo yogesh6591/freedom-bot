@@ -245,6 +245,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "integration_destructive_action": "action (an action_id from integration_find_action), arguments (object)",
     "web_search": "query (str, no confidential data), limit (int, optional)",
     "web_read": "url (public http(s) address)",
+    "attachment_read": "attachment_id (from Attached files), query (str, optional), start (int, optional)",
     "synced_search": "query (str, optional), sources (list of gmail|calendar|youtube|hubspot, optional), since (ISO date, optional), limit (int, optional)",
     "memory_search": "query (str), categories (list of FACT|SOP|DECISION|CORRECTION, optional), limit (int, optional)",
     "memory_get_fact": "key (str), category (str, default FACT)",
