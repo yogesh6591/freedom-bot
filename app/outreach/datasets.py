@@ -271,6 +271,14 @@ def _fuzzy_person_ids(db: Session, text: str, columns: list[Any]) -> list[Any]:
     return [pid for pid, _ in matching.find_ids(db, text, Prospect.id, columns, limit=MAX_FUZZY_IDS)]
 
 
+#: A status column's value that means "nothing has happened yet". is_empty / not_empty on these columns use it.
+_DEFAULT_VALUE = {
+    "booking_status": "not_booked", "assessment_status": "not_started", "outreach_status": "pending",
+    "consultation_show": "not_recorded", "purchase_outcome": "not_recorded", "handoff_status": "not_started",
+    "journey_stage": "outreach", "status": "not_emailed", "qualification": "pending",
+}
+
+
 def _condition(db: Session, ds: Dataset, f: dict) -> tuple[Any, set[str]]:
     """One filter as a SQL condition, plus the joins it needs."""
     key, op, value = str(f.get("field") or ""), str(f.get("op") or "equals"), f.get("value")
@@ -293,10 +301,14 @@ def _condition(db: Session, ds: Dataset, f: dict) -> tuple[Any, set[str]]:
     if op == "is_empty":
         expr = col.expr
         cond = expr.is_(None) if col.kind in ("date", "number", "money") else or_(expr.is_(None), cast(expr, String) == "")
+        if col.kind == "enum" and key in _DEFAULT_VALUE:
+            cond = or_(cond, cast(expr, String) == _DEFAULT_VALUE[key])
         return cond, needs
     if op == "not_empty":
         expr = col.expr
         cond = expr.is_not(None) if col.kind in ("date", "number", "money") else and_(expr.is_not(None), cast(expr, String) != "")
+        if col.kind == "enum" and key in _DEFAULT_VALUE:
+            cond = and_(cond, cast(expr, String) != _DEFAULT_VALUE[key])
         return cond, needs
     if value is None or str(value).strip() == "":
         raise QueryError(f"'{key}' {op} needs a value")
