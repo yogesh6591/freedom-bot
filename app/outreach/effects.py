@@ -24,6 +24,9 @@ _EMAIL_METHODS: dict[str, tuple[str, tuple[str, ...]]] = {
     "set_person_details": ("set_person_details", ("email", "first_name", "last_name", "company", "evidence")),
     "send_approved": ("send_approved", ("approval_evidence",)),
     "send_from_template": ("send_from_template", ("people", "audience", "approval_evidence")),
+    "show_email_template": ("show_email_template", ()),
+    "update_email_template": ("update_email_template",
+                              ("first_subject", "first_body", "followup_body", "change_evidence", "remove_placeholders")),
     "cancel_sending": ("cancel_sending", ()),
 }
 

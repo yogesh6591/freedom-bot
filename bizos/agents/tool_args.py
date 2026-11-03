@@ -755,6 +755,14 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     }, ["email", "evidence"]),
     "send_approved": _obj({"approval_evidence": _s("The user's own words approving, copied from their latest message")},
                           ["approval_evidence"]),
+    "show_email_template": _obj({}),
+    "update_email_template": _obj({
+        "first_subject": _s("New first email subject. Leave out to keep it as it is."),
+        "first_body": _s("New first email body, the whole text with every {{blank}} kept. Leave out to keep it."),
+        "followup_body": _s("New follow-up body, the whole text with every {{blank}} kept. Leave out to keep it."),
+        "change_evidence": _s("The user's own words asking for the change, copied from their latest message"),
+        "remove_placeholders": _arr("Blank names the user clearly asked to remove, for example companyName. Usually empty."),
+    }, ["change_evidence"]),
     "send_from_template": _obj({
         "people": {
             "type": "array",

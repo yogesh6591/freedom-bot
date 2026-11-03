@@ -527,6 +527,73 @@ class OutreachSession:
         finally:
             db.close()
 
+    # ------------------------------------------------------------------ the saved template (see / change)
+    TEMPLATE_BLANKS = ("firstName", "lastName", "companyName", "assessment_url", "senderName")
+
+    @staticmethod
+    def _blanks_in(text: str) -> set[str]:
+        return {m.group(1) for m in re.finditer(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}", text or "")}
+
+    @staticmethod
+    def _template_text(cfg: Any) -> str:
+        follow = cfg.followup_body or "(none: follow-ups reuse the first email)"
+        return (f"First email subject:\n{cfg.first_subject or '(empty)'}\n\nFirst email body:\n{cfg.first_body or '(empty)'}"
+                f"\n\nFollow-up body:\n{follow}")
+
+    def show_email_template(self) -> str:
+        from acquisition.services import outreach_settings
+
+        db = self.db_factory()
+        try:
+            cfg = outreach_settings.effective(db)
+            state = "ON (no card, the chat sends it)" if cfg.auto_send_enabled else "OFF (emails are shown on a card first)"
+            return (f"Template sending is {state}.\n\n{self._template_text(cfg)}\n\n"
+                    "Show this to the user exactly as it is, keeping the {{blanks}}.")
+        finally:
+            db.close()
+
+    def update_email_template(self, first_subject: Optional[str] = None, first_body: Optional[str] = None,
+                              followup_body: Optional[str] = None, change_evidence: str = "",
+                              remove_placeholders: Optional[list] = None) -> str:
+        """Change the saved template. Every {{blank}} that was there stays unless the user asked to remove it."""
+        from acquisition.services import outreach_settings
+
+        if first_subject is None and first_body is None and followup_body is None:
+            return "error: give the new first_subject, first_body or followup_body"
+        if not (change_evidence and self._said(change_evidence)):
+            return "error: pass change_evidence, the user's own words asking for this change, copied from their latest message"
+        allowed_gone = {str(x).strip().strip("{} ") for x in (remove_placeholders or []) if str(x).strip()}
+        db = self.db_factory()
+        try:
+            cfg = outreach_settings.effective(db)
+            changes = {"first_subject": (first_subject, cfg.first_subject), "first_body": (first_body, cfg.first_body),
+                       "followup_body": (followup_body, cfg.followup_body)}
+            for field, (new, old) in changes.items():
+                if new is None:
+                    continue
+                if field != "followup_body" and not new.strip():
+                    return f"error: {field} cannot be empty"
+                unknown = self._blanks_in(new) - set(self.TEMPLATE_BLANKS)
+                if unknown:
+                    return ("error: unknown blank(s) " + ", ".join("{{" + b + "}}" for b in sorted(unknown))
+                            + ". Allowed: " + ", ".join("{{" + b + "}}" for b in self.TEMPLATE_BLANKS))
+                dropped = (self._blanks_in(old) - self._blanks_in(new)) - allowed_gone
+                if dropped:
+                    return (f"error: the new {field} dropped " + ", ".join("{{" + b + "}}" for b in sorted(dropped))
+                            + ". Keep every blank exactly as it was; only when the user clearly asked to remove one, "
+                            "pass it in remove_placeholders. Current text:\n" + (old or ""))
+            store = outreach_settings
+            store.save(
+                db, sender_user_id=cfg.sender_user_id, business_address=cfg.business_address,
+                optout_line=cfg.optout_line, worker_enabled=cfg.worker_enabled, updated_by="chat",
+                first_subject=first_subject, first_body=first_body, followup_body=followup_body,
+            )
+            after = outreach_settings.effective(db)
+            return ("saved. This is the template now:\n\n" + self._template_text(after)
+                    + "\n\nShow the user the new version exactly as it is, keeping the {{blanks}}.")
+        finally:
+            db.close()
+
     def _signer_name(self, db: Any) -> str:
         """The signed-in user's display name (or the local part of their email), for the {{senderName}} blank."""
         from bizos.control import store as control

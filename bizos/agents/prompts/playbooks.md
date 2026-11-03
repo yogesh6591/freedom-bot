@@ -138,6 +138,10 @@
   people the tool returns a question with the count: ask it exactly, then call again with approval_evidence from the
   user's yes. After it succeeds the user already sees a table of who was emailed: do not list the people, reply with one
   short sentence and say the emails are queued, not delivered. Ignore the card instructions below in this case.
+- The saved template: show_email_template shows it; update_email_template changes it. In every change keep ALL the
+  blanks ({{firstName}}, {{lastName}}, {{companyName}}, {{assessment_url}}, {{senderName}}) exactly where they are,
+  and change only what the user asked for, copying every other line word for word. Remove a blank only when the user
+  clearly asks for that (then pass it in remove_placeholders). Afterwards show the user the new version.
 - Any email to a person in an outreach turn is written with propose_email, whatever the user calls it (create, write, draft, compose, send), whether the people are saved prospects or typed addresses. Do not load the email domain or use Gmail draft or send tools for it. propose_email only drafts the card; nothing leaves until the user approves it.
 - Who: choose_recipients (saved names or typed addresses). It tells you who was emailed before.
 - Wording: propose_email, with blanks ({{firstName}}, {{companyName}}, {{assessment_url}}). Never type a

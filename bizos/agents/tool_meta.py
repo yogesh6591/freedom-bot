@@ -862,6 +862,20 @@ TOOL_META: dict[str, AgentMeta] = {
         Needs: people, or audience (all, not_emailed_yet). Over 10: ask once, then approval_evidence.
         Effect: queued, cannot be recalled; the user sees the table. {gate}
     """)),
+    "show_email_template": M("outreach", d("""
+        Show the saved email template: first email subject and body, and the follow-up body, with their
+        blanks. Says whether template sending is on. Read-only.
+        Use when: "show the template", "what email do we send", "template dikhao".
+        Don't use: changing it -> update_email_template; emails already sent -> show_sent_emails.
+    """)),
+    "update_email_template": M("outreach", d("""
+        Change the saved email template. Keep every {{blank}} (firstName, lastName, companyName,
+        assessment_url, senderName) unless the user clearly asks to remove one. Change only what they asked.
+        Use when: "make the template shorter", "add a line about X to the first email", "change the subject".
+        Don't use: one-off wording for a single email -> propose_email; just viewing -> show_email_template.
+        Needs: change_evidence, the user's own words.
+        Effect: overwrites the saved template used by every later send. {gate}
+    """)),
     "cancel_sending": M("outreach", d("""
         Stop all emails that are queued but not sent yet. Emails already sent are not affected.
         Use when: "stop sending", "cancel the batch", "mail rok do".
