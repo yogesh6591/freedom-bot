@@ -50,7 +50,7 @@ Do not clarify when:
   "did we email X", the prospect list (count, search, add, edit, delete), assessment progress of a prospect,
   approve or unapprove an assessment, consultation bookings (read, move, cancel), payment offers
   and links for prospects, the prospect journey page settings (case studies, videos, publish),
-  "stop sending" → outreach.
+  "stop sending", the saved email template used for prospects (seeing it or changing its subject, body or follow-up), choosing prospects by stage, newest or oldest, emailed or not, how long quiet, or place, and sending to a group of prospects without naming each one → outreach.
 - Remembering or correcting company facts, SOPs or decisions → memory. "Remember that Acme renews in
   March" is a fact for everyone → memory; "add/log a note on Acme (or Raj, or a deal)" → crm.
 - Policy questions → the domain that owns the policy, plus memory when unsure: discounts, refunds,
