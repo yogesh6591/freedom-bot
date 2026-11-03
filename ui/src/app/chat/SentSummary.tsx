@@ -77,7 +77,7 @@ export function SentSummary({ view }: { view: SentView }) {
       ) : null}
       {skipped.length > 0 ? (
         <p className="border-t border-black/10 px-4 py-2 text-[12px] text-muted">
-          {pluralise(skipped.length, 'person')} skipped (opted out or no valid email).
+          {pluralise(skipped.length, 'person')} skipped (opted out, no valid email or emailed recently).
         </p>
       ) : null}
     </section>

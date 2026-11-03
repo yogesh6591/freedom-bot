@@ -856,11 +856,18 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: emails are queued, then sent; cannot be recalled. {gate}
     """)),
     "send_from_template": M("outreach", d("""
-        Send the admin's saved email template to named people or everyone, with no review card. Code fills names, link and sender; never write the wording. Prior contacts get a follow-up in-thread.
-        Use when: "email Nina", "send to everyone", "not emailed yet".
-        Don't use: custom wording -> template sending is on; stopping -> cancel_sending.
-        Needs: people, or audience (all, not_emailed_yet). Over 10: ask once, then approval_evidence.
-        Effect: queued, cannot be recalled; the user sees the table. {gate}
+        Send emails with no card, to named people or everyone matching filters (stage, newest or oldest with
+        count, emailed, inactive_days, text, place). No subject or body uses the saved template; giving them
+        replaces it. Emailed before means a threaded follow-up.
+        Use when: "email Nina", "send to everyone", "email the 2 oldest", "follow up stuck people".
+        Don't use: stopping -> cancel_sending; counting -> find_people.
+        Effect: queued, sent one at a time, no recall. {gate}
+    """)),
+    "find_people": M("outreach", d("""
+        Find people by stage, newest or oldest with count, emailed or not, days quiet, a word or a place, and
+        show where each is stuck: what they answered and what is missing. Sends nothing.
+        Use when: "who has not finished", "who is qualified but not booked", before writing follow-ups.
+        Don't use: looking up one person by name -> query_records; sending -> send_from_template.
     """)),
     "show_email_template": M("outreach", d("""
         Show the saved email template: first email subject and body, and the follow-up body, with their
