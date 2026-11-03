@@ -522,8 +522,9 @@ class OutreachSession:
                 follow_body = first_body
             else:
                 first_subject = strip_assessment_link(cfg.first_subject)
-                first_body = keep_assessment_link(cfg.first_body.replace("{{senderName}}", signer))
-                follow_body = keep_assessment_link((cfg.followup_body or cfg.first_body).replace("{{senderName}}", signer))
+                first_body = self._wrap_email(keep_assessment_link(cfg.first_body.replace("{{senderName}}", signer)))
+                follow_body = self._wrap_email(
+                    keep_assessment_link((cfg.followup_body or cfg.first_body).replace("{{senderName}}", signer)))
             import uuid as _uuid
 
             batch_id = _uuid.uuid4()
@@ -670,7 +671,20 @@ class OutreachSession:
             out.append(line)
         while out and out[-1] == "":
             out.pop()
-        return "\n".join(out)
+        return cls._wrap_email("\n".join(out))
+
+    @staticmethod
+    def _wrap_email(text: str, width: int = 72) -> str:
+        """Plain-text emails: wrap long lines at about 72 characters. The link line and short lines stay as they are."""
+        import textwrap
+
+        lines = []
+        for line in (text or "").split("\n"):
+            if len(line) <= width or "{{assessment_url}}" in line or "://" in line:
+                lines.append(line)
+            else:
+                lines.append(textwrap.fill(line, width=width, break_long_words=False, break_on_hyphens=False))
+        return "\n".join(lines)
 
     def _signer_name(self, db: Any) -> str:
         """The signed-in user's display name (or the local part of their email), for the {{senderName}} blank."""
