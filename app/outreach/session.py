@@ -450,6 +450,9 @@ class OutreachSession:
                 if unknown:
                     return ("error: unknown blank(s) " + ", ".join("{{" + b + "}}" for b in sorted(unknown))
                             + ". Allowed: " + ", ".join("{{" + b + "}}" for b in self.TEMPLATE_BLANKS))
+                if "{{senderName}}" not in body:
+                    return ("error: end the email with a sign-off line and then {{senderName}} on its own line "
+                            "(the sender's real name is filled in by the system); never type a person's name there")
             if audience and audience not in ("all", "not_emailed_yet"):
                 return "error: audience must be all or not_emailed_yet (or use the filters, or name the people)"
             filtered = bool(stage or order or count or inactive_days or text or place or emailed not in ("", "any"))
@@ -515,7 +518,7 @@ class OutreachSession:
             signer = self._signer_name(db)
             if custom:
                 first_subject = strip_assessment_link(subject or "")
-                first_body = keep_assessment_link(body.replace("{{senderName}}", signer))
+                first_body = self._tidy_email(keep_assessment_link(body.replace("{{senderName}}", signer)))
                 follow_body = first_body
             else:
                 first_subject = strip_assessment_link(cfg.first_subject)
@@ -545,17 +548,26 @@ class OutreachSession:
             table = [{"name": names.get(str(x.to_email).lower()) or str(x.to_email).split("@")[0],
                       "email": x.to_email, "kind": "follow_up" if x.kind == svc.KIND_FOLLOW_UP else "first"}
                      for x in rows]
-            self.sent_view = {
-                "count": len(rows), "first": sum(1 for t in table if t["kind"] == "first"),
-                "follow_up": sum(1 for t in table if t["kind"] == "follow_up"),
-                "minutes": minutes, "rows": table, "skipped": skipped,
-            }
+            first_n = sum(1 for t in table if t["kind"] == "first")
+            follow_n = sum(1 for t in table if t["kind"] == "follow_up")
+            old = self.sent_view  # an earlier send call in this same turn: show one card for all of them
+            if old:
+                seen = {s["email"] for s in old["skipped"]}
+                self.sent_view = {
+                    "count": old["count"] + len(rows), "first": old["first"] + first_n,
+                    "follow_up": old["follow_up"] + follow_n, "minutes": old["minutes"] + minutes,
+                    "rows": old["rows"] + table,
+                    "skipped": old["skipped"] + [s for s in skipped if s["email"] not in seen],
+                }
+            else:
+                self.sent_view = {"count": len(rows), "first": first_n, "follow_up": follow_n,
+                                  "minutes": minutes, "rows": table, "skipped": skipped}
             self.state["last_batch"] = {"id": str(batch_id), "count": len(rows)}
             when = "under a minute" if minutes < 1 else f"about {minutes} min"
             extra = f" {len(skipped)} were skipped ({'; '.join(sorted({s['reason'] for s in skipped}))})." if skipped else ""
             return (f"queued {len(rows)} email{'s' if len(rows) != 1 else ''} "
-                    f"({'your wording' if custom else 'saved template'}; {self.sent_view['first']} first, "
-                    f"{self.sent_view['follow_up']} follow-up); sending one at a time, "
+                    f"({'your wording' if custom else 'saved template'}; {first_n} first, "
+                    f"{follow_n} follow-up); sending one at a time, "
                     f"{when} to finish. Not delivered yet.{extra} The user already sees a table of who was emailed, so "
                     "do NOT list the people. Reply with one short sentence, and say they are queued, not delivered.")
         finally:
@@ -636,6 +648,29 @@ class OutreachSession:
                     "do NOT repeat the template.")
         finally:
             db.close()
+
+    _GREETING = re.compile(r"^(hi|hello|dear|hey)\b.*[,:]$", re.I)
+    _SIGN_OFF = re.compile(r"^(best|best regards|regards|kind regards|warm regards|thanks|thank you|sincerely|cheers)[,!.]?$", re.I)
+
+    @classmethod
+    def _tidy_email(cls, text: str) -> str:
+        """Aligned layout: one blank line between paragraphs, the link alone on its line, the sign-off as its own block."""
+        t = re.sub(r"[ \t]*(\{\{assessment_url\}\})[ \t]*", r"\n\n\1\n\n", (text or "").replace("\r\n", "\n"))
+        out: list[str] = []
+        for raw in t.split("\n"):
+            line = raw.strip()
+            if not line:
+                if out and out[-1] != "":
+                    out.append("")
+                continue
+            if cls._SIGN_OFF.match(line) and out and out[-1] != "":
+                out.append("")  # the sign-off starts its own block
+            elif out and out[-1] != "" and cls._GREETING.match(out[-1]) and len(out) == 1:
+                out.append("")  # a blank line after the greeting
+            out.append(line)
+        while out and out[-1] == "":
+            out.pop()
+        return "\n".join(out)
 
     def _signer_name(self, db: Any) -> str:
         """The signed-in user's display name (or the local part of their email), for the {{senderName}} blank."""

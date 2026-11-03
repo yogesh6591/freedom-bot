@@ -794,7 +794,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         "place": _s("City, state or region. Only works when places are saved; the tool says if they are not"),
         "include_recent": {"type": "boolean", "description": "Also include people emailed in the last 2 days. Only when the user asks"},
         "subject": _s("Subject for first emails, only when the user gave a topic or wording. Blanks allowed. Leave out to use the saved template."),
-        "body": _s("Email body, only when the user gave a topic or wording, or for follow-ups. Keep {{firstName}} and {{assessment_url}}. Leave out to use the saved template."),
+        "body": _s("Email body, only when the user gave a topic or wording, or for follow-ups. Keep {{firstName}} and {{assessment_url}}, and end with Best, then {{senderName}}. Leave out to use the saved template."),
         "approval_evidence": _s("Only if the tool asked for a yes: the user's words saying yes"),
     }, []),
     "cancel_sending": _obj({}),
