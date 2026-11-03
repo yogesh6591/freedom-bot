@@ -52,6 +52,7 @@ import type {
 import { Badge, Btn, ErrorNote } from '@/components/common/primitives'
 import { EmailCard } from './EmailCard'
 import { SentSummary } from './SentSummary'
+import { TemplateCard } from './TemplateCard'
 import { useDebug } from '@/lib/debug'
 import { BrandMark } from '@/components/BrandMark'
 import { SidebarSwitch } from '@/components/SidebarSwitch'
@@ -1647,8 +1648,11 @@ function ChatView({ home }: { home: boolean }) {
                       {turn.trace?.sent_view ? (
                         <SentSummary view={turn.trace.sent_view} />
                       ) : null}
+                      {turn.trace?.template_view ? (
+                        <TemplateCard view={turn.trace.template_view} />
+                      ) : null}
                       {note ? (
-                        card ? (
+                        card || turn.trace?.sent_view ? (
                           <p className="assistant-bot-bubble w-fit max-w-[min(100%,36rem)] whitespace-pre-wrap break-words rounded-2xl rounded-tl-md px-4 py-3 text-[15px] leading-7 text-primary">
                             {note}
                           </p>

@@ -43,6 +43,7 @@ class OutreachSession:
         self.latest = latest_message or ""
         self.card_shown = False
         self.sent_view: Optional[dict] = None  # the "who was emailed" table, set by send_from_template
+        self.template_view: Optional[dict] = None  # the saved-template card, set by show/update_email_template
         if db_factory is None:
             from acquisition.db.session import SessionLocal
 
@@ -536,9 +537,15 @@ class OutreachSession:
 
     @staticmethod
     def _template_text(cfg: Any) -> str:
-        follow = cfg.followup_body or "(none: follow-ups reuse the first email)"
-        return (f"First email subject:\n{cfg.first_subject or '(empty)'}\n\nFirst email body:\n{cfg.first_body or '(empty)'}"
-                f"\n\nFollow-up body:\n{follow}")
+        text = f"First email subject:\n{cfg.first_subject or '(empty)'}\n\nFirst email body:\n{cfg.first_body or '(empty)'}"
+        if cfg.followup_body:
+            text += f"\n\nFollow-up body:\n{cfg.followup_body}"
+        return text
+
+    def _set_template_view(self, cfg: Any, saved: bool = False) -> None:
+        self.template_view = {"subject": cfg.first_subject or "", "body": cfg.first_body or "",
+                              "followup": cfg.followup_body or "", "sending_on": bool(cfg.auto_send_enabled),
+                              "saved": saved}
 
     def show_email_template(self) -> str:
         from acquisition.services import outreach_settings
@@ -547,8 +554,9 @@ class OutreachSession:
         try:
             cfg = outreach_settings.effective(db)
             state = "ON (no card, the chat sends it)" if cfg.auto_send_enabled else "OFF (emails are shown on a card first)"
+            self._set_template_view(cfg)
             return (f"Template sending is {state}.\n\n{self._template_text(cfg)}\n\n"
-                    "Show this to the user exactly as it is, keeping the {{blanks}}.")
+                    "The user already sees this as a card. Reply with one short sentence; do NOT repeat the template.")
         finally:
             db.close()
 
@@ -589,8 +597,10 @@ class OutreachSession:
                 first_subject=first_subject, first_body=first_body, followup_body=followup_body,
             )
             after = outreach_settings.effective(db)
+            self._set_template_view(after, saved=True)
             return ("saved. This is the template now:\n\n" + self._template_text(after)
-                    + "\n\nShow the user the new version exactly as it is, keeping the {{blanks}}.")
+                    + "\n\nThe user already sees the new version as a card. Reply with one short sentence; "
+                    "do NOT repeat the template.")
         finally:
             db.close()
 

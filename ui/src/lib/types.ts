@@ -317,6 +317,14 @@ export interface SentView {
   skipped?: { name: string; email: string; reason: string }[]
 }
 
+export interface TemplateView {
+  subject: string
+  body: string
+  followup: string
+  sending_on: boolean
+  saved: boolean
+}
+
 export interface AssistantTrace {
   engine?: string
   model?: string
@@ -338,6 +346,7 @@ export interface AssistantTrace {
   email_view?: EmailView
   show_email_card?: boolean
   sent_view?: SentView
+  template_view?: TemplateView
   reply_note?: string
   campaigns_to_show?: { name: string; timing: string }[]
   people_to_show?: { name: string; email: string }[]

@@ -707,6 +707,9 @@ def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, gua
             "email_draft": draft.get("email_draft", ""), "email_address_list": emails,
             "email_address": emails[0] if len(emails) == 1 else "",
         })
+        template_view = getattr(outreach, "template_view", None)
+        if template_view:
+            trace["template_view"] = template_view  # the saved-template card; history keeps it
         sent_view = getattr(outreach, "sent_view", None)
         if sent_view:
             trace["sent_view"] = sent_view  # the compact "who was emailed" table; history keeps it
