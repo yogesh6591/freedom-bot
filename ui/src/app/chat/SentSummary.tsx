@@ -21,7 +21,7 @@ export function SentSummary({ view }: { view: SentView }) {
   return (
     <section
       aria-label="Emails queued"
-      className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-black/10 bg-white text-primary shadow-sm"
+      className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]"
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3.5">
         <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
@@ -30,7 +30,7 @@ export function SentSummary({ view }: { view: SentView }) {
         </h3>
         <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium">
           {view.first > 0 ? (
-            <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-secondary">
+            <span className="rounded-full bg-black/[0.06] px-2 py-0.5 text-[#5f6368]">
               {view.first} first
             </span>
           ) : null}
@@ -41,13 +41,13 @@ export function SentSummary({ view }: { view: SentView }) {
           ) : null}
         </div>
       </header>
-      <p className="px-4 pb-2 pt-1 text-[12.5px] text-muted">
+      <p className="px-4 pb-2 pt-1 text-[12.5px] text-[#5f6368]">
         Sending one at a time, {when} to finish. Not delivered yet.
       </p>
       <div className={open && long ? 'max-h-72 overflow-y-auto' : ''}>
         <table className="w-full border-collapse text-left text-[13.5px]">
           <thead className="sticky top-0 bg-white">
-            <tr className="border-y border-black/10 text-[11px] font-semibold uppercase tracking-wide text-secondary">
+            <tr className="border-y border-black/10 text-[11px] font-semibold uppercase tracking-wide text-[#5f6368]">
               <th className="px-4 py-1.5 font-semibold">Name</th>
               <th className="py-1.5 pr-2 font-semibold">Email</th>
               <th className="py-1.5 pr-4 text-right font-semibold">Type</th>
@@ -57,8 +57,8 @@ export function SentSummary({ view }: { view: SentView }) {
             {shown.map((row) => (
               <tr key={row.email} className="border-b border-black/5 last:border-0">
                 <td className="max-w-[9rem] truncate px-4 py-1.5 font-medium">{row.name}</td>
-                <td className="max-w-[12rem] truncate py-1.5 pr-2 text-secondary">{row.email}</td>
-                <td className="whitespace-nowrap py-1.5 pr-4 text-right text-[12px] text-secondary">
+                <td className="max-w-[12rem] truncate py-1.5 pr-2 text-[#5f6368]">{row.email}</td>
+                <td className="whitespace-nowrap py-1.5 pr-4 text-right text-[12px] text-[#5f6368]">
                   {row.kind === 'follow_up' ? 'Follow-up' : 'First'}
                 </td>
               </tr>
@@ -76,7 +76,7 @@ export function SentSummary({ view }: { view: SentView }) {
         </button>
       ) : null}
       {skipped.length > 0 ? (
-        <p className="border-t border-black/10 px-4 py-2 text-[12px] text-muted">
+        <p className="border-t border-black/10 px-4 py-2 text-[12px] text-[#5f6368]">
           {pluralise(skipped.length, 'person')} skipped (opted out or no valid email).
         </p>
       ) : null}
