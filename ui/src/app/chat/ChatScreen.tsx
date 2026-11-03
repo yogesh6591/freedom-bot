@@ -1652,7 +1652,7 @@ function ChatView({ home }: { home: boolean }) {
                         <TemplateCard view={turn.trace.template_view} />
                       ) : null}
                       {note ? (
-                        card || turn.trace?.sent_view ? (
+                        card || turn.trace?.sent_view || turn.trace?.template_view ? (
                           <p className="assistant-bot-bubble w-fit max-w-[min(100%,36rem)] whitespace-pre-wrap break-words rounded-2xl rounded-tl-md px-4 py-3 text-[15px] leading-7 text-primary">
                             {note}
                           </p>
