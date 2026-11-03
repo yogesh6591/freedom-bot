@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from acquisition.models.assessment import AssessmentProfile
@@ -163,6 +163,20 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
     elif count and count > 0:
         people = people[:count]
     return {"people": people, "skipped": skipped, "error": ""}
+
+
+def stages_for(db: Session, emails: list) -> dict:
+    """email (lower case) -> stage, for the given people."""
+    keys = {str(e).strip().lower() for e in emails if e}
+    if not keys:
+        return {}
+    links, profiles, mail = _loaded(db)
+    out: dict[str, str] = {}
+    for p in db.scalars(select(Prospect).where(func.lower(Prospect.email).in_(keys))):
+        link = links.get(p.id)
+        profile = profiles.get(link.id) if link is not None else None
+        out[str(p.email).strip().lower()] = person_stage(link, profile, (mail.get(p.id) or {"count": 0})["count"])
+    return out
 
 
 def describe(result: dict, sample: int = 10) -> str:

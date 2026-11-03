@@ -487,6 +487,26 @@ class OutreachSession:
                 why = ("; ".join(sorted({s["reason"] for s in skipped}))) if skipped else ""
                 return "error: nobody matches" + (f" ({len(skipped)} skipped: {why})" if skipped else "") + ". Nothing was queued."
 
+            # ---- the saved template only fits people who have not started; anyone further along needs fitting words
+            if not custom:
+                stages = aud.stages_for(db, [r["email"] for r in chosen])
+                fit, later = [], {}
+                for r in chosen:
+                    st = stages.get(r["email"].lower(), "new")
+                    if st in ("new", "not_started"):
+                        fit.append(r)
+                    else:
+                        later[st] = later.get(st, 0) + 1
+                        skipped.append({"name": r.get("name") or r["email"], "email": r["email"],
+                                        "reason": f"already at {st}, the saved template does not fit"})
+                if later and not fit:
+                    db.rollback()
+                    return ("error: the saved template does not fit " + ", ".join(f"{n} person(s) at {s}" for s, n in later.items())
+                            + ": it is for people who were never emailed or have not started the assessment. Nothing was "
+                            "queued. Find where they are with find_people, then call again with a short subject and body "
+                            "written for each stage (what they did, what the next step is), one call per stage, using the stage filter.")
+                chosen = fit
+
             # ---- first email or follow-up for each
             ids: dict[str, Any] = {}
             follow: set[str] = set()
