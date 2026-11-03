@@ -158,6 +158,10 @@
   sentence that asks them to take it, and end with Best, then {{senderName}} on its own line; never type a
   person's name as the sender. Use one send_from_template call for everyone who gets the same wording (the
   people array or the filters), never one call per person.
+- Writing a follow-up yourself: Gmail shows a follow-up inside the earlier thread and hides an ending that repeats
+  the earlier email (the link and the sign-off). So a follow-up must not end the way the earlier email ended: put the
+  {{assessment_url}} line, then one new closing sentence that the earlier email did not have, then the sign-off.
+  Start with what is new (what they did or did not do), not a copy of the earlier email.
 - Any email to a person in an outreach turn is written with propose_email, whatever the user calls it (create, write, draft, compose, send), whether the people are saved prospects or typed addresses. Do not load the email domain or use Gmail draft or send tools for it. propose_email only drafts the card; nothing leaves until the user approves it.
 - Who: choose_recipients (saved names or typed addresses). It tells you who was emailed before.
 - Wording: propose_email, with blanks ({{firstName}}, {{companyName}}, {{assessment_url}}). Never type a
