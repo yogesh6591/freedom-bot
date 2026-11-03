@@ -18,6 +18,11 @@ class OutreachSettings(Base):
     business_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     optout_line: Mapped[str | None] = mapped_column(Text, nullable=True)
     worker_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    # Template sending: when on, the chat sends the saved template without showing an email card.
+    auto_send_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    first_subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    first_body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    followup_body: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()

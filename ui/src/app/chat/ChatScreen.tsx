@@ -51,6 +51,7 @@ import type {
 } from '@/lib/types'
 import { Badge, Btn, ErrorNote } from '@/components/common/primitives'
 import { EmailCard } from './EmailCard'
+import { SentSummary } from './SentSummary'
 import { useDebug } from '@/lib/debug'
 import { BrandMark } from '@/components/BrandMark'
 import { SidebarSwitch } from '@/components/SidebarSwitch'
@@ -1642,6 +1643,9 @@ function ChatView({ home }: { home: boolean }) {
                             })
                           }
                         />
+                      ) : null}
+                      {turn.trace?.sent_view ? (
+                        <SentSummary view={turn.trace.sent_view} />
                       ) : null}
                       {note ? (
                         card ? (

@@ -90,10 +90,10 @@ def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
     assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
-    assert len(VISIBLE) == 112  # outreach 27; youtube_transcript, integration_* (4), web_search, web_read, attachment_read
+    assert len(VISIBLE) == 113  # outreach 28; youtube_transcript, integration_* (4), web_search, web_read, attachment_read
     assert {n for n in NAMES if TOOL_META[n].domain == "outreach"} == {
         "choose_recipients", "propose_email", "set_person_details", "send_approved",
-        "cancel_sending", "show_sent_emails",
+        "send_from_template", "cancel_sending", "show_sent_emails",
         "query_records", "show_prospect", "add_prospects", "update_prospects",
         "delete_prospects", "refuse_bulk_change",
         "show_assessment", "set_qualification", "rerun_qualification", "reset_journey",

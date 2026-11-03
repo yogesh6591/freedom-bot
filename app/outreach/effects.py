@@ -23,6 +23,7 @@ _EMAIL_METHODS: dict[str, tuple[str, tuple[str, ...]]] = {
     "propose_email": ("propose_email", ("subject", "body", "change_evidence", "per_person", "new_thread", "same_for_all")),
     "set_person_details": ("set_person_details", ("email", "first_name", "last_name", "company", "evidence")),
     "send_approved": ("send_approved", ("approval_evidence",)),
+    "send_from_template": ("send_from_template", ("people", "audience", "approval_evidence")),
     "cancel_sending": ("cancel_sending", ()),
 }
 

@@ -10,6 +10,8 @@
 {% block flash %}
   {% if flash == 'sending_saved' %}<div class="flash">Sending settings saved.</div>
   {% elif flash == 'sending_on' %}<div class="flash">Saved. Sending is on.</div>
+  {% elif flash == 'template_on' %}<div class="flash">Saved. Template sending is on: the chat sends your saved email without showing a card.</div>
+  {% elif flash == 'template_missing' %}<div class="flash flash-error">Saved, but template sending stayed off: fill in the first email subject and body first.</div>
   {% elif flash == 'sending_not_ready' %}<div class="flash flash-error">Saved, but sending stayed off: {{ email.reason }}</div>
   {% elif flash == 'calcom_updated' %}<div class="flash">Cal.com webhook / bookings updated.</div>
   {% elif flash == 'calcom_error' %}<div class="flash flash-error">Cal.com request failed. Check that Cal.com is connected in the chat app, Integrations.</div>
@@ -138,6 +140,23 @@
         <input type="checkbox" name="worker_enabled" value="1" {% if email.worker_on %}checked{% endif %}>
         <span>Sending is on (emails you approve in the chat go out in the background, one every {{ email.gap_seconds }} seconds, up to {{ email.daily_ceiling }} a day)</span>
       </label>
+      <label class="field full checkbox-inline">
+        <input type="checkbox" name="auto_send_enabled" value="1" {% if email.auto_send_on %}checked{% endif %}>
+        <span>Send from the saved template, no review card (the chat fills the template and sends it, then tells you who it went to. Turn this off to review every email on a card first. Sending above must also be on for emails to go out)</span>
+      </label>
+      <label class="field full">
+        <span>First email subject</span>
+        <input type="text" name="first_subject" value="{{ email.first_subject }}" maxlength="300" placeholder="A quick introduction">
+      </label>
+      <label class="field full">
+        <span>First email body</span>
+        <textarea name="first_body" rows="9" placeholder="Hi {{ '{{firstName}}' }},&#10;&#10;...&#10;&#10;{{ '{{assessment_url}}' }}&#10;&#10;Best,&#10;{{ '{{senderName}}' }}">{{ email.first_body }}</textarea>
+      </label>
+      <label class="field full">
+        <span>Follow-up body (optional, used for people already emailed; leave empty to reuse the first email)</span>
+        <textarea name="followup_body" rows="7">{{ email.followup_body }}</textarea>
+      </label>
+      <p class="page-lede full">Blanks you can use: <code>{{ '{{firstName}}' }}</code>, <code>{{ '{{lastName}}' }}</code>, <code>{{ '{{companyName}}' }}</code>, <code>{{ '{{assessment_url}}' }}</code> (each person's own link) and <code>{{ '{{senderName}}' }}</code> (the signed-in user who sends). Follow-ups keep the earlier subject with "Re:".</p>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Save</button>

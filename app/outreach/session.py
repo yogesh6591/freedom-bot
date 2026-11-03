@@ -42,6 +42,7 @@ class OutreachSession:
         self.state.setdefault("recipients", [])
         self.latest = latest_message or ""
         self.card_shown = False
+        self.sent_view: Optional[dict] = None  # the "who was emailed" table, set by send_from_template
         if db_factory is None:
             from acquisition.db.session import SessionLocal
 
@@ -397,6 +398,152 @@ class OutreachSession:
                     f"{when} to finish. Not delivered yet.")
         finally:
             db.close()
+
+    # ------------------------------------------------------------------ send from the saved template
+    #: more people than this need one yes from the user (the count is shown), because a bulk send cannot be recalled
+    TEMPLATE_CONFIRM_ABOVE = 10
+
+    def send_from_template(self, people: Optional[list] = None, audience: str = "",
+                           approval_evidence: str = "") -> str:
+        """Queue the admin's saved template for the named people, or for every saved prospect, with no card."""
+        from sqlalchemy import select
+
+        from acquisition.models.prospect import Prospect
+        from acquisition.services import outreach_service as svc
+        from acquisition.services import outreach_settings
+        from app.outreach import confirm, sender
+        from app.outreach.records import email_state, ensure_prospect, find_prospects
+
+        db = self.db_factory()
+        try:
+            cfg = outreach_settings.effective(db)
+            if not cfg.auto_send_enabled:
+                return ("error: sending from a saved template is switched off. Use the normal email flow "
+                        "(choose_recipients, propose_email) instead.")
+            if not cfg.template_ready:
+                return ("error: the saved first-email template is empty. Tell the user an admin must fill in the "
+                        "first email subject and body on the Integrations page, Sending card.")
+            if audience and audience not in ("all", "not_emailed_yet"):
+                return "error: audience must be all or not_emailed_yet (or leave it out and name the people)"
+            if not audience and not people:
+                return "error: name the people, or set audience to all or not_emailed_yet"
+            ready, why = sender.readiness()
+            if not ready:
+                return f"error: not sent - {why}. Nothing was queued."
+
+            # ---- who
+            chosen: list[dict] = []
+            skipped: list[dict] = []
+            if audience:
+                for p in db.scalars(select(Prospect).order_by(Prospect.executive_name)):
+                    email = str(p.email or "").strip()
+                    if not _EMAIL.match(email):
+                        skipped.append({"name": p.executive_name or email, "email": email, "reason": "no valid email"})
+                        continue
+                    st = email_state(db, p.id)
+                    if st["opted_out"]:
+                        skipped.append({"name": p.executive_name or email, "email": email, "reason": st["opt_status"]})
+                        continue
+                    if audience == "not_emailed_yet" and st["emails"]:
+                        continue
+                    chosen.append({"email": email, "name": p.executive_name or ""})
+            else:
+                before = [dict(r) for r in self.state["recipients"]]
+                text = self.choose_recipients(people, "replace")
+                found = [dict(r) for r in self.state["recipients"]]
+                self.state["recipients"] = before  # this tool never leaves a card-flow selection behind
+                if text.startswith("error:"):
+                    return text
+                chosen = found
+            if not chosen:
+                return ("error: nobody to email" + (" (everyone is opted out or was already emailed)" if audience else "")
+                        + ". Nothing was queued.")
+
+            # ---- first email or follow-up for each
+            ids: dict[str, Any] = {}
+            follow: set[str] = set()
+            for r in chosen:
+                key = r["email"].lower()
+                row = ensure_prospect(db, r["email"], r.get("name", ""))
+                ids[key] = row
+                if svc.last_email_to(db, row.id) is not None:
+                    follow.add(key)
+            n_follow = len(follow)
+            n_first = len(chosen) - n_follow
+
+            # ---- one yes for a big send (the count is part of what was agreed to)
+            if len(chosen) > self.TEMPLATE_CONFIRM_ABOVE:
+                key = confirm.action_key("send_template", sorted(r["email"].lower() for r in chosen))
+                parts = [f"{n_first} first email{'s' if n_first != 1 else ''}"] if n_first else []
+                if n_follow:
+                    parts.append(f"{n_follow} follow-up{'s' if n_follow != 1 else ''}")
+                question = f"Send the saved email to {len(chosen)} people ({' and '.join(parts)})?"
+                held = confirm.gate(self.state, self.latest, key, approval_evidence, question)
+                if held is not None:
+                    db.rollback()
+                    return held
+
+            # ---- fill and queue
+            signer = self._signer_name(db)
+            first_subject = strip_assessment_link(cfg.first_subject)
+            first_body = keep_assessment_link(cfg.first_body.replace("{{senderName}}", signer))
+            follow_body = keep_assessment_link((cfg.followup_body or cfg.first_body).replace("{{senderName}}", signer))
+            import uuid as _uuid
+
+            batch_id = _uuid.uuid4()
+            requested_by = getattr(self.ctx, "user_id", None)
+            rows = []
+            try:
+                firsts = [ids[r["email"].lower()].id for r in chosen if r["email"].lower() not in follow]
+                follows = [ids[r["email"].lower()].id for r in chosen if r["email"].lower() in follow]
+                if firsts:
+                    rows += svc.enqueue(db, prospect_ids=firsts, batch_id=batch_id, requested_by=requested_by,
+                                        subject_template=first_subject, body_template=first_body)
+                if follows:
+                    rows += svc.enqueue(db, prospect_ids=follows, batch_id=batch_id, requested_by=requested_by,
+                                        subject_template=first_subject, body_template=follow_body)
+            except svc.OutreachError as exc:
+                db.rollback()
+                return f"error: not sent - {exc}. Nothing was queued."
+            db.commit()
+            today = svc.sent_today(db)
+            minutes = svc.eta_minutes(len(rows), today)
+            names = {str(r["email"]).lower(): (r.get("name") or "") for r in chosen}
+            table = [{"name": names.get(str(x.to_email).lower()) or str(x.to_email).split("@")[0],
+                      "email": x.to_email, "kind": "follow_up" if x.kind == svc.KIND_FOLLOW_UP else "first"}
+                     for x in rows]
+            self.sent_view = {
+                "count": len(rows), "first": sum(1 for t in table if t["kind"] == "first"),
+                "follow_up": sum(1 for t in table if t["kind"] == "follow_up"),
+                "minutes": minutes, "rows": table, "skipped": skipped,
+            }
+            self.state["last_batch"] = {"id": str(batch_id), "count": len(rows)}
+            when = "under a minute" if minutes < 1 else f"about {minutes} min"
+            extra = f" {len(skipped)} were skipped (opted out or no valid email)." if skipped else ""
+            return (f"queued {len(rows)} email{'s' if len(rows) != 1 else ''} from the saved template "
+                    f"({self.sent_view['first']} first, {self.sent_view['follow_up']} follow-up); sending one at a time, "
+                    f"{when} to finish. Not delivered yet.{extra} The user already sees a table of who was emailed, so "
+                    "do NOT list the people. Reply with one short sentence, and say they are queued, not delivered.")
+        finally:
+            db.close()
+
+    def _signer_name(self, db: Any) -> str:
+        """The signed-in user's display name (or the local part of their email), for the {{senderName}} blank."""
+        from bizos.control import store as control
+        from bizos.control.store import UserNotFound
+
+        user_id = getattr(self.ctx, "user_id", None)
+        if not user_id:
+            return ""
+        try:
+            user = control.get_user(user_id)
+        except UserNotFound:
+            return ""
+        name = (user.display_name or "").strip()
+        if name:
+            return clean_field(name)
+        email = (user.email or "").strip()
+        return clean_field(email.split("@", 1)[0]) if email else ""
 
     def cancel_sending(self) -> str:
         from acquisition.services import outreach_service as svc

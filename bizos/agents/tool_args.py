@@ -755,6 +755,20 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     }, ["email", "evidence"]),
     "send_approved": _obj({"approval_evidence": _s("The user's own words approving, copied from their latest message")},
                           ["approval_evidence"]),
+    "send_from_template": _obj({
+        "people": {
+            "type": "array",
+            "description": "Who to email. Leave out when using audience.",
+            "items": _obj({
+                "email": _s("Typed email address"),
+                "name": _s("Saved person's name"),
+                "company": _s("Company, only if the user wrote it"),
+            }, []),
+        },
+        "audience": _enum("Everyone saved: all, or only people not emailed yet. Leave out when naming people.",
+                          ["all", "not_emailed_yet"]),
+        "approval_evidence": _s("The user's own words saying yes, copied from their latest message. Only after the tool asked for a yes."),
+    }, []),
     "cancel_sending": _obj({}),
     # ------------------------------------------------------------------ outreach: records
     "query_records": _obj({

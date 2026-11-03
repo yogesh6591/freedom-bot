@@ -18,6 +18,15 @@ class Effective:
     optout_line: str
     worker_enabled: bool
     saved: bool  # a row exists in the database
+    auto_send_enabled: bool = False
+    first_subject: str = ""
+    first_body: str = ""
+    followup_body: str = ""
+
+    @property
+    def template_ready(self) -> bool:
+        """Template sending needs a first-email subject and body."""
+        return bool(self.first_subject.strip() and self.first_body.strip())
 
 
 def get_row(db: Session) -> Optional[OutreachSettings]:
@@ -41,6 +50,10 @@ def effective(db: Session) -> Effective:
         optout_line=(row.optout_line or cfg.outreach_optout_line or "").strip(),
         worker_enabled=bool(row.worker_enabled),
         saved=True,
+        auto_send_enabled=bool(row.auto_send_enabled),
+        first_subject=(row.first_subject or "").strip(),
+        first_body=(row.first_body or "").strip(),
+        followup_body=(row.followup_body or "").strip(),
     )
 
 
@@ -52,7 +65,12 @@ def save(
     optout_line: str,
     worker_enabled: bool,
     updated_by: str | None = None,
+    auto_send_enabled: bool | None = None,
+    first_subject: str | None = None,
+    first_body: str | None = None,
+    followup_body: str | None = None,
 ) -> OutreachSettings:
+    """Save the sending settings. The toggle and template fields change only when a value is given."""
     row = get_row(db)
     if row is None:
         row = OutreachSettings(id=1)
@@ -61,6 +79,14 @@ def save(
     row.business_address = (business_address or "").strip() or None
     row.optout_line = (optout_line or "").strip() or None
     row.worker_enabled = bool(worker_enabled)
+    if auto_send_enabled is not None:
+        row.auto_send_enabled = bool(auto_send_enabled)
+    if first_subject is not None:
+        row.first_subject = first_subject.strip() or None
+    if first_body is not None:
+        row.first_body = first_body.strip() or None
+    if followup_body is not None:
+        row.followup_body = followup_body.strip() or None
     row.updated_by = updated_by
     db.commit()
     db.refresh(row)

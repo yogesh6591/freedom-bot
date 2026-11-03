@@ -302,6 +302,21 @@ export interface EmailView {
   audience?: EmailViewAudience
 }
 
+export interface SentViewRow {
+  name: string
+  email: string
+  kind: 'first' | 'follow_up'
+}
+
+export interface SentView {
+  count: number
+  first: number
+  follow_up: number
+  minutes: number
+  rows: SentViewRow[]
+  skipped?: { name: string; email: string; reason: string }[]
+}
+
 export interface AssistantTrace {
   engine?: string
   model?: string
@@ -322,6 +337,7 @@ export interface AssistantTrace {
   email_draft?: string
   email_view?: EmailView
   show_email_card?: boolean
+  sent_view?: SentView
   reply_note?: string
   campaigns_to_show?: { name: string; timing: string }[]
   people_to_show?: { name: string; email: string }[]

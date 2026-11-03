@@ -855,6 +855,13 @@ TOOL_META: dict[str, AgentMeta] = {
         Needs: approval_evidence copied from the user's latest message.
         Effect: emails are queued, then sent; cannot be recalled. {gate}
     """)),
+    "send_from_template": M("outreach", d("""
+        Send the admin's saved email template to named people or everyone, with no review card. Code fills names, link and sender; never write the wording. Prior contacts get a follow-up in-thread.
+        Use when: "email Nina", "send to everyone", "not emailed yet".
+        Don't use: custom wording -> template sending is on; stopping -> cancel_sending.
+        Needs: people, or audience (all, not_emailed_yet). Over 10: ask once, then approval_evidence.
+        Effect: queued, cannot be recalled; the user sees the table. {gate}
+    """)),
     "cancel_sending": M("outreach", d("""
         Stop all emails that are queued but not sent yet. Emails already sent are not affected.
         Use when: "stop sending", "cancel the batch", "mail rok do".

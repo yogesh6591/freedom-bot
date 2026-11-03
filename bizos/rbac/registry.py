@@ -1028,6 +1028,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     _outreach("propose_email", "Propose outreach email", "Write the email and show it on the card. Sends nothing."),
     _outreach("set_person_details", "Set person details", "Save a name or company for one chosen recipient."),
     _outreach("send_approved", "Send approved email", "Queue the approved email, one per person, for background sending.", write=True, external=True),
+    _outreach("send_from_template", "Send from saved template", "Queue the admin's saved email for the named people or everyone, with no card.", write=True, external=True),
     _outreach("cancel_sending", "Stop sending", "Cancel emails that are queued but not sent.", write=True),
     _outreach("show_sent_emails", "Show sent emails", "The log of emails sent or waiting to send. Read-only."),
     # -- records (reads)

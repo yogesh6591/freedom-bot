@@ -123,6 +123,35 @@ def _known(saved: dict, message: str) -> tuple[KnownValues, set[str]]:
 # --------------------------------------------------------------------------- tools for the executor
 
 
+#: Card-flow tools the model must not see while template sending is on (so the two ways never compete).
+_CARD_TOOLS = frozenset({"choose_recipients", "propose_email", "set_person_details", "send_approved"})
+_TEMPLATE_TOOL = "send_from_template"
+
+
+def template_mode_on() -> bool:
+    """True when the admin switched on "send from the saved template" (a failure counts as off)."""
+    try:
+        from acquisition.db.session import SessionLocal
+        from acquisition.services import outreach_settings
+
+        db = SessionLocal()
+        try:
+            eff = outreach_settings.effective(db)
+            return bool(eff.auto_send_enabled and eff.template_ready)
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 - the normal card flow is the safe default
+        return False
+
+
+def apply_template_mode(visible: frozenset, *, on: bool) -> frozenset:
+    """Template sending on: the card tools are hidden and send_from_template is shown. Off: the reverse."""
+    if on:
+        return frozenset(t for t in visible if t not in _CARD_TOOLS) | (
+            {_TEMPLATE_TOOL} if _TEMPLATE_TOOL in visible else frozenset())
+    return frozenset(t for t in visible if t != _TEMPLATE_TOOL)
+
+
 def _description(name: str, scope: RunScope, packs, menu: list[str]) -> str:
     if name == LOAD_TOOLS:
         return (
@@ -410,6 +439,7 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
     packs = _packs_for(settings, pinned)
     outreach_allowed = bool(ctx.is_admin)
     visible = visible_tools(scope, packs, outreach_allowed=outreach_allowed)
+    visible = apply_template_mode(visible, on=outreach_allowed and template_mode_on())
     menu = domain_menu(visible)
     history = _history(saved)
     # Short-term memory: the last turns' tool calls, so follow-ups ("another one", "cancel that") resolve.
@@ -677,6 +707,9 @@ def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, gua
             "email_draft": draft.get("email_draft", ""), "email_address_list": emails,
             "email_address": emails[0] if len(emails) == 1 else "",
         })
+        sent_view = getattr(outreach, "sent_view", None)
+        if sent_view:
+            trace["sent_view"] = sent_view  # the compact "who was emailed" table; history keeps it
     response = {
         "session_id": session_id,
         "content": content,
