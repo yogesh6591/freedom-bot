@@ -131,8 +131,8 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
             continue
         if place_q and place_q not in _place_text(p):
             continue
-        last_touch = max((d for d in (_aware(m["last"]), _aware(link.last_activity_at if link else None),
-                                      _aware(p.created_at)) if d is not None), default=now)
+        touches = [d for d in (_aware(m["last"]), _aware(link.last_activity_at if link else None)) if d is not None]
+        last_touch = max(touches) if touches else (_aware(p.created_at) or now)  # quiet since the last contact
         quiet = (now - last_touch).days
         if inactive_days and quiet < inactive_days:
             continue
