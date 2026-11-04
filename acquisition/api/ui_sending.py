@@ -39,7 +39,7 @@ def sending_context(db: Session) -> dict:
         "auto_send_on": eff.auto_send_enabled,
         "first_subject": eff.first_subject,
         "first_body": eff.first_body,
-        "followup_body": eff.followup_body,
+        "stages": [{"key": k, "label": store.STAGE_LABELS[k], "body": eff.stage_bodies[k]} for k in store.STAGE_KEYS],
         "sender_gmail": sender_gmail,
         "daily_ceiling": cfg.outreach_daily_ceiling,
         "gap_seconds": cfg.outreach_gap_seconds,
@@ -53,6 +53,10 @@ def save_sending(
     first_subject: Annotated[str, Form()] = "",
     first_body: Annotated[str, Form()] = "",
     followup_body: Annotated[str, Form()] = "",
+    stage_not_started: Annotated[str, Form()] = "",
+    stage_in_progress: Annotated[str, Form()] = "",
+    stage_qualified: Annotated[str, Form()] = "",
+    stage_unqualified: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
 ):
     want_on = worker_enabled is not None
@@ -69,7 +73,8 @@ def save_sending(
         auto_send_enabled=False,  # switched on below only when the first-email template is filled in
         first_subject=first_subject,
         first_body=first_body,
-        followup_body=followup_body,
+        stage_bodies={"not_started": stage_not_started, "in_progress": stage_in_progress,
+                      "qualified": stage_qualified, "unqualified": stage_unqualified},
     )
     flash = "sending_saved"
     if want_auto:

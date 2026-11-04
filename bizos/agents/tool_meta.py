@@ -856,12 +856,12 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: emails are queued, then sent; cannot be recalled. {gate}
     """)),
     "send_from_template": M("outreach", d("""
-        Send emails with no card, to named people or everyone matching filters (stage, newest or oldest with
-        count, emailed, inactive_days, text, place). No subject or body uses the saved template; giving them
-        replaces it. Emailed before means a threaded follow-up.
-        Use when: "email Nina", "send to everyone", "email the 2 oldest", "follow up stuck people".
+        Send emails (no card) to named people or everyone matching filters (stage, newest or oldest with
+        count, emailed, inactive_days, text, place). With no subject or body, each person gets the saved email
+        for where they are. Give them only for a requested topic or wording.
+        Use when: "email Nina", "send to everyone", "email the 2 oldest", "follow up".
         Don't use: stopping -> cancel_sending; counting -> find_people.
-        Effect: queued, sent one at a time, no recall. {gate}
+        Effect: queued, sent one by one, no recall. {gate}
     """)),
     "find_people": M("outreach", d("""
         Find people by stage, newest or oldest with count, emailed or not, days quiet, a word or a place, and
@@ -870,15 +870,15 @@ TOOL_META: dict[str, AgentMeta] = {
         Don't use: looking up one person by name -> query_records; sending -> send_from_template.
     """)),
     "show_email_template": M("outreach", d("""
-        Show the saved email template: first email subject and body, and the follow-up body, with their
-        blanks. Says whether template sending is on. Read-only.
+        Show the saved emails: the first email (subject and body) and the email for each stage (not started,
+        in progress, qualified, not a fit), with their blanks. Says whether template sending is on. Read-only.
         Use when: "show the template", "what email do we send", "template dikhao".
         Don't use: changing it -> update_email_template; emails already sent -> show_sent_emails.
     """)),
     "update_email_template": M("outreach", d("""
-        Change the saved email template. Keep every {{blank}} (firstName, lastName, companyName,
-        assessment_url, senderName) unless the user clearly asks to remove one. Change only what they asked.
-        Use when: "make the template shorter", "add a line about X to the first email", "change the subject".
+        Change the saved first email, or one stage's email (stage and stage_body). Keep every {{blank}}
+        unless the user clearly asks to remove one. Change only what they asked.
+        Use when: "make the template shorter", "change the in-progress email", "change the subject".
         Don't use: one-off wording for a single email -> propose_email; just viewing -> show_email_template.
         Needs: change_evidence, the user's own words.
         Effect: overwrites the saved template used by every later send. {gate}

@@ -25,12 +25,12 @@ export function TemplateCard({ view }: { view: TemplateView }) {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-[#5f6368]">First email</p>
           <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-6">{view.body}</p>
         </div>
-        {view.followup ? (
-          <div className="border-t border-black/10 pt-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#5f6368]">Follow-up</p>
-            <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-6">{view.followup}</p>
+        {(view.stages ?? []).map((s) => (
+          <div key={s.stage} className="border-t border-black/10 pt-3">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[#5f6368]">{s.label}</p>
+            <p className="mt-0.5 whitespace-pre-wrap break-words text-[14px] leading-6">{s.body}</p>
           </div>
-        ) : null}
+        ))}
       </div>
     </section>
   )

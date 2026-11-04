@@ -152,11 +152,14 @@
         <span>First email body</span>
         <textarea name="first_body" rows="9" placeholder="Hi {{ '{{firstName}}' }},&#10;&#10;...&#10;&#10;{{ '{{assessment_url}}' }}&#10;&#10;Best,&#10;{{ '{{senderName}}' }}">{{ email.first_body }}</textarea>
       </label>
+      <p class="page-lede full">Follow-up emails by stage. The chat sends each person the email for where they are; nobody has to write it. Empty a box and save to go back to the standard text. People who booked, are customers, or finished with no result yet get no email.</p>
+      {% for st in email.stages %}
       <label class="field full">
-        <span>Follow-up body (optional, used for people already emailed; leave empty to reuse the first email)</span>
-        <textarea name="followup_body" rows="7">{{ email.followup_body }}</textarea>
+        <span>{{ st.label }}</span>
+        <textarea name="stage_{{ st.key }}" rows="7">{{ st.body }}</textarea>
       </label>
-      <p class="page-lede full">Blanks you can use: <code>{{ '{{firstName}}' }}</code>, <code>{{ '{{lastName}}' }}</code>, <code>{{ '{{companyName}}' }}</code>, <code>{{ '{{assessment_url}}' }}</code> (each person's own link) and <code>{{ '{{senderName}}' }}</code> (the signed-in user who sends). Follow-ups keep the earlier subject with "Re:".</p>
+      {% endfor %}
+      <p class="page-lede full">Blanks you can use: <code>{{ '{{firstName}}' }}</code>, <code>{{ '{{lastName}}' }}</code>, <code>{{ '{{companyName}}' }}</code>, <code>{{ '{{assessment_url}}' }}</code> (each person's own link) and <code>{{ '{{senderName}}' }}</code> (the signed-in user who sends). In the "started, not finished" email, <code>{{ '{{missingTopics}}' }}</code> is filled with what that person still has to answer. Follow-ups keep the earlier subject with "Re:".</p>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Save</button>

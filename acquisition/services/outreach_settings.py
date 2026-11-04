@@ -2,13 +2,52 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, field
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from acquisition.config import get_settings
 from acquisition.models.outreach_settings import OutreachSettings
+
+
+#: The email each person gets by where they are. Code fills the blanks; nobody writes these again unless an admin edits them.
+STAGE_KEYS = ("not_started", "in_progress", "qualified", "unqualified")
+STAGE_LABELS = {
+    "not_started": "Emailed, has not started the assessment",
+    "in_progress": "Started the assessment, not finished",
+    "qualified": "Finished and a good fit, not booked",
+    "unqualified": "Finished, not a fit",
+}
+DEFAULT_STAGE_TEMPLATES = {
+    "not_started": (
+        "Hi {{firstName}},\n\nJust a quick follow-up. The assessment takes a few minutes and gives you a clear "
+        "summary of where AI could save your team time.\n\n{{assessment_url}}\n\nBest,\n{{senderName}}"),
+    "in_progress": (
+        "Hi {{firstName}},\n\nYou are partway through the assessment. It only needs {{missingTopics}} to finish. "
+        "Pick up where you left off:\n\n{{assessment_url}}\n\nBest,\n{{senderName}}"),
+    "qualified": (
+        "Hi {{firstName}},\n\nThanks for completing the assessment. The next step is a short call with Jeanne to "
+        "go through your results. You can pick a time here:\n\n{{assessment_url}}\n\nBest,\n{{senderName}}"),
+    "unqualified": (
+        "Hi {{firstName}},\n\nThank you for taking the time to complete the assessment. We appreciate your "
+        "interest and wish you the best.\n\nBest,\n{{senderName}}"),
+}
+
+
+def _stage_bodies(raw: Optional[str]) -> dict:
+    """Saved bodies over the defaults. A stage with nothing saved uses the default."""
+    out = dict(DEFAULT_STAGE_TEMPLATES)
+    try:
+        saved = json.loads(raw) if raw else {}
+    except (TypeError, ValueError):
+        saved = {}
+    if isinstance(saved, dict):
+        for k in STAGE_KEYS:
+            if isinstance(saved.get(k), str) and saved[k].strip():
+                out[k] = saved[k].strip()
+    return out
 
 
 @dataclass(frozen=True)
@@ -22,6 +61,7 @@ class Effective:
     first_subject: str = ""
     first_body: str = ""
     followup_body: str = ""
+    stage_bodies: dict = field(default_factory=lambda: dict(DEFAULT_STAGE_TEMPLATES))
 
     @property
     def template_ready(self) -> bool:
@@ -54,6 +94,7 @@ def effective(db: Session) -> Effective:
         first_subject=(row.first_subject or "").strip(),
         first_body=(row.first_body or "").strip(),
         followup_body=(row.followup_body or "").strip(),
+        stage_bodies=_stage_bodies(row.stage_templates),
     )
 
 
@@ -69,6 +110,7 @@ def save(
     first_subject: str | None = None,
     first_body: str | None = None,
     followup_body: str | None = None,
+    stage_bodies: dict | None = None,
 ) -> OutreachSettings:
     """Save the sending settings. The toggle and template fields change only when a value is given."""
     row = get_row(db)
@@ -87,6 +129,12 @@ def save(
         row.first_body = first_body.strip() or None
     if followup_body is not None:
         row.followup_body = followup_body.strip() or None
+    if stage_bodies is not None:
+        merged = _stage_bodies(row.stage_templates)
+        for k, v in stage_bodies.items():
+            if k in STAGE_KEYS:
+                merged[k] = (v or "").strip() or DEFAULT_STAGE_TEMPLATES[k]  # empty means back to the default
+        row.stage_templates = json.dumps(merged)
     row.updated_by = updated_by
     db.commit()
     db.refresh(row)

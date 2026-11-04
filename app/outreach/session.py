@@ -487,24 +487,25 @@ class OutreachSession:
                 why = ("; ".join(sorted({s["reason"] for s in skipped}))) if skipped else ""
                 return "error: nobody matches" + (f" ({len(skipped)} skipped: {why})" if skipped else "") + ". Nothing was queued."
 
-            # ---- the saved template only fits people who have not started; anyone further along needs fitting words
+            # ---- no wording given: each person gets the saved email for where they are (code picks, nobody writes)
+            plan: dict[str, str] = {}
             if not custom:
                 stages = aud.stages_for(db, [r["email"] for r in chosen])
-                fit, later = [], {}
+                fit = []
                 for r in chosen:
                     st = stages.get(r["email"].lower(), "new")
-                    if st in ("new", "not_started"):
-                        fit.append(r)
-                    else:
-                        later[st] = later.get(st, 0) + 1
+                    key = "first" if st == "new" else self.STAGE_TEMPLATE.get(st)
+                    if key is None:
                         skipped.append({"name": r.get("name") or r["email"], "email": r["email"],
-                                        "reason": f"already at {st}, the saved template does not fit"})
-                if later and not fit:
+                                        "reason": self.NO_EMAIL_REASON.get(st, f"nothing to send at {st}")})
+                        continue
+                    plan[r["email"].lower()] = key
+                    fit.append(r)
+                if not fit:
                     db.rollback()
-                    return ("error: the saved template does not fit " + ", ".join(f"{n} person(s) at {s}" for s, n in later.items())
-                            + ": it is for people who were never emailed or have not started the assessment. Nothing was "
-                            "queued. Find where they are with find_people, then call again with a short subject and body "
-                            "written for each stage (what they did, what the next step is), one call per stage, using the stage filter.")
+                    why = "; ".join(sorted({s["reason"] for s in skipped}))
+                    return (f"error: nobody here needs an email ({why}). Nothing was queued. Tell the user that; "
+                            "do not write an email for them.")
                 chosen = fit
 
             # ---- first email or follow-up for each
@@ -536,31 +537,39 @@ class OutreachSession:
 
             # ---- fill and queue
             signer = self._signer_name(db)
+            # (subject, body) -> prospect ids; people who get the same text are queued together
+            groups: dict[tuple, list] = {}
             if custom:
                 first_subject = strip_assessment_link(subject or "")
                 stages = aud.stages_for(db, [r["email"] for r in chosen])
                 needs_link = any(stages.get(r["email"].lower(), "new") in ("new", "not_started") for r in chosen)
-                first_body = self._tidy_email(self._fit_link(body.replace("{{senderName}}", signer), needs_link))
-                follow_body = first_body
+                own_body = self._tidy_email(self._fit_link(body.replace("{{senderName}}", signer), needs_link))
+                for r in chosen:
+                    groups.setdefault((first_subject, own_body), []).append(ids[r["email"].lower()].id)
             else:
                 first_subject = strip_assessment_link(cfg.first_subject)
-                first_body = self._wrap_email(keep_assessment_link(cfg.first_body.replace("{{senderName}}", signer)))
-                follow_body = self._wrap_email(
-                    keep_assessment_link((cfg.followup_body or cfg.first_body).replace("{{senderName}}", signer)))
+                first_text = self._wrap_email(keep_assessment_link(cfg.first_body.replace("{{senderName}}", signer)))
+                missing = {r["email"].lower(): r.get("missing") for r in self._in_progress_rows(db, chosen, plan)}
+                for r in chosen:
+                    key_email = r["email"].lower()
+                    which = plan[key_email]
+                    if which == "first":
+                        text_for = first_text
+                    else:
+                        text_for = cfg.stage_bodies[which].replace("{{senderName}}", signer)
+                        if "{{missingTopics}}" in text_for:
+                            text_for = text_for.replace("{{missingTopics}}", self._missing_phrase(missing.get(key_email)))
+                        text_for = self._tidy_email(text_for)
+                    groups.setdefault((first_subject, text_for), []).append(ids[key_email].id)
             import uuid as _uuid
 
             batch_id = _uuid.uuid4()
             requested_by = getattr(self.ctx, "user_id", None)
             rows = []
             try:
-                firsts = [ids[r["email"].lower()].id for r in chosen if r["email"].lower() not in follow]
-                follows = [ids[r["email"].lower()].id for r in chosen if r["email"].lower() in follow]
-                if firsts:
-                    rows += svc.enqueue(db, prospect_ids=firsts, batch_id=batch_id, requested_by=requested_by,
-                                        subject_template=first_subject, body_template=first_body)
-                if follows:
-                    rows += svc.enqueue(db, prospect_ids=follows, batch_id=batch_id, requested_by=requested_by,
-                                        subject_template=first_subject, body_template=follow_body)
+                for (subj, text_for), pids in groups.items():
+                    rows += svc.enqueue(db, prospect_ids=pids, batch_id=batch_id, requested_by=requested_by,
+                                        subject_template=subj, body_template=text_for)
             except svc.OutreachError as exc:
                 db.rollback()
                 return f"error: not sent - {exc}. Nothing was queued."
@@ -589,7 +598,7 @@ class OutreachSession:
             when = "under a minute" if minutes < 1 else f"about {minutes} min"
             extra = f" {len(skipped)} were skipped ({'; '.join(sorted({s['reason'] for s in skipped}))})." if skipped else ""
             return (f"queued {len(rows)} email{'s' if len(rows) != 1 else ''} "
-                    f"({'your wording' if custom else 'saved template'}; {first_n} first, "
+                    f"({'your wording' if custom else 'saved emails by stage'}; {first_n} first, "
                     f"{follow_n} follow-up); sending one at a time, "
                     f"{when} to finish. Not delivered yet.{extra} The user already sees a table of who was emailed, so "
                     "do NOT list the people. Reply with one short sentence, and say they are queued, not delivered.")
@@ -598,6 +607,42 @@ class OutreachSession:
 
     # ------------------------------------------------------------------ the saved template (see / change)
     TEMPLATE_BLANKS = ("firstName", "lastName", "companyName", "assessment_url", "senderName")
+    #: Blanks the code fills itself while sending; allowed only inside the stage templates.
+    STAGE_ONLY_BLANKS = ("missingTopics",)
+    #: Where a person is -> which saved email they get. "new" gets the first email.
+    STAGE_TEMPLATE = {"not_started": "not_started", "in_progress": "in_progress", "qualified": "qualified",
+                      "exploring": "qualified", "unqualified": "unqualified"}
+    NO_EMAIL_REASON = {"booked": "already booked", "purchased": "already a customer",
+                       "completed": "finished, result not ready yet"}
+    #: assessment answers -> plain words for {{missingTopics}}, in the order they are asked
+    _TOPIC_WORDS = (
+        (("company",), "your company"), (("goals",), "your goals"),
+        (("revenue_range", "headcount"), "your company size"),
+        (("functions", "tools", "workflows"), "your team, tools and workflows"),
+        (("knowledge_locations",), "where your information lives"),
+        (("pain_points", "time_cost_impact", "bottlenecks"), "where your time goes"),
+        (("change_readiness", "ai_readiness"), "how ready you are for AI"), (("authority",), "your role"),
+    )
+
+    @classmethod
+    def _missing_phrase(cls, missing: Optional[list]) -> str:
+        """The unanswered assessment topics in plain words, at most three: 'your goals and your role'."""
+        gone = set(missing or [])
+        words = [w for keys, w in cls._TOPIC_WORDS if gone & set(keys)][:3]
+        if not words:
+            return "a few last answers"
+        return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+
+    @staticmethod
+    def _in_progress_rows(db: Any, chosen: list, plan: dict) -> list:
+        """The unanswered topics for each chosen person who is mid-assessment."""
+        from app.outreach import audience as aud
+
+        want = {r["email"].lower() for r in chosen if plan.get(r["email"].lower()) == "in_progress"}
+        if not want:
+            return []
+        res = aud.select_people(db, stage=["in_progress"], include_recent=True)
+        return [r for r in res["people"] if r["email"].lower() in want]
 
     @staticmethod
     def _blanks_in(text: str) -> set[str]:
@@ -605,15 +650,20 @@ class OutreachSession:
 
     @staticmethod
     def _template_text(cfg: Any) -> str:
-        text = f"First email subject:\n{cfg.first_subject or '(empty)'}\n\nFirst email body:\n{cfg.first_body or '(empty)'}"
-        if cfg.followup_body:
-            text += f"\n\nFollow-up body:\n{cfg.followup_body}"
+        from acquisition.services.outreach_settings import STAGE_KEYS, STAGE_LABELS
+
+        text = f"First email subject:\n{cfg.first_subject or '(empty)'}\n\nFirst email body (people never emailed):\n{cfg.first_body or '(empty)'}"
+        for k in STAGE_KEYS:
+            text += f"\n\nStage '{k}' ({STAGE_LABELS[k]}):\n{cfg.stage_bodies[k]}"
         return text
 
     def _set_template_view(self, cfg: Any, saved: bool = False) -> None:
+        from acquisition.services.outreach_settings import STAGE_KEYS, STAGE_LABELS
+
         self.template_view = {"subject": cfg.first_subject or "", "body": cfg.first_body or "",
-                              "followup": cfg.followup_body or "", "sending_on": bool(cfg.auto_send_enabled),
-                              "saved": saved}
+                              "stages": [{"stage": k, "label": STAGE_LABELS[k], "body": cfg.stage_bodies[k]}
+                                         for k in STAGE_KEYS],
+                              "sending_on": bool(cfg.auto_send_enabled), "saved": saved}
 
     def show_email_template(self) -> str:
         from acquisition.services import outreach_settings
@@ -629,13 +679,17 @@ class OutreachSession:
             db.close()
 
     def update_email_template(self, first_subject: Optional[str] = None, first_body: Optional[str] = None,
-                              followup_body: Optional[str] = None, change_evidence: str = "",
-                              remove_placeholders: Optional[list] = None) -> str:
-        """Change the saved template. Every {{blank}} that was there stays unless the user asked to remove it."""
+                              stage: Optional[str] = None, stage_body: Optional[str] = None,
+                              change_evidence: str = "", remove_placeholders: Optional[list] = None) -> str:
+        """Change the saved first email, or the saved email of one stage. Every {{blank}} stays unless the user asked to remove it."""
         from acquisition.services import outreach_settings
 
-        if first_subject is None and first_body is None and followup_body is None:
-            return "error: give the new first_subject, first_body or followup_body"
+        if stage is not None and stage not in outreach_settings.STAGE_KEYS:
+            return "error: stage must be one of " + ", ".join(outreach_settings.STAGE_KEYS)
+        if (stage is None) != (stage_body is None):
+            return "error: give stage and stage_body together"
+        if first_subject is None and first_body is None and stage_body is None:
+            return "error: give the new first_subject, first_body, or a stage with its stage_body"
         if not (change_evidence and self._said(change_evidence)):
             return "error: pass change_evidence, the user's own words asking for this change, copied from their latest message"
         allowed_gone = {str(x).strip().strip("{} ") for x in (remove_placeholders or []) if str(x).strip()}
@@ -643,16 +697,17 @@ class OutreachSession:
         try:
             cfg = outreach_settings.effective(db)
             changes = {"first_subject": (first_subject, cfg.first_subject), "first_body": (first_body, cfg.first_body),
-                       "followup_body": (followup_body, cfg.followup_body)}
+                       f"stage {stage}": (stage_body, cfg.stage_bodies.get(stage or "", ""))}
             for field, (new, old) in changes.items():
                 if new is None:
                     continue
-                if field != "followup_body" and not new.strip():
+                if not new.strip():
                     return f"error: {field} cannot be empty"
-                unknown = self._blanks_in(new) - set(self.TEMPLATE_BLANKS)
+                ok_blanks = set(self.TEMPLATE_BLANKS) | (set(self.STAGE_ONLY_BLANKS) if field.startswith("stage ") else set())
+                unknown = self._blanks_in(new) - ok_blanks
                 if unknown:
                     return ("error: unknown blank(s) " + ", ".join("{{" + b + "}}" for b in sorted(unknown))
-                            + ". Allowed: " + ", ".join("{{" + b + "}}" for b in self.TEMPLATE_BLANKS))
+                            + ". Allowed: " + ", ".join("{{" + b + "}}" for b in sorted(ok_blanks)))
                 dropped = (self._blanks_in(old) - self._blanks_in(new)) - allowed_gone
                 if dropped:
                     return (f"error: the new {field} dropped " + ", ".join("{{" + b + "}}" for b in sorted(dropped))
@@ -662,7 +717,8 @@ class OutreachSession:
             store.save(
                 db, sender_user_id=cfg.sender_user_id, business_address=cfg.business_address,
                 optout_line=cfg.optout_line, worker_enabled=cfg.worker_enabled, updated_by="chat",
-                first_subject=first_subject, first_body=first_body, followup_body=followup_body,
+                first_subject=first_subject, first_body=first_body,
+                stage_bodies={stage: stage_body} if stage else None,
             )
             after = outreach_settings.effective(db)
             self._set_template_view(after, saved=True)

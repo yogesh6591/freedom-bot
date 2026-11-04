@@ -30,7 +30,7 @@ _EMAIL_METHODS: dict[str, tuple[str, tuple[str, ...]]] = {
                                     "include_recent")),
     "show_email_template": ("show_email_template", ()),
     "update_email_template": ("update_email_template",
-                              ("first_subject", "first_body", "followup_body", "change_evidence", "remove_placeholders")),
+                              ("first_subject", "first_body", "stage", "stage_body", "change_evidence", "remove_placeholders")),
     "cancel_sending": ("cancel_sending", ()),
 }
 

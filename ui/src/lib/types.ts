@@ -320,7 +320,7 @@ export interface SentView {
 export interface TemplateView {
   subject: string
   body: string
-  followup: string
+  stages?: { stage: string; label: string; body: string }[]
   sending_on: boolean
   saved: boolean
 }
