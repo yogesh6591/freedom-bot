@@ -487,6 +487,23 @@ class OutreachSession:
                 why = ("; ".join(sorted({s["reason"] for s in skipped}))) if skipped else ""
                 return "error: nobody matches" + (f" ({len(skipped)} skipped: {why})" if skipped else "") + ". Nothing was queued."
 
+            # ---- own wording that invites people to take the assessment: not for people who are past it
+            if custom and "assessment_url" in self._blanks_in(body):
+                st_now = aud.stages_for(db, [r["email"] for r in chosen])
+                keep = []
+                for r in chosen:
+                    if st_now.get(r["email"].lower(), "new") in ("new", "not_started", "in_progress"):
+                        keep.append(r)
+                    else:
+                        skipped.append({"name": r.get("name") or r["email"], "email": r["email"],
+                                        "reason": "past the assessment, this email asks them to take it"})
+                if not keep:
+                    db.rollback()
+                    return ("error: this email asks them to take the assessment, but they are past it. Nothing was "
+                            "queued. Write it again without {{assessment_url}} and without asking them to take the "
+                            "assessment, and send it.")
+                chosen = keep
+
             # ---- no wording given: each person gets the saved email for where they are (code picks, nobody writes)
             plan: dict[str, str] = {}
             if not custom:

@@ -171,11 +171,14 @@
   touch"). A thank-you note is short and ends after the thanks. For people the assessment did not qualify, thank them
   for their time and close politely, with no next step.
 - Writing an email yourself in template mode: warm, plain and human, like a short note from a person. 3 to 5 short
-  sentences in 2 or 3 short paragraphs, each sentence under about 20 words. Say what is in it for the reader and
-  give one clear next step. Start with Hi {{firstName}}, put {{assessment_url}} on its own line right after the
-  sentence that asks them to take it, and end with Best, then {{senderName}} on its own line; never type a
-  person's name as the sender. Use one send_from_template call for everyone who gets the same wording (the
-  people array or the filters), never one call per person.
+  sentences in 2 or 3 short paragraphs, each sentence under about 20 words. Say only what the user asked for: do
+  not add an invitation to take the assessment, a link or any other next step unless the user asked for it. Only
+  when the user asks to invite people to the assessment, put {{assessment_url}} on its own line right after the
+  sentence that asks them to take it. Start with Hi {{firstName}} and end with Best, then {{senderName}} on its own
+  line; never type a person's name as the sender. Use one send_from_template call for everyone who gets the same
+  wording (the people array or the filters), never one call per person. If the result says some people were
+  skipped because they are past the assessment, send them the same message in one more call without
+  {{assessment_url}} and without asking them to take the assessment.
 - Writing a follow-up yourself (only when the user gave the topic or wording): Gmail shows a follow-up inside the
   earlier thread and hides an ending that repeats the earlier email (the link and the sign-off). So a follow-up must
   not end the way the earlier email ended: put the {{assessment_url}} line, then one new closing sentence that the
