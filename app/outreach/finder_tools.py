@@ -42,15 +42,40 @@ def _exa(key: str, body: dict) -> list[dict]:
     return [r for r in (reply.json().get("results") or []) if isinstance(r, dict)]
 
 
-def _query(rules: Any, focus: str) -> str:
+def _queries(rules: Any, focus: str) -> list[str]:
+    """One search per category, best priority first (or one search for the kind of firm the user named)."""
+    tail = f"{rules.employees_min} to {rules.employees_max} employees, {rules.country}"
     if focus.strip():
-        kind = focus.strip()
-    else:
-        words: list[str] = []
-        for category in sorted(rules.categories, key=lambda c: c.priority)[:3]:
-            words.append(category.keywords[0] if category.keywords else category.name)
-        kind = " or ".join(words) or "consulting or advisory firm"
-    return f"founder-led {kind} firm, {rules.employees_min} to {rules.employees_max} employees, {rules.country}"
+        return [f"founder-led {focus.strip()} firm, {tail}"]
+    out = []
+    for category in sorted(rules.categories, key=lambda c: c.priority):
+        kind = " or ".join(category.keywords[:2]) or category.name
+        out.append(f"founder-led {kind} firm, {tail}")
+    return out or [f"founder-led consulting or advisory firm, {tail}"]
+
+
+def _companies(key: str, rules: Any, focus: str) -> list[dict]:
+    """Companies from every category, taken in turns so each category gets a chance, minus the excluded kinds."""
+    queries = _queries(rules, focus)
+    per = max(3, -(-COMPANY_POOL // len(queries)))
+    lists = [_exa(key, {"query": q, "category": "company", "userLocation": "US", "numResults": per,
+                        "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}}})
+             for q in queries]
+    banned = [x.casefold() for x in rules.exclusions]
+    seen: set[str] = set()
+    out: list[dict] = []
+    for i in range(per):
+        for rows in lists:
+            if i >= len(rows):
+                continue
+            row = rows[i]
+            url = str(row.get("url") or "")
+            text = f"{row.get('title') or ''} {row.get('summary') or ''}".casefold()
+            if url in seen or any(word in text for word in banned):
+                continue
+            seen.add(url)
+            out.append(row)
+    return out[:COMPANY_POOL]
 
 
 def _company_name(title: str) -> str:
@@ -129,10 +154,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "") -> st
         raise ToolError("Prospeo is not connected for your account. Connect it on the Integrations page first.")
 
     rules = get_prospecting_rules()
-    companies = _exa(key, {
-        "query": _query(rules, focus), "category": "company", "userLocation": "US", "numResults": COMPANY_POOL,
-        "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}},
-    })
+    companies = _companies(key, rules, focus)
     added: list[Prospect] = []
     skipped: list[str] = []
     lookups = 0
