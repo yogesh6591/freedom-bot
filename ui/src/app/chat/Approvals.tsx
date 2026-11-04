@@ -22,7 +22,7 @@ export interface ApprovalItem {
   created_at?: string | null
   updated_at?: string | null
   error?: string | null
-  content?: { headline?: string; summary?: string; fields?: { label: string; value: string }[] }
+  content?: { headline?: string; line?: string; summary?: string; fields?: { label: string; value: string }[] }
 }
 
 interface Inbox {
@@ -171,11 +171,9 @@ export function ApprovalBell({
   )
 }
 
-/** At most five words: the headline up to its first ":" or " — " ("Draft invoice for Acme Logistics"). */
-function shortTitle(item: ApprovalItem): string {
-  const full = (item.content?.headline || item.title || item.tool).trim()
-  const words = full.split(/\s+[—–-]\s+|:\s/)[0].split(/\s+/)
-  return words.length > 5 ? `${words.slice(0, 5).join(' ')}…` : words.join(' ')
+/** The server's one-line summary ("Memory conflict on goal: Which goal is current?"). */
+function oneLine(item: ApprovalItem): string {
+  return (item.content?.line || item.content?.headline || item.title || item.tool).trim()
 }
 
 /** One short line per request: what it is, its status, and Approve / Reject when it waits for this user. */
@@ -196,7 +194,8 @@ function Card({
       : { text: 'Rejected', tone: 'bg-red-500/10 text-red-600' }
     : statusLabel(item.status)
   const full = [
-    item.content?.headline || item.title,
+    oneLine(item),
+    ...(item.content?.fields ?? []).slice(0, 6).map((f) => `${f.label}: ${f.value}`),
     item.requested_by_name ? `Requested by ${item.requested_by_name}` : '',
     decided?.note || (item.status === 'FAILED' ? item.error : '') || ''
   ].filter(Boolean).join('\n')
@@ -205,7 +204,7 @@ function Card({
       title={full}
       className="flex items-center gap-2 rounded-lg border border-black/5 bg-white/80 px-2.5 py-1.5 dark:border-white/10 dark:bg-white/5"
     >
-      <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary">{shortTitle(item)}</p>
+      <p className="min-w-0 flex-1 truncate text-[13px] font-medium text-primary">{oneLine(item)}</p>
       {onDecide && !decided ? (
         <>
           <button
@@ -332,7 +331,7 @@ function ApprovalsPanel({
     <div
       role="dialog"
       aria-label="Approvals"
-      className="absolute right-0 top-full z-40 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-2xl border border-border bg-background shadow-xl"
+      className="absolute right-0 top-full z-40 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-border bg-background shadow-xl"
     >
       <div className="max-h-[70vh] overflow-y-auto px-4 py-3">
         <div className="mb-2 flex items-center justify-between">

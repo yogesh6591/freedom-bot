@@ -21,7 +21,14 @@ def content_for(action: Action, *, ctx: TenantContext) -> dict[str, Any]:
     result = (action.result or {}).get("data") if isinstance(action.result, dict) else None
     if not isinstance(result, dict):
         result = {}
+    content = _content(action, tool, payload, result, ctx)
+    content["line"] = _line(tool, payload, content)
+    return content
 
+
+def _content(
+    action: Action, tool: str, payload: dict[str, Any], result: dict[str, Any], ctx: TenantContext
+) -> dict[str, Any]:
     if tool == "finance_draft_invoice":
         return _invoice(action, payload, result, ctx)
     if tool.startswith("email_") or tool in {"gmail_send", "gmail_create_draft"}:
@@ -210,6 +217,103 @@ def _generic(payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
         "lines": [],
         "summary": headline[:200],
     }
+
+
+#: Longest one-line summary on the chat's approval list; the card's fields carry the rest.
+_LINE_CHARS = 80
+
+#: What the request does, for tools whose registry title reads badly on one line.
+_VERBS = {
+    "memory_add_fact": "Save to memory",
+    "memory_add_sop": "Save SOP",
+    "memory_record_decision": "Record decision",
+    "memory_correct": "Correct memory",
+    "crm_create_note": "CRM note",
+    "crm_create_task": "CRM task",
+    "crm_tag_lead": "Tag contact",
+    "calendar_cancel_event": "Cancel event",
+}
+
+#: The payload value that says what the request is about (first one present wins).
+_DETAIL_KEYS = (
+    "title", "subject", "name", "decision", "new_content", "content", "body", "question", "topic",
+    "customer", "company", "query", "add_tags", "event_id", "record_id", "contact_id", "deal_id",
+)
+
+#: The same, for app actions (their arguments use each app's own names).
+_APP_DETAIL_KEYS = ("recipient_email", "to", "recipients", "subject", "title", "summary", "name", "text", "query")
+
+
+def _line(tool: str, payload: dict[str, Any], content: dict[str, Any]) -> str:
+    """One short line for the chat's approval list: what will happen, and to whom or to what."""
+    from bizos.rbac.registry import get_spec
+
+    fields = {f["label"]: f["value"] for f in content.get("fields") or []}
+    kind = content.get("kind")
+    if kind == "invoice":
+        customer = fields.get("Customer")
+        text = f"Invoice for {customer}, {fields['Amount']}" if customer not in (None, "—") else f"Invoice, {fields['Amount']}"
+    elif kind == "email":
+        text = f"Email to {_people(fields.get('To'))}: {fields.get('Subject')}"
+    elif kind == "app_action":
+        arguments = payload.get("arguments") if isinstance(payload.get("arguments"), dict) else {}
+        detail = _first(arguments, _APP_DETAIL_KEYS)
+        text = content["headline"].split(" (")[0] + (f" · {detail}" if detail else "")
+    elif tool == "crm_create_contact":
+        name = " ".join(x for x in (_first(payload, ("first_name",)), _first(payload, ("last_name",))) if x)
+        company = _first(payload, ("company",))
+        text = f"New contact: {name or _first(payload, ('email',)) or 'unnamed'}" + (f" ({company})" if company else "")
+    elif tool in {"crm_update_contact_field", "crm_bulk_update_contacts"}:
+        who = f" on {payload['lifecycle_stage']} contacts" if payload.get("lifecycle_stage") else ""
+        text = f"Set contact {payload.get('field') or 'field'} to {payload.get('value')}{who}"
+    elif tool == "crm_update_deal_stage":
+        text = f"Move deal to {payload.get('stage')}"
+    elif tool == "crm_delete_record":
+        text = f"Delete {payload.get('record_type') or 'record'} {payload.get('record_id') or ''}"
+    elif tool == "memory_escalate_conflict":
+        text = f"Memory conflict on {payload.get('topic') or 'policy'}: {payload.get('question') or ''}"
+    elif tool in {"calendar_create_event", "calendar_reschedule_event"} and payload.get("starts_at"):
+        when = _when(payload["starts_at"])
+        if tool == "calendar_create_event":
+            text = f"New event: {payload.get('title') or 'untitled'}, {when}"
+        else:
+            text = f"Move event to {when}"
+    else:
+        spec = get_spec(tool)
+        verb = _VERBS.get(tool) or (spec.title if spec else tool.replace("_", " ").capitalize())
+        detail = _first(payload, _DETAIL_KEYS)
+        text = f"{verb}: {detail}" if detail else verb
+    text = " ".join(text.split()).rstrip(": ")
+    return text if len(text) <= _LINE_CHARS else text[: _LINE_CHARS - 1].rstrip() + "…"
+
+
+def _first(values: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = values.get(key)
+        if isinstance(value, (list, tuple)):
+            value = ", ".join(str(v) for v in value if v not in (None, ""))
+        if value not in (None, "", {}) and not isinstance(value, dict):
+            return str(value)
+    return ""
+
+
+def _people(to: Optional[str]) -> str:
+    """"a@x.com, b@y.com, c@z.com" -> "a@x.com +2"."""
+    names = [n.strip() for n in str(to or "").split(",") if n.strip() and n.strip() != "—"]
+    if not names:
+        return "recipient"
+    return names[0] + (f" +{len(names) - 1}" if len(names) > 1 else "")
+
+
+def _when(value: Any) -> str:
+    """An ISO time as "3 Dec 10:00", in the time zone it was written in."""
+    from datetime import datetime
+
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value)[:16]
+    return f"{moment.day} {moment:%b %H:%M}"
 
 
 def _short(value: Any) -> str:
