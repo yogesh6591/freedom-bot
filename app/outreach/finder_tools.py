@@ -125,7 +125,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "") -> st
     ctx = control.build_context(control.get_user(call.user_id))
     from bizos.connectors import composio
 
-    if not composio.connected_toolkit(ctx, "prospeo"):
+    if not composio._active_accounts(ctx).get("prospeo"):
         raise ToolError("Prospeo is not connected for your account. Connect it on the Integrations page first.")
 
     rules = get_prospecting_rules()
