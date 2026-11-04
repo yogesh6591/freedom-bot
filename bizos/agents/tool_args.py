@@ -840,6 +840,10 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             }),
         },
     }, ["people"]),
+    "find_new_prospects": _obj({
+        "count": _i("How many new people to find (1 to 5, default 5)"),
+        "focus": _s("Kind of firm to look for, only if the user named one; leave empty to use the targeting rules"),
+    }),
     "update_prospects": _obj({
         "changes": _obj({
             "executive_name": _s("Full name"), "first_name": _s("First name"), "last_name": _s("Last name"),

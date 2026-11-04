@@ -91,6 +91,7 @@ def run(name: str, *, db_factory: Callable[[], Any], state: dict, latest: str, u
 _TOOL_MODULES = (
     "assessment_tools",
     "booking_tools",
+    "finder_tools",
     "journey_tools",
     "payment_tools",
     "prospect_tools",

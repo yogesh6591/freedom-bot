@@ -922,6 +922,14 @@ TOOL_META: dict[str, AgentMeta] = {
         a CRM contact -> crm_create_contact.
         Effect: the people are saved; nothing is emailed. {gate}
     """)),
+    "find_new_prospects": M("outreach", d("""
+        Find new prospects from the web: up to 5 owner-led US firms matching Jeanne's targeting rules, each saved
+        with the founder and a verified email. Nothing is emailed.
+        Use when: "find 5 new prospects", "get new leads", "naye prospects dhundo".
+        Don't use: saving people the user typed -> add_prospects.
+        Needs: count (1 to 5); focus only if the user named a kind of firm.
+        Effect: new people are saved. {gate}
+    """)),
     "update_prospects": M("outreach", d("""
         Change any detail of a saved person: name, email, company, title, website, LinkedIn, revenue,
         headcount, source or fit note. One person changes at once; several, or a filter, ask yes first.
