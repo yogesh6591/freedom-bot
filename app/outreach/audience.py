@@ -30,7 +30,7 @@ STAGE_ALIASES = {"exploring": ("proof", "demo", "value", "calendar")}
 _STEP_STAGE = {"proof": "proof", "demo": "demo", "value": "value", "calendar_unlocked": "calendar"}
 ORDERS = ("newest", "oldest")
 EMAILED = ("yes", "no", "any")
-RECENT_DAYS = 2  # someone emailed in the last 2 days is skipped unless include_recent is set
+RECENT_DAYS = 0  # someone emailed in the last 2 days is skipped unless include_recent is set
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _OPTED_OUT = (OutreachStatus.UNSUBSCRIBED, OutreachStatus.BOUNCED)
