@@ -57,6 +57,11 @@ def save_sending(
     stage_in_progress: Annotated[str, Form()] = "",
     stage_qualified: Annotated[str, Form()] = "",
     stage_unqualified: Annotated[str, Form()] = "",
+    stage_proof: Annotated[str, Form()] = "",
+    stage_demo: Annotated[str, Form()] = "",
+    stage_value: Annotated[str, Form()] = "",
+    stage_calendar: Annotated[str, Form()] = "",
+    stage_payment_pending: Annotated[str, Form()] = "",
     db: Session = Depends(get_db),
 ):
     want_on = worker_enabled is not None
@@ -74,7 +79,9 @@ def save_sending(
         first_subject=first_subject,
         first_body=first_body,
         stage_bodies={"not_started": stage_not_started, "in_progress": stage_in_progress,
-                      "qualified": stage_qualified, "unqualified": stage_unqualified},
+                      "qualified": stage_qualified, "unqualified": stage_unqualified, "proof": stage_proof,
+                      "demo": stage_demo, "value": stage_value, "calendar": stage_calendar,
+                      "payment_pending": stage_payment_pending},
     )
     flash = "sending_saved"
     if want_auto:

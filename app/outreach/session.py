@@ -499,6 +499,11 @@ class OutreachSession:
                         skipped.append({"name": r.get("name") or r["email"], "email": r["email"],
                                         "reason": self.NO_EMAIL_REASON.get(st, f"nothing to send at {st}")})
                         continue
+                    if key == "payment_pending":
+                        hold = self._payment_hold(db, ensure_prospect(db, r["email"], r.get("name", "")).id)
+                        if hold:
+                            skipped.append({"name": r.get("name") or r["email"], "email": r["email"], "reason": hold})
+                            continue
                     plan[r["email"].lower()] = key
                     fit.append(r)
                 if not fit:
@@ -557,6 +562,9 @@ class OutreachSession:
                         text_for = first_text
                     else:
                         text_for = cfg.stage_bodies[which].replace("{{senderName}}", signer)
+                        if "{{next_step_url}}" in text_for:
+                            text_for = text_for.replace("{{next_step_url}}",
+                                                        self._step_url(db, ids[key_email].id, which))
                         if "{{missingTopics}}" in text_for:
                             text_for = text_for.replace("{{missingTopics}}", self._missing_phrase(missing.get(key_email)))
                         text_for = self._tidy_email(text_for)
@@ -608,12 +616,59 @@ class OutreachSession:
     # ------------------------------------------------------------------ the saved template (see / change)
     TEMPLATE_BLANKS = ("firstName", "lastName", "companyName", "assessment_url", "senderName")
     #: Blanks the code fills itself while sending; allowed only inside the stage templates.
-    STAGE_ONLY_BLANKS = ("missingTopics",)
+    STAGE_ONLY_BLANKS = ("missingTopics", "next_step_url")
     #: Where a person is -> which saved email they get. "new" gets the first email.
-    STAGE_TEMPLATE = {"not_started": "not_started", "in_progress": "in_progress", "qualified": "qualified",
-                      "exploring": "qualified", "unqualified": "unqualified"}
-    NO_EMAIL_REASON = {"booked": "already booked", "purchased": "already a customer",
+    STAGE_TEMPLATE = {k: k for k in ("not_started", "in_progress", "qualified", "proof", "demo", "value", "calendar",
+                                     "payment_pending", "unqualified")}
+    NO_EMAIL_REASON = {"booked": "booked, no payment offer yet", "purchased": "already paid",
                        "completed": "finished, result not ready yet"}
+    #: The page each stage email points to: /a/<their link>/<page>
+    STEP_PAGE = {"qualified": "proof", "proof": "proof", "demo": "demo", "value": "value", "calendar": "calendar",
+                 "payment_pending": "checkout"}
+    #: Payment reminders: at most this many, at least this many days apart
+    PAYMENT_MAX_EMAILS = 3
+    PAYMENT_GAP_DAYS = 3
+
+    @classmethod
+    def _step_url(cls, db: Any, prospect_id: Any, stage: str) -> str:
+        """This person's own link to the next step. Falls back to the assessment link when they have none yet."""
+        from acquisition.services.assessment_tokens import build_assessment_url
+        from app.outreach.records import link_row
+
+        link = link_row(db, prospect_id)
+        token = getattr(link, "assessment_token", None) if link is not None else None
+        if not token:
+            return "{{assessment_url}}"
+        return build_assessment_url(token).rstrip("/") + "/" + cls.STEP_PAGE[stage]
+
+    @classmethod
+    def _payment_hold(cls, db: Any, prospect_id: Any) -> Optional[str]:
+        """Why a payment reminder should not go out now (too many, or too soon), else None."""
+        from datetime import datetime, timedelta, timezone
+
+        from sqlalchemy import select
+
+        from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENT, SentEmail
+        from app.outreach.records import link_row
+
+        link = link_row(db, prospect_id)
+        offered = getattr(link, "checkout_offered_at", None) if link is not None else None
+        if offered is None:
+            return None
+        if offered.tzinfo is None:
+            offered = offered.replace(tzinfo=timezone.utc)
+        times = []
+        for e in db.scalars(select(SentEmail).where(SentEmail.prospect_id == prospect_id,
+                                                    SentEmail.status.in_((STATUS_SENT, STATUS_QUEUED)))):
+            at = e.sent_at or e.queued_at
+            if at is not None:
+                times.append(at if at.tzinfo else at.replace(tzinfo=timezone.utc))
+        times = [t for t in times if t >= offered]
+        if len(times) >= cls.PAYMENT_MAX_EMAILS:
+            return f"already sent {cls.PAYMENT_MAX_EMAILS} payment emails"
+        if times and datetime.now(timezone.utc) - max(times) < timedelta(days=cls.PAYMENT_GAP_DAYS):
+            return f"payment email sent in the last {cls.PAYMENT_GAP_DAYS} days"
+        return None
     #: assessment answers -> plain words for {{missingTopics}}, in the order they are asked
     _TOPIC_WORDS = (
         (("company",), "your company"), (("goals",), "your goals"),

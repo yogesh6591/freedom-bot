@@ -756,7 +756,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "send_approved": _obj({"approval_evidence": _s("The user's own words approving, copied from their latest message")},
                           ["approval_evidence"]),
     "find_people": _obj({
-        "stage": _arr("Where they are now, any of: new, not_started, in_progress, completed, qualified, unqualified, exploring, booked, purchased. Leave out for any stage."),
+        "stage": _arr("Where they are now, any of: new, not_started, in_progress, completed, qualified, proof, demo, value, calendar, unqualified, booked, payment_pending (offered, not paid), purchased (paid). Leave out for any stage."),
         "order": _enum("newest or oldest, by when the person was added. Use with count.", ["newest", "oldest"]),
         "count": _i("How many to take after the other filters. With order and no count, 1."),
         "emailed": _enum("yes: already emailed, no: never emailed, any (default)", ["yes", "no", "any"]),
@@ -769,8 +769,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "update_email_template": _obj({
         "first_subject": _s("New first email subject. Leave out to keep it as it is."),
         "first_body": _s("New first email body, the whole text with every {{blank}} kept. Leave out to keep it."),
-        "stage": _s("Which stage email to change: not_started, in_progress, qualified or unqualified. Use with stage_body."),
-        "stage_body": _s("New body for that stage, the whole text with every {{blank}} kept ({{missingTopics}} stays in in_progress)."),
+        "stage": _s("Which stage email to change: not_started, in_progress, qualified, proof, demo, value, calendar, payment_pending or unqualified. Use with stage_body."),
+        "stage_body": _s("New body for that stage, the whole text with every {{blank}} kept ({{missingTopics}} stays in in_progress, {{next_step_url}} in the later-step and payment emails)."),
         "change_evidence": _s("The user's own words asking for the change, copied from their latest message"),
         "remove_placeholders": _arr("Blank names the user clearly asked to remove, for example companyName. Usually empty."),
     }, ["change_evidence"]),
@@ -786,7 +786,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         "audience": _enum("Everyone saved: all, or only people not emailed yet. Leave out when using filters or names.",
                           ["all", "not_emailed_yet"]),
-        "stage": _arr("Where they are now, any of: new, not_started, in_progress, completed, qualified, unqualified, exploring, booked, purchased. Leave out for any stage."),
+        "stage": _arr("Where they are now, any of: new, not_started, in_progress, completed, qualified, proof, demo, value, calendar, unqualified, booked, payment_pending (offered, not paid), purchased (paid). Leave out for any stage."),
         "order": _enum("newest or oldest, by when the person was added. Use with count.", ["newest", "oldest"]),
         "count": _i("How many to take after the other filters. With order and no count, 1."),
         "emailed": _enum("yes: already emailed, no: never emailed, any (default)", ["yes", "no", "any"]),

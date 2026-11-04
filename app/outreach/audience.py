@@ -23,7 +23,11 @@ from acquisition.services import outreach_service as svc
 from app.outreach.records import structured_answers_and_missing
 
 #: Where a person is, from first contact to purchase. One value per person.
-STAGES = ("new", "not_started", "in_progress", "completed", "qualified", "unqualified", "exploring", "booked", "purchased")
+STAGES = ("new", "not_started", "in_progress", "completed", "qualified", "proof", "demo", "value", "calendar",
+          "unqualified", "booked", "payment_pending", "purchased")
+#: Older or looser words that mean several stages.
+STAGE_ALIASES = {"exploring": ("proof", "demo", "value", "calendar")}
+_STEP_STAGE = {"proof": "proof", "demo": "demo", "value": "value", "calendar_unlocked": "calendar"}
 ORDERS = ("newest", "oldest")
 EMAILED = ("yes", "no", "any")
 RECENT_DAYS = 2  # someone emailed in the last 2 days is skipped unless include_recent is set
@@ -42,10 +46,12 @@ def person_stage(link: Optional[CampaignProspect], profile: Optional[AssessmentP
     if link is not None:
         if _val(link.purchase_outcome) == "purchased":
             return "purchased"
+        if link.checkout_offered_at is not None:
+            return "payment_pending"  # an offer was made and it is not paid
         if link.journey_stage == JourneyStage.BOOKED or _val(link.booking_status) not in ("", "not_booked"):
             return "booked"
-        if link.journey_stage in _EXPLORING:
-            return "exploring"
+        if _val(link.journey_stage) in _STEP_STAGE:
+            return _STEP_STAGE[_val(link.journey_stage)]
         qual = profile.qualification_status if profile is not None else None
         if qual == QualificationStatus.QUALIFIED or link.journey_stage == JourneyStage.QUALIFIED:
             return "qualified"
@@ -96,7 +102,11 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
     answered honestly (an unknown stage, or a place filter when nobody has a place saved).
     """
     now = now or datetime.now(timezone.utc)
-    stages = [str(s).strip().lower() for s in (stage or []) if str(s).strip()]
+    stages = []
+    for s in (stage or []):
+        s = str(s).strip().lower()
+        if s:
+            stages.extend(STAGE_ALIASES.get(s, (s,)))
     bad = [s for s in stages if s not in STAGES]
     if bad:
         return {"people": [], "skipped": [], "error": f"unknown stage {', '.join(bad)}. Stages: {', '.join(STAGES)}"}
@@ -149,7 +159,8 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
             skipped.append({"name": label, "email": email, "reason": f"emailed in the last {RECENT_DAYS} days"})
             continue
         row = {"id": str(p.id), "email": email, "name": p.executive_name or "", "company": (p.company or "").strip(),
-               "stage": st, "emails": m["count"], "days_quiet": quiet, "added": _aware(p.created_at)}
+               "stage": st, "emails": m["count"], "days_quiet": quiet, "added": _aware(p.created_at),
+               "offered_at": link.checkout_offered_at if link is not None else None}
         if st in ("in_progress", "not_started") and profile is not None:
             got, missing = structured_answers_and_missing(profile.structured_state)
             row["captured"] = [f"{g['key']}: {str(g['value'])[:80]}" for g in got][:6]

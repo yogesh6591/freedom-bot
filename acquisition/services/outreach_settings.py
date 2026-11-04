@@ -13,11 +13,17 @@ from acquisition.models.outreach_settings import OutreachSettings
 
 
 #: The email each person gets by where they are. Code fills the blanks; nobody writes these again unless an admin edits them.
-STAGE_KEYS = ("not_started", "in_progress", "qualified", "unqualified")
+STAGE_KEYS = ("not_started", "in_progress", "qualified", "proof", "demo", "value", "calendar", "payment_pending",
+              "unqualified")
 STAGE_LABELS = {
     "not_started": "Emailed, has not started the assessment",
     "in_progress": "Started the assessment, not finished",
-    "qualified": "Finished and a good fit, not booked",
+    "qualified": "Finished and a good fit, has not opened the next step",
+    "proof": "Looking at examples, not finished",
+    "demo": "At the demo, not finished",
+    "value": "At the value summary, not finished",
+    "calendar": "Ready to book a call, not booked",
+    "payment_pending": "Payment offered, not paid (reminder)",
     "unqualified": "Finished, not a fit",
 }
 DEFAULT_STAGE_TEMPLATES = {
@@ -28,8 +34,23 @@ DEFAULT_STAGE_TEMPLATES = {
         "Hi {{firstName}},\n\nYou are partway through the assessment. It only needs {{missingTopics}} to finish. "
         "Pick up where you left off:\n\n{{assessment_url}}\n\nBest,\n{{senderName}}"),
     "qualified": (
-        "Hi {{firstName}},\n\nThanks for completing the assessment. The next step is a short call with Jeanne to "
-        "go through your results. You can pick a time here:\n\n{{assessment_url}}\n\nBest,\n{{senderName}}"),
+        "Hi {{firstName}},\n\nThanks for completing the assessment. Your results are ready, and the next step is "
+        "a short walkthrough of how we would help your team.\n\n{{next_step_url}}\n\nBest,\n{{senderName}}"),
+    "proof": (
+        "Hi {{firstName}},\n\nYou were looking at examples of how we have helped teams like yours. It only takes "
+        "a few minutes to go through the rest.\n\n{{next_step_url}}\n\nBest,\n{{senderName}}"),
+    "demo": (
+        "Hi {{firstName}},\n\nYou are one step away from the demo. It is short and shows how this would work for "
+        "your team.\n\n{{next_step_url}}\n\nBest,\n{{senderName}}"),
+    "value": (
+        "Hi {{firstName}},\n\nThe last part is a short summary of what this could be worth to your team. It takes "
+        "a couple of minutes.\n\n{{next_step_url}}\n\nBest,\n{{senderName}}"),
+    "calendar": (
+        "Hi {{firstName}},\n\nYou are ready for the next step, a short call with Jeanne to go through your "
+        "results. You can pick a time here:\n\n{{next_step_url}}\n\nBest,\n{{senderName}}"),
+    "payment_pending": (
+        "Hi {{firstName}},\n\nFollowing up on your call with Jeanne. When you are ready, you can complete your "
+        "payment securely here:\n\n{{next_step_url}}\n\nBest,\n{{senderName}}"),
     "unqualified": (
         "Hi {{firstName}},\n\nThank you for taking the time to complete the assessment. We appreciate your "
         "interest and wish you the best.\n\nBest,\n{{senderName}}"),
