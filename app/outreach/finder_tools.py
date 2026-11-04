@@ -28,6 +28,19 @@ COMPANY_POOL = 12  # companies asked from Exa per run (some will be skipped)
 MAX_LOOKUPS = 10  # Prospeo lookups per run, whatever the count
 EXA_URL = "https://api.exa.ai/search"
 SOURCE = "Exa + Prospeo"
+STATES = {
+    "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado",
+    "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia", "FL": "Florida", "GA": "Georgia",
+    "HI": "Hawaii", "ID": "Idaho", "IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+    "KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland", "MA": "Massachusetts",
+    "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi", "MO": "Missouri", "MT": "Montana",
+    "NE": "Nebraska", "NV": "Nevada", "NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico",
+    "NY": "New York", "NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+    "OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina", "SD": "South Dakota",
+    "TN": "Tennessee", "TX": "Texas", "UT": "Utah", "VT": "Vermont", "VA": "Virginia", "WA": "Washington",
+    "WV": "West Virginia", "WI": "Wisconsin", "WY": "Wyoming",
+}
+STATE_OF = {name: code for code, name in STATES.items()}
 _OWNER = re.compile(r"\b(founder|co-?founder|owner|ceo|chief executive|president|managing (partner|director))\b", re.I)
 _FORMER = re.compile(r"\b(former|formerly|ex-|previously|retired|past)\b", re.I)
 _SPLIT = re.compile(r"\s[-–—|·•]\s")
@@ -42,9 +55,24 @@ def _exa(key: str, body: dict) -> list[dict]:
     return [r for r in (reply.json().get("results") or []) if isinstance(r, dict)]
 
 
-def _queries(rules: Any, focus: str) -> list[str]:
-    """One search per category, best priority first (or one search for the kind of firm the user named)."""
-    tail = f"{rules.employees_min} to {rules.employees_max} employees, {rules.country}"
+def _state(value: str) -> str:
+    """The full state name for a name or abbreviation the user typed, or "" when none was given."""
+    text = " ".join(str(value or "").split())
+    if not text:
+        return ""
+    if text.upper() in STATES:
+        return STATES[text.upper()]
+    match = next((n for n in STATES.values() if n.casefold() == text.casefold()), None)
+    if match is None:
+        raise ToolError(f"{text!r} is not a US state. Ask the user for a state name or its two-letter code.")
+    return match
+
+
+def _queries(rules: Any, focus: str, state: str = "", lo: Optional[int] = None, hi: Optional[int] = None) -> list[str]:
+    """One search per category, best priority first (or one search for the kind of firm the user named).
+    Whatever the user named replaces that part of the saved rules; everything else comes from the rules."""
+    place = f"based in {state}, United States" if state else rules.country
+    tail = f"{lo or rules.employees_min} to {hi or rules.employees_max} employees, {place}"
     if focus.strip():
         return [f"founder-led {focus.strip()} firm, {tail}"]
     out = []
@@ -54,9 +82,10 @@ def _queries(rules: Any, focus: str) -> list[str]:
     return out or [f"founder-led consulting or advisory firm, {tail}"]
 
 
-def _companies(key: str, rules: Any, focus: str) -> list[dict]:
+def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
+               hi: Optional[int] = None) -> list[dict]:
     """Companies from every category, taken in turns so each category gets a chance, minus the excluded kinds."""
-    queries = _queries(rules, focus)
+    queries = _queries(rules, focus, state, lo, hi)
     per = max(3, -(-COMPANY_POOL // len(queries)))
     lists = [_exa(key, {"query": q, "category": "company", "userLocation": "US", "numResults": per,
                         "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}}})
@@ -73,6 +102,8 @@ def _companies(key: str, rules: Any, focus: str) -> list[dict]:
             text = f"{row.get('title') or ''} {row.get('summary') or ''}".casefold()
             if url in seen or any(word in text for word in banned):
                 continue
+            if state and state.casefold() not in text:
+                continue  # the search page does not place the firm in this state
             seen.add(url)
             out.append(row)
     return out[:COMPANY_POOL]
@@ -129,12 +160,28 @@ def _verified_email(ctx: Any, name: str, domain: str) -> tuple[Optional[str], di
     return None, company
 
 
+def _num(value: Any) -> Optional[int]:
+    try:
+        return int(value) if value not in (None, "") and int(value) > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _outside(facts: dict, place: str) -> bool:
+    """True when Prospeo says the firm is based somewhere other than ``place``."""
+    where = facts.get("location") or {}
+    found = f"{where.get('state') or ''} {where.get('raw_address') or ''}".casefold()
+    return bool(place and found.strip() and place.casefold() not in found
+                and not re.search(rf"\b{STATE_OF[place].casefold()}\b", found))
+
+
 def _taken(call: Call, domain: str) -> bool:
     return call.db.scalar(select(Prospect.id).where(Prospect.domain == domain).limit(1)) is not None
 
 
-@tool("find_new_prospects", "count", "focus")
-def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "") -> str:
+@tool("find_new_prospects", "count", "focus", "state", "employees_min", "employees_max")
+def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state: str = "",
+                       employees_min: Optional[int] = None, employees_max: Optional[int] = None) -> str:
     """Find up to 5 new owner-led firms that match Jeanne's targeting rules and save them with a verified email."""
     if not call.user_id:
         raise ToolError("no signed-in user, so Prospeo cannot be used.")
@@ -154,7 +201,9 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "") -> st
         raise ToolError("Prospeo is not connected for your account. Connect it on the Integrations page first.")
 
     rules = get_prospecting_rules()
-    companies = _companies(key, rules, focus)
+    place = _state(state)
+    lo, hi = _num(employees_min), _num(employees_max)
+    companies = _companies(key, rules, focus, place, lo, hi)
     added: list[Prospect] = []
     skipped: list[str] = []
     lookups = 0
@@ -178,6 +227,9 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "") -> st
         email, facts = _verified_email(ctx, person, domain)
         if not email:
             skipped.append(f"{name}: no verified email for {person}")
+            continue
+        if place and _outside(facts, place):
+            skipped.append(f"{name}: based outside {place}")
             continue
         if lookup.by_email(call.db, email) is not None:
             skipped.append(f"{person} <{email}>: already saved")

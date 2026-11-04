@@ -843,6 +843,9 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "find_new_prospects": _obj({
         "count": _i("How many new people to find (1 to 5, default 5)"),
         "focus": _s("Kind of firm to look for, only if the user named one; leave empty to use the targeting rules"),
+        "state": _s("US state (name or two-letter code), only if the user named one"),
+        "employees_min": _i("Smallest headcount, only if the user named one"),
+        "employees_max": _i("Largest headcount, only if the user named one"),
     }),
     "update_prospects": _obj({
         "changes": _obj({
