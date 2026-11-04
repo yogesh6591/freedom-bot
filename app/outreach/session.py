@@ -538,7 +538,9 @@ class OutreachSession:
             signer = self._signer_name(db)
             if custom:
                 first_subject = strip_assessment_link(subject or "")
-                first_body = self._tidy_email(keep_assessment_link(body.replace("{{senderName}}", signer)))
+                stages = aud.stages_for(db, [r["email"] for r in chosen])
+                needs_link = any(stages.get(r["email"].lower(), "new") in ("new", "not_started") for r in chosen)
+                first_body = self._tidy_email(self._fit_link(body.replace("{{senderName}}", signer), needs_link))
                 follow_body = first_body
             else:
                 first_subject = strip_assessment_link(cfg.first_subject)
@@ -705,6 +707,17 @@ class OutreachSession:
             else:
                 lines.append(textwrap.fill(line, width=width, break_long_words=False, break_on_hyphens=False))
         return "\n".join(lines)
+
+    @classmethod
+    def _fit_link(cls, body: str, needed: bool) -> str:
+        """Keep the wording as written. Add the assessment link (before the sign-off) only when it is needed and missing."""
+        if re.search(r"\{\{\s*assessment_url\s*\}\}", body or "") or not needed:
+            return body
+        lines = (body or "").rstrip().split("\n")
+        for i in range(len(lines) - 1, -1, -1):
+            if cls._SIGN_OFF.match(lines[i].strip()):
+                return "\n".join(lines[:i] + ["{{assessment_url}}", ""] + lines[i:])
+        return "\n".join(lines + ["", "{{assessment_url}}"])
 
     def _signer_name(self, db: Any) -> str:
         """The signed-in user's display name (or the local part of their email), for the {{senderName}} blank."""

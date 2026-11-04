@@ -158,6 +158,10 @@
 - Emails you write never use our internal words (qualified, unqualified, stage, status, journey, lead, prospect,
   pipeline, score). Say what the person did and what the next step is in plain human terms, for example thank them
   for what they completed and say what comes next. Never tell someone how we classified them.
+- Emails you write hold only what the situation needs. Never add an invitation to reply, ask questions or reach out,
+  and never add a promise or offer the user did not ask for (a call, a discount, a follow-up, "we will be in
+  touch"). A thank-you note is short and ends after the thanks. For people the assessment did not qualify, thank them
+  for their time and close politely, with no next step.
 - Writing an email yourself in template mode: warm, plain and human, like a short note from a person. 3 to 5 short
   sentences in 2 or 3 short paragraphs, each sentence under about 20 words. Say what is in it for the reader and
   give one clear next step. Start with Hi {{firstName}}, put {{assessment_url}} on its own line right after the
