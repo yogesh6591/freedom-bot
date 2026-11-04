@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronUp,
   History,
+  KeyRound,
   LogOut,
   Mail,
   PanelLeftClose,
@@ -37,6 +38,7 @@ import {
   X
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
+import { RequestAccessDialog } from '@/components/RequestAccess'
 import { api, ApiError } from '@/lib/api'
 import { useSession } from '@/components/SessionProvider'
 import type {
@@ -680,6 +682,7 @@ function ChatView({ home }: { home: boolean }) {
   const [historyQuery, setHistoryQuery] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [integrationsOpen, setIntegrationsOpen] = useState(false)
+  const [accessOpen, setAccessOpen] = useState(false)
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
   const storageKey = me ? `bizos:chat:${me.client.id}:${me.user.id}` : null
@@ -1233,6 +1236,23 @@ function ChatView({ home }: { home: boolean }) {
                           <span className="block text-[11px] text-muted">Gmail, Calendar, YouTube, HubSpot</span>
                         </span>
                       </button>
+                      {!me?.user.roles.includes('ADMIN') && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-primary hover:bg-background-elevated"
+                          onClick={() => {
+                            setSettingsOpen(false)
+                            setAccessOpen(true)
+                          }}
+                        >
+                          <KeyRound size={15} className="text-brand" aria-hidden />
+                          <span className="min-w-0">
+                            <span className="block font-medium">Request access</span>
+                            <span className="block text-[11px] text-muted">Ask an admin for more data</span>
+                          </span>
+                        </button>
+                      )}
                     </div>
                   </>
                 )}
@@ -1786,6 +1806,7 @@ function ChatView({ home }: { home: boolean }) {
         </div>
       </section>
 
+      <RequestAccessDialog open={accessOpen} onClose={() => setAccessOpen(false)} />
       {chatHome && integrationsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button

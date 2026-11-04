@@ -115,6 +115,24 @@ CONTROL_DDL: tuple[str, ...] = (
     # M15-20: the JeanneCAIO owner view spans every client, so it is gated on a
     # platform-level flag held by Cepoch staff — never on a client's ADMIN role.
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS platform_owner BOOLEAN NOT NULL DEFAULT FALSE",
+    # The job title an admin picks (HR, Finance...). A label over the permission level
+    # in user_roles; see bizos/rbac/job_roles.py. NULL until an admin picks one.
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_role TEXT",
+    # A person asking an admin for extra data tags. Granting goes through admin_ops.set_scopes.
+    """
+    CREATE TABLE IF NOT EXISTS access_requests (
+        id          TEXT PRIMARY KEY,
+        client_id   TEXT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+        user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        areas       TEXT[] NOT NULL,
+        reason      TEXT NOT NULL DEFAULT '',
+        status      TEXT NOT NULL DEFAULT 'PENDING',
+        decided_by  TEXT,
+        decided_at  TIMESTAMPTZ,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS access_requests_pending_idx ON access_requests (client_id, status, created_at DESC)",
     # FB-046 — post-sale support tickets (control-plane metadata; not a sales CRM).
     """
     CREATE TABLE IF NOT EXISTS support_tickets (

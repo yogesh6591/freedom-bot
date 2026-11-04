@@ -317,6 +317,32 @@ def set_user_scopes(user_id: str, scopes: Iterable[str]) -> User:
     return get_user(user_id)
 
 
+def set_user_job_role(user_id: str, job_role: Optional[str]) -> User:
+    """Record the job title an admin picked. Permission changes go through ``set_user_roles``."""
+    with control_connection() as conn:
+        updated = conn.execute(
+            text("UPDATE users SET job_role = :j, updated_at = NOW() WHERE id = :i"),
+            {"j": job_role, "i": user_id},
+        )
+        if updated.rowcount == 0:
+            raise UserNotFound(user_id)
+    return get_user(user_id)
+
+
+def active_admin_emails(client_id: str, *, limit: int = 5) -> list[str]:
+    """Where a person in this client sends an access request."""
+    with control_connection() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT u.email FROM users u JOIN user_roles r ON r.user_id = u.id "
+                "WHERE u.client_id = :c AND u.status = 'ACTIVE' AND r.role = :a "
+                "ORDER BY u.created_at LIMIT :l"
+            ),
+            {"c": client_id, "a": str(Role.ADMIN), "l": limit},
+        ).fetchall()
+    return [r.email for r in rows]
+
+
 def set_platform_owner(user_id: str, flag: bool) -> User:
     """Grant or revoke the cross-client owner view (M15-20). Platform staff only."""
     with control_connection() as conn:
@@ -414,6 +440,7 @@ def _user_from_row(conn: Any, row: Any) -> User:
         last_login_at=row.last_login_at,
         data_scopes=frozenset(getattr(row, "data_scopes", None) or ()),
         platform_owner=bool(getattr(row, "platform_owner", False)),
+        job_role=getattr(row, "job_role", None),
     )
 
 

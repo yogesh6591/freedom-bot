@@ -7,9 +7,10 @@ pricing, users, policies, domain packs and tool permissions — implemented once
 and called from both the admin API routes and the admin chat tools, so the two
 can never disagree about what is allowed.
 
-Callers must already have established that ``ctx`` is an ADMIN. Every function
-is scoped to ``ctx.client_id``; a user id from another client is reported as
-not found. Writes are audited here, not by the caller.
+Callers must already have established that ``ctx`` is an ADMIN, except for
+``access_overview`` and ``request_access``, which anyone may call for themselves.
+Every function is scoped to ``ctx.client_id``; a user id from another client is
+reported as not found. Writes are audited here, not by the caller.
 """
 
 from __future__ import annotations
@@ -18,10 +19,12 @@ import re
 from typing import Any, Iterable, Optional
 
 from bizos.audit import events as audit
+from bizos.control import access_requests
 from bizos.control import store as control
 from bizos.control.models import ClientSettings
+from bizos.rbac.job_roles import JOB_ROLES, JobRole, roles_for, tags_after_change
 from bizos.tenancy.context import TenantContext, tenant_scope
-from bizos.types import AuditEventType, Role, ToolPermission
+from bizos.types import DATA_AREAS, AuditEventType, Role, ToolPermission
 from bizos.util.timeutil import is_timezone, utcnow
 
 
@@ -122,12 +125,16 @@ def create_user(
     display_name: str = "",
     roles: Iterable[str] = ("VIEWER",),
     data_scopes: Iterable[str] = (),
+    job_role: Optional[str] = None,
 ):
     email = (email or "").strip()
     if not _EMAIL.match(email):
         raise AdminError(f"{email!r} is not a valid email address")
     if len(password or "") < MIN_PASSWORD_LENGTH:
         raise AdminError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
+    job = _job_role(job_role) if job_role else None
+    if job:
+        roles, data_scopes = (str(job.level),), job.tags
     role_names = list(roles)
     try:
         user = control.create_user(
@@ -143,6 +150,8 @@ def create_user(
         raise AdminConflict(str(exc)) from exc
     except ValueError as exc:
         raise AdminError(str(exc)) from exc
+    if job:
+        user = control.set_user_job_role(user.id, job.key)
     _log(ctx, AuditEventType.CONFIG_CHANGED, "USER_CREATED", request={"email": email, "roles": role_names})
     return user
 
@@ -178,6 +187,83 @@ def set_scopes(ctx: TenantContext, user_id: str, data_scopes: Iterable[str]):
         request={"user_id": user_id, "data_scopes": sorted(user.data_scopes)},
     )
     return user
+
+
+def _job_role(name: str) -> JobRole:
+    job = JOB_ROLES.get((name or "").strip().upper())
+    if job is None:
+        raise AdminError(f"Job role must be one of {', '.join(JOB_ROLES)}")
+    return job
+
+
+def set_job_role(ctx: TenantContext, user_id: str, job_role: str):
+    """Give a person a job role: its permission level, plus its data tags in place of the old role's."""
+    user = user_in_client(ctx, user_id)
+    job = _job_role(job_role)
+    previous = JOB_ROLES.get(user.effective_job_role or "")
+    # set_roles carries the "not your own Admin" and "keep one active admin" rules.
+    set_roles(ctx, user_id, [str(r) for r in roles_for(job, can_approve=Role.APPROVER in user.roles)])
+    set_scopes(ctx, user_id, tags_after_change(user.data_scopes, previous, job))
+    updated = control.set_user_job_role(user_id, job.key)
+    _log(ctx, AuditEventType.CONFIG_CHANGED, "JOB_ROLE_CHANGED", request={"user_id": user_id, "job_role": job.key})
+    return updated
+
+
+def set_can_approve(ctx: TenantContext, user_id: str, can_approve: bool):
+    """Add or remove the right to decide approvals, on top of the person's job role."""
+    user = user_in_client(ctx, user_id)
+    if Role.ADMIN in user.roles:
+        raise AdminError("Admins can always approve.")
+    roles = set(user.roles)
+    if can_approve:
+        roles.add(Role.APPROVER)
+    else:
+        roles.discard(Role.APPROVER)
+    return set_roles(ctx, user_id, [str(r) for r in roles or {Role.VIEWER}])
+
+
+# ------------------------------------------------------------- access requests
+
+
+def access_overview(ctx: TenantContext) -> dict[str, Any]:
+    """What the caller can see, what they have asked for, and where to send the email."""
+    return {
+        "areas": list(DATA_AREAS),
+        "granted": sorted(ctx.visible_areas),
+        "pending": sorted({a for r in access_requests.pending(ctx.client_id, user_id=ctx.user_id) for a in r["areas"]}),
+        "admin_emails": control.active_admin_emails(ctx.client_id),
+    }
+
+
+def request_access(ctx: TenantContext, areas: Iterable[str], reason: str = "") -> dict[str, Any]:
+    """Ask an admin for data tags. Changes nothing until an admin grants it."""
+    wanted = sorted({str(a).strip().casefold() for a in areas if str(a).strip()})
+    unknown = [a for a in wanted if a not in DATA_AREAS]
+    if unknown:
+        raise AdminError(f"Unknown data area(s): {', '.join(unknown)}")
+    asked = {a for r in access_requests.pending(ctx.client_id, user_id=ctx.user_id) for a in r["areas"]}
+    new = [a for a in wanted if a not in ctx.visible_areas and a not in asked]
+    if not new:
+        raise AdminConflict("You already have, or have already requested, that access.")
+    request = access_requests.create(ctx.client_id, ctx.user_id, new, (reason or "").strip())
+    _log(ctx, AuditEventType.CONFIG_CHANGED, "ACCESS_REQUESTED", request={"id": request["id"], "areas": new})
+    return request
+
+
+def decide_access_request(ctx: TenantContext, request_id: str, *, grant: bool) -> dict[str, Any]:
+    """Grant or decline a request. A grant adds the tags through ``set_scopes``, like the Users page."""
+    request = access_requests.get(ctx.client_id, request_id)
+    if request is None:
+        raise AdminNotFound("No such access request")
+    decided = access_requests.decide(ctx.client_id, request_id, granted=grant, decided_by=ctx.user_id)
+    if decided is None:
+        raise AdminConflict("This request has already been decided.")
+    if grant:
+        user = user_in_client(ctx, request["user_id"])
+        set_scopes(ctx, user.id, set(user.data_scopes) | set(request["areas"]))
+    status = "ACCESS_REQUEST_GRANTED" if grant else "ACCESS_REQUEST_DECLINED"
+    _log(ctx, AuditEventType.CONFIG_CHANGED, status, request={"id": request_id, "areas": request["areas"]})
+    return decided
 
 
 def set_status(ctx: TenantContext, user_id: str, status: str):

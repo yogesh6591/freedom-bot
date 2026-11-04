@@ -3,8 +3,25 @@
 /** Admin (§17) — users, roles, policies, domains, tool permission matrix. */
 
 import { useCallback, useEffect, useState } from 'react'
+import {
+  Baby,
+  Check,
+  CreditCard,
+  FileCheck2,
+  Fingerprint,
+  HeartPulse,
+  UserCheck,
+  Zap,
+  type LucideIcon
+} from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
 import { PricingStudio } from '@/components/admin/Pricing'
+import {
+  DATA_TAGS,
+  JOB_ROLES,
+  tagLabel,
+  type AccessRequest
+} from '@/lib/access'
 import { api } from '@/lib/api'
 import type { DomainPack, Role, SessionUser } from '@/lib/types'
 import {
@@ -20,12 +37,12 @@ import {
   SegmentedTabs,
   inputClass,
   modeTone,
-  riskTone
+  riskTone,
+  type Tone
 } from '@/components/common/primitives'
 
 const ROLES: Role[] = ['VIEWER', 'DRAFTER', 'APPROVER', 'OPERATOR', 'ADMIN']
 const MODES = ['ADVISE', 'DRAFT', 'WAIT_FOR_APPROVAL', 'AUTO_WITHIN_SCOPE']
-const DATA_AREAS = ['exec', 'hr', 'salary', 'finance', 'legal', 'ops']
 
 interface ToolPolicy {
   name: string
@@ -916,13 +933,131 @@ function displayEmail(email: string) {
   return email.replace(/@([a-z0-9-]+)\.example\.com$/i, '@$1.com')
 }
 
+function TagChip({
+  on,
+  label,
+  onClick
+}: {
+  on: boolean
+  label: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      onClick={onClick}
+      className={`inline-flex min-h-7 items-center gap-1 rounded-full border px-2.5 text-[11px] font-medium ui-transition ${
+        on
+          ? 'border-brand bg-brand/15 text-primary'
+          : 'border-border text-muted hover:border-brand/50 hover:text-secondary'
+      }`}
+    >
+      {on && <Check size={11} aria-hidden />}
+      {label}
+    </button>
+  )
+}
+
+function AccessRequests({ onDecided }: { onDecided: () => Promise<void> }) {
+  const [items, setItems] = useState<AccessRequest[]>([])
+  const [busy, setBusy] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      const data = await api.get<{ items: AccessRequest[] }>(
+        '/api/access/requests'
+      )
+      setItems(data.items)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Could not load access requests'
+      )
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  async function decide(id: string, grant: boolean) {
+    setBusy(id)
+    setError(null)
+    try {
+      await api.post(`/api/access/requests/${id}/decide`, { grant })
+      await Promise.all([load(), onDecided()])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save decision')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  if (items.length === 0 && !error) return null
+
+  return (
+    <Panel
+      title="Access requests"
+      description="People asking for more data. Granting adds these tags to their account."
+    >
+      {error && <ErrorNote>{error}</ErrorNote>}
+      <ul className="divide-y divide-border">
+        {items.map((item) => (
+          <li
+            key={item.id}
+            className="flex flex-wrap items-center gap-x-4 gap-y-3 py-3 first:pt-0 last:pb-0"
+          >
+            <div className="min-w-0 flex-1 basis-64">
+              <p className="text-sm font-semibold text-primary">
+                {item.display_name}
+                <span className="ml-2 font-normal text-muted">
+                  {displayEmail(item.email)}
+                </span>
+              </p>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {item.areas.map((area) => (
+                  <Badge key={area} tone="info">
+                    {tagLabel(area)}
+                  </Badge>
+                ))}
+              </div>
+              {item.reason && (
+                <p className="mt-1.5 text-xs text-muted">{item.reason}</p>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Btn
+                variant="secondary"
+                size="sm"
+                disabled={busy !== null}
+                onClick={() => void decide(item.id, false)}
+              >
+                Decline
+              </Btn>
+              <Btn
+                size="sm"
+                loading={busy === item.id}
+                disabled={busy !== null}
+                onClick={() => void decide(item.id, true)}
+              >
+                Grant
+              </Btn>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  )
+}
+
 function Users() {
   const [users, setUsers] = useState<SessionUser[]>([])
   const [form, setForm] = useState({
     email: '',
     password: '',
     display_name: '',
-    role: 'VIEWER'
+    job_role: 'EMPLOYEE'
   })
   const [error, setError] = useState<string | null>(null)
 
@@ -942,41 +1077,45 @@ function Users() {
   async function create(event: React.FormEvent) {
     event.preventDefault()
     try {
-      await api.post('/api/users', {
-        email: form.email,
-        password: form.password,
-        display_name: form.display_name,
-        roles: [form.role]
+      await api.post('/api/users', form)
+      setForm({
+        email: '',
+        password: '',
+        display_name: '',
+        job_role: 'EMPLOYEE'
       })
-      setForm({ email: '', password: '', display_name: '', role: 'VIEWER' })
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create user')
     }
   }
 
-  async function setRole(userId: string, role: string) {
-    await api.patch(`/api/users/${userId}/roles`, { roles: [role] })
-    await load()
-  }
-
-  async function toggleScope(user: SessionUser, area: string) {
-    const current = new Set(user.data_scopes ?? [])
-    if (current.has(area)) current.delete(area)
-    else current.add(area)
+  async function update(path: string, body: unknown) {
     try {
-      await api.patch(`/api/users/${user.id}/scopes`, {
-        data_scopes: Array.from(current)
-      })
+      await api.patch(path, body)
       await load()
     } catch (err) {
+      await load()
       setError(err instanceof Error ? err.message : 'Could not change access')
     }
   }
 
+  function toggleTag(user: SessionUser, area: string) {
+    const current = new Set(user.data_scopes ?? [])
+    if (current.has(area)) current.delete(area)
+    else current.add(area)
+    void update(`/api/users/${user.id}/scopes`, {
+      data_scopes: Array.from(current)
+    })
+  }
+
   return (
     <>
-      <Panel title="Users">
+      <AccessRequests onDecided={load} />
+      <Panel
+        title="Users"
+        description="The role sets what someone can do. Tags add the restricted data they can see, and you can pick several."
+      >
         {error && <ErrorNote>{error}</ErrorNote>}
         <DataTable
           rows={users}
@@ -986,60 +1125,58 @@ function Users() {
             { key: 'n', header: 'Name', render: (u) => u.display_name },
             {
               key: 'r',
-              header: 'Roles',
-              render: (u) => (
-                <div className="flex gap-1">
-                  {u.roles.map((role) => (
-                    <Badge key={role} tone="neutral">
-                      {role}
-                    </Badge>
-                  ))}
-                </div>
-              )
-            },
-            {
-              key: 'set',
-              header: 'Change role',
+              header: 'Role',
               render: (u) => (
                 <select
-                  defaultValue={u.primary_role}
-                  onChange={(event) => void setRole(u.id, event.target.value)}
-                  className="rounded border border-border bg-background px-2 py-1 text-[11px]"
+                  aria-label={`Role for ${u.display_name}`}
+                  value={u.job_role ?? ''}
+                  onChange={(event) =>
+                    void update(`/api/users/${u.id}/job-role`, {
+                      job_role: event.target.value
+                    })
+                  }
+                  className="min-h-9 rounded-lg border border-border bg-background-secondary px-2.5 text-[13px] text-primary"
                 >
-                  {ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {role}
+                  {!u.job_role && (
+                    <option value="" disabled>
+                      Choose role
+                    </option>
+                  )}
+                  {JOB_ROLES.map((role) => (
+                    <option key={role.value} value={role.value}>
+                      {role.label}
                     </option>
                   ))}
                 </select>
               )
             },
             {
-              key: 'scopes',
-              header: 'Restricted data access',
+              key: 'tags',
+              header: 'Access tags',
               render: (u) =>
                 u.roles.includes('ADMIN') ? (
-                  <span className="text-[11px] text-muted">
-                    all areas (admin)
+                  <span className="text-xs text-muted">
+                    All areas and approvals
                   </span>
                 ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {DATA_AREAS.map((area) => {
-                      const on = (u.data_scopes ?? []).includes(area)
-                      return (
-                        <button
-                          key={area}
-                          onClick={() => void toggleScope(u, area)}
-                          className={`rounded border px-1.5 py-0.5 text-[10px] ${
-                            on
-                              ? 'border-brand bg-brand/20 text-primary'
-                              : 'border-border text-muted'
-                          }`}
-                        >
-                          {area}
-                        </button>
-                      )
-                    })}
+                  <div className="flex max-w-md flex-wrap gap-1.5">
+                    {DATA_TAGS.map((tag) => (
+                      <TagChip
+                        key={tag.value}
+                        label={tag.label}
+                        on={(u.data_scopes ?? []).includes(tag.value)}
+                        onClick={() => toggleTag(u, tag.value)}
+                      />
+                    ))}
+                    <TagChip
+                      label="Can approve"
+                      on={Boolean(u.can_approve)}
+                      onClick={() =>
+                        void update(`/api/users/${u.id}/can-approve`, {
+                          can_approve: !u.can_approve
+                        })
+                      }
+                    />
                   </div>
                 )
             }
@@ -1084,14 +1221,14 @@ function Users() {
           <Field label="Role">
             <select
               className={inputClass}
-              value={form.role}
+              value={form.job_role}
               onChange={(event) =>
-                setForm({ ...form, role: event.target.value })
+                setForm({ ...form, job_role: event.target.value })
               }
             >
-              {ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {role}
+              {JOB_ROLES.map((role) => (
+                <option key={role.value} value={role.value}>
+                  {role.label}
                 </option>
               ))}
             </select>
@@ -1104,6 +1241,129 @@ function Users() {
         </form>
       </Panel>
     </>
+  )
+}
+
+const REGULATED = [
+  {
+    key: 'phi',
+    icon: HeartPulse,
+    title: 'Block PHI / medical',
+    description: 'Patient records, diagnoses and prescriptions.'
+  },
+  {
+    key: 'card',
+    icon: CreditCard,
+    title: 'Block payment card data',
+    description: 'Card numbers and CVV codes.'
+  },
+  {
+    key: 'child',
+    icon: Baby,
+    title: "Block children's personal data",
+    description: 'Names, ages and schools of anyone under 18.'
+  },
+  {
+    key: 'biometrics',
+    icon: Fingerprint,
+    title: 'Block biometrics',
+    description: 'Fingerprints and face, voice or iris scans.'
+  }
+]
+
+function PolicyGroup({
+  title,
+  description,
+  aside,
+  children
+}: {
+  title: string
+  description: string
+  aside?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section className="border-t border-border pt-7 first:border-t-0 first:pt-0">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-w-prose">
+          <h3 className="font-geist text-[15px] font-semibold text-primary">
+            {title}
+          </h3>
+          <p className="mt-1 text-[13px] leading-relaxed text-muted">
+            {description}
+          </p>
+        </div>
+        {aside}
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function PolicyToggle({
+  icon: Icon,
+  title,
+  description,
+  on,
+  onChange,
+  disabled,
+  status,
+  tone = 'neutral'
+}: {
+  icon: LucideIcon
+  title: string
+  description: string
+  on: boolean
+  onChange: (next: boolean) => void
+  disabled?: boolean
+  status?: string
+  tone?: Tone
+}) {
+  return (
+    <div
+      className={`flex items-start gap-3.5 rounded-xl border p-4 ui-transition ${
+        on
+          ? 'border-brand/35 bg-brand/5'
+          : 'border-border bg-background-elevated/40'
+      }`}
+    >
+      <span
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+          on ? 'bg-brand/15 text-brand' : 'bg-background-elevated text-muted'
+        }`}
+        aria-hidden
+      >
+        <Icon size={19} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-primary">{title}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted">
+          {description}
+        </p>
+        {status && (
+          <Badge tone={tone} className="mt-2.5">
+            {status}
+          </Badge>
+        )}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={title}
+        disabled={disabled}
+        onClick={() => onChange(!on)}
+        className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full ui-transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-soft/70 disabled:opacity-60 ${
+          on ? 'bg-brand' : 'bg-border'
+        }`}
+      >
+        <span
+          className={`inline-block h-[18px] w-[18px] rounded-full bg-white shadow-sm transition-transform ${
+            on ? 'translate-x-[23px]' : 'translate-x-[3px]'
+          }`}
+        />
+      </button>
+    </div>
   )
 }
 
@@ -1129,6 +1389,8 @@ function Policies() {
 
   const settings = data.settings
   const risk = settings.risk_policy
+  const allowed = new Set(settings.order_dpa_allows ?? [])
+  const blockedCount = REGULATED.filter(({ key }) => !allowed.has(key)).length
 
   async function save(body: Record<string, unknown>) {
     setSaving(true)
@@ -1146,9 +1408,17 @@ function Policies() {
     <Panel
       title="Policies"
       description="Tenant configuration. Values are clamped server-side to the platform floor — CRITICAL actions always require a human, whatever is entered here."
+      actions={
+        saving ? <span className="text-xs text-muted">Saving…</span> : undefined
+      }
     >
       {error && <ErrorNote>{error}</ErrorNote>}
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="space-y-8">
+        <PolicyGroup
+          title="How the assistant acts"
+          description="What it may do on its own, and when it must wait for a person."
+        >
+          <div className="grid gap-4 md:grid-cols-3">
         <Field label="Default execution mode">
           <select
             className={inputClass}
@@ -1198,6 +1468,96 @@ function Policies() {
             ))}
           </select>
         </Field>
+          </div>
+        </PolicyGroup>
+
+        <PolicyGroup
+          title="Regulated data"
+          description="Blocked data is refused before it reaches the AI model. Turn a block off only when the signed Order/DPA allows that data."
+          aside={
+            <Badge tone={blockedCount === REGULATED.length ? 'good' : 'warn'}>
+              {blockedCount} of {REGULATED.length} blocked
+            </Badge>
+          }
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            {REGULATED.map(({ key, ...item }) => {
+              const blocked = !allowed.has(key)
+              const heldByBaa =
+                key === 'phi' && !blocked && !settings.llm_baa_covered
+              return (
+                <PolicyToggle
+                  key={key}
+                  {...item}
+                  on={blocked}
+                  disabled={saving}
+                  status={
+                    heldByBaa ? 'Needs BAA' : blocked ? 'Blocked' : 'Allowed'
+                  }
+                  tone={heldByBaa ? 'info' : blocked ? 'good' : 'warn'}
+                  onChange={(block) => {
+                    const next = new Set(allowed)
+                    if (block) next.delete(key)
+                    else next.add(key)
+                    void save({ order_dpa_allows: Array.from(next) })
+                  }}
+                />
+              )
+            })}
+            <div className="md:col-span-2">
+              <PolicyToggle
+                icon={FileCheck2}
+                title="Model vendor has signed a BAA for this client"
+                description={`Model vendor: ${settings.llm_vendor || 'openai'} (set by the deployment). PHI also needs a BAA with this vendor, so it stays blocked without one.`}
+                on={Boolean(settings.llm_baa_covered)}
+                disabled={saving}
+                status={settings.llm_baa_covered ? 'BAA in place' : 'No BAA'}
+                tone={settings.llm_baa_covered ? 'good' : 'neutral'}
+                onChange={(covered) => void save({ llm_baa_covered: covered })}
+              />
+              {allowed.has('phi') && !settings.llm_baa_covered && (
+                <p className="mt-2 rounded-lg border border-warning/35 bg-warning/10 px-3.5 py-2.5 text-xs text-secondary">
+                  PHI is unblocked here but stays blocked until a BAA is in
+                  place
+                </p>
+              )}
+            </div>
+          </div>
+        </PolicyGroup>
+
+        <PolicyGroup
+          title="Approvals"
+          description="Who can get an action through without a second person."
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <PolicyToggle
+              icon={UserCheck}
+              title="Allow self-approval"
+              description="People can approve actions they asked for themselves."
+              on={Boolean(settings.approval_policy?.allow_self_approval)}
+              disabled={saving}
+              onChange={(on) =>
+                void save({ approval_policy: { allow_self_approval: on } })
+              }
+            />
+            <PolicyToggle
+              icon={Zap}
+              title="Admins skip approval"
+              description="Admin actions run without waiting. Refusals, Advise and Draft modes and data blocks still apply."
+              on={Boolean(settings.approval_policy?.admins_skip_approval)}
+              disabled={saving}
+              onChange={(on) =>
+                void save({ approval_policy: { admins_skip_approval: on } })
+              }
+            />
+          </div>
+        </PolicyGroup>
+
+        <PolicyGroup
+          title="Limits"
+          description="Caps on a single action or run."
+        >
+          <div className="grid gap-4 md:grid-cols-3">
         <Field label="Max records per action">
           <input
             className={inputClass}
@@ -1273,91 +1633,8 @@ function Policies() {
             }
           />
         </Field>
-        <div className="space-y-3">
-          <div>
-            <p className="type-caption mb-1">Regulated data blocking (FB-039)</p>
-            <p className="mb-2 text-xs text-muted">
-              Ticked = blocked: the assistant refuses to add, store or look up
-              that data. Untick only when the signed Order/DPA allows it. PHI
-              also needs a BAA with the model vendor; OpenAI has none, so PHI
-              stays blocked on OpenAI.
-            </p>
-            {(
-              [
-                ['phi', 'Block PHI / medical'],
-                ['card', 'Block payment card data'],
-                ['child', "Block children's personal data"],
-                ['biometrics', 'Block biometrics']
-              ] as const
-            ).map(([key, label]) => {
-              const allowed = new Set(settings.order_dpa_allows ?? [])
-              return (
-                <label
-                  key={key}
-                  className="flex items-center gap-2 text-xs text-muted"
-                >
-                  <input
-                    type="checkbox"
-                    checked={!allowed.has(key)}
-                    onChange={(event) => {
-                      const next = new Set(allowed)
-                      if (event.target.checked) next.delete(key)
-                      else next.add(key)
-                      void save({ order_dpa_allows: Array.from(next) })
-                    }}
-                  />
-                  {label}
-                </label>
-              )
-            })}
-            <label className="mt-2 flex items-center gap-2 text-xs text-muted">
-              <input
-                type="checkbox"
-                checked={Boolean(settings.llm_baa_covered)}
-                onChange={(event) =>
-                  void save({ llm_baa_covered: event.target.checked })
-                }
-              />
-              Model vendor has signed a BAA for this client
-            </label>
-            <p className="mt-1 text-[11px] text-muted">
-              Model vendor: {settings.llm_vendor || 'openai'} (set by the
-              deployment)
-              {settings.order_dpa_allows?.includes('phi') &&
-              !settings.llm_baa_covered
-                ? ' · PHI is unblocked here but stays blocked until a BAA is in place'
-                : ''}
-            </p>
           </div>
-          <label className="flex items-center gap-2 text-xs text-muted">
-            <input
-              type="checkbox"
-              checked={Boolean(settings.approval_policy?.allow_self_approval)}
-              onChange={(event) =>
-                void save({
-                  approval_policy: { allow_self_approval: event.target.checked }
-                })
-              }
-            />
-            Allow self-approval
-          </label>
-          <label
-            className="flex items-center gap-2 text-xs text-muted"
-            title="Admin actions run without waiting for approval. Refusals, Advise/Draft modes and data guardrails still apply."
-          >
-            <input
-              type="checkbox"
-              checked={Boolean(settings.approval_policy?.admins_skip_approval)}
-              onChange={(event) =>
-                void save({
-                  approval_policy: { admins_skip_approval: event.target.checked }
-                })
-              }
-            />
-            Admins skip approval
-          </label>
-          {saving && <span className="text-[11px] text-muted">Saving…</span>}
-        </div>
+        </PolicyGroup>
       </div>
     </Panel>
   )

@@ -49,6 +49,8 @@ class UserCreate(BaseModel):
     display_name: str = ""
     roles: list[str] = Field(default_factory=lambda: ["VIEWER"])
     data_scopes: list[str] = Field(default_factory=list)
+    #: When set, this decides the permission level and data tags instead of the two fields above.
+    job_role: Optional[str] = None
 
 
 class RoleUpdate(BaseModel):
@@ -57,6 +59,14 @@ class RoleUpdate(BaseModel):
 
 class ScopeUpdate(BaseModel):
     data_scopes: list[str] = Field(default_factory=list)
+
+
+class JobRoleUpdate(BaseModel):
+    job_role: str
+
+
+class CanApproveUpdate(BaseModel):
+    can_approve: bool
 
 
 class StatusUpdate(BaseModel):
@@ -116,6 +126,7 @@ def create_user(body: UserCreate, ctx: TenantContext = Depends(require_admin)) -
         display_name=body.display_name,
         roles=body.roles,
         data_scopes=body.data_scopes,
+        job_role=body.job_role,
     ).to_dict()
 
 
@@ -124,6 +135,20 @@ def set_roles(
     user_id: str, body: RoleUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
     return _run(ops.set_roles, ctx, user_id, body.roles).to_dict()
+
+
+@router.patch("/users/{user_id}/job-role")
+def set_job_role(
+    user_id: str, body: JobRoleUpdate, ctx: TenantContext = Depends(require_admin)
+) -> dict[str, Any]:
+    return _run(ops.set_job_role, ctx, user_id, body.job_role).to_dict()
+
+
+@router.patch("/users/{user_id}/can-approve")
+def set_can_approve(
+    user_id: str, body: CanApproveUpdate, ctx: TenantContext = Depends(require_admin)
+) -> dict[str, Any]:
+    return _run(ops.set_can_approve, ctx, user_id, body.can_approve).to_dict()
 
 
 @router.patch("/users/{user_id}/scopes")

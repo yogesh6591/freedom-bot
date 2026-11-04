@@ -319,7 +319,7 @@ class AuditEventType(StrEnum):
 #: Restricted data areas (FB-037). Content tagged with one of these is returned
 #: only to users whose data scopes include it; untagged content is general.
 #: ``ops`` is the operations/department bucket (distinct from finance and HR).
-DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal", "ops")
+DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal", "ops", "sales")
 
 
 __all__ = [

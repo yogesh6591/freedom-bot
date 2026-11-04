@@ -24,6 +24,10 @@ export interface SessionUser {
   display_name: string
   roles: Role[]
   primary_role: Role
+  /** The title an admin picked. Null when no title describes this person's access yet. */
+  job_role?: string | null
+  job_role_label?: string | null
+  can_approve?: boolean
   data_scopes?: string[]
   /** M15-20: may open the cross-client owner view. */
   is_platform_owner?: boolean

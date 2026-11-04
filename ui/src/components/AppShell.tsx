@@ -10,6 +10,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useDebug, useShowAcquisition } from '@/lib/debug'
 import { adminUnlocked, isHomePath } from '@/lib/panel'
+import { RequestAccessDialog } from '@/components/RequestAccess'
 import { SidebarSwitch } from '@/components/SidebarSwitch'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -17,6 +18,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Headset,
+  KeyRound,
   LayoutGrid,
   LogOut,
   Megaphone,
@@ -140,11 +142,9 @@ const AREA_LABEL: Record<string, string> = {
 function accessLabel(me: Me): string {
   if (me.user.primary_role === 'ADMIN' || me.user.roles.includes('ADMIN'))
     return 'Administrator'
+  if (me.user.job_role_label) return me.user.job_role_label
   const scope = me.user.data_scopes?.[0]
-  if (scope) return AREA_LABEL[scope.toLowerCase()] ?? scope
-  return (me.user.primary_role ?? 'Member')
-    .toLowerCase()
-    .replace(/^./, (c) => c.toUpperCase())
+  return scope ? (AREA_LABEL[scope.toLowerCase()] ?? scope) : 'Member'
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -157,6 +157,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [adminOk, setAdminOk] = useState<boolean | null>(null)
   const router = useRouter()
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [accessOpen, setAccessOpen] = useState(false)
   const sidebarRef = useRef<HTMLElement>(null)
   const mobileNavTriggerRef = useRef<HTMLButtonElement>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -439,6 +440,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </p>
             </div>
           )}
+          {!me.user.roles.includes('ADMIN') && (
+            <button
+              type="button"
+              onClick={() => setAccessOpen(true)}
+              className="mb-3 flex w-full items-center gap-2 rounded-lg border border-border bg-background-elevated px-3 py-2 text-[12px] font-semibold text-secondary hover:text-primary"
+            >
+              <KeyRound size={14} aria-hidden /> Request access
+            </button>
+          )}
           <div className="flex items-center gap-2.5">
             <div
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-xs font-semibold text-white"
@@ -466,6 +476,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </aside>
+      <RequestAccessDialog open={accessOpen} onClose={() => setAccessOpen(false)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="relative z-10 flex h-[72px] shrink-0 items-center justify-between gap-4 border-b border-border bg-background-secondary px-4 sm:px-7 lg:px-9">

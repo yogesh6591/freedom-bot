@@ -38,10 +38,11 @@ const TAB_LABEL: Record<string, string> = {
   DOCUMENT: 'Documents'
 }
 
-const AREAS = ['', 'finance', 'hr', 'salary', 'legal', 'exec', 'ops'] as const
+const AREAS = ['', 'finance', 'hr', 'salary', 'legal', 'exec', 'ops', 'sales'] as const
 const AREA_LABEL: Record<string, string> = {
   '': 'Everyone in the workspace',
   finance: 'Finance access only',
+  sales: 'Sales access only',
   hr: 'HR access only',
   salary: 'Salary access only',
   legal: 'Legal access only',

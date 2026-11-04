@@ -322,12 +322,27 @@ class User:
     data_scopes: frozenset[str] = frozenset()
     #: M15-20: may use the cross-client owner view. Not a client role.
     platform_owner: bool = False
+    #: The job title an admin picked. Read it through ``effective_job_role``.
+    job_role: Optional[str] = None
 
     @property
     def primary_role(self) -> Role:
         from bizos.types import role_rank
 
         return max(self.roles, key=role_rank) if self.roles else Role.VIEWER
+
+    @property
+    def effective_job_role(self) -> Optional[str]:
+        from bizos.rbac.job_roles import resolve_job_role
+
+        return resolve_job_role(self.job_role, self.roles, self.data_scopes)
+
+    @property
+    def job_role_label(self) -> Optional[str]:
+        from bizos.rbac.job_roles import JOB_ROLES
+
+        job = JOB_ROLES.get(self.effective_job_role or "")
+        return job.label if job else None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -337,6 +352,9 @@ class User:
             "display_name": self.display_name,
             "roles": sorted(str(r) for r in self.roles),
             "primary_role": str(self.primary_role),
+            "job_role": self.effective_job_role,
+            "job_role_label": self.job_role_label,
+            "can_approve": Role.APPROVER in self.roles or Role.ADMIN in self.roles,
             "data_scopes": sorted(self.data_scopes),
             "is_platform_owner": self.platform_owner,
             "status": self.status,

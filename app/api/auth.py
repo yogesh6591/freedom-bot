@@ -163,6 +163,7 @@ def me(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
     from bizos.domains.packs import PACKS_BY_NAME
     from bizos.rbac.permissions import permitted_tools
 
+    person = control.get_user(ctx.user_id)
     return {
         "user": {
             "id": ctx.user_id,
@@ -170,6 +171,8 @@ def me(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
             "display_name": ctx.display_name,
             "roles": sorted(str(r) for r in ctx.roles),
             "primary_role": str(ctx.primary_role),
+            "job_role": person.effective_job_role,
+            "job_role_label": person.job_role_label,
             # Department / restricted areas for the demo strip and UI (FB-037).
             # Admins see every area; others see only their granted data_scopes.
             "data_scopes": sorted(ctx.visible_areas),
