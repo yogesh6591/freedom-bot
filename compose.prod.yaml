@@ -1,0 +1,111 @@
+# Production side-by-side stack for FreedomBot Core / AgentOS.
+# Unique container names — does NOT touch freedombot-platform.
+# Usage:
+#   docker compose -p freedom-bot-core -f compose.prod.yaml up -d --build
+
+name: freedom-bot-core
+
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: fb-core-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bizos
+      POSTGRES_PASSWORD: ${CORE_DB_PASS}
+      POSTGRES_DB: bizos_control
+    ports:
+      - "127.0.0.1:5436:5432"
+    volumes:
+      - fb_core_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bizos -d bizos_control"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  api:
+    build: .
+    container_name: fb-core-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      RUNTIME_ENV: ${RUNTIME_ENV:-dev}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: bizos
+      DB_PASS: ${CORE_DB_PASS}
+      CONTROL_DB_NAME: bizos_control
+      WORKSPACE_DB_PREFIX: bizos_ws_
+      SHARED_WORKSPACE_DB: bizos_workspaces
+      DEFAULT_DEPLOYMENT_TYPE: ${DEFAULT_DEPLOYMENT_TYPE:-DEDICATED_DB}
+      DEFAULT_EXECUTION_MODE: ${DEFAULT_EXECUTION_MODE:-WAIT_FOR_APPROVAL}
+      JWT_SECRET: ${JWT_SECRET}
+      # Agno AgentOS authorization=True requires a verification key (HS256: same as JWT_SECRET).
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN}
+      COOKIE_SECURE: "true"
+      CORS_ORIGINS: https://freedombot-core.cloud.cepoch.com
+      AGENTOS_URL: https://freedombot-core-api.cloud.cepoch.com
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_WEB_MODEL: ${OPENAI_WEB_MODEL:-}
+      INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
+      CALCOM_API_KEY: ${CALCOM_API_KEY:-}
+      CALCOM_API_BASE_URL: ${CALCOM_API_BASE_URL:-https://api.cal.com/v2}
+      CALCOM_WEBHOOK_SECRET: ${CALCOM_WEBHOOK_SECRET:-}
+      INSTANTLY_API_KEY: ${INSTANTLY_API_KEY:-}
+      INSTANTLY_WEBHOOK_SECRET: ${INSTANTLY_WEBHOOK_SECRET:-}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-usd}
+      STRIPE_ENABLED: ${STRIPE_ENABLED:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      MODEL_ID: ${MODEL_ID:-gpt-4.1-mini}
+      EXECUTOR_MODEL_ID: ${EXECUTOR_MODEL_ID:-}
+      TRANSCRIPT_API_KEY: ${TRANSCRIPT_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL_ID: ${GEMINI_MODEL_ID:-}
+      ROUTER_MODEL_ID: ${ROUTER_MODEL_ID:-}
+      MODEL_REASONING_EFFORT: ${MODEL_REASONING_EFFORT:-}
+      AGENT_PIPELINE_V2: ${AGENT_PIPELINE_V2:-}
+      DATABASE_URL: postgresql+psycopg://${DB_USER:-bizos}:${DB_PASS}@db:5432/${ACQUISITION_DB_NAME:-acquisition}
+      ACQUISITION_URL_PREFIX: /acquire
+      PUBLIC_BASE_URL: https://freedombot-core.cloud.cepoch.com/acquire
+      COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+    ports:
+      - "127.0.0.1:8030:8000"
+    command: >
+      sh -c "python -m scripts.ensure_acquisition_db &&
+             python -m alembic -c acquisition_alembic.ini upgrade head &&
+             python -m scripts.bootstrap &&
+             python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      # AgentOS publishes public /health; /api/health is behind auth in prd.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  ui:
+    build:
+      context: ./ui
+      args:
+        NEXT_PUBLIC_API_URL: https://freedombot-core.cloud.cepoch.com
+    container_name: fb-core-ui
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8031:3000"
+
+networks:
+  default:
+    name: freedom-bot-core-net
+    external: true
+
+volumes:
+  fb_core_pgdata:
