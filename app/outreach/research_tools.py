@@ -152,8 +152,9 @@ def ask_web(prompt: str) -> tuple[dict, list[dict]]:
         try:
             response = client.responses.create(model=model, input=prompt, **options)
             break
-        except Exception:  # noqa: BLE001
-            if i == len(tries) - 1:
+        except Exception as exc:  # noqa: BLE001
+            # only a refused option falls back to a simpler request; a rate limit or timeout is not retried here
+            if i == len(tries) - 1 or type(exc).__name__ not in ("BadRequestError", "UnprocessableEntityError"):
                 raise
     data = _json_in(getattr(response, "output_text", "") or "")
     listed = [{"url": str(u), "title": ""} for u in (data.get("sources") or []) if isinstance(u, str)] \

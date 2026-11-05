@@ -153,6 +153,9 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
         if p.research_status in RESEARCH_HOLD:
             skipped.append({"name": label, "email": email, "reason": "still being researched"})
             continue
+        if p.research_status == "done" and (p.research_notes or "").startswith("Verdict: not suitable"):
+            skipped.append({"name": label, "email": email, "reason": "researched: not suitable (name them to email anyway)"})
+            continue
         if email.lower() in seen:
             continue
         seen.add(email.lower())
