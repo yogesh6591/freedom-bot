@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import threading
 import uuid
@@ -135,12 +136,25 @@ def ask_web(prompt: str) -> tuple[dict, list[dict]]:
     if not key:
         raise RuntimeError("no OpenAI key is set up")
     model = (settings.openai_web_model or settings.openai_model or "").strip() or "gpt-4.1"
-    client = OpenAI(api_key=key, timeout=150)
-    try:
-        response = client.responses.create(model=model, input=prompt, tools=[{"type": "web_search"}],
-                                           include=["web_search_call.action.sources"])
-    except Exception:  # noqa: BLE001 - an older API without that option: search without the full page list
-        response = client.responses.create(model=model, input=prompt, tools=[{"type": "web_search"}])
+    client = OpenAI(api_key=key, timeout=240)
+    context = (os.environ.get("WEB_SEARCH_CONTEXT") or "high").strip().lower()
+    effort = (os.environ.get("WEB_SEARCH_EFFORT") or "medium").strip().lower()
+    tool_deep = {"type": "web_search", "search_context_size": context if context in ("low", "medium", "high") else "high"}
+    tries = [  # the deepest first; a model or API that refuses an option falls back to the next one
+        {"tools": [tool_deep], "reasoning": {"effort": effort}, "include": ["web_search_call.action.sources"]},
+        {"tools": [tool_deep], "include": ["web_search_call.action.sources"]},
+        {"tools": [{"type": "web_search"}]},
+    ]
+    if effort in ("", "none", "off"):
+        tries = tries[1:]
+    response = None
+    for i, options in enumerate(tries):
+        try:
+            response = client.responses.create(model=model, input=prompt, **options)
+            break
+        except Exception:  # noqa: BLE001
+            if i == len(tries) - 1:
+                raise
     data = _json_in(getattr(response, "output_text", "") or "")
     listed = [{"url": str(u), "title": ""} for u in (data.get("sources") or []) if isinstance(u, str)] \
         if isinstance(data.get("sources"), list) else []
