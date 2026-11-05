@@ -193,5 +193,17 @@ export const api = {
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: <T>(path: string, form: FormData) =>
     request<T>(path, { method: 'POST', body: form }),
+  /** A file from the API, with the same session as every other request. */
+  blob: async (path: string): Promise<Blob> => {
+    const response = await fetch(`${API_BASE}${path}`, {
+      credentials: 'include',
+      headers: headersFor({}, {})
+    })
+    if (!response.ok) {
+      const text = await response.text()
+      throw failure(response.status, text ? safeJson(text) : null)
+    }
+    return response.blob()
+  },
   stream
 }

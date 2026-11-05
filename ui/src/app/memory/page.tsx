@@ -9,6 +9,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import { Eye, Plus } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
 import { useSession } from '@/components/SessionProvider'
 import { api } from '@/lib/api'
@@ -28,6 +29,8 @@ import {
   inputClass,
   timestamp
 } from '@/components/common/primitives'
+import { ADD_LABEL, AddMemoryDialog } from './AddMemoryDialog'
+import { DocumentViewer } from './DocumentViewer'
 
 const TABS = ['FACT', 'SOP', 'DECISION', 'CORRECTION', 'DOCUMENT'] as const
 const TAB_LABEL: Record<string, string> = {
@@ -58,6 +61,7 @@ interface KnowledgeDocument {
   access_area: string | null
   uploaded_by: string
   uploaded_at: string | null
+  has_file?: boolean
 }
 
 /** Uploaded knowledge-base files: admins upload and remove; everyone sees the ones their access allows. */
@@ -75,6 +79,7 @@ function DocumentsPanel({
   const [area, setArea] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<KnowledgeDocument | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -129,13 +134,13 @@ function DocumentsPanel({
       {isAdmin && (
         <Panel
           title="Upload a document"
-          description="PDF, .txt or .md, up to 10 MB. The assistant answers from it for everyone who has the access you choose."
+          description="PDF, Word (.docx), .txt or .md, up to 10 MB. The assistant answers from it for everyone who has the access you choose."
         >
           <div className="grid gap-3 md:grid-cols-3">
             <Field label="File">
               <input
                 type="file"
-                accept=".pdf,.txt,.md"
+                accept=".pdf,.docx,.txt,.md"
                 className={inputClass}
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               />
@@ -203,6 +208,21 @@ function DocumentsPanel({
                 header: 'Uploaded',
                 render: (doc) => <span className="text-muted">{timestamp(doc.uploaded_at)}</span>
               },
+              {
+                key: 'view',
+                header: '',
+                render: (doc) => (
+                  <Btn
+                    size="sm"
+                    variant="secondary"
+                    title="View document"
+                    aria-label={`View ${doc.title}`}
+                    onClick={() => setViewing(doc)}
+                  >
+                    <Eye size={16} aria-hidden />
+                  </Btn>
+                )
+              },
               ...(isAdmin
                 ? [
                     {
@@ -220,6 +240,7 @@ function DocumentsPanel({
           />
         )}
       </Panel>
+      <DocumentViewer doc={viewing} onClose={() => setViewing(null)} />
     </>
   )
 }
@@ -245,16 +266,20 @@ interface Conflict {
 }
 
 function MemoryView() {
-  const { hasRole } = useSession()
+  const { hasRole, me } = useSession()
   const [tab, setTab] = useState<(typeof TABS)[number]>('FACT')
   const [items, setItems] = useState<MemoryItem[]>([])
   const [selected, setSelected] = useState<MemoryItem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [conflicts, setConflicts] = useState<Conflict[]>([])
+  const [adding, setAdding] = useState(false)
 
   const canWrite = hasRole('DRAFTER', 'APPROVER', 'OPERATOR')
   const canRemove = hasRole('APPROVER')
+  const areaOptions = AREAS.filter(
+    (area) => !area || me?.user.data_scopes?.includes(area)
+  ).map((area) => ({ value: area, label: AREA_LABEL[area] ?? area }))
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -375,7 +400,16 @@ function MemoryView() {
       {tab === 'DOCUMENT' ? (
         <DocumentsPanel isAdmin={hasRole('ADMIN')} onError={setError} />
       ) : (
-      <Panel>
+      <Panel
+        title={TAB_LABEL[tab]}
+        actions={
+          canWrite ? (
+            <Btn size="sm" onClick={() => setAdding(true)}>
+              <Plus size={15} aria-hidden /> {ADD_LABEL[tab]}
+            </Btn>
+          ) : undefined
+        }
+      >
         {loading ? (
           <LoadingBlock rows={5} />
         ) : (
@@ -460,6 +494,16 @@ function MemoryView() {
           />
         )}
       </Panel>
+      )}
+
+      {tab !== 'DOCUMENT' && (
+        <AddMemoryDialog
+          tab={tab}
+          open={adding}
+          areas={areaOptions}
+          onClose={() => setAdding(false)}
+          onSaved={load}
+        />
       )}
 
       {selected && (

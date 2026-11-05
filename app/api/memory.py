@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from typing import Any, Optional
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, require_admin, require_approver, require_drafter
@@ -12,9 +13,20 @@ from bizos.control.models import ClientSettings
 from bizos.memory import documents
 from bizos.memory import store as memory
 from bizos.tenancy.context import TenantContext
-from bizos.types import ApprovalStatus, MemoryCategory, Role, SourceType
+from bizos.types import ApprovalStatus, AuditEventType, MemoryCategory, Role, SourceType
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
+
+
+def _refuse_regulated_data(text: str, settings: ClientSettings, ctx: TenantContext) -> None:
+    """A value typed into a memory form gets the same check as "Remember that ..." typed in chat."""
+    from app.api.chat import _regulated_data_refusal
+    from bizos.audit.events import log
+
+    refusal = _regulated_data_refusal(f"Remember that {text}", settings)
+    if refusal:
+        log(AuditEventType.GUARDRAIL_TRIGGERED, ctx=ctx, status=f"MEMORY_{refusal[0]}")
+        raise HTTPException(status_code=422, detail=refusal[1])
 
 
 class MemoryWrite(BaseModel):
@@ -114,6 +126,32 @@ async def upload_document(
             raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
+@router.get("/documents/{document_id}/text")
+def read_document_text(document_id: str, ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
+    """The text of a document this user can see."""
+    with bound(ctx):
+        found = documents.document_text(document_id, ctx=ctx)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such document")
+    return found
+
+
+@router.get("/documents/{document_id}/file")
+def read_document_file(document_id: str, ctx: TenantContext = Depends(current_context)) -> Response:
+    """The original file of a document this user can see. Only a PDF opens in the browser."""
+    with bound(ctx):
+        found = documents.document_file(document_id, ctx=ctx)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such file")
+    disposition = "inline" if found["content_type"] == "application/pdf" else "attachment"
+    name = quote(found["filename"])
+    return Response(
+        content=found["data"],
+        media_type=found["content_type"],
+        headers={"Content-Disposition": f"{disposition}; filename*=UTF-8''{name}", "X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.post("/documents/{document_id}/archive")
 def archive_document(document_id: str, ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
     """Admin only: remove a document from the knowledge base (its parts are archived, history kept)."""
@@ -144,6 +182,7 @@ def create_memory(
     if body.topic:
         attributes["topic"] = body.topic
     with bound(ctx):
+        _refuse_regulated_data(f"{body.title}: {body.content}", settings, ctx)
         try:
             item = memory.put(
                 category=MemoryCategory.parse(body.category, MemoryCategory.FACT),  # type: ignore[arg-type]
@@ -179,6 +218,7 @@ def correct_memory(
             status_code=403, detail=f"Corrections require at least the {required} role"
         )
     with bound(ctx):
+        _refuse_regulated_data(body.new_content, settings, ctx)
         try:
             item = memory.correct(
                 item_id=item_id,
