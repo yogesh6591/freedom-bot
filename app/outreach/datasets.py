@@ -141,6 +141,10 @@ def _people_columns() -> dict[str, Column]:
         Column("added_at", Prospect.created_at, "date", "added"),
         # where they are overall
         Column("status", _overall_status(), "enum", "status", _STATUS, frozenset({"link", "mail", "conversation"})),
+        # web research
+        Column("research_status", func.coalesce(Prospect.research_status, "not_researched"), "enum", "research",
+               ("not_researched", "queued", "running", "done", "failed")),
+        Column("priority_score", Prospect.priority_score, "number", "priority"),
         # emails
         Column("emails_sent", func.coalesce(MAIL.c.sent, 0), "number", "emails sent", needs=_MAIL),
         Column("emails_queued", func.coalesce(MAIL.c.queued, 0), "number", "emails waiting", needs=_MAIL),
