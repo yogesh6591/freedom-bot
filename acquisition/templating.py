@@ -90,6 +90,7 @@ _SOURCE_LABELS = {
     "openai_web": "OpenAI web",
     "nppes": "NPPES registry",
     "exa": "Exa index",
+    "exa_prospeo": "Exa + Prospeo",
     "legacy_search": "Legacy search",
     "autonomous_discovery": "Engine",
     "mock": "Mock",

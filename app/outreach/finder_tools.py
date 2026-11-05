@@ -237,7 +237,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         size = facts.get("employee_range") or facts.get("employee_count")
         prospect = Prospect(
             company=name, executive_name=proper_case(person), email=email, website=url, domain=domain,
-            linkedin_url=linkedin or None, source=SOURCE, discovery_source="assistant",
+            linkedin_url=linkedin or None, source=SOURCE, discovery_source="exa_prospeo",
             headcount_band=str(size) if size else None, fit_note=(str(row.get("summary") or "").strip()[:500] or None),
         )
         call.db.add(prospect)
