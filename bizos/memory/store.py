@@ -778,7 +778,11 @@ def list_items(
     """List items with their current version."""
     clauses = ["v.status = 'ACTIVE'"]
     params: dict[str, Any] = {"limit": max(1, min(limit, 500)), "offset": max(0, offset)}
-    if category is not None:
+    if category == MemoryCategory.CORRECTION:
+        # A correction is a new version of a fact, SOP or decision, and the item keeps its own
+        # category. So this view is every item whose current value came from a correction.
+        clauses.append("v.correction_reason IS NOT NULL")
+    elif category is not None:
         clauses.append("i.category = :category")
         params["category"] = str(category)
     if domain:

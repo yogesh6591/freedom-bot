@@ -266,3 +266,43 @@ def test_tool_argument_schemas_expose_memory_fields():
         "content": "b",
     }
 
+
+
+def test_a_corrected_item_shows_in_the_corrections_view_and_keeps_its_category(client_a, ctx_factory):
+    ctx = ctx_factory(client_a, "admin")
+    with tenant_scope(ctx):
+        corrected = memory.put(
+            category=MemoryCategory.FACT, memory_key="corrections_view_changed", title="Corrections view changed",
+            content="The old value", settings=client_a.settings, ctx=ctx,
+        )
+        untouched = memory.put(
+            category=MemoryCategory.FACT, memory_key="corrections_view_untouched", title="Corrections view untouched",
+            content="Never changed", settings=client_a.settings, ctx=ctx,
+        )
+        memory.correct(
+            item_id=corrected.id, new_content="The new value", reason="It changed",
+            settings=client_a.settings, ctx=ctx,
+        )
+        shown = {i.id: i for i in memory.list_items(category=MemoryCategory.CORRECTION, ctx=ctx)}
+        facts = {i.id for i in memory.list_items(category=MemoryCategory.FACT, ctx=ctx)}
+
+    assert corrected.id in shown and untouched.id not in shown
+    assert shown[corrected.id].current.content == "The new value"
+    assert corrected.id in facts
+
+
+def test_the_corrections_view_still_hides_restricted_items(client_a, ctx_factory):
+    admin = ctx_factory(client_a, "admin")
+    viewer = ctx_factory(client_a, "viewer")
+    with tenant_scope(admin):
+        item = memory.put(
+            category=MemoryCategory.FACT, memory_key="corrections_view_restricted", title="Corrections view restricted",
+            content="Secret old value", access_area="exec", settings=client_a.settings, ctx=admin,
+        )
+        memory.correct(
+            item_id=item.id, new_content="Secret new value", reason="It changed",
+            settings=client_a.settings, ctx=admin,
+        )
+    with tenant_scope(viewer):
+        shown = {i.id for i in memory.list_items(category=MemoryCategory.CORRECTION, ctx=viewer)}
+    assert item.id not in shown
