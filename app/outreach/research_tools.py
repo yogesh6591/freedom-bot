@@ -76,13 +76,24 @@ def _json_in(text: str) -> dict:
     return data
 
 
+def _clean(url: str) -> str:
+    """The address without the tracking parameters the web search adds (utm_source=openai and the like)."""
+    url = re.sub(r"([?&])utm_[a-z_]+=[^&#\s)]*&?", r"\1", url)
+    return re.sub(r"[?&]+(?=[)\s]|$)", "", url)
+
+
+def _pct(value: Any) -> int:
+    """A score as a whole number, .5 rounding up, so every place shows the same number."""
+    return int(float(value or 0) + 0.5)
+
+
 def _citations(response: Any) -> list[dict]:
     seen: set[str] = set()
     out: list[dict] = []
     for item in getattr(response, "output", None) or []:
         for part in getattr(item, "content", None) or []:
             for note in getattr(part, "annotations", None) or []:
-                url = str(getattr(note, "url", "") or "")
+                url = _clean(str(getattr(note, "url", "") or ""))
                 if getattr(note, "type", "") == "url_citation" and url and url not in seen:
                     seen.add(url)
                     out.append({"url": url[:1024], "title": str(getattr(note, "title", "") or "")[:300]})
@@ -108,7 +119,7 @@ def _merge_sources(*groups: list[dict]) -> list[dict]:
     out: list[dict] = []
     for group in groups:
         for src in group:
-            url = str(src.get("url") or "").strip()
+            url = _clean(str(src.get("url") or "").strip())
             if url.lower().startswith("http") and url not in seen:
                 seen.add(url)
                 out.append({"url": url[:1024], "title": str(src.get("title") or "")[:300]})
@@ -184,7 +195,7 @@ def apply_result(db: Any, p: Prospect, data: dict, sources: list[dict]) -> None:
     body = "\n".join(x for x in (
         text("summary") and f"Summary: {text('summary')}", _lines("Signals", signals),
         _lines("Why it fits", data.get("fit_reasons")), _lines("Concerns", concerns)) if x)
-    p.research_notes = body[:8000] or None
+    p.research_notes = _clean(body)[:8000] or None
     p.last_researched_at = _now()
     p.acquisition_status = AcquisitionStatus.RESEARCHED
     for old in db.scalars(select(ProspectResearchSource).where(ProspectResearchSource.prospect_id == p.id,
@@ -196,8 +207,8 @@ def apply_result(db: Any, p: Prospect, data: dict, sources: list[dict]) -> None:
     db.add(p)
     db.commit()
     ProspectScoringService(db).score_prospect(p)
-    scores = (f"Fit {float(p.fit_score or 0):.0f}, timing {float(p.timing_score or 0):.0f}, "
-              f"reach {float(p.reachability_score or 0):.0f}, priority {float(p.priority_score or 0):.0f}")
+    scores = (f"Fit {_pct(p.fit_score)}, timing {_pct(p.timing_score)}, "
+              f"reach {_pct(p.reachability_score)}, priority {_pct(p.priority_score)}")
     why = [str(x).strip() for x in data["fit_reasons"] if str(x).strip()] if isinstance(data.get("fit_reasons"), list) else []
     p.research_notes = f"Verdict: {_verdict(p, concerns, why)}. {scores}.\n" + (p.research_notes or "")
     db.add(p)
@@ -300,7 +311,7 @@ def describe(info: Optional[dict]) -> str:
     if info["finished"]:
         ranked = sorted(info["finished"], key=lambda r: -(r["priority"] if r["priority"] is not None else -1))
         parts.append("Done, best first: " + "; ".join(
-            f"{r['name']} - {r['verdict'] or 'done'}" + (f", priority {r['priority']:.0f}" if r["priority"] is not None else "")
+            f"{r['name']} - {r['verdict'] or 'done'}" + (f", priority {_pct(r['priority'])}" if r["priority"] is not None else "")
             for r in ranked) + ".")
     return " ".join(parts)
 

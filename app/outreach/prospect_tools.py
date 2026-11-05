@@ -78,7 +78,7 @@ def show_prospect(call: Call, who: str = "") -> str:
         + (f", last {chicago.fmt_time(mail['last_at'])}" if mail["last_at"] else ""),
     ]
     if p.research_status:
-        lines.append(f"Research: {p.research_status}" + (f", priority {p.priority_score:.0f}" if p.priority_score is not None else ""))
+        lines.append(f"Research: {p.research_status}" + (f", priority {int(float(p.priority_score) + 0.5)}" if p.priority_score is not None else ""))
     if p.research_notes:
         lines.append("Research notes: " + p.research_notes[:2500].replace("\n", " "))
         from acquisition.models.prospect import ProspectResearchSource
