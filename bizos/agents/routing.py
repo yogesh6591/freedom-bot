@@ -59,7 +59,7 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "admin_users": "BizOS login accounts: list, create, roles and data access, suspend or reactivate, password reset",
     "admin_permissions": "Tool rules: which roles can use a tool, and tightening how it runs",
     "admin_commercial": "Pricing, resale rules, consulting quotes, change orders",
-    "outreach": "Acquisition (admins only): prospects (count, search, show, add, edit, delete), emails to prospects and follow-ups, the sent-email log, assessment progress and reports, approve or unapprove, bookings (read, move, cancel), payment offers, the prospect journey page",
+    "outreach": "Acquisition (admins only): prospects (count, search, show, add, edit, delete), emails to prospects and follow-ups, the sent-email log, assessment progress and reports, approve or unapprove, bookings (read, move, cancel), payment offers, the prospect journey page, finding new prospects, and web research with scores on saved prospects",
     "integrations": "Anything else in the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion or any other connected platform) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it",
     "research": "The public web: research a company or person, news, job posts, read a web page",
     "files": "Files the user attached in this chat (PDF, Word, CSV, Excel, text): summarise, answer questions about them, use their contents (e.g. the people or emails listed in them)",

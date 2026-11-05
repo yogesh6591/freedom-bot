@@ -45,8 +45,8 @@ def _prompt(p: Prospect, rules: Any) -> str:
              f"Contact: {p.executive_name or 'unknown'}" + (f", {p.executive_title}" if p.executive_title else ""),
              f"Headcount: {p.headcount_band or 'unknown'}", f"Revenue: {p.revenue_band or 'unknown'}"]
     return (
-        "Research this company on the public web for a business that sells an AI operating system to owner-led, "
-        "expertise-based firms.\n" + "\n".join(facts) + "\n\n"
+        "Research this company on the public web to judge whether it matches the good-fit description below. "
+        "Judge only the match with that description; whether the firm already uses AI is not a concern.\n" + "\n".join(facts) + "\n\n"
         f"Good-fit firms: {kinds}. About {rules.employees_min} to {rules.employees_max} employees and "
         f"${rules.revenue_min // 1_000_000}M to ${rules.revenue_max // 1_000_000}M revenue (revenue is a soft signal). "
         f"Not wanted: {skip}.\n\n"
@@ -59,7 +59,7 @@ def _prompt(p: Prospect, rules: Any) -> str:
         ' "signals": ["each a short plain sentence about something happening now, such as '
         f'{SIGNAL_WORDS}; empty list if you found none"],'
         ' "fit_reasons": ["why they match the good-fit description"],'
-        ' "concerns": ["anything that makes them a poor fit"],'
+        ' "concerns": ["only ways they do NOT match the good-fit description (wrong kind of firm, too big or too small, excluded kind); empty if none"],'
         ' "excluded_kind": "the excluded kind of business this is, or null"}'
     )
 
@@ -91,13 +91,11 @@ def ask_web(prompt: str) -> tuple[dict, list[dict]]:
     """(the JSON GPT answered, the pages it cited). Raises when there is no key or the answer is unusable."""
     from openai import OpenAI
 
-    from acquisition.services.openai_service import OpenAIService
-
     settings = get_settings()
-    key, stored_model = OpenAIService(settings=settings).resolve_credentials()
+    key = (settings.openai_api_key or "").strip()  # the key alone; this does not depend on AI_REPLY_PROVIDER
     if not key:
         raise RuntimeError("no OpenAI key is set up")
-    model = (settings.openai_web_model or stored_model or "").strip() or "gpt-4.1"
+    model = (settings.openai_web_model or settings.openai_model or "").strip() or "gpt-4.1"
     client = OpenAI(api_key=key, timeout=150)
     response = client.responses.create(model=model, input=prompt, tools=[{"type": "web_search"}])
     return _json_in(getattr(response, "output_text", "") or ""), _citations(response)

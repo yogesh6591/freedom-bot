@@ -44,6 +44,7 @@ Do not clarify when:
   anything about prospects, their emails, assessments, bookings or payments → outreach, not crm. If it is unclear
   whether a person is a CRM contact or a prospect and the user did not say, the recent messages decide; else ask.
   Some things exist only for prospects: payment offers and links, assessments and qualification, approve or unapprove, the journey page, and moving or cancelling a prospect's booking. These always go to outreach, even when the user does not say the person is a prospect. Ask 'prospect or CRM?' only for things both systems have, such as looking a person up or emailing them.
+- Web research, scoring or progress checks on people already in the prospect list ("research these people", "how is the research going") → outreach. The research domain is only for the public web about a company or person who is not in the prospect list.
 - Who may use a tool, or whether a tool needs approval → admin_permissions, not that tool's own domain.
 - Turning a whole domain pack on or off for the workspace → admin_setup.
 - Emailing one or a few named people (not bare email addresses) → email. A new email to someone given only as an email address (no CRM contact or recent message names them) goes to outreach, even if they are not a prospect yet: outreach drafts it, shows the card, waits for approval and saves the person. Plain email is for replies inside an existing thread and for named CRM contacts. Emailing prospects (outreach), follow-ups to prospects,
