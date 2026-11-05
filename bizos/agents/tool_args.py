@@ -757,7 +757,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
                           ["approval_evidence"]),
     "find_people": _obj({
         "stage": _arr("Where they are now, any of: new, not_started, in_progress, completed, qualified, proof, demo, value, calendar, unqualified, booked, payment_pending (offered, not paid), purchased (paid). Leave out for any stage."),
-        "order": _enum("newest or oldest, by when the person was added. Use with count.", ["newest", "oldest"]),
+        "order": _enum("Only when the user says newest, latest, oldest or first added: newest or oldest, by when the person was added. Use with count. Otherwise leave it out, and the best-scored people come first.", ["newest", "oldest"]),
         "count": _i("How many to take after the other filters. With order and no count, 1."),
         "emailed": _enum("yes: already emailed, no: never emailed, any (default)", ["yes", "no", "any"]),
         "inactive_days": _i("Only people with no activity or email for at least this many days"),
@@ -787,7 +787,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         "audience": _enum("Everyone saved: all, or only people not emailed yet. Leave out when using filters or names.",
                           ["all", "not_emailed_yet"]),
         "stage": _arr("Where they are now, any of: new, not_started, in_progress, completed, qualified, proof, demo, value, calendar, unqualified, booked, payment_pending (offered, not paid), purchased (paid). Leave out for any stage."),
-        "order": _enum("newest or oldest, by when the person was added. Use with count.", ["newest", "oldest"]),
+        "order": _enum("Only when the user says newest, latest, oldest or first added: newest or oldest, by when the person was added. Use with count. Otherwise leave it out, and the best-scored people come first.", ["newest", "oldest"]),
         "count": _i("How many to take after the other filters. With order and no count, 1."),
         "emailed": _enum("yes: already emailed, no: never emailed, any (default)", ["yes", "no", "any"]),
         "inactive_days": _i("Only people with no activity or email for at least this many days"),
