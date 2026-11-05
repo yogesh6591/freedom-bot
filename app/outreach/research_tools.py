@@ -27,7 +27,7 @@ from app.outreach.toolkit import Call, ToolError, tool
 log = logging.getLogger(__name__)
 
 MAX_RESEARCH = 20  # people per request
-MAX_SOURCES = 8  # source links kept per person
+MAX_SOURCES = 10  # source links kept per person
 MIN_FIT = 50  # a researched person below this fit is "not suitable"
 SIGNAL_WORDS = ("hiring, growth, expansion, acquisition, leadership change, new offering, launch, scaling, "
                 "funding, technology, operational complexity")
@@ -56,11 +56,13 @@ def _prompt(p: Prospect, rules: Any) -> str:
         ' "business_type": "short label", "industry": "short label",'
         ' "headcount_estimate": "e.g. 40-60 or null", "revenue_estimate": "e.g. $5M-$10M or null",'
         ' "city": "or null", "state": "US state name or null",'
-        ' "signals": ["each a short plain sentence about something happening now, such as '
-        f'{SIGNAL_WORDS}; empty list if you found none"],'
+        ' "signals": ["only things that CHANGED in roughly the last 12 months, each a short plain sentence with its '
+        f'date, such as {SIGNAL_WORDS}. Plain facts about the firm (when it was founded, what it offers, how big it '
+        'is) are NOT signals. Empty list if you found no recent change"],'
         ' "fit_reasons": ["why they match the good-fit description"],'
         ' "concerns": ["only ways they do NOT match the good-fit description (wrong kind of firm, too big or too small, excluded kind); empty if none"],'
-        ' "excluded_kind": "the excluded kind of business this is, or null"}'
+        ' "excluded_kind": "the excluded kind of business this is, or null",'
+        ' "sources": ["the full web addresses of the pages you actually used"]}'
     )
 
 
@@ -87,6 +89,32 @@ def _citations(response: Any) -> list[dict]:
     return out[:MAX_SOURCES]
 
 
+def _searched(response: Any) -> list[dict]:
+    """Every page the web search looked at (the search call's own list), whether or not the answer cites it."""
+    out: list[dict] = []
+    for item in getattr(response, "output", None) or []:
+        if getattr(item, "type", "") != "web_search_call":
+            continue
+        action = getattr(item, "action", None)
+        for src in (getattr(action, "sources", None) or []) if action is not None else []:
+            url = str(getattr(src, "url", "") or (src.get("url") if isinstance(src, dict) else "") or "")
+            if url:
+                out.append({"url": url[:1024], "title": ""})
+    return out
+
+
+def _merge_sources(*groups: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for group in groups:
+        for src in group:
+            url = str(src.get("url") or "").strip()
+            if url.lower().startswith("http") and url not in seen:
+                seen.add(url)
+                out.append({"url": url[:1024], "title": str(src.get("title") or "")[:300]})
+    return out[:MAX_SOURCES]
+
+
 def ask_web(prompt: str) -> tuple[dict, list[dict]]:
     """(the JSON GPT answered, the pages it cited). Raises when there is no key or the answer is unusable."""
     from openai import OpenAI
@@ -97,8 +125,15 @@ def ask_web(prompt: str) -> tuple[dict, list[dict]]:
         raise RuntimeError("no OpenAI key is set up")
     model = (settings.openai_web_model or settings.openai_model or "").strip() or "gpt-4.1"
     client = OpenAI(api_key=key, timeout=150)
-    response = client.responses.create(model=model, input=prompt, tools=[{"type": "web_search"}])
-    return _json_in(getattr(response, "output_text", "") or ""), _citations(response)
+    try:
+        response = client.responses.create(model=model, input=prompt, tools=[{"type": "web_search"}],
+                                           include=["web_search_call.action.sources"])
+    except Exception:  # noqa: BLE001 - an older API without that option: search without the full page list
+        response = client.responses.create(model=model, input=prompt, tools=[{"type": "web_search"}])
+    data = _json_in(getattr(response, "output_text", "") or "")
+    listed = [{"url": str(u), "title": ""} for u in (data.get("sources") or []) if isinstance(u, str)] \
+        if isinstance(data.get("sources"), list) else []
+    return data, _merge_sources(_citations(response), listed, _searched(response))
 
 
 # ------------------------------------------------------------------------------------------------ saving it

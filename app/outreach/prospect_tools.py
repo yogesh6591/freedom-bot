@@ -80,7 +80,12 @@ def show_prospect(call: Call, who: str = "") -> str:
     if p.research_status:
         lines.append(f"Research: {p.research_status}" + (f", priority {p.priority_score:.0f}" if p.priority_score is not None else ""))
     if p.research_notes:
-        lines.append("Research notes: " + p.research_notes[:600].replace("\n", " "))
+        lines.append("Research notes: " + p.research_notes[:2500].replace("\n", " "))
+        from acquisition.models.prospect import ProspectResearchSource
+
+        urls = [r.source_url for r in db.scalars(select(ProspectResearchSource)
+                .where(ProspectResearchSource.prospect_id == p.id).order_by(ProspectResearchSource.created_at)) if r.source_url]
+        lines.append("Sources: " + (" | ".join(urls[:8]) if urls else "none saved"))
     if link is None or not link.assessment_token:
         lines.append("Assessment: no link yet (never emailed)")
         return "\n".join(lines)

@@ -419,6 +419,9 @@ class ProspectScoringService:
         del cfg  # reserved for future tunable timing dictionaries
         reasons: list[str] = []
         blob = _text_blob(prospect)
+        if prospect.last_researched_at is not None and isinstance(prospect.public_signals, list):
+            # a researched firm: only the recent changes found count, not plain words in its description
+            blob = " ".join(str(x) for x in prospect.public_signals).lower()
         hits = [kw for kw in _TIMING_KEYWORDS if kw in blob]
         if not hits:
             return {
