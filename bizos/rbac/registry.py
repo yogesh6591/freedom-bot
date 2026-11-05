@@ -1039,6 +1039,8 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     _outreach("show_prospect", "Show one prospect", "Everything stored about one person with their status. Read-only."),
     # -- records (changes)
     _outreach("add_prospects", "Add prospects", "Save one or many new people.", write=True),
+    _outreach("research_prospects", "Research prospects", "Queue web research on named or filtered people; they are researched one at a time in the background and scored.", write=True),
+    _outreach("show_research", "Show research progress", "How the latest research is going: who is done, running or waiting."),
     _outreach("find_new_prospects", "Find new prospects", "Find up to 5 new owner-led firms that fit the targeting rules and save them with a verified email.", write=True),
     _outreach("update_prospects", "Update prospects", "Change fields on one person, or on a named or filtered group after a yes.", write=True),
     _outreach("delete_prospects", "Delete prospects", "Delete named people and their email log after a yes.", write=True),

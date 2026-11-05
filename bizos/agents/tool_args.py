@@ -840,6 +840,16 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             }),
         },
     }, ["people"]),
+    "research_prospects": _obj({
+        "people": {"type": "array", "items": {"type": "string"}, "description": "Names or emails of the people to research"},
+        "where": {
+            "type": "array",
+            "description": "Instead of people: a filter that picks the group (same shape as query_records filters).",
+            "items": _obj({"field": _s("Column name or 'search'"), "op": _s("equals, contains, ..."), "value": _s("Value"),
+                           "value2": _s("Upper end for between")}, ["field"]),
+        },
+    }),
+    "show_research": _obj({}),
     "find_new_prospects": _obj({
         "count": _i("How many new people to find (1 to 5, default 5)"),
         "focus": _s("Kind of firm to look for, only if the user named one; leave empty to use the targeting rules"),

@@ -151,6 +151,10 @@ class Prospect(Base):
     last_researched_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Chat-started web research: queued -> running -> done / failed. Queued or running people are on hold for email.
+    research_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    research_batch: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    research_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -77,6 +77,10 @@ def show_prospect(call: Call, who: str = "") -> str:
         f"Emails: {mail['sent']} sent, {mail['queued']} waiting" + (", opted out" if mail["opted_out"] else "")
         + (f", last {chicago.fmt_time(mail['last_at'])}" if mail["last_at"] else ""),
     ]
+    if p.research_status:
+        lines.append(f"Research: {p.research_status}" + (f", priority {p.priority_score:.0f}" if p.priority_score is not None else ""))
+    if p.research_notes:
+        lines.append("Research notes: " + p.research_notes[:600].replace("\n", " "))
     if link is None or not link.assessment_token:
         lines.append("Assessment: no link yet (never emailed)")
         return "\n".join(lines)

@@ -102,6 +102,9 @@ class OutreachSession:
                     email, name = matches[0].email, name or matches[0].executive_name
                 known = find_prospects(db, email)
                 known = next((k for k in known if k.email.lower() == email.lower()), None)
+                if known is not None and known.research_status in ("queued", "running"):
+                    return (f"error: {known.executive_name} is still being researched, so cannot be emailed yet. "
+                            "Tell the user to wait until the research is done.")
                 if (known is None and email.lower() not in self.latest.lower()
                         and email.lower() not in {r["email"].lower() for r in self.state["recipients"]}):
                     return (f"error: {email} is not a saved prospect and the user did not type it in this message. "
@@ -483,6 +486,13 @@ class OutreachSession:
                     return "error: " + res["error"] + " Nothing was queued."
                 skipped = res["skipped"]
                 chosen = [{"email": r["email"], "name": r["name"]} for r in res["people"]]
+            on_hold = aud.held_among(db, [r["email"] for r in chosen])
+            if on_hold:
+                for r in chosen:
+                    if r["email"].lower() in on_hold:
+                        skipped.append({"name": r.get("name") or r["email"], "email": r["email"],
+                                        "reason": "still being researched"})
+                chosen = [r for r in chosen if r["email"].lower() not in on_hold]
             if not chosen:
                 why = ("; ".join(sorted({s["reason"] for s in skipped}))) if skipped else ""
                 return "error: nobody matches" + (f" ({len(skipped)} skipped: {why})" if skipped else "") + ". Nothing was queued."

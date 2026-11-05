@@ -216,6 +216,7 @@
   record: show_prospect. Email history: show_sent_emails. Assessment: show_assessment.
 - A name may be misspelled; pass it as typed, the tools match close spellings. If several people match, ask which one.
 - Find new people from the web (up to 5 per request, saved with a verified email, nothing emailed): find_new_prospects. Saved targeting rules are the default; pass count, focus, state or sizes only when the user named them. Never run it twice for one request.
+- Research: research_prospects only when the user asks to research people; never after find_new_prospects on your own. Progress: show_research. People in research cannot be emailed until done. "Send to N people" with nobody named picks the best fit first by itself; do not add an order.
 - Add people: add_prospects. Change fields: update_prospects (one person at once; a named group or a filter asks one yes).
   Delete a named list (up to 25): delete_prospects. "Delete everyone / all" is refuse_bulk_change; never try another way.
 - Every tool that says "confirm first" changed nothing. Put its question to the user in plain words, wait for the

@@ -922,6 +922,20 @@ TOOL_META: dict[str, AgentMeta] = {
         a CRM contact -> crm_create_contact.
         Effect: the people are saved; nothing is emailed. {gate}
     """)),
+    "research_prospects": M("outreach", d("""
+        Start web research on saved people, one at a time in the background: what the firm does, current signals,
+        sources, three scores and a verdict. People in research cannot be emailed until it is done.
+        Use when: "research these people", "inka research karo".
+        Don't use: finding new people -> find_new_prospects; progress -> show_research.
+        Needs: people (names or emails) or where (a filter).
+        Effect: they are queued for research. {gate}
+    """)),
+    "show_research": M("outreach", d("""
+        Show how the latest web research is going: how many are done, who is being researched now, who is waiting,
+        and for finished people the verdict and priority, best first. Read-only.
+        Use when: "how is the research going", "who is researched", "research ka status".
+        Don't use: starting research -> research_prospects; one person's full record -> show_prospect.
+    """)),
     "find_new_prospects": M("outreach", d("""
         Find new prospects from the web: up to 5 owner-led firms, each saved with the founder and a verified
         email. Jeanne's saved targeting rules apply; pass only what the user named, which replaces that part.

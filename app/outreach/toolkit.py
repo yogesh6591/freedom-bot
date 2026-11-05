@@ -96,6 +96,7 @@ _TOOL_MODULES = (
     "payment_tools",
     "prospect_tools",
     "query_tools",
+    "research_tools",
 )
 
 

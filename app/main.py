@@ -82,9 +82,18 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         stop_outreach = outreach_sender.start()
     except Exception as exc:  # noqa: BLE001 - the API must start even if the email sender cannot
         log_warning(f"bizos: outreach sender not started: {exc}")
+    stop_research = None
+    try:
+        from app.outreach import research_tools
+
+        stop_research = research_tools.start()
+    except Exception as exc:  # noqa: BLE001 - the API must start even if the research worker cannot
+        log_warning(f"bizos: prospect research not started: {exc}")
     try:
         yield
     finally:
+        if stop_research:
+            stop_research()
         if stop_outreach:
             stop_outreach()
         if stop_sync:

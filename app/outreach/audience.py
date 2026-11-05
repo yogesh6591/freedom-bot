@@ -28,6 +28,7 @@ STAGES = ("new", "not_started", "in_progress", "completed", "qualified", "proof"
 #: Older or looser words that mean several stages.
 STAGE_ALIASES = {"exploring": ("proof", "demo", "value", "calendar")}
 _STEP_STAGE = {"proof": "proof", "demo": "demo", "value": "value", "calendar_unlocked": "calendar"}
+RESEARCH_HOLD = ("queued", "running")
 ORDERS = ("newest", "oldest")
 EMAILED = ("yes", "no", "any")
 RECENT_DAYS = 0  # someone emailed in the last 2 days is skipped unless include_recent is set
@@ -149,6 +150,9 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
         if not _EMAIL.match(email):
             skipped.append({"name": label, "email": email, "reason": "no valid email"})
             continue
+        if p.research_status in RESEARCH_HOLD:
+            skipped.append({"name": label, "email": email, "reason": "still being researched"})
+            continue
         if email.lower() in seen:
             continue
         seen.add(email.lower())
@@ -160,7 +164,8 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
             continue
         row = {"id": str(p.id), "email": email, "name": p.executive_name or "", "company": (p.company or "").strip(),
                "stage": st, "emails": m["count"], "days_quiet": quiet, "added": _aware(p.created_at),
-               "offered_at": link.checkout_offered_at if link is not None else None}
+               "offered_at": link.checkout_offered_at if link is not None else None,
+               "priority": float(p.priority_score) if p.priority_score is not None else None}
         if st in ("in_progress", "not_started") and profile is not None:
             got, missing = structured_answers_and_missing(profile.structured_state)
             row["captured"] = [f"{g['key']}: {str(g['value'])[:80]}" for g in got][:6]
@@ -171,9 +176,22 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
         people.sort(key=lambda r: r["added"], reverse=(order == "newest"))
         n = count if count and count > 0 else 1
         people = people[:n]
-    elif count and count > 0:
-        people = people[:count]
+    else:
+        # nobody was named and no order was asked: the best fit goes first, researched before unresearched
+        people.sort(key=lambda r: (-(r["priority"] if r["priority"] is not None else -1.0), r["added"]))
+        if count and count > 0:
+            people = people[:count]
     return {"people": people, "skipped": skipped, "error": ""}
+
+
+def held_among(db: Session, emails: list) -> set:
+    """Lower-case emails (of the given ones) whose person is queued or being researched, so cannot be emailed."""
+    keys = {str(e).strip().lower() for e in emails if e}
+    if not keys:
+        return set()
+    rows = db.scalars(select(Prospect.email).where(func.lower(Prospect.email).in_(keys),
+                                                   Prospect.research_status.in_(RESEARCH_HOLD)))
+    return {str(e).strip().lower() for e in rows}
 
 
 def stages_for(db: Session, emails: list) -> dict:
