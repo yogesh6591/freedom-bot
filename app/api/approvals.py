@@ -11,6 +11,7 @@ from app.api.deps import (
     bound,
     client_settings,
     current_context,
+    require_admin,
     require_approver,
     require_role,
     run_scope,
@@ -118,6 +119,19 @@ def inbox(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
         to_decide = [a for a in pending if a.requested_by != ctx.user_id]
         mine = actions.list_actions(requested_by=ctx.user_id, limit=_INBOX_RECENT, ctx=ctx)
         return {"can_decide": can_decide, "to_decide": _named(to_decide, ctx), "mine": _named(mine, ctx)}
+
+
+@router.get("/research-progress")
+def research_progress(ctx: TenantContext = Depends(require_admin)) -> Optional[dict[str, Any]]:
+    """How the latest prospect research is going, for the research card in the chat bell (null when none)."""
+    from acquisition.db.session import SessionLocal
+    from app.outreach import research_tools
+
+    db = SessionLocal()
+    try:
+        return research_tools.progress(db)
+    finally:
+        db.close()
 
 
 @router.get("/{action_id}")

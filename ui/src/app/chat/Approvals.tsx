@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bell, BellRing, CheckCircle2, Clock, X, XCircle } from 'lucide-react'
+import { Bell, BellRing, CheckCircle2, Clock, Loader2, Search, X, XCircle } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 
 export interface ApprovalItem {
@@ -29,6 +29,21 @@ interface Inbox {
   can_decide: boolean
   to_decide: ApprovalItem[]
   mine: ApprovalItem[]
+}
+
+/** Web research started from the chat: one batch of prospects, researched one at a time. */
+export interface ResearchInfo {
+  batch: string
+  total: number
+  done: number
+  finished: { name: string; verdict: string; priority: number | null }[]
+  failed: string[]
+  running: string[]
+  waiting: string[]
+}
+
+function researchActive(r: ResearchInfo | null): boolean {
+  return !!r && r.running.length + r.waiting.length > 0
 }
 
 /** Outcome shown on a card right after this user decided it. */
@@ -69,8 +84,24 @@ export function useApprovalInbox(enabled = true) {
   const [fresh, setFresh] = useState(0)
   const [flash, setFlash] = useState<Decided['kind'] | null>(null)
   const known = useRef<Map<string, string> | null>(null)
+  const [research, setResearch] = useState<ResearchInfo | null>(null)
+  const [researchFresh, setResearchFresh] = useState(false)
+  const wasActive = useRef(false)
+
+  const refreshResearch = useCallback(async () => {
+    try {
+      const next = await api.get<ResearchInfo | null>('/api/approvals/research-progress')
+      setResearch(next)
+      const active = researchActive(next)
+      if (wasActive.current && !active) setResearchFresh(true)
+      wasActive.current = active
+    } catch {
+      // The research card stays as it was; the next poll tries again.
+    }
+  }, [])
 
   const refresh = useCallback(async () => {
+    void refreshResearch()
     try {
       const next = await api.get<Inbox>('/api/approvals/inbox')
       setInbox(next)
@@ -99,6 +130,16 @@ export function useApprovalInbox(enabled = true) {
     return () => window.clearInterval(timer)
   }, [refresh, enabled])
 
+  // While people are being researched, look more often so the card moves as each one finishes.
+  const researching = researchActive(research)
+  useEffect(() => {
+    if (!enabled || !researching) return
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void refreshResearch()
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [enabled, researching, refreshResearch])
+
   useEffect(() => {
     if (!flash) return
     const timer = window.setTimeout(() => setFlash(null), 4000)
@@ -109,8 +150,13 @@ export function useApprovalInbox(enabled = true) {
     inbox,
     fresh,
     flash,
+    research,
+    researchFresh,
     refresh,
-    markSeen: () => setFresh(0),
+    markSeen: () => {
+      setFresh(0)
+      setResearchFresh(false)
+    },
     showFlash: (kind: Decided['kind']) => setFlash(kind)
   }
 }
@@ -119,13 +165,18 @@ export function ApprovalBell({
   waiting,
   fresh,
   flash,
+  research,
+  researchFresh,
   onClick
 }: {
   waiting: number
   fresh: number
   flash: Decided['kind'] | null
+  research?: ResearchInfo | null
+  researchFresh?: boolean
   onClick: () => void
 }) {
+  const busyResearch = researchActive(research ?? null)
   const label =
     flash === 'approved'
       ? 'Approved'
@@ -133,9 +184,13 @@ export function ApprovalBell({
         ? 'Rejected'
         : waiting
           ? `${waiting} waiting for your approval`
-          : fresh
-            ? `${fresh} of your requests decided`
-            : 'Approvals'
+          : busyResearch && research
+            ? `Research ${research.done} of ${research.total} done`
+            : researchFresh && research
+              ? `Research done: ${research.done} of ${research.total}`
+              : fresh
+                ? `${fresh} of your requests decided`
+                : 'Approvals'
   return (
     <button
       type="button"
@@ -156,15 +211,19 @@ export function ApprovalBell({
         <XCircle size={15} aria-hidden />
       ) : waiting ? (
         <BellRing size={15} aria-hidden />
+      ) : busyResearch ? (
+        <Loader2 size={15} className="animate-spin" aria-hidden />
       ) : (
         <Bell size={15} aria-hidden />
       )}
-      <span className="hidden sm:inline">{flash ? label : 'Approvals'}</span>
+      <span className="hidden sm:inline">
+        {flash || (!waiting && (busyResearch || researchFresh) && research) ? label : 'Approvals'}
+      </span>
       {!flash && waiting > 0 ? (
         <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold text-white">
           {waiting}
         </span>
-      ) : !flash && fresh > 0 ? (
+      ) : !flash && (fresh > 0 || (researchFresh && !busyResearch)) ? (
         <span className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" aria-hidden />
       ) : null}
     </button>
@@ -264,6 +323,8 @@ export function ApprovalsMenu({
         waiting={approvals.inbox?.to_decide.length ?? 0}
         fresh={approvals.fresh}
         flash={approvals.flash}
+        research={approvals.research}
+        researchFresh={approvals.researchFresh}
         onClick={() => {
           setOpen((o) => !o)
           approvals.markSeen()
@@ -273,6 +334,7 @@ export function ApprovalsMenu({
       {open && (
         <ApprovalsPanel
           inbox={approvals.inbox}
+          research={approvals.research}
           onClose={() => setOpen(false)}
           onChanged={() => void approvals.refresh()}
           onDecided={(kind) => approvals.showFlash(kind)}
@@ -282,13 +344,65 @@ export function ApprovalsMenu({
   )
 }
 
+/** One card for the latest research batch; it changes in place as people finish. */
+function ResearchCard({ research }: { research: ResearchInfo }) {
+  const active = researchActive(research)
+  const percent = research.total ? Math.round((research.done / research.total) * 100) : 0
+  const ranked = [...research.finished].sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1))
+  return (
+    <div className="rounded-lg border border-black/5 bg-white/80 px-2.5 py-2 dark:border-white/10 dark:bg-white/5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-primary">
+          {active ? <Loader2 size={14} className="animate-spin" aria-hidden /> : <CheckCircle2 size={14} aria-hidden />}
+          {active ? 'Researching' : 'Research done'}: {research.done} of {research.total}
+        </p>
+      </div>
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-black/5 dark:bg-white/10" aria-hidden>
+        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${percent}%` }} />
+      </div>
+      <ul className="mt-2 flex flex-col gap-1 text-[12.5px] text-secondary">
+        {research.running.map((n) => (
+          <li key={`r-${n}`} className="flex items-center gap-1.5">
+            <Search size={12} aria-hidden /> <span className="truncate">{n}</span>
+            <span className="ml-auto shrink-0 text-[11.5px] text-amber-700">Researching now</span>
+          </li>
+        ))}
+        {research.waiting.map((n) => (
+          <li key={`w-${n}`} className="flex items-center gap-1.5">
+            <Clock size={12} aria-hidden /> <span className="truncate">{n}</span>
+            <span className="ml-auto shrink-0 text-[11.5px]">Waiting</span>
+          </li>
+        ))}
+        {research.failed.map((n) => (
+          <li key={`f-${n}`} className="flex items-center gap-1.5">
+            <XCircle size={12} aria-hidden /> <span className="truncate">{n}</span>
+            <span className="ml-auto shrink-0 text-[11.5px] text-red-600">Failed</span>
+          </li>
+        ))}
+        {ranked.map((f) => (
+          <li key={`d-${f.name}`} className="flex items-center gap-1.5" title={f.verdict}>
+            <CheckCircle2 size={12} aria-hidden /> <span className="truncate">{f.name}</span>
+            <span className="ml-auto shrink-0 text-[11.5px] text-emerald-700">
+              {f.verdict.startsWith('suitable') ? 'Suitable' : 'Not suitable'}
+              {f.priority !== null ? ` · ${Math.round(f.priority)}` : ''}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {active ? <p className="mt-1.5 text-[11.5px] text-muted">People in research cannot be emailed until they are done.</p> : null}
+    </div>
+  )
+}
+
 function ApprovalsPanel({
   inbox,
+  research,
   onClose,
   onChanged,
   onDecided
 }: {
   inbox: Inbox | null
+  research: ResearchInfo | null
   onClose: () => void
   onChanged: () => void
   onDecided: (kind: Decided['kind']) => void
@@ -345,6 +459,14 @@ function ApprovalsPanel({
           <p className="text-[14px] text-muted">Loading…</p>
         ) : (
           <div className="flex flex-col gap-3">
+            {research ? (
+              <section>
+                <p className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-secondary">
+                  <Search size={13} /> Research
+                </p>
+                <ResearchCard research={research} />
+              </section>
+            ) : null}
             {inbox.can_decide ? (
               <section>
                 <p className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-secondary">
