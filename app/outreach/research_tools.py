@@ -340,17 +340,23 @@ def research_prospects(call: Call, people: Optional[list] = None, where: Optiona
     batch = str(uuid.uuid4())
     queued: list[Prospect] = []
     busy: list[str] = []
+    done: list[str] = []
     for p in targets:
         if p.research_status in ("queued", "running"):
             busy.append(p.executive_name)
             continue
+        if not people and p.research_status == "done":
+            done.append(p.executive_name)  # a group or "all": only the ones not researched yet; a named person is redone
+            continue
         p.research_status, p.research_batch, p.research_updated_at = "queued", batch, _now()
         queued.append(p)
     call.db.commit()
+    skipped = f" Already researched, skipped (name them to research again): {', '.join(done)}." if done else ""
     if not queued:
-        return "Nothing queued: " + ", ".join(busy) + " already in research."
+        return "Nothing queued." + (f" {', '.join(busy)} already in research." if busy else "") + skipped
     names = ", ".join(p.executive_name for p in queued[:8]) + (f" and {len(queued) - 8} more" if len(queued) > 8 else "")
     extra = f" Already in research, left as they were: {', '.join(busy)}." if busy else ""
+    extra += skipped
     return (f"Queued {len(queued)} for web research: {names}. They are researched one at a time in the background "
             f"and cannot be emailed until their research is done.{extra} Tell the user the bell shows progress, "
             "and that show_research gives the details.")
