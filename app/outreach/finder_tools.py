@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from acquisition.config import get_settings
 from acquisition.models.prospect import Prospect
-from acquisition.services.prospect_identity import domain_from_website_or_email
+from acquisition.services.prospect_identity import domain_from_website_or_email, unique_placeholder_email
 from acquisition.services.prospecting_rules_service import get_prospecting_rules
 from app.outreach import lookup
 from app.outreach.text import proper_case
@@ -28,6 +28,7 @@ from app.outreach.toolkit import Call, ToolError, tool
 MAX_FIND = 5  # people per run
 COMPANY_POOL = 12  # companies asked from Exa per run (some will be skipped)
 MAX_LOOKUPS = 10  # Prospeo lookups per run, whatever the count
+MAX_NO_EMAIL = 3  # founders saved without an email per run (researchable, never emailed)
 EXA_URL = "https://api.exa.ai/search"
 SOURCE = "Exa + Prospeo"
 STATES = {
@@ -246,6 +247,21 @@ def _taken(call: Call, domain: str) -> bool:
 
 
 @tool("find_new_prospects", "count", "focus", "state", "employees_min", "employees_max")
+def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: str, _unused: str, category: str,
+          label: Optional[str], row: dict, facts: dict, email: str, verified: bool = False) -> Prospect:
+    size = facts.get("employee_range") or facts.get("employee_count")
+    prospect = Prospect(
+        company=name, executive_name=proper_case(person), email=email, website=url, domain=domain,
+        linkedin_url=linkedin or None, source=SOURCE, discovery_source="exa_prospeo",
+        email_confidence="verified" if verified else "placeholder", icp_category=category, business_type=label,
+        discovery_query=str(row.get("_query") or "")[:600] or None,
+        headcount_band=str(size) if size else None, fit_note=(_trim(str(row.get("summary") or ""), 500) or None),
+    )
+    call.db.add(prospect)
+    call.db.commit()
+    return prospect
+
+
 def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state: str = "",
                        employees_min: Optional[int] = None, employees_max: Optional[int] = None) -> str:
     """Find up to 5 new owner-led firms that match Jeanne's targeting rules and save them with a verified email."""
@@ -271,6 +287,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
     lo, hi = _num(employees_min), _num(employees_max)
     companies = _companies(key, rules, focus, place, lo, hi)
     added: list[Prospect] = []
+    nomail: list[Prospect] = []
     skipped: list[str] = []
     lookups = 0
     kinds = _classify(rules, focus, companies)  # one cheap call; the firms that do not match are never looked up
@@ -296,30 +313,27 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         person, job, linkedin = found
         lookups += 1
         email, facts = _verified_email(ctx, person, domain)
-        if not email:
-            skipped.append(f"{name}: no verified email for {person}")
-            continue
         if place and _outside(facts, place):
             skipped.append(f"{name}: based outside {place}")
+            continue
+        if not email:
+            if len(nomail) >= MAX_NO_EMAIL:
+                skipped.append(f"{name}: no verified email for {person}")
+                continue
+            nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, unique_placeholder_email()))
             continue
         if lookup.by_email(call.db, email) is not None:
             skipped.append(f"{person} <{email}>: already saved")
             continue
-        size = facts.get("employee_range") or facts.get("employee_count")
-        prospect = Prospect(
-            company=name, executive_name=proper_case(person), email=email, website=url, domain=domain,
-            linkedin_url=linkedin or None, source=SOURCE, discovery_source="exa_prospeo",
-            email_confidence="verified", icp_category=category, business_type=label,
-            discovery_query=str(row.get("_query") or "")[:600] or None,
-            headcount_band=str(size) if size else None, fit_note=(_trim(str(row.get("summary") or ""), 500) or None),
-        )
-        call.db.add(prospect)
-        call.db.commit()
-        added.append(prospect)
+        added.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, True))
     lines = [f"Added {len(added)} of {want} asked: " + "; ".join(
         f"{p.executive_name} <{p.email}> ({p.company}; category: {p.icp_category or '-'}; "
         f"business type: {p.business_type or '-'}; found by: {p.discovery_query or '-'})" for p in added) + "." if added
         else f"Added 0 of {want} asked."]
+    if nomail:
+        lines.append("Also saved without an email (founder found, no verified email): " + "; ".join(
+            f"{p.executive_name} ({p.company}; category: {p.icp_category or '-'}; business type: {p.business_type or '-'})"
+            for p in nomail) + ". Their Email shows No email yet. They can be researched but cannot be emailed.")
     if skipped:
         lines.append("Skipped: " + " | ".join(skipped[:8]) + ".")
     lines.append(f"Prospeo lookups used: {lookups}. Nothing was emailed. Show the people added in the prospects table "

@@ -89,11 +89,18 @@ def placeholder_email_for_domain(domain: str | None = None) -> str:
     return f"{PLACEHOLDER_EMAIL_LOCAL}@{PLACEHOLDER_EMAIL_DOMAIN}"
 
 
+def unique_placeholder_email() -> str:
+    """A placeholder that is different for every person, so saving several never collides on email."""
+    return f"{PLACEHOLDER_EMAIL_LOCAL}+{uuid.uuid4().hex[:10]}@{PLACEHOLDER_EMAIL_DOMAIN}"
+
+
 def is_placeholder_email(email: str | None) -> bool:
     text = (email or "").strip().lower()
     if not text:
         return True
     if text == f"{PLACEHOLDER_EMAIL_LOCAL}@{PLACEHOLDER_EMAIL_DOMAIN}":
+        return True
+    if text.startswith(f"{PLACEHOLDER_EMAIL_LOCAL}+") and text.endswith(f"@{PLACEHOLDER_EMAIL_DOMAIN}"):
         return True
     if text.endswith("@pending.invalid") or ".pending.invalid" in text:
         return True

@@ -20,6 +20,7 @@ from acquisition.models.journey import QualificationStatus
 from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENT, SentEmail
 from acquisition.models.prospect import Prospect
 from acquisition.services import outreach_service as svc
+from acquisition.services.prospect_identity import is_placeholder_email
 from app.outreach.records import structured_answers_and_missing
 
 #: Where a person is, from first contact to purchase. One value per person.
@@ -149,6 +150,9 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
             continue
         if not _EMAIL.match(email):
             skipped.append({"name": label, "email": email, "reason": "no valid email"})
+            continue
+        if is_placeholder_email(email):
+            skipped.append({"name": label, "email": "", "reason": "no email yet"})
             continue
         if p.research_status in RESEARCH_HOLD:
             skipped.append({"name": label, "email": email, "reason": "still being researched"})

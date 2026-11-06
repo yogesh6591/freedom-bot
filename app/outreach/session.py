@@ -19,6 +19,7 @@ import re
 import uuid
 from typing import Any, Callable, Optional
 
+from acquisition.services.prospect_identity import is_placeholder_email
 from app.outreach import card, chicago
 from app.outreach.approval import CHANGE_VERB, WHOLE_EMAIL, approval_problem, asks_to_change_subject, user_said
 from app.outreach.text import (
@@ -100,6 +101,8 @@ class OutreachSession:
                         listing = "; ".join(f"{m.executive_name} <{m.email}> ({m.company or 'no company'})" for m in matches)
                         return f"error: {name!r} matches several people: {listing}. Ask which one."
                     email, name = matches[0].email, name or matches[0].executive_name
+                if is_placeholder_email(email):
+                    return f"error: {name or 'this person'} has no email yet, so cannot be emailed. Tell the user to give an address."
                 known = find_prospects(db, email)
                 known = next((k for k in known if k.email.lower() == email.lower()), None)
                 if known is not None and known.research_status in ("queued", "running"):

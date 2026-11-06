@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from acquisition.models.prospect import Prospect
+from acquisition.services.prospect_identity import is_placeholder_email
 from app.outreach import chicago, datasets, fields, lookup, records
 from app.outreach.confirm import action_key
 from app.outreach.fields import FieldError
@@ -68,7 +69,7 @@ def show_prospect(call: Call, who: str = "") -> str:
     link = records.link_row(db, p.id)
     mail = records.email_state(db, p.id)
     lines = [
-        f"{p.executive_name} <{p.email}>",
+        f"{p.executive_name} <{'No email yet' if is_placeholder_email(p.email) else p.email}>",
         " | ".join([_show("Company", p.company), _show("Title", p.executive_title)]),
         " | ".join([_show("Website", p.website), _show("LinkedIn", p.linkedin_url)]),
         " | ".join([_show("Revenue", p.revenue_band), _show("Headcount", p.headcount_band), _show("Source", p.source)]),
