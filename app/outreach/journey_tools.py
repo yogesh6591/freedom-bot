@@ -121,12 +121,16 @@ def show_journey_settings(call: Call) -> str:
     journey = AcquisitionJourneyService(call.db)
     real, has_video = readiness(call.db)
     on = lambda flag: "on" if flag else "off"  # noqa: E731
+    demo_url = (row.demo_video_url or "").strip()
+    after_url = (row.after_booking_video_url or "").strip()
     lines = [
-        f"Demo: {on(row.demo_enabled)}, title {_clip(row.demo_title)}, video {'set' if has_video else 'not set (placeholder)'}, "
+        f"Demo: {on(row.demo_enabled)}, title {_clip(row.demo_title)}, "
+        f"video {demo_url if has_video and demo_url else 'not set (placeholder)'}, "
         f"must watch {on(row.demo_require_watch)}",
         f"Value: {on(row.value_enabled)}, heading {_clip(row.value_heading)}",
         f"Calendar: {on(row.calendar_enabled)}, event {_clip(row.calcom_event_title)}, link {_clip(row.calcom_booking_url or row.calendar_url, 60)}",
-        f"After booking: video {on(row.after_booking_video_enabled)}, heading {_clip(row.after_booking_video_heading)}, "
+        f"After booking: video {on(row.after_booking_video_enabled)}, "
+        f"url {after_url or '-'}, heading {_clip(row.after_booking_video_heading)}, "
         f"prep heading {_clip(row.after_booking_prep_heading)}",
     ]
     studies = journey.list_all_case_studies()
