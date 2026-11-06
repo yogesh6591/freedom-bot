@@ -918,8 +918,17 @@ function ChatView({ home }: { home: boolean }) {
     event.preventDefault()
     const files = attachments.ready
     if (busy || attachments.uploading || (!input.trim() && !files.length)) return
+    const videoExts = ['.mp4', '.webm', '.mov', '.m4v']
+    const videoOnly =
+      files.length > 0 &&
+      files.every((f) => videoExts.some((ext) => f.name.toLowerCase().endsWith(ext)))
     const message =
-      input.trim() || (files.length > 1 ? 'Please read the attached files and summarise them.' : 'Please read the attached file and summarise it.')
+      input.trim() ||
+      (videoOnly
+        ? 'I attached a video.'
+        : files.length > 1
+          ? 'Please read the attached files and summarise them.'
+          : 'Please read the attached file and summarise it.')
     const sentFiles = attachments.take()
     setInput('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
