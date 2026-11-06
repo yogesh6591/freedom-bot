@@ -27,7 +27,8 @@ from app.outreach.toolkit import Call, ToolError, tool
 
 MAX_FIND = 5  # people per run
 COMPANY_POOL = 12  # companies asked from Exa per run (some will be skipped)
-MAX_LOOKUPS = 10  # Prospeo lookups per run, whatever the count
+MAX_LOOKUPS = 15  # Prospeo lookups per run, whatever the count
+MAX_ROUNDS = 3  # Exa searches per run: each round asks for more firms than the last
 MAX_NO_EMAIL = 0  # founders saved without an email per run: none, only verified emails are kept
 EXA_URL = "https://api.exa.ai/search"
 SOURCE = "Exa + Prospeo"
@@ -141,10 +142,10 @@ def _classify(rules: Any, focus: str, rows: list[dict]) -> dict[int, tuple[str, 
 
 
 def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
-               hi: Optional[int] = None) -> list[dict]:
+               hi: Optional[int] = None, size: int = COMPANY_POOL) -> list[dict]:
     """Companies from every category, taken in turns so each category gets a chance, minus the excluded kinds."""
     pairs = _labelled(rules, focus, state, lo, hi)
-    per = max(3, -(-COMPANY_POOL // len(pairs)))
+    per = max(3, -(-size // len(pairs)))
     lists = [[dict(r, _category=cat, _query=q) for r in _exa(key, {
                  "query": q, "category": "company", "userLocation": "US", "numResults": per,
                  "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}}})]
@@ -165,7 +166,7 @@ def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[i
                 continue  # the search page does not place the firm in this state
             seen.add(url)
             out.append(row)
-    return out[:COMPANY_POOL]
+    return out[:size]
 
 
 def _trim(text: str, size: int) -> str:
@@ -287,47 +288,56 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
     rules = get_prospecting_rules()
     place = _state(state)
     lo, hi = _num(employees_min), _num(employees_max)
-    companies = _companies(key, rules, focus, place, lo, hi)
     added: list[Prospect] = []
     nomail: list[Prospect] = []
     skipped: list[str] = []
     lookups = 0
-    kinds = _classify(rules, focus, companies)  # one cheap call; the firms that do not match are never looked up
-    for number, row in enumerate(companies):
+    tried: set[str] = set()
+    for round_no in range(MAX_ROUNDS):
         if len(added) >= want or lookups >= MAX_LOOKUPS:
             break
-        url = str(row.get("url") or "")
-        name = _company_name(str(row.get("title") or "")) or url
-        domain = domain_from_website_or_email(website=url)
-        if not domain:
-            continue
-        if _taken(call, domain):
-            skipped.append(f"{name}: already saved")
-            continue
-        category, label, matches = kinds.get(number, (str(row.get("_category") or "Other"), None, True))
-        if not matches:
-            skipped.append(f"{name}: not what was asked ({label or 'another kind of firm'})")
-            continue
-        found = _founder(key, name)
-        if found is None:
-            skipped.append(f"{name}: no founder or owner found")
-            continue
-        person, job, linkedin = found
-        lookups += 1
-        email, facts = _verified_email(ctx, person, domain)
-        if place and _outside(facts, place):
-            skipped.append(f"{name}: based outside {place}")
-            continue
-        if not email:
-            if len(nomail) >= MAX_NO_EMAIL:
-                skipped.append(f"{name}: no verified email for {person}")
+        # each round asks Exa for a wider list; firms already tried in an earlier round are dropped
+        companies = [r for r in _companies(key, rules, focus, place, lo, hi, COMPANY_POOL * (round_no + 1))
+                     if (domain_from_website_or_email(website=str(r.get('url') or '')) or '') not in tried]
+        if not companies:
+            break
+        tried.update(domain_from_website_or_email(website=str(r.get('url') or '')) or '' for r in companies)
+        kinds = _classify(rules, focus, companies)  # one cheap call; the firms that do not match are never looked up
+        for number, row in enumerate(companies):
+            if len(added) >= want or lookups >= MAX_LOOKUPS:
+                break
+            url = str(row.get("url") or "")
+            name = _company_name(str(row.get("title") or "")) or url
+            domain = domain_from_website_or_email(website=url)
+            if not domain:
                 continue
-            nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, unique_placeholder_email()))
-            continue
-        if lookup.by_email(call.db, email) is not None:
-            skipped.append(f"{person} <{email}>: already saved")
-            continue
-        added.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, True))
+            if _taken(call, domain):
+                skipped.append(f"{name}: already saved")
+                continue
+            category, label, matches = kinds.get(number, (str(row.get("_category") or "Other"), None, True))
+            if not matches:
+                skipped.append(f"{name}: not what was asked ({label or 'another kind of firm'})")
+                continue
+            found = _founder(key, name)
+            if found is None:
+                skipped.append(f"{name}: no founder or owner found")
+                continue
+            person, job, linkedin = found
+            lookups += 1
+            email, facts = _verified_email(ctx, person, domain)
+            if place and _outside(facts, place):
+                skipped.append(f"{name}: based outside {place}")
+                continue
+            if not email:
+                if len(nomail) >= MAX_NO_EMAIL:
+                    skipped.append(f"{name}: no verified email for {person}")
+                    continue
+                nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, unique_placeholder_email()))
+                continue
+            if lookup.by_email(call.db, email) is not None:
+                skipped.append(f"{person} <{email}>: already saved")
+                continue
+            added.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, True))
     lines = [f"Added {len(added)} of {want} asked: " + "; ".join(
         f"{p.executive_name} <{p.email}> ({p.company}; category: {p.icp_category or '-'}; "
         f"business type: {p.business_type or '-'}; found by: {p.discovery_query or '-'})" for p in added) + "." if added
@@ -338,6 +348,8 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             for p in nomail) + ". Their Email shows No email yet. They can be researched but cannot be emailed.")
     if skipped:
         lines.append("Skipped: " + " | ".join(skipped[:8]) + ".")
+    if len(added) < want:
+        lines.append(f"Only {len(added)} of {want} could be found within the search limit ({lookups} email lookups); ask again to continue.")
     lines.append(f"Prospeo lookups used: {lookups}. Nothing was emailed. Show the people added in the prospects table "
                  "with the Category column, as for any prospect answer.")
     return " ".join(lines)
