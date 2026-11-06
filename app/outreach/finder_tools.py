@@ -9,6 +9,8 @@ One chat tool, ``find_new_prospects``. It is small on purpose (credits are limit
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from typing import Any, Optional
 
@@ -68,28 +70,84 @@ def _state(value: str) -> str:
     return match
 
 
-def _queries(rules: Any, focus: str, state: str = "", lo: Optional[int] = None, hi: Optional[int] = None) -> list[str]:
-    """One search per category, best priority first (or one search for the kind of firm the user named).
+def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
+              hi: Optional[int] = None) -> list[tuple[str, str]]:
+    """(category, search text) pairs: one search per category, best priority first (or one search for the kind of
+    firm the user named, labelled with the closest saved category or "Other").
     Whatever the user named replaces that part of the saved rules; everything else comes from the rules."""
     place = f"based in {state}, United States" if state else rules.country
     tail = f"{lo or rules.employees_min} to {hi or rules.employees_max} employees, {place}"
     if focus.strip():
-        return [f"founder-led {focus.strip()} firm, {tail}"]
+        low = focus.strip().casefold()
+        name = next((c.name for c in rules.categories
+                     if any(w and w.casefold() in low for w in [c.name, *c.keywords])), "Other")
+        return [(name, f"founder-led {focus.strip()} firm, {tail}")]
     out = []
     for category in sorted(rules.categories, key=lambda c: c.priority):
         kind = " or ".join(category.keywords[:2]) or category.name
-        out.append(f"founder-led {kind} firm, {tail}")
-    return out or [f"founder-led consulting or advisory firm, {tail}"]
+        out.append((category.name, f"founder-led {kind} firm, {tail}"))
+    return out or [("Other", f"founder-led consulting or advisory firm, {tail}")]
+
+
+def _queries(rules: Any, focus: str, state: str = "", lo: Optional[int] = None, hi: Optional[int] = None) -> list[str]:
+    return [q for _, q in _labelled(rules, focus, state, lo, hi)]
+
+
+def _small_model(prompt: str) -> str:
+    """One cheap call (gpt-4o-mini unless FINDER_CLASSIFY_MODEL says otherwise)."""
+    from openai import OpenAI
+
+    key = (get_settings().openai_api_key or "").strip()
+    if not key:
+        raise RuntimeError("no OpenAI key is set up")
+    model = (os.environ.get("FINDER_CLASSIFY_MODEL") or "gpt-4o-mini").strip()
+    reply = OpenAI(api_key=key, timeout=60).chat.completions.create(
+        model=model, temperature=0, messages=[{"role": "user", "content": prompt}])
+    return reply.choices[0].message.content or ""
+
+
+def _classify(rules: Any, focus: str, rows: list[dict]) -> dict[int, tuple[str, Optional[str], bool]]:
+    """{row number: (category, what the firm is, matches what was asked)} from ONE small-model call for all the
+    firms found. Empty when the call fails, so the search's own category is used and nothing is dropped."""
+    if not rows:
+        return {}
+    names = [c.name for c in rules.categories]
+    wanted = (f"the kind of firm the user asked for: {focus.strip()}" if focus.strip()
+              else "one of these kinds of firm: " + "; ".join(names))
+    skip = ", ".join(rules.exclusions) or "none"
+    firms = "\n".join(f"{i}. {r.get('title') or ''} - {str(r.get('summary') or '')[:400]}" for i, r in enumerate(rows))
+    prompt = (
+        "Classify each firm from its short description. Reply with ONLY a JSON array, one object per firm: "
+        '{"i": number, "category": exactly one of [' + ", ".join(f'"{n}"' for n in names) + ', "Other"], '
+        '"business_type": "what the firm is in 2 to 4 words", "matches": true or false}. '
+        f"matches is true only when the firm is founder-led and is {wanted}, and is not an excluded kind "
+        f"(excluded: {skip}). Use only what the description says.\n\n{firms}")
+    try:
+        data = json.loads(re.search(r"\[.*\]", _small_model(prompt), re.S).group(0))
+    except Exception:  # noqa: BLE001 - no answer: keep the search's own category
+        return {}
+    out: dict[int, tuple[str, Optional[str], bool]] = {}
+    for item in data if isinstance(data, list) else []:
+        try:
+            i = int(item["i"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        said = str(item.get("category") or "").strip()
+        category = next((n for n in names if n.casefold() == said.casefold()), "Other")
+        label = str(item.get("business_type") or "").strip()[:128] or None
+        out[i] = (category, label, item.get("matches") is True)
+    return out
 
 
 def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
                hi: Optional[int] = None) -> list[dict]:
     """Companies from every category, taken in turns so each category gets a chance, minus the excluded kinds."""
-    queries = _queries(rules, focus, state, lo, hi)
-    per = max(3, -(-COMPANY_POOL // len(queries)))
-    lists = [_exa(key, {"query": q, "category": "company", "userLocation": "US", "numResults": per,
-                        "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}}})
-             for q in queries]
+    pairs = _labelled(rules, focus, state, lo, hi)
+    per = max(3, -(-COMPANY_POOL // len(pairs)))
+    lists = [[dict(r, _category=cat, _query=q) for r in _exa(key, {
+                 "query": q, "category": "company", "userLocation": "US", "numResults": per,
+                 "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}}})]
+             for cat, q in pairs]
     banned = [x.casefold() for x in rules.exclusions]
     seen: set[str] = set()
     out: list[dict] = []
@@ -215,7 +273,8 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
     added: list[Prospect] = []
     skipped: list[str] = []
     lookups = 0
-    for row in companies:
+    kinds = _classify(rules, focus, companies)  # one cheap call; the firms that do not match are never looked up
+    for number, row in enumerate(companies):
         if len(added) >= want or lookups >= MAX_LOOKUPS:
             break
         url = str(row.get("url") or "")
@@ -225,6 +284,10 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             continue
         if _taken(call, domain):
             skipped.append(f"{name}: already saved")
+            continue
+        category, label, matches = kinds.get(number, (str(row.get("_category") or "Other"), None, True))
+        if not matches:
+            skipped.append(f"{name}: not what was asked ({label or 'another kind of firm'})")
             continue
         found = _founder(key, name)
         if found is None:
@@ -246,7 +309,8 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         prospect = Prospect(
             company=name, executive_name=proper_case(person), email=email, website=url, domain=domain,
             linkedin_url=linkedin or None, source=SOURCE, discovery_source="exa_prospeo",
-            email_confidence="verified",
+            email_confidence="verified", icp_category=category, business_type=label,
+            discovery_query=str(row.get("_query") or "")[:600] or None,
             headcount_band=str(size) if size else None, fit_note=(_trim(str(row.get("summary") or ""), 500) or None),
         )
         call.db.add(prospect)

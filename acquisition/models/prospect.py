@@ -155,6 +155,9 @@ class Prospect(Base):
     research_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     research_batch: Mapped[str | None] = mapped_column(String(36), nullable=True)
     research_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # One of the saved ICP category names, or "Other"; and the exact search text that found this prospect.
+    icp_category: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    discovery_query: Mapped[str | None] = mapped_column(String(600), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

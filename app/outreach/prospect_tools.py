@@ -72,6 +72,7 @@ def show_prospect(call: Call, who: str = "") -> str:
         " | ".join([_show("Company", p.company), _show("Title", p.executive_title)]),
         " | ".join([_show("Website", p.website), _show("LinkedIn", p.linkedin_url)]),
         " | ".join([_show("Revenue", p.revenue_band), _show("Headcount", p.headcount_band), _show("Source", p.source)]),
+        " | ".join([_show("Category", p.icp_category), _show("Business type", p.business_type), _show("Found by", p.discovery_query)]),
         _show("Fit note", p.fit_note),
         f"Added {chicago.fmt_time(p.created_at)} (Chicago time).",
         f"Emails: {mail['sent']} sent, {mail['queued']} waiting" + (", opted out" if mail["opted_out"] else "")

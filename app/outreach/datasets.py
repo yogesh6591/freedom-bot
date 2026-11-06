@@ -141,6 +141,10 @@ def _people_columns() -> dict[str, Column]:
         Column("added_at", Prospect.created_at, "date", "added"),
         # where they are overall
         Column("status", _overall_status(), "enum", "status", _STATUS, frozenset({"link", "mail", "conversation"})),
+        # where the firm fits and how it was found
+        Column("icp_category", Prospect.icp_category, "text", "category"),
+        Column("business_type", Prospect.business_type, "text", "business type"),
+        Column("discovery_query", Prospect.discovery_query, "text", "found by"),
         # web research
         Column("research_status", func.coalesce(Prospect.research_status, "not_researched"), "enum", "research",
                ("not_researched", "queued", "running", "done", "failed")),

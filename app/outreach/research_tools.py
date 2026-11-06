@@ -62,6 +62,7 @@ def _prompt(p: Prospect, rules: Any) -> str:
         'is) are NOT signals. Empty list if you found no recent change"],'
         ' "fit_reasons": ["why they match the good-fit description"],'
         ' "concerns": ["only ways they do NOT match the good-fit description (wrong kind of firm, too big or too small, excluded kind); empty if none"],'
+        ' "icp_category": "exactly one of: ' + " | ".join([c.name for c in rules.categories] + ["Other"]) + ', judged from what the firm really does",'
         ' "excluded_kind": "the excluded kind of business this is, or null",'
         ' "sources": ["the full web addresses of the pages you actually used"]}'
     )
@@ -205,6 +206,12 @@ def apply_result(db: Any, p: Prospect, data: dict, sources: list[dict]) -> None:
     excluded = text("excluded_kind")
     if excluded:
         concerns.append(f"looks like {excluded}")
+    from acquisition.services.prospecting_rules_service import get_prospecting_rules
+
+    said = text("icp_category")
+    if said:
+        names = [c.name for c in get_prospecting_rules().categories]
+        p.icp_category = "Other" if excluded else next((n for n in names if n.casefold() == said.casefold()), "Other")
     if (p.source or "") == "Exa + Prospeo" and not p.email_confidence:
         p.email_confidence = "verified"  # Prospeo only returns verified emails
     body = "\n".join(x for x in (

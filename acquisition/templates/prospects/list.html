@@ -129,6 +129,7 @@
               <th>Email</th>
               <th>Revenue (est.)</th>
               <th>Staff</th>
+              <th>Category</th>
               <th>Source</th>
               <th class="col-actions"></th>
             </tr>
@@ -154,6 +155,7 @@
               <td>{% if prospect.email is placeholder_email %}<span class="email-missing">No email yet</span>{% else %}<a href="mailto:{{ prospect.email }}">{{ prospect.email }}</a>{% endif %}</td>
               <td title="{{ prospect.revenue_band or '' }}">{{ prospect.revenue_band|short_band }}</td>
               <td title="{{ prospect.headcount_band or '' }}">{{ prospect.headcount_band|short_band }}</td>
+              <td>{% if prospect.icp_category %}{{ prospect.icp_category }}{% if prospect.icp_category == 'Other' and prospect.business_type %}: {{ prospect.business_type }}{% endif %}{% else %}<span class="cell-muted">&mdash;</span>{% endif %}</td>
               <td><span class="source-tag src-{{ prospect.discovery_source or prospect.source }}"><i></i>{{ (prospect.discovery_source or prospect.source)|source_label }}</span></td>
               <td class="actions">
                 <a class="btn btn-icon" href="/prospects/{{ prospect.id }}" title="Edit" aria-label="Edit {{ prospect.executive_name }}">
