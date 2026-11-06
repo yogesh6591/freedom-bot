@@ -317,9 +317,11 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         call.db.commit()
         added.append(prospect)
     lines = [f"Added {len(added)} of {want} asked: " + "; ".join(
-        f"{p.executive_name} <{p.email}> ({p.company})" for p in added) + "." if added
+        f"{p.executive_name} <{p.email}> ({p.company}; category: {p.icp_category or '-'}; "
+        f"business type: {p.business_type or '-'}; found by: {p.discovery_query or '-'})" for p in added) + "." if added
         else f"Added 0 of {want} asked."]
     if skipped:
         lines.append("Skipped: " + " | ".join(skipped[:8]) + ".")
-    lines.append(f"Prospeo lookups used: {lookups}. Nothing was emailed.")
+    lines.append(f"Prospeo lookups used: {lookups}. Nothing was emailed. Show the people added in the prospects table "
+                 "with the Category column, as for any prospect answer.")
     return " ".join(lines)
