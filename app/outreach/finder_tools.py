@@ -217,6 +217,8 @@ def _verified_email(ctx: Any, name: str, domain: str) -> tuple[Optional[str], di
             "only_verified_email": True,
         })
     except ConnectorError as exc:
+        if any(word in str(exc).upper() for word in ("INVALID_DATAPOINTS", "NO_MATCH", "NOT_FOUND")):
+            return None, {}  # this one person cannot be matched: no verified email, move on to the next company
         raise ToolError(str(exc)) from exc
     data = data if isinstance(data, dict) else {}
     data = data.get("data") if isinstance(data.get("data"), dict) and "person" not in data else data
