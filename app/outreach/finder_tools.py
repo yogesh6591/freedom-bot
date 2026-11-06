@@ -28,7 +28,7 @@ from app.outreach.toolkit import Call, ToolError, tool
 MAX_FIND = 5  # people per run
 COMPANY_POOL = 12  # companies asked from Exa per run (some will be skipped)
 MAX_LOOKUPS = 10  # Prospeo lookups per run, whatever the count
-MAX_NO_EMAIL = 3  # founders saved without an email per run (researchable, never emailed)
+MAX_NO_EMAIL = 0  # founders saved without an email per run: none, only verified emails are kept
 EXA_URL = "https://api.exa.ai/search"
 SOURCE = "Exa + Prospeo"
 STATES = {
