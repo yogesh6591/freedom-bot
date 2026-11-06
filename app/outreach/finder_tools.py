@@ -246,7 +246,6 @@ def _taken(call: Call, domain: str) -> bool:
     return call.db.scalar(select(Prospect.id).where(Prospect.domain == domain).limit(1)) is not None
 
 
-@tool("find_new_prospects", "count", "focus", "state", "employees_min", "employees_max")
 def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: str, _unused: str, category: str,
           label: Optional[str], row: dict, facts: dict, email: str, verified: bool = False) -> Prospect:
     size = facts.get("employee_range") or facts.get("employee_count")
@@ -262,6 +261,7 @@ def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: s
     return prospect
 
 
+@tool("find_new_prospects", "count", "focus", "state", "employees_min", "employees_max")
 def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state: str = "",
                        employees_min: Optional[int] = None, employees_max: Optional[int] = None) -> str:
     """Find up to 5 new owner-led firms that match Jeanne's targeting rules and save them with a verified email."""
