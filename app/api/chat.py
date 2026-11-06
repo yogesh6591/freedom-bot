@@ -283,6 +283,23 @@ def chat(
     return _dispatch(body, ctx, settings)
 
 
+async def _attach_video(file: UploadFile, filename: str, ctx: TenantContext) -> dict[str, Any]:
+    """A demo or welcome video: saved on the server like an admin-panel upload; the assistant is given its link."""
+    from starlette.concurrency import run_in_threadpool
+
+    from acquisition.services.demo_video_storage import DemoVideoUploadError, save_uploaded_demo_video
+    from bizos.control import store as control
+
+    if not control.build_context(control.get_user(ctx.user_id)).is_admin:
+        raise HTTPException(status_code=403, detail="Only an admin can attach a video.")
+    try:
+        url = await run_in_threadpool(save_uploaded_demo_video, file)
+    except DemoVideoUploadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc) or "The video could not be saved (mp4, webm, mov or m4v, up to 250 MB).") from exc
+    with bound(ctx):
+        return chat_attachments.save_video(ctx, filename=filename, size_bytes=int(getattr(file, "size", 0) or 0), url=url)
+
+
 @router.post("/attachments", status_code=201)
 async def upload_attachment(
     file: UploadFile = File(...),
@@ -294,6 +311,8 @@ async def upload_attachment(
     The text is read and checked now, with the same regulated-data rules as a typed message, so a file
     the Order/DPA does not allow is refused before it is stored or reaches a model.
     """
+    if (file.filename or "").lower().endswith(chat_attachments.VIDEO_EXTENSIONS):
+        return await _attach_video(file, file.filename, ctx)
     data = await file.read(chat_attachments.MAX_BYTES + 1)
     filename = file.filename or "file"
     try:

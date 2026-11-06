@@ -36,6 +36,9 @@ from bizos.util.redaction import scrub_identifiers
 #: Accepted file types. ``.doc`` (the old binary Word format) gets its own message.
 EXTENSIONS = (".pdf", ".docx", ".csv", ".xlsx", ".txt", ".md")
 MAX_BYTES = 10 * 1024 * 1024
+#: A video (demo or welcome video, admins only) is not read: it is saved on the server like an admin-panel upload
+#: and the assistant is given its link.
+VIDEO_EXTENSIONS = (".mp4", ".webm", ".mov", ".m4v")
 #: Most text kept from one file, and most rows kept from one table.
 MAX_CHARS = 400_000
 MAX_ROWS = 20_000
@@ -289,6 +292,14 @@ def save(ctx: TenantContext, *, filename: str, kind: str, size_bytes: int, body:
     return {"id": attachment_id, "name": filename[:200], "kind": kind, "size_bytes": int(size_bytes),
             **{k: meta[k] for k in ("pages", "rows", "columns", "sheets", "characters", "emails_total", "truncated")
                if k in meta}}
+
+
+def save_video(ctx: TenantContext, *, filename: str, size_bytes: int, url: str) -> dict[str, Any]:
+    """Record a video that was saved on the server; its text is the link the assistant needs."""
+    body = (f"Video file {filename[:200]} was saved on the server. Its link is {url} . To use it as the demo video "
+            f"set demo_video_url to exactly this link; to use it as the welcome video shown after booking set "
+            f"after_booking_video_url to exactly this link.")
+    return save(ctx, filename=filename, kind="video", size_bytes=size_bytes, body=body, meta={"video_url": url})
 
 
 def attach(ctx: TenantContext, session_id: str, ids: list[str], *, bind: bool = True) -> list[dict[str, Any]]:

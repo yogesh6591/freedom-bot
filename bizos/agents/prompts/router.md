@@ -74,7 +74,7 @@ Do not clarify when:
   (plus crm when our records matter).
 - When the recent conversation lists attached files, "this file", "the PDF", "the sheet", "this list",
   "these people" or a question about their content → files, plus the domain of what is done with the
-  contents (emailing the people listed → the domain the email rules above give; adding them to the CRM → crm).
+  contents (emailing the people listed → the domain the email rules above give; adding them to the CRM → crm; a video to become the demo or welcome video → outreach).
   Never clarify which file when only one is attached.
 - Hindi and Hinglish are routed exactly like English.
 

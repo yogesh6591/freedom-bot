@@ -1060,8 +1060,8 @@ TOOL_META: dict[str, AgentMeta] = {
     """)),
     "update_journey_settings": M("outreach", d("""
         Change journey text and switches: demo, value, budget answers, booking link, after-booking video and
-        preparation text. No file uploads.
-        Use when: "change the demo title", "turn off the value page", "booking link badal do".
+        preparation text. Videos are a link or a file attached in the chat.
+        Use when: "change the demo title", "turn off the value page", "booking link badal do", "use this video".
         Don't use: case studies -> edit_case_study; video links -> edit_video_link; going live in one go -> publish_journey.
         Needs: changes, setting names with their new values.
         Effect: the journey page changes. {gate}

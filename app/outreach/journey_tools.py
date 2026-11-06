@@ -1,7 +1,7 @@
 """Journey content: settings text, case studies, video links, and publish.
 
-Covers what the admin Journey settings page edits, except file uploads (videos and posters are uploaded in the
-admin panel). Text edits, section switches, links, and making a video link live are immediate. Making a case
+Covers what the admin Journey settings page edits. A video file is attached in the chat (the link it is saved
+under is then set here); posters are uploaded in the admin panel. Text edits, section switches, links, and making a video link live are immediate. Making a case
 study live, publishing, and anything deleted asks the user for one yes first.
 """
 
@@ -29,6 +29,8 @@ from app.outreach import matching
 from app.outreach.confirm import action_key
 from app.outreach.toolkit import Call, ToolError, tool
 
+# A video attached in the chat is saved under this path on the server (the same place the admin panel uses).
+_OWN_VIDEO = re.compile(r"/static/demo/[\w.-]+\.(mp4|webm|mov|m4v)", re.I)
 _TRUE = {"1", "true", "yes", "on", "y"}
 _FALSE = {"0", "false", "no", "off", "n"}
 
@@ -87,8 +89,8 @@ def _link(setting: Setting, value: Any) -> Optional[str]:
     from acquisition.services.demo_video_storage import is_valid_demo_link
 
     text = _text(setting, value)
-    if text and not is_valid_demo_link(text):
-        raise ToolError("the demo video link must be a YouTube or Vimeo link, or a direct https link to an .mp4, .webm, .mov or .m4v file.")
+    if text and not (_OWN_VIDEO.fullmatch(text) or is_valid_demo_link(text)):
+        raise ToolError("the video link must be a YouTube or Vimeo link, a direct https link to an .mp4, .webm, .mov or .m4v file, or the link of a video attached in this chat.")
     return text
 
 

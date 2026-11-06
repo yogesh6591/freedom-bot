@@ -11,10 +11,12 @@ import { FileSpreadsheet, FileText, Loader2, Paperclip, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ChatAttachment } from '@/lib/types'
 
-export const ACCEPT = '.pdf,.docx,.csv,.xlsx,.txt,.md'
+export const ACCEPT = '.pdf,.docx,.csv,.xlsx,.txt,.md,.mp4,.webm,.mov,.m4v'
 const EXTENSIONS = ACCEPT.split(',')
+const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.m4v']
 const MAX_FILES = 5
 const MAX_BYTES = 10 * 1024 * 1024
+const MAX_VIDEO_BYTES = 250 * 1024 * 1024
 
 export interface PendingFile {
   key: string
@@ -27,8 +29,13 @@ export interface PendingFile {
 function problemWith(file: File): string | null {
   const name = file.name.toLowerCase()
   if (name.endsWith('.doc')) return 'Old .doc files can’t be read. Save it as .docx or PDF.'
-  if (!EXTENSIONS.some((ext) => name.endsWith(ext))) return 'Attach a PDF, Word (.docx), CSV, Excel (.xlsx) or text file.'
-  if (file.size > MAX_BYTES) return 'The file is larger than 10 MB.'
+  if (!EXTENSIONS.some((ext) => name.endsWith(ext))) return 'Attach a PDF, Word (.docx), CSV, Excel (.xlsx), text file or video (.mp4, .webm, .mov, .m4v).'
+  const isVideo = VIDEO_EXTENSIONS.some((ext) => name.endsWith(ext))
+  if (isVideo) {
+    if (file.size > MAX_VIDEO_BYTES) return 'The video is larger than 250 MB.'
+  } else if (file.size > MAX_BYTES) {
+    return 'The file is larger than 10 MB.'
+  }
   return null
 }
 
