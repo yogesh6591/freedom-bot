@@ -59,10 +59,20 @@ class TenantContext:
     display_name: Optional[str] = None
     #: Restricted data areas this user may see (FB-037), from the user record.
     data_scopes: frozenset[str] = frozenset()
+    #: Per-person app access an admin set, as ``(area, mode)`` pairs. Only ever narrows the
+    #: mode for that app's changes (bizos/policy/app_modes.py). From the user record.
+    app_modes: tuple[tuple[str, str], ...] = ()
     #: Non-authoritative extras (session id, run id) useful for audit.
     attributes: dict = field(default_factory=dict, compare=False)
 
     # -- role helpers -------------------------------------------------------
+
+    def app_mode(self, area: str) -> Optional[ExecutionMode]:
+        """The narrowing mode an admin set for this person's changes in ``area``, if any."""
+        for key, mode in self.app_modes:
+            if key == area:
+                return ExecutionMode.parse(mode, None)
+        return None
 
     def has_role(self, role: Role) -> bool:
         """Whether the caller holds ``role`` exactly."""

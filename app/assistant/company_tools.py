@@ -20,7 +20,9 @@ from bizos.tools.base import RunScope, effect, precheck, risk_inputs
 
 
 def _crm(scope: RunScope):
-    return get_connector("crm", ctx=scope.ctx)
+    # An approved change runs on the requester's own CRM login, like email and calendar, so the
+    # record in HubSpot shows the person who asked for it rather than the approver.
+    return get_connector("crm", ctx=scope.ctx, owner_user_id=scope.on_behalf_of)
 
 
 # ------------------------------------------------------------------- reads

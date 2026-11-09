@@ -30,6 +30,7 @@ from bizos.policy.models import (
     PolicyDecision,
     PolicyRequest,
 )
+from bizos.policy.app_modes import PERSON_RULES
 from bizos.policy.modes import narrowest, resolve_mode
 from bizos.policy.rules import RULES
 from bizos.rbac.permissions import EffectivePermission, resolve as resolve_permission
@@ -116,6 +117,8 @@ def evaluate(req: PolicyRequest, *, domain_mode: Optional[ExecutionMode] = None)
         and req.ctx.is_admin
         and permission.can_execute_approved
         and req.tool not in (policy.always_require_approval or [])
+        # A level an admin set for this one person is meant to bind, admins included.
+        and not any(c.code in PERSON_RULES for c in constraints)
     ):
         effect = PolicyEffect.ALLOW
         reason = "this workspace lets admins act without waiting for approval"

@@ -25,7 +25,7 @@ import {
   type AccessRequest
 } from '@/lib/access'
 import { api } from '@/lib/api'
-import type { DomainPack, Role, SessionUser } from '@/lib/types'
+import type { AppAccessLevel, DomainPack, Role, SessionUser } from '@/lib/types'
 import {
   Badge,
   Btn,
@@ -1053,6 +1053,64 @@ function AccessRequests({ onDecided }: { onDecided: () => Promise<void> }) {
   )
 }
 
+const CRM_LEVELS: { value: AppAccessLevel; label: string }[] = [
+  { value: 'direct', label: 'Direct changes' },
+  { value: 'approval', label: 'Needs approval' },
+  { value: 'draft', label: 'Draft only' }
+]
+
+const CRM_RESULT: Record<string, string> = {
+  ALLOW: 'Runs straight away',
+  REQUIRE_APPROVAL: 'Waits for approval',
+  DRAFT_ONLY: 'Saved as a draft',
+  DENY: 'Cannot change the CRM'
+}
+
+/** The level an admin picked, and what a CRM change by this person does today (from the policy check). */
+function CrmAccess({
+  user,
+  onChange
+}: {
+  user: SessionUser
+  onChange: (level: AppAccessLevel) => void
+}) {
+  const level = user.app_access?.crm ?? 'direct'
+  const result = user.app_access_result?.crm
+  const differs =
+    result &&
+    !(
+      (level === 'direct' && result.effect === 'ALLOW') ||
+      (level === 'approval' && result.effect === 'REQUIRE_APPROVAL') ||
+      (level === 'draft' && result.effect === 'DRAFT_ONLY')
+    )
+  return (
+    <div className="max-w-[15rem] space-y-1">
+      <select
+        aria-label={`CRM changes for ${user.display_name}`}
+        value={level}
+        onChange={(event) => onChange(event.target.value as AppAccessLevel)}
+        className="min-h-9 rounded-lg border border-border bg-background-secondary px-2.5 text-[13px] text-primary"
+      >
+        {CRM_LEVELS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {result && (
+        <p className="text-xs leading-5 text-muted">
+          <span className={differs ? 'font-medium text-warning' : 'font-medium text-secondary'}>
+            {CRM_RESULT[result.effect] ?? result.effect}
+          </span>
+          {differs && result.reason
+            ? `: ${result.reason.charAt(0).toUpperCase()}${result.reason.slice(1)}.`
+            : ''}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function Users() {
   const [users, setUsers] = useState<SessionUser[]>([])
   const [form, setForm] = useState({
@@ -1116,7 +1174,7 @@ function Users() {
       <AccessRequests onDecided={load} />
       <Panel
         title="Users"
-        description="The role sets what someone can do. Tags set what they can see: apps like CRM and Gmail, and restricted data. You can pick several."
+        description="The role sets what someone can do. CRM changes sets whether their CRM changes run directly, wait for approval or stay drafts. Tags set what they can see: apps like CRM and Gmail, and restricted data. You can pick several."
       >
         {error && <ErrorNote>{error}</ErrorNote>}
         <DataTable
@@ -1150,6 +1208,21 @@ function Users() {
                     </option>
                   ))}
                 </select>
+              )
+            },
+            {
+              key: 'crm',
+              header: 'CRM changes',
+              render: (u) => (
+                <CrmAccess
+                  user={u}
+                  onChange={(level) =>
+                    void update(`/api/users/${u.id}/app-access`, {
+                      area: 'crm',
+                      level
+                    })
+                  }
+                />
               )
             },
             {

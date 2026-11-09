@@ -125,13 +125,15 @@ def rule_rbac(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
 
 def rule_data_area(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """FB-037: tools over a restricted data area need that area in the user's scopes."""
+    from bizos.policy.app_modes import AREA_LABELS
+
     area = inp.spec.data_area
     if not area or req.ctx.can_see_area(area):
         return None
     return Constraint(
         "DATA_AREA_RESTRICTED",
         DENY,
-        f"{area} information is restricted and this user has not been granted access to it",
+        f"{AREA_LABELS.get(area, area)} information is restricted and this user has not been granted access to it",
     )
 
 
@@ -347,6 +349,36 @@ def rule_mode(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
     return None
 
 
+def rule_person_app_mode(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """An admin held this person to Needs approval or Draft only for one app's changes.
+
+    Only ever narrows (bizos/policy/app_modes.py). Not applied when an approver releases an
+    approved action: the requester's level was applied when the action was raised.
+    """
+    from bizos.policy.app_modes import AREA_LABELS, app_area
+
+    if not inp.spec.write or req.executing_approved_action or inp.spec.skips_mode_queue:
+        return None
+    area = app_area(inp.spec, req.arguments)
+    mode = req.ctx.app_mode(area) if area else None
+    label = AREA_LABELS.get(area or "", area or "")
+    if mode == ExecutionMode.DRAFT:
+        return Constraint(
+            "PERSON_APP_DRAFT",
+            DRAFT_ONLY,
+            f"an admin set your {label} access to Draft only, so the change is prepared for review "
+            "rather than made",
+        )
+    if mode == ExecutionMode.WAIT_FOR_APPROVAL:
+        return Constraint(
+            "PERSON_APP_APPROVAL",
+            REQUIRE_APPROVAL,
+            f"an admin set your {label} access to Needs approval, so an approver must accept the change "
+            "before it runs",
+        )
+    return None
+
+
 def rule_auto_risk_ceiling(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """In AUTO mode, only risk at or below the configured ceiling runs unattended."""
     if inp.mode != ExecutionMode.AUTO_WITHIN_SCOPE or not inp.spec.write:
@@ -477,6 +509,7 @@ RULES: tuple[Rule, ...] = (
     rule_critical_risk,
     rule_risk_floor,
     rule_mode,
+    rule_person_app_mode,
     rule_auto_risk_ceiling,
     rule_record_limit,
     rule_financial_limit,

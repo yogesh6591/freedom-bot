@@ -209,6 +209,56 @@ def set_job_role(ctx: TenantContext, user_id: str, job_role: str):
     return updated
 
 
+#: The change used to show an admin what a person's level means in practice.
+_PREVIEW_TOOL = {"crm": "crm_update_contact_field"}
+
+
+def set_app_access(ctx: TenantContext, user_id: str, area: str, level: str):
+    """Set one person's level for one app: direct, approval or draft (bizos/policy/app_modes.py)."""
+    from bizos.policy.app_modes import LEVELS, PERSON_APP_AREAS, parse_level
+
+    user_in_client(ctx, user_id)
+    if area not in PERSON_APP_AREAS:
+        raise AdminNotFound(f"{area!r} has no per-person access level")
+    try:
+        chosen = parse_level(level)
+    except ValueError as exc:
+        raise AdminError(str(exc)) from exc
+    mode = LEVELS[chosen]
+    user = control.set_user_app_mode(user_id, area, str(mode) if mode else None)
+    _log(ctx, AuditEventType.CONFIG_CHANGED, "APP_ACCESS_CHANGED",
+         request={"user_id": user_id, "area": area, "level": chosen})
+    return user
+
+
+def app_access_preview(user, settings: ClientSettings) -> dict[str, dict[str, Any]]:
+    """What a CRM change by this person does today, from the policy check itself.
+
+    Answers "Direct changes, but the workspace still asks for approval" without the page
+    having to repeat the rules.
+    """
+    from bizos.policy.engine import evaluate
+    from bizos.policy.models import PolicyRequest
+    from bizos.rbac.registry import get_spec
+
+    person = control.build_context(user)
+    out: dict[str, dict[str, Any]] = {}
+    for area, tool in _PREVIEW_TOOL.items():
+        spec = get_spec(tool)
+        domains = sorted(spec.domains) if spec else []
+        domain = next((d for d in domains if settings.domain_enabled(d)), domains[0] if domains else "general")
+        with tenant_scope(person):
+            decision = evaluate(PolicyRequest(ctx=person, settings=settings, tool=tool, domain=domain,
+                                              connected_integrations=frozenset({area})))
+        out[area] = {
+            "level": user.app_access.get(area, "direct"),
+            "effect": str(decision.effect),
+            "rule": decision.rule,
+            "reason": decision.reason,
+        }
+    return out
+
+
 def set_can_approve(ctx: TenantContext, user_id: str, can_approve: bool):
     """Add or remove the right to decide approvals, on top of the person's job role."""
     user = user_in_client(ctx, user_id)

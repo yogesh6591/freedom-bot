@@ -40,6 +40,11 @@ class CrmConnector(Connector):
     category = "crm"
     provider = "workspace"
 
+    @property
+    def _author(self) -> str:
+        """Who a new note or task is from: the requester when an approver runs it for them."""
+        return str(self.config.get("owner_user_id") or self.ctx.user_id)
+
     def health(self) -> ConnectorResult:
         with readonly_connection(self.ctx) as conn:
             count = conn.execute(text("SELECT count(*) FROM crm_contacts")).scalar()
@@ -185,7 +190,7 @@ class CrmConnector(Connector):
                     "INSERT INTO crm_notes (id, contact_id, deal_id, body, author) "
                     "VALUES (:i, :c, :d, :b, :a)"
                 ),
-                {"i": note_id, "c": contact_id, "d": deal_id, "b": body, "a": self.ctx.user_id},
+                {"i": note_id, "c": contact_id, "d": deal_id, "b": body, "a": self._author},
             )
         return ConnectorResult(ok=True, data={"id": note_id}, summary=f"note {note_id} created")
 
@@ -215,7 +220,7 @@ class CrmConnector(Connector):
                     "d": deal_id,
                     "a": assignee,
                     "du": due_at or "",
-                    "cb": self.ctx.user_id,
+                    "cb": self._author,
                 },
             )
         return ConnectorResult(ok=True, data={"id": task_id}, summary=f"task '{title}' created")

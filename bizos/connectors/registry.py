@@ -163,7 +163,11 @@ def get_connector(
         raise IntegrationNotConnected(
             f"No adapter is available for {category}/{row.provider} in this deployment."
         )
-    return adapter(tenant, row.config or {})
+    config = dict(row.config or {})
+    if owner_user_id:
+        # The person an approved change is for, so the record names them and not the approver.
+        config["owner_user_id"] = owner_user_id
+    return adapter(tenant, config)
 
 
 def set_integration(

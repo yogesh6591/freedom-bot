@@ -13,6 +13,8 @@ metadata (§1); customer content is reached exclusively through
 
 from __future__ import annotations
 
+import json
+
 from typing import Any, Iterable, Optional
 
 from sqlalchemy import text
@@ -317,6 +319,30 @@ def set_user_scopes(user_id: str, scopes: Iterable[str]) -> User:
     return get_user(user_id)
 
 
+def set_user_app_mode(user_id: str, area: str, mode: Optional[str]) -> User:
+    """Set one person's level for one app (``None`` clears it: no extra limit). See bizos/policy/app_modes.py."""
+    from bizos.policy.app_modes import PERSON_APP_AREAS, stored_modes
+
+    if area not in PERSON_APP_AREAS:
+        raise ValueError(f"{area!r} has no per-person access level")
+    if mode is not None and stored_modes({area: mode}) != {area: str(mode)}:
+        raise ValueError(f"{mode!r} is not a narrowing mode")
+    with control_connection() as conn:
+        if mode is None:
+            updated = conn.execute(
+                text("UPDATE users SET app_modes = app_modes - CAST(:a AS TEXT), updated_at = NOW() WHERE id = :i"),
+                {"a": area, "i": user_id},
+            )
+        else:
+            updated = conn.execute(
+                text("UPDATE users SET app_modes = app_modes || CAST(:m AS JSONB), updated_at = NOW() WHERE id = :i"),
+                {"m": json.dumps({area: str(mode)}), "i": user_id},
+            )
+        if updated.rowcount == 0:
+            raise UserNotFound(user_id)
+    return get_user(user_id)
+
+
 def set_user_job_role(user_id: str, job_role: Optional[str]) -> User:
     """Record the job title an admin picked. Permission changes go through ``set_user_roles``."""
     with control_connection() as conn:
@@ -441,7 +467,16 @@ def _user_from_row(conn: Any, row: Any) -> User:
         data_scopes=frozenset(getattr(row, "data_scopes", None) or ()),
         platform_owner=bool(getattr(row, "platform_owner", False)),
         job_role=getattr(row, "job_role", None),
+        app_modes=_app_modes(getattr(row, "app_modes", None)),
     )
+
+
+def _app_modes(raw: Any) -> dict[str, str]:
+    from bizos.policy.app_modes import stored_modes
+
+    if isinstance(raw, str):
+        raw = json.loads(raw or "{}")
+    return stored_modes(raw)
 
 
 def get_user(user_id: str) -> User:
@@ -553,6 +588,7 @@ def build_context(user: User, *, attributes: Optional[dict] = None) -> TenantCon
         email=user.email,
         display_name=user.display_name,
         data_scopes=user.data_scopes,
+        app_modes=tuple(sorted(user.app_modes.items())),
         attributes={**(attributes or {}), "platform_owner": user.platform_owner},
     )
 

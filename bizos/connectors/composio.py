@@ -1062,8 +1062,28 @@ def _hs_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+#: HubSpot owner id per connected person, so new records show who made them. (expiry, owner id or None)
+_hs_owner_cache: dict[str, tuple[float, Optional[str]]] = {}
+_HS_OWNER_TTL = 600.0
+
+
+def _person_email(ctx: TenantContext) -> str:
+    """The email of the person a call runs for. ``as_user`` swaps only the user id, so read the user record."""
+    from bizos.control import store as control
+
+    try:
+        return control.get_user(ctx.user_id).email
+    except control.UserNotFound:
+        return ctx.email or ""
+
+
 class ComposioHubSpotConnector(_ComposioIdentity, Connector):
-    """The user's own HubSpot CRM, with the same methods as the workspace CRM (bizos/connectors/mock_crm.py)."""
+    """The user's own HubSpot CRM, with the same methods as the workspace CRM (bizos/connectors/mock_crm.py).
+
+    One company shares one HubSpot account and each person connects their own HubSpot user, so
+    changes run under that person's login. An approved change runs under the requester's login
+    (``owner_user_id``), and new notes, tasks and contacts get the requester as their HubSpot owner.
+    """
 
     category = "crm"
     provider = "composio_hubspot"
@@ -1071,6 +1091,36 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
 
     def _run(self, action: str, arguments: dict[str, Any]) -> Any:
         return execute(self.owner, self.toolkit, action, arguments)
+
+    def _owner_id(self) -> Optional[str]:
+        """This person's HubSpot owner id, matched by their FreedomBot email. ``None`` when HubSpot has no such user.
+
+        A lookup that fails is not remembered and never blocks the change: the record is then made without an owner.
+        """
+        key = composio_user_id(self.owner)
+        hit = _hs_owner_cache.get(key)
+        if hit and hit[0] > time.monotonic():
+            return hit[1]
+        email = _person_email(self.owner).strip()
+        owner_id: Optional[str] = None
+        if email:
+            try:
+                rows = _hs_results(self._run("HUBSPOT_RETRIEVE_PAGE_OF_CRM_OWNERS", {"email": email, "limit": 5}))
+            except ConnectorError as exc:
+                log_warning(f"HubSpot owner lookup failed for {key}: {exc}")
+                return None
+            match = next((r for r in rows if str(r.get("email") or "").casefold() == email.casefold()), None)
+            owner_id = str(match["id"]) if match and match.get("id") else None
+        _hs_owner_cache[key] = (time.monotonic() + _HS_OWNER_TTL, owner_id)
+        return owner_id
+
+    def _with_owner(self, args: dict[str, Any]) -> dict[str, Any]:
+        """Give a new record its maker as HubSpot owner, unless the request named one."""
+        if not args.get("hubspot_owner_id"):
+            owner_id = self._owner_id()
+            if owner_id:
+                args["hubspot_owner_id"] = owner_id
+        return args
 
     def _search(self, action: str, *, query: str = "", filters: Optional[list[dict]] = None,
                 properties: list[str], limit: int) -> tuple[list[dict[str, Any]], int]:
@@ -1246,7 +1296,7 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
         if assoc:
             args["associations"] = assoc
         try:
-            data = _hs_unwrap(self._run("HUBSPOT_CREATE_NOTE", args))
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_NOTE", self._with_owner(args)))
         except ConnectorError as exc:
             return ConnectorResult.failure(str(exc))
         note_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
@@ -1263,7 +1313,7 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
         if assoc:
             args["associations"] = assoc
         try:
-            data = _hs_unwrap(self._run("HUBSPOT_CREATE_TASK", args))
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_TASK", self._with_owner(args)))
         except ConnectorError as exc:
             return ConnectorResult.failure(str(exc))
         task_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
@@ -1322,7 +1372,7 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
         args = {k: v for k, v in {"firstname": first_name, "lastname": last_name, "email": (email or "").lower() or None,
                                   "company": company, "jobtitle": title, "lifecyclestage": lifecycle}.items() if v}
         try:
-            data = _hs_unwrap(self._run("HUBSPOT_CREATE_CONTACT", args))
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_CONTACT", self._with_owner(args)))
         except ConnectorError as exc:
             return ConnectorResult.failure(str(exc))
         contact_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None

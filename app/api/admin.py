@@ -61,6 +61,13 @@ class ScopeUpdate(BaseModel):
     data_scopes: list[str] = Field(default_factory=list)
 
 
+class AppAccessUpdate(BaseModel):
+    #: The app, e.g. "crm".
+    area: str
+    #: direct | approval | draft
+    level: str
+
+
 class JobRoleUpdate(BaseModel):
     job_role: str
 
@@ -111,9 +118,16 @@ class PermissionOverride(BaseModel):
 # --------------------------------------------------------------------- users
 
 
+def _user_row(user, settings: ClientSettings) -> dict[str, Any]:
+    """A user plus what their CRM changes do today, worked out by the policy check."""
+    return {**user.to_dict(), "app_access_result": ops.app_access_preview(user, settings)}
+
+
 @router.get("/users")
-def list_users(ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
-    return {"items": [u.to_dict() for u in control.list_users(ctx.client_id)]}
+def list_users(
+    ctx: TenantContext = Depends(require_admin), settings: ClientSettings = Depends(client_settings)
+) -> dict[str, Any]:
+    return {"items": [_user_row(u, settings) for u in control.list_users(ctx.client_id)]}
 
 
 @router.post("/users", status_code=201)
@@ -142,6 +156,17 @@ def set_job_role(
     user_id: str, body: JobRoleUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
     return _run(ops.set_job_role, ctx, user_id, body.job_role).to_dict()
+
+
+@router.patch("/users/{user_id}/app-access")
+def set_app_access(
+    user_id: str,
+    body: AppAccessUpdate,
+    ctx: TenantContext = Depends(require_admin),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Direct changes, Needs approval or Draft only, for one person's changes in one app (CRM)."""
+    return _user_row(_run(ops.set_app_access, ctx, user_id, body.area, body.level), settings)
 
 
 @router.patch("/users/{user_id}/can-approve")
