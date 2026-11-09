@@ -164,6 +164,21 @@ def rule_phi(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     return None
 
 
+def rule_ssn(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """A Social Security number is refused unless Order/DPA allows it.
+
+    This adds to :func:`rule_card_data`, which has always covered a labelled SSN. Allowing SSNs here
+    lifts this rule only, so the card rule still applies and nothing ends up looser than it was.
+    """
+    if not req.contains_ssn or _order_dpa_allows(req.settings, "ssn"):
+        return None
+    return Constraint(
+        "SSN_NOT_PERMITTED",
+        DENY,
+        "this workspace's Order/DPA does not allow Social Security numbers",
+    )
+
+
 def rule_card_data(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """Payment-card data is refused unless Order/DPA allows it (§14 / FB-039)."""
     if not (inp.spec.card_sensitive or req.contains_card_data):
@@ -452,6 +467,7 @@ RULES: tuple[Rule, ...] = (
     rule_rbac,
     rule_data_area,
     rule_phi,
+    rule_ssn,
     rule_card_data,
     rule_child_data,
     rule_biometrics,

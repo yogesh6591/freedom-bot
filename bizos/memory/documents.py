@@ -20,10 +20,12 @@ from typing import Any, Optional
 
 from sqlalchemy import text as sql
 
+from bizos.audit.events import log
 from bizos.memory import store, vectors
+from bizos.policy.classifier import find_ssn
 from bizos.tenancy.context import TenantContext
 from bizos.tenancy.registry import workspace_connection, workspace_location
-from bizos.types import ApprovalStatus, DataClassification, MemoryCategory, SourceType
+from bizos.types import ApprovalStatus, AuditEventType, DataClassification, MemoryCategory, SourceType
 from bizos.util.ids import new_id
 
 #: Accepted file types and the largest upload, in bytes.
@@ -112,7 +114,12 @@ def upload(*, title: str, filename: str, data: bytes, access_area: Optional[str]
            ctx: TenantContext) -> dict[str, Any]:
     """Store a document as memory parts. Returns the document summary."""
     title = (title or "").strip() or re.sub(r"\.[a-z]+$", "", filename or "Document", flags=re.I)
-    parts = split(extract_text(filename, data))
+    text = extract_text(filename, data)
+    if find_ssn(text) and "ssn" not in (getattr(settings, "order_dpa_allows", None) or []):
+        log(AuditEventType.GUARDRAIL_TRIGGERED, ctx=ctx, status="DOCUMENT_SSN_BLOCKED")
+        raise DocumentError("This file has a Social Security number in it, so it was not uploaded. "
+                            "Remove the number and upload it again.")
+    parts = split(text)
     doc_id = new_id("doc")
     area = (access_area or "").strip().casefold() or None
     for n, content in enumerate(parts, 1):

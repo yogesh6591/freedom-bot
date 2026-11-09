@@ -34,6 +34,9 @@ AREA_LABELS: dict[str, str] = {
     "salary": "Salary / compensation",
     "legal": "Legal",
     "exec": "Executive / board",
+    "crm": "CRM",
+    "email": "Gmail",
+    "calendar": "Calendar",
 }
 
 #: Words a reply must contain to count as naming the area.

@@ -108,6 +108,7 @@ def _auth(app_client, client, prefix: str) -> dict[str, str]:
 def test_picking_a_job_role_sets_the_level_and_tags(app_client, client):
     admin = _auth(app_client, client, "admin")
     viewer = _user(client, "viewer")
+    control.set_user_scopes(viewer.id, [])
     body = app_client.patch(f"/api/users/{viewer.id}/job-role", json={"job_role": "HR"}, headers=admin).json()
     assert body["job_role"] == "HR" and body["job_role_label"] == "HR"
     assert body["roles"] == ["OPERATOR"] and body["data_scopes"] == ["hr", "salary"]
@@ -237,6 +238,19 @@ def test_an_unknown_area_is_refused(app_client, client):
 
 
 def test_the_overview_names_the_admin_to_email(app_client, client):
+    control.set_user_scopes(_user(client, "viewer").id, [])
     body = app_client.get("/api/access", headers=_auth(app_client, client, "viewer")).json()
     assert body["admin_emails"] == [_user(client, "admin").email]
     assert "sales" in body["areas"] and body["granted"] == []
+
+
+def test_an_admin_grants_app_tags_and_anyone_can_ask_for_them(app_client, client):
+    admin, viewer = _auth(app_client, client, "admin"), _user(client, "viewer")
+    control.set_user_scopes(viewer.id, [])
+
+    asked = app_client.post("/api/access/requests", json={"areas": ["crm", "email"]}, headers=_auth(app_client, client, "viewer"))
+    assert asked.status_code in (200, 201)
+
+    body = app_client.patch(f"/api/users/{viewer.id}/scopes", json={"data_scopes": ["crm", "email", "calendar"]}, headers=admin).json()
+    assert body["data_scopes"] == ["calendar", "crm", "email"]
+    assert set(app_client.get("/api/access", headers=_auth(app_client, client, "viewer")).json()["granted"]) == {"calendar", "crm", "email"}

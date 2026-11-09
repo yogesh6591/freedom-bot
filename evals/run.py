@@ -65,7 +65,7 @@ PRICES = {"gpt-4.1-mini": (0.40, 0.10, 1.60), "gpt-4.1": (2.00, 0.50, 8.00)}
 LABELS = {"v2": "v2", "v2-norouter": "v2 no router", "current": "flat baseline", "v2-strong": "v2 strong executor"}
 CASES = ROOT / "evals" / "cases.yaml"
 REPORTS = ROOT / "evals" / "reports"
-ALL_AREAS = frozenset({"finance", "legal", "hr", "exec", "salary", "ops"})
+ALL_AREAS = frozenset({"finance", "legal", "hr", "exec", "salary", "ops", "crm", "email", "calendar"})
 ROLE_USER = {"ADMIN": "admin", "OPERATOR": "operator", "APPROVER": "approver", "DRAFTER": "drafter", "VIEWER": "viewer"}
 OUTREACH_TOOLS = frozenset({
     "choose_recipients", "propose_email", "set_person_details", "send_approved",

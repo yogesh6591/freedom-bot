@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 #: category -> compiled patterns that indicate that category of content.
 _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
@@ -201,6 +201,20 @@ def identifiable_phi(text: str) -> bool:
     return bool(re.search(r"\bpatients?\b", text, re.I) and _PERSONAL_MARKER.search(text))
 
 
+#: A US Social Security number: dashed on its own, or with any spacing next to a label. A dashed number
+#: the SSA never issues (000, 666, 9xx; group 00; serial 0000) is treated as an ordinary reference.
+_SSN_DASHED = re.compile(r"(?<![\w-])(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}(?![\w-])")
+_SSN_LABELLED = re.compile(
+    r"(?i)\b(?:ssn|ss#|social security(?: number| no\.?)?)\s*(?:is|was|:|#|=)?\s*\d{3}[ -]?\d{2}[ -]?\d{4}\b"
+)
+_SSN_WORD = re.compile(r"(?i)\bssns?\b|\bsocial security\b")
+
+
+def find_ssn(text: str) -> bool:
+    """Whether ``text`` holds an actual Social Security number, not just the word."""
+    return bool(_SSN_LABELLED.search(text or "") or _SSN_DASHED.search(text or ""))
+
+
 _PHI_CATEGORIES = frozenset({"medical"})
 _CARD_CATEGORIES = frozenset({"credit"})
 _BIOMETRIC_CATEGORIES = frozenset({"biometrics"})
@@ -215,6 +229,7 @@ _LICENSED_CATEGORIES = frozenset(
         "safety",
         "financial_advice",
         "biometrics",
+        "ssn",
     }
 )
 
@@ -230,6 +245,8 @@ class Classification:
     contains_child_data: bool = False
     #: FB-039: biometric identifiers.
     contains_biometrics: bool = False
+    #: A Social Security number, or a mention of one.
+    contains_ssn: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -239,6 +256,7 @@ class Classification:
             "requires_licensed_human": self.requires_licensed_human,
             "contains_child_data": self.contains_child_data,
             "contains_biometrics": self.contains_biometrics,
+            "contains_ssn": self.contains_ssn,
             "matches": [{"category": c, "snippet": s} for c, s in self.matches],
         }
 
@@ -281,6 +299,9 @@ def classify_text(*texts: str) -> Classification:
     if biometric:
         found.add("biometrics")
         matches.append(("biometrics", biometric[:80]))
+    if find_ssn(blob) or _SSN_WORD.search(blob):
+        found.add("ssn")
+        matches.append(("ssn", "SSN"))  # never the number itself
     cats = frozenset(found)
     return Classification(
         categories=cats,
@@ -290,6 +311,7 @@ def classify_text(*texts: str) -> Classification:
         matches=tuple(matches),
         contains_child_data="minor" in cats,
         contains_biometrics=bool(cats & _BIOMETRIC_CATEGORIES),
+        contains_ssn="ssn" in cats,
     )
 
 
@@ -297,3 +319,100 @@ def classify_arguments(arguments: dict[str, Any] | None) -> Classification:
     """Classify a tool payload (all string leaves)."""
     texts = list(_walk_strings(arguments or {}))
     return classify_text(*texts)
+
+
+# --------------------------------------------------------------------------- licensed advice
+
+_SPAN = r"[^.?!\n]{0,60}"
+_DRUGS = (r"(?:\d+\s?mg|\d+\s?ml|pills?|tablets?|ibuprofen|paracetamol|acetaminophen|aspirin|tylenol|advil|insulin|"
+          r"antibiotics?|medicines?|medications?|dose|dosage)")
+_SECURITIES = (r"(?:stocks?|shares?|bonds?|crypto|cryptocurrenc(?:y|ies)|bitcoin|btc|ethereum|etfs?|mutual funds?|"
+               r"index funds?|securities)")
+_STAFF = r"(?:employees?|staff|workers?|contractors?|interns?|managers?|team members?|reps?)"
+
+#: Someone asking the assistant for a professional's judgment on their own situation. Each pattern needs the
+#: asking frame, not only the subject, so "what is our medical leave policy" or "find the liability clause"
+#: stay ordinary lookups.
+_ADVICE: dict[str, tuple[re.Pattern[str], ...]] = {
+    "legal": tuple(
+        re.compile(p)
+        for p in (
+            r"(?i)\blegal (?:advice|opinion)\b",
+            rf"(?i)\b(?:is|are|was|would|will)\b{_SPAN}(?<!\bin )\b(?:legal|illegal|lawful|unlawful|enforceable|binding)"
+            r"\s*(?:[?.!]|$|\b(?:to|for|in|under|if|here|or)\b)",
+            r"(?i)\b(?:can|could|may|might|should)\s+(?:i|we|they|he|she)\s+(?:legally\b|sue\b|be sued\b|get sued\b)",
+            r"(?i)\b(?:are we|am i)\s+(?:legally\s+)?(?:liable|in breach|at fault)\b",
+            r"(?i)\bdo (?:i|we) have (?:a|any) (?:legal )?(?:case|claim)\b",
+            r"(?i:\b(?:should|can|could)\s+(?:i|we)\s+(?:fire|sack|lay\s+off)\s+)"
+            rf"(?:[A-Z][a-z]+|(?i:him|her|them|someone|(?:an?|the|this|that|our|my)\s+{_STAFF}))",
+        )
+    ),
+    "tax": tuple(
+        re.compile(p)
+        for p in (
+            r"(?i)\btax advice\b",
+            rf"(?i)\bhow much\b{_SPAN}\btax(?:es)?\b{_SPAN}\b(?:do|should|will|would|must|did)\s+(?:i|we)\b",
+            rf"(?i)\b(?:do|should|will|would|must)\s+(?:i|we)\b{_SPAN}\b(?:owe|pay|file)\b{_SPAN}\btax(?:es)?\b",
+            r"(?is)(?=.*\b(?:tax|taxes|irs)\b).*\b(?:can|could|should|may)\s+(?:i|we)\s+(?:deduct|write\s+off|claim)\b",
+            r"(?i)\b(?:can|could|should|may)\s+(?:i|we)\s+(?:deduct|write\s+off)\s+(?:the|my|our|a|an)?\s*"
+            r"(?:car|vehicle|laptop|home office|travel|meals?|mileage|rent)\b",
+            rf"(?i)\b(?:is|are)\b{_SPAN}\btax[- ]deductible\b",
+            r"(?i)\bhow (?:do|can|should|could) (?:i|we) (?:avoid|reduce|lower|minimi[sz]e|cut|save on)\b[^.?!\n]{0,20}\btax(?:es)?\b",
+        )
+    ),
+    "medical": tuple(
+        re.compile(p)
+        for p in (
+            r"(?i)\bmedical advice\b",
+            r"(?i)\bwhat\b[^.?!\n]{0,30}\b(?:medication|medicine|drug|dose|dosage|pills?|antibiotics?)\b"
+            r"[^.?!\n]{0,40}\b(?:should|can|do|must)\s+(?:i|he|she|they|we)\b",
+            rf"(?i)\bhow (?:much|many)\b{_SPAN}\b{_DRUGS}\b{_SPAN}\b(?:should|can|do)\s+(?:i|he|she|they)\s+take\b",
+            rf"(?i)\bshould\s+(?:i|he|she|they)\s+(?:take|stop taking|start taking)\b{_SPAN}\b{_DRUGS}\b",
+            r"(?i)\bshould\s+(?:i|he|she|they)\s+(?:see|go to|visit)\s+(?:a|the|my)\s+(?:doctor|gp|hospital|specialist)\b",
+            r"(?i)\bwhat\b[^.?!\n]{0,20}\b(?:should|can)\s+(?:i|he|she|they)\s+take\s+for\b",
+            r"(?i)\b(?:do|could|might)\s+(?:i|he|she|they)\s+have\b[^.?!\n]{0,30}\b"
+            r"(?:cancer|diabetes|covid|an infection|depression|adhd|a tumou?r|an ulcer|pneumonia)\b",
+            r"(?i)\bdiagnose\s+(?:my|his|her|their|this)\b[^.?!\n]{0,30}\b"
+            r"(?:rash|pain|symptoms?|condition|illness|infection|headache|cough|fever)\b",
+        )
+    ),
+    "investment": tuple(
+        re.compile(p)
+        for p in (
+            r"(?i)\b(?:invest(?:ment)?|financial) advice\b",
+            r"(?i)\b(?:should|can|could)\s+(?:i|we)\s+(?:buy|sell|hold|short|invest\s+in)\b"
+            rf"{_SPAN}\b{_SECURITIES}\b",
+            rf"(?i)\b(?:best|top|good|safest)\b[^.?!\n]{{0,20}}\b{_SECURITIES}\b[^.?!\n]{{0,20}}\b(?:to|for)\s+(?:buy|invest|hold)",
+            r"(?i)\b(?:where|how)\s+should\s+(?:i|we)\s+(?:invest|put)\s+(?:my|our|the|this|company)?\s*"
+            r"(?:cash|money|savings|profits?|reserves?|retirement|surplus)\b",
+            rf"(?i)\b(?:will|is)\b{_SPAN}\b{_SECURITIES}\b{_SPAN}\b(?:go up|rise|fall|crash|a good (?:buy|investment))\b",
+        )
+    ),
+}
+
+#: Asking to hand the question to a professional is the right move, so it is never refused.
+_ADVICE_REFERRAL = re.compile(
+    r"(?i)\b(?:flag|escalate|raise|send|forward|refer|route|ask|book|find)\b[^.?!\n]{0,60}\b"
+    r"(?:counsel|lawyers?|attorneys?|legal team|accountants?|cpa|doctors?|advis[eo]rs?)\b"
+)
+
+
+def licensed_advice_topic(text: str) -> Optional[str]:
+    """The field (legal, tax, medical, investment) ``text`` asks for a professional's advice on, if any."""
+    message = text or ""
+    if _ADVICE_REFERRAL.search(message):
+        return None
+    return next((topic for topic, patterns in _ADVICE.items() if any(p.search(message) for p in patterns)), None)
+
+
+#: A sentence that asks for something, used to tell a request with other parts from a bare advice question.
+_OTHER_ASK = re.compile(
+    r"(?i)\?|\b(?:also|what|how|who|when|where|show|list|find|draft|send|create|add|enable|update|book|schedule|tell me)\b"
+)
+
+
+def advice_is_one_part(text: str) -> bool:
+    """Whether ``text`` also asks for other things, in sentences that do not ask for advice."""
+    sentences = re.split(r"(?<=[.?!])\s+|\n+", text or "")
+    return any(_OTHER_ASK.search(s) and not licensed_advice_topic(s) for s in sentences)
+

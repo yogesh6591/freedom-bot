@@ -311,6 +311,8 @@ def assess(
         request.contains_child_data = True
     if classified.contains_biometrics:
         request.contains_biometrics = True
+    if classified.contains_ssn:
+        request.contains_ssn = True
     if classified.requires_licensed_human:
         request.licensed_categories = tuple(sorted(classified.categories))
 

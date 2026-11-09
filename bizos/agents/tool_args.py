@@ -637,7 +637,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "admin_update_settings": _obj(
         {
             "default_execution_mode": _s("ADVISE | DRAFT | WAIT_FOR_APPROVAL | AUTO_WITHIN_SCOPE"),
-            "order_dpa_allows": _arr("Full list of allowed regulated categories: phi, card, child, biometrics"),
+            "order_dpa_allows": _arr("Full list of allowed regulated categories: phi, card, child, biometrics, ssn, licensed_advice"),
             "llm_baa_covered": {"type": "boolean", "description": "Model vendor has a signed BAA"},
             "approval_policy": {"type": "object", "description": "Fields to change, e.g. allow_self_approval, approver_role, expires_after_hours"},
             "risk_policy": {"type": "object", "description": "Fields to change, e.g. max_records_per_action, max_emails_per_run, auto_allowed_max_risk"},

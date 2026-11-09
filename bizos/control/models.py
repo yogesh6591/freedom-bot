@@ -112,7 +112,8 @@ _LEGACY_DPA_FLAGS = {
     "child": "allow_child_data",
     "biometrics": "allow_biometrics",
 }
-ORDER_DPA_CATEGORIES = frozenset(_LEGACY_DPA_FLAGS)
+#: Categories added after the legacy booleans: blocked unless listed here, with no boolean of their own.
+ORDER_DPA_CATEGORIES = frozenset(_LEGACY_DPA_FLAGS) | {"ssn", "licensed_advice"}
 
 
 def _order_dpa_categories(values: Any) -> set[str]:

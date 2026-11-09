@@ -10,6 +10,9 @@ export const JOB_ROLES = [
 ] as const
 
 export const DATA_TAGS = [
+  { value: 'crm', label: 'CRM' },
+  { value: 'email', label: 'Gmail' },
+  { value: 'calendar', label: 'Calendar' },
   { value: 'sales', label: 'Sales' },
   { value: 'finance', label: 'Finance' },
   { value: 'hr', label: 'HR' },

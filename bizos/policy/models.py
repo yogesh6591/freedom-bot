@@ -82,6 +82,8 @@ class PolicyRequest:
     contains_child_data: bool = False
     #: FB-039: the payload carries biometric identifiers.
     contains_biometrics: bool = False
+    #: The payload carries a Social Security number, or mentions one.
+    contains_ssn: bool = False
     #: Licensed / regulated categories detected in the payload (FB-039).
     licensed_categories: tuple[str, ...] = ()
     #: Connected integration ids in this workspace.

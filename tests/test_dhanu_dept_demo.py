@@ -12,16 +12,19 @@ from bizos.policy.models import PolicyRequest
 from bizos.rbac.registry import get_spec
 from bizos.tenancy.context import tenant_scope
 from bizos.tools.base import RunScope, guarded_call
-from bizos.types import ExecutionMode, MemoryCategory, PolicyEffect, Role
+from bizos.types import APP_AREAS, ExecutionMode, MemoryCategory, PolicyEffect, Role
 
 
 def test_department_people_seeded_with_distinct_scopes(client_a):
     by_email = {u.email.split("@")[0]: u for u in control.list_users(client_a.id)}
-    assert by_email["finance"].data_scopes == frozenset({"finance"})
-    assert by_email["ops"].data_scopes == frozenset({"ops"})
-    assert by_email["hr"].data_scopes == frozenset({"hr", "salary"})
-    assert by_email["employee"].data_scopes == frozenset()
-    assert by_email["lead"].data_scopes == frozenset({"ops"})
+    def departments(who: str) -> frozenset[str]:
+        return by_email[who].data_scopes - frozenset(APP_AREAS)
+
+    assert departments("finance") == frozenset({"finance"})
+    assert departments("ops") == frozenset({"ops"})
+    assert departments("hr") == frozenset({"hr", "salary"})
+    assert departments("employee") == frozenset()
+    assert departments("lead") == frozenset({"ops"})
     assert "exec" in by_email["exec"].data_scopes
     assert Role.OPERATOR in by_email["finance"].roles
     assert Role.VIEWER in by_email["employee"].roles

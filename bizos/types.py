@@ -319,7 +319,9 @@ class AuditEventType(StrEnum):
 #: Restricted data areas (FB-037). Content tagged with one of these is returned
 #: only to users whose data scopes include it; untagged content is general.
 #: ``ops`` is the operations/department bucket (distinct from finance and HR).
-DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal", "ops", "sales")
+#: Apps whose data a person needs a tag for. Without it the assistant cannot read or change that app for them.
+APP_AREAS: tuple[str, ...] = ("crm", "email", "calendar")
+DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal", "ops", "sales", *APP_AREAS)
 
 
 __all__ = [

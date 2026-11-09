@@ -10,6 +10,8 @@ import {
   FileCheck2,
   Fingerprint,
   HeartPulse,
+  IdCard,
+  Scale,
   UserCheck,
   Zap,
   type LucideIcon
@@ -1114,7 +1116,7 @@ function Users() {
       <AccessRequests onDecided={load} />
       <Panel
         title="Users"
-        description="The role sets what someone can do. Tags add the restricted data they can see, and you can pick several."
+        description="The role sets what someone can do. Tags set what they can see: apps like CRM and Gmail, and restricted data. You can pick several."
       >
         {error && <ErrorNote>{error}</ErrorNote>}
         <DataTable
@@ -1268,6 +1270,19 @@ const REGULATED = [
     icon: Fingerprint,
     title: 'Block biometrics',
     description: 'Fingerprints and face, voice or iris scans.'
+  },
+  {
+    key: 'ssn',
+    icon: IdCard,
+    title: 'Block Social Security numbers',
+    description: 'SSNs in chat, attachments, memory and uploaded documents.'
+  },
+  {
+    key: 'licensed_advice',
+    icon: Scale,
+    title: 'Block licensed advice',
+    description:
+      'Legal, tax, medical and investment advice. Company records can still be looked up.'
   }
 ]
 
@@ -1473,7 +1488,7 @@ function Policies() {
 
         <PolicyGroup
           title="Regulated data"
-          description="Blocked data is refused before it reaches the AI model. Turn a block off only when the signed Order/DPA allows that data."
+          description="Blocked items are refused before they reach the AI model. Turn a block off only when the signed Order/DPA allows it."
           aside={
             <Badge tone={blockedCount === REGULATED.length ? 'good' : 'warn'}>
               {blockedCount} of {REGULATED.length} blocked

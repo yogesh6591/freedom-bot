@@ -26,7 +26,7 @@ from bizos.domains.catalog import DEFAULT_ENABLED_DOMAINS, DOMAIN_NAMES
 from bizos.tenancy.context import TenantContext, tenant_scope
 from bizos.tenancy.provisioning import apply_workspace_schema, provision_client
 from bizos.tenancy.registry import workspace_connection
-from bizos.types import DeploymentType, ExecutionMode, MemoryCategory, Role, SourceType
+from bizos.types import APP_AREAS, DeploymentType, ExecutionMode, MemoryCategory, Role, SourceType
 from bizos.util.ids import new_id
 from bizos.util.timeutil import utcnow
 
@@ -116,7 +116,7 @@ def ensure_dev_users(client: Client, *, domain: str = "example.com") -> list[dic
                 display_name=name,
                 roles=roles,
                 created_by="bootstrap",
-                data_scopes=scopes,
+                data_scopes=(*scopes, *APP_AREAS),
             )
             created.append(
                 {
@@ -129,8 +129,9 @@ def ensure_dev_users(client: Client, *, domain: str = "example.com") -> list[dic
         except control.DuplicateUser:
             existing = next((u for u in control.list_users(client.id) if u.email == email), None)
             if existing is not None:
-                # Re-bootstrap always aligns scopes + given name so demos stay correct.
-                control.set_user_scopes(existing.id, scopes)
+                # Re-bootstrap aligns scopes + given name so demos stay correct. App tags are the
+                # admin's to give or take away, so a restart keeps them as they are.
+                control.set_user_scopes(existing.id, [*scopes, *(a for a in existing.data_scopes if a in APP_AREAS)])
                 if existing.display_name != name:
                     control.set_user_display_name(existing.id, name)
             created.append(

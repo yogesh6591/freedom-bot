@@ -417,7 +417,7 @@ def _legacy_chat(
                     "State that it is assistive only and the hiring decision stays with a human."
                 )
 
-        refusal = _regulated_data_refusal(body.message, settings)
+        refusal = _regulated_data_refusal(body.message, settings) or _licensed_advice_refusal(body.message, settings)
         output: Any = (refusal[1] if refusal else None) or grounding.restricted_candidate_reply(
             grounded, body.message
         )
@@ -433,6 +433,9 @@ def _legacy_chat(
                 execution_mode=str(scope.mode),
             )
         if output is None:
+            note = _licensed_advice_note(body.message, settings)
+            if note:
+                grounded.text += "\n\n" + note
             try:
                 agent = build_agent(
                     scope, session_id=session_id, message=body.message, grounding_text=grounded.text
@@ -621,6 +624,51 @@ CARD_DATA_REFUSAL = (
 )
 
 
+SSN_REFUSAL = (
+    "I can't process Social Security numbers here. This workspace's Order/DPA doesn't allow them, "
+    "so I won't add, store or look them up. Please don't share more of them. An admin can update "
+    "the Order/DPA setting if your contract covers it."
+)
+
+LICENSED_ADVICE_REFUSAL = (
+    "I can't give {topic} advice here. That needs {expert}. I can still look up what your company "
+    "has recorded or summarise a document for you."
+)
+_ADVICE_EXPERT = {
+    "legal": "a lawyer",
+    "tax": "a tax professional",
+    "medical": "a doctor",
+    "investment": "a licensed financial adviser",
+}
+
+
+def _licensed_advice_refusal(message: str, settings: ClientSettings) -> Optional[tuple[str, str]]:
+    """Refuse a request for legal, tax, medical or investment advice, before any model call.
+
+    Only for what the user asks in chat. A file or memory value may discuss these subjects freely.
+    A message that also asks for other things is not refused whole: see :func:`_licensed_advice_note`.
+    """
+    from bizos.policy.classifier import advice_is_one_part, licensed_advice_topic
+
+    if settings.order_dpa_allows_category("licensed_advice"):
+        return None
+    topic = licensed_advice_topic(message)
+    if topic is None or advice_is_one_part(message):
+        return None
+    return "LICENSED_ADVICE_BLOCKED", LICENSED_ADVICE_REFUSAL.format(topic=topic, expert=_ADVICE_EXPERT[topic])
+
+
+def _licensed_advice_note(message: str, settings: ClientSettings) -> str:
+    """When advice is one part of a bigger request: what to leave out, so the other parts still get answered."""
+    from bizos.policy.classifier import licensed_advice_topic
+
+    topic = None if settings.order_dpa_allows_category("licensed_advice") else licensed_advice_topic(message)
+    if topic is None:
+        return ""
+    return (f"## Licensed advice\nPart of this message asks for {topic} advice. Do not give that advice: say that "
+            f"part needs {_ADVICE_EXPERT[topic]}. Answer every other part.")
+
+
 def _regulated_data_refusal(
     message: str, settings: ClientSettings
 ) -> Optional[tuple[str, str]]:
@@ -631,7 +679,7 @@ def _regulated_data_refusal(
     The policy engine still denies tool calls carrying this data; this keeps it
     from reaching the model at all.
     """
-    from bizos.policy.classifier import classify_text, identifiable_phi
+    from bizos.policy.classifier import classify_text, find_ssn, identifiable_phi
 
     child = _child_data_refusal(message, settings)
     if child:
@@ -641,6 +689,10 @@ def _regulated_data_refusal(
     handling = bool(_HANDLE_INTENT.search(message or ""))
     phi_payload = bool(_PHI_PAYLOAD.search(message or ""))
     card_digits = bool(_CARD_DIGITS.search(message or ""))
+
+    # SSN: the number itself in any sentence; the word alone only when someone wants it handled.
+    if (find_ssn(message) or (handling and found.contains_ssn)) and not settings.order_dpa_allows_category("ssn"):
+        return "SSN_BLOCKED", SSN_REFUSAL
 
     # PHI: handling intent, or a concrete identifier / labelled diagnosis in the message.
     if (

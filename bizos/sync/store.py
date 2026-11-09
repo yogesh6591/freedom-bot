@@ -17,6 +17,8 @@ from bizos.tenancy.registry import readonly_connection, workspace_connection, wo
 from bizos.util.timeutil import utcnow
 
 SOURCES = ("gmail", "calendar", "youtube", "hubspot")
+#: The access tag each source needs. A record synced for someone without the tag stays hidden from them.
+SOURCE_AREAS = {"gmail": "email", "calendar": "calendar", "hubspot": "crm"}
 
 _ready: set[tuple[str, str]] = set()
 _lock = threading.Lock()
@@ -200,13 +202,13 @@ _STOP = frozenset({"the", "and", "for", "from", "with", "what", "any", "about", 
 def search(ctx: TenantContext, query: str = "", *, sources: Optional[Sequence[str]] = None, since: Optional[str] = None,
            limit: int = 20) -> list[dict[str, Any]]:
     """The caller's own synced records matching ``query`` (any meaningful word), newest first."""
+    picked = [s for s in (sources or []) if s in SOURCES] or list(SOURCES)
+    allowed = [s for s in picked if ctx.can_see_area(SOURCE_AREAS.get(s))]
+    if not allowed:
+        return []
     ensure_tables(ctx)
-    clauses = ["owner_user_id = :o"]
-    params: dict[str, Any] = {"o": ctx.user_id, "limit": max(1, min(int(limit or 20), 50))}
-    picked = [s for s in (sources or []) if s in SOURCES]
-    if picked:
-        clauses.append("source = ANY(:sources)")
-        params["sources"] = picked
+    clauses = ["owner_user_id = :o", "source = ANY(:sources)"]
+    params: dict[str, Any] = {"o": ctx.user_id, "sources": allowed, "limit": max(1, min(int(limit or 20), 50))}
     when = _when(since)
     if when is not None:
         clauses.append("occurred_at >= :since")

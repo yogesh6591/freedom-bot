@@ -311,6 +311,15 @@ def executor_model(*, campaign: bool = False) -> Any:
 # --------------------------------------------------------------------------- prompts
 
 
+#: The model-side backstop to the check in code, for phrasings that check does not recognise.
+LICENSED_RULE = (
+    "## Licensed advice\n"
+    "Never give legal, tax, medical or investment advice, and never make a decision that needs a licensed\n"
+    "professional. You may look up what the company has recorded, summarise documents, draft, and lay out\n"
+    "options; say the decision itself needs a qualified professional."
+)
+
+
 def _executor_prompt(ctx, settings, *, memory_context: str, playbooks: str, grounded: str) -> str:
     text = (PROMPTS / "executor.md").read_text(encoding="utf-8")
     now = local_now(settings)
@@ -327,6 +336,8 @@ def _executor_prompt(ctx, settings, *, memory_context: str, playbooks: str, grou
         text = text.replace(key, value)
     if grounded:
         text += "\n\n" + grounded
+    if not settings.order_dpa_allows_category("licensed_advice"):
+        text += "\n\n" + LICENSED_RULE
     return text
 
 
@@ -384,6 +395,8 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
     With ``emit``, progress streams while the turn runs (POST /api/chat/stream): a status line per tool
     call and the model's words through :class:`StreamGate`. The returned reply is the same either way.
     """
+    from app.api.chat import _licensed_advice_note as licensed_advice_note
+    from app.api.chat import _licensed_advice_refusal as licensed_advice_refusal
     from app.api.chat import _regulated_data_refusal as regulated_data_refusal
     from app.api.deps import run_scope
     from app.assistant.assistant import _guardrail_audit, _history, _packs_for, _pending_state
@@ -421,7 +434,7 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
 
     # ---- before the model, exactly as the current assistant: regulated data and restricted candidates
     grounded = grounding.analyze(ctx, message, settings.enabled_domains)
-    refusal = regulated_data_refusal(message, settings)
+    refusal = regulated_data_refusal(message, settings) or licensed_advice_refusal(message, settings)
     canned = (refusal[1] if refusal else None) or grounding.restricted_candidate_reply(grounded, message)
     if canned is not None:
         if refusal:
@@ -516,6 +529,10 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
     draft_text = _outreach_draft_text(outreach) if outreach is not None else ""
     if draft_text:
         grounded_text = (grounded_text + "\n\n" if grounded_text else "") + draft_text
+    advice_note = licensed_advice_note(message, settings)
+    if advice_note:
+        grounded_text = (grounded_text + "\n\n" if grounded_text else "") + advice_note
+        _guardrail_audit(ctx, scope, session_id, "LICENSED_ADVICE_PART_DECLINED")
     next_input: list[Message] = conversation.window(history) + [Message(role="user", content=message)]
     calls_left, text, explanation, output = TOOL_CALL_LIMIT, "", "", None
     gate = StreamGate(lambda: _write_state(guard), task=route.kind == "task")
