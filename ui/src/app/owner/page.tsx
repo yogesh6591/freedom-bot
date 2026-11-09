@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { api } from '@/lib/api'
+import { NewClientPanel } from './NewClientPanel'
 import {
   Badge,
   Btn,
@@ -210,6 +211,8 @@ function OwnerView() {
           )}
         </Panel>
       )}
+
+      <NewClientPanel onCreated={load} />
 
       {data && (
         <Panel title="Clients" description="At-risk clients first.">

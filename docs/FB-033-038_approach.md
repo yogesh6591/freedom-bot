@@ -30,6 +30,13 @@ cd deploy/clients/globex && docker compose up -d --build
 
 `deploy/clients/` is git-ignored: `client.env` contains generated secrets.
 
+**From a screen.** A platform owner can also add a client on **Platform owner →
+New client** (`POST /api/owner/clients`, platform owners only). It runs the same
+setup as the script (`bizos/tenancy/new_client.py::set_up_workspace`) and creates
+the first admin, who signs in on this deployment. It writes no deployment files,
+refuses a workspace identifier that is already taken, and removes everything it
+made if a step fails. Use the script when the client needs its own deployment.
+
 ## FB-034 — One company chat, persona rules
 
 - **One chat.** No Bronze/Silver/Gold or domain menu. `POST /api/chat` defaults

@@ -11,13 +11,15 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.api.deps import SESSION_COOKIE, require_platform_owner
+from bizos import admin_ops
 from bizos import settings as app_settings
 from bizos.audit import events as audit
 from bizos.control import store as control
 from bizos.control.tokens import TokenError, verify_token
+from bizos.tenancy import new_client
 from bizos.tenancy.context import TenantContext, tenant_scope
 from bizos.types import AuditEventType
 import bizos.owner as owner
@@ -80,6 +82,47 @@ def put_portfolio(
     except control.ClientNotFound as exc:
         raise HTTPException(status_code=404, detail="Client not found") from exc
     return {"portfolio": portfolio}
+
+
+class NewClientBody(BaseModel):
+    """A new client and its first admin, from the owner page."""
+
+    company_name: str = Field(min_length=1, max_length=new_client.MAX_NAME_LENGTH)
+    #: Leave empty to make it from the company name.
+    slug: Optional[str] = Field(default=None, max_length=40)
+    #: Leave out for the template's default package. General is always added.
+    purchased_domains: Optional[list[str]] = None
+    admin_name: str = Field(default="", max_length=120)
+    admin_email: EmailStr
+    admin_password: str = Field(min_length=admin_ops.MIN_PASSWORD_LENGTH, max_length=512)
+
+
+@router.get("/clients/new")
+def new_client_form(ctx: TenantContext = Depends(require_platform_owner)) -> dict[str, Any]:
+    """What the new-client form offers. Platform owners only."""
+    _ = ctx
+    return new_client.form_defaults()
+
+
+@router.post("/clients", status_code=201)
+def create_client(body: NewClientBody, ctx: TenantContext = Depends(require_platform_owner)) -> dict[str, Any]:
+    """Make a new client with its own workspace and first admin, without a server command.
+
+    Platform owners only: a client's own ADMIN cannot make other companies.
+    The password is never returned or recorded.
+    """
+    try:
+        return new_client.create_client(
+            company_name=body.company_name,
+            slug=body.slug or None,
+            purchased_domains=body.purchased_domains,
+            admin_name=body.admin_name,
+            admin_email=str(body.admin_email),
+            admin_password=body.admin_password,
+            actor=ctx,
+        )
+    except admin_ops.AdminError as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
 
 def _resolve_client(*, client_id: Optional[str], client_slug: Optional[str]):

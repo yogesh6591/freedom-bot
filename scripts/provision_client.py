@@ -38,11 +38,9 @@ from bizos.util.dotenv import load_dotenv
 load_dotenv()
 
 from bizos import template  # noqa: E402
-from bizos.bootstrap import admin_context  # noqa: E402
-from bizos.connectors.registry import seed_default_integrations  # noqa: E402
 from bizos.control import store as control  # noqa: E402
 from bizos.control.db import migrate_control_plane  # noqa: E402
-from bizos.tenancy import provisioning  # noqa: E402
+from bizos.tenancy import new_client  # noqa: E402
 from bizos.types import DeploymentType, Role  # noqa: E402
 from bizos.util.ids import slugify  # noqa: E402
 
@@ -121,13 +119,12 @@ def provision(args: argparse.Namespace) -> dict:
         )
         created = True
 
-    report = provisioning.provision_client(client)
-    ctx = admin_context(client)
-    seed_default_integrations(ctx)
-    seeded = template.seed_memory(ctx, config, client.settings)
-    unwalled = provisioning.unwalled_tables(ctx)
-    if unwalled:
-        raise SystemExit(f"client wall missing on: {', '.join(unwalled)}")
+    # The same steps the owner page's "New client" form runs.
+    try:
+        setup = new_client.set_up_workspace(client, config, actor="__bootstrap__")
+    except new_client.WorkspaceNotWalled as exc:
+        raise SystemExit(str(exc)) from exc
+    report, seeded = setup["provisioning"], setup["seeded_memory"]
 
     admin = None
     if args.admin_email:
