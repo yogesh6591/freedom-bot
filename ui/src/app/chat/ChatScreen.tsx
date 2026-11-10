@@ -1734,7 +1734,7 @@ function ChatView({ home }: { home: boolean }) {
                           </div>
                         </div>
                       ) : (
-                        <div className="flex min-w-0 flex-1 flex-col items-end gap-1.5">
+                        <div className="flex min-w-0 flex-col items-end gap-1.5">
                           <FileChips files={turn.attachments} />
                           <p className="assistant-user-bubble w-fit max-w-[min(80%,28rem)] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-4 py-2.5 text-[15px] leading-7">
                             {turn.content}
