@@ -536,57 +536,54 @@ function AssistantMessage({
   const lead = campaignRows.length && before.length ? before.slice(0, 1) : before
   const rest = campaignRows.length && before.length ? [...before.slice(1), ...after] : after
   return (
-    <div className="flex items-start gap-2.5">
-      <span className="assistant-orb mt-0.5 h-5 w-5 shrink-0 rounded-full" aria-hidden />
-      <div className="assistant-bot-bubble w-fit max-w-[min(100%,36rem)] rounded-2xl rounded-tl-md px-4 py-3">
-        <div className="flex flex-col gap-3">
-          {lead.map((block) => (
-            <div key={block} className="break-words">
-              <ChatMarkdown text={block} />
-            </div>
-          ))}
-          {people.length > 0 ? (
-            <table className="w-full border-collapse text-left text-[14px]">
-              <thead>
-                <tr className="border-b border-black/10 text-[12px] font-semibold uppercase tracking-wide text-secondary">
-                  <th className="py-1.5 pr-4 font-semibold">Name</th>
-                  <th className="py-1.5 font-semibold">Email</th>
+    <div className="assistant-bot-bubble w-fit max-w-full rounded-2xl rounded-tl-md px-4 py-3">
+      <div className="flex flex-col gap-3">
+        {lead.map((block) => (
+          <div key={block} className="break-words">
+            <ChatMarkdown text={block} />
+          </div>
+        ))}
+        {people.length > 0 ? (
+          <table className="w-full border-collapse text-left text-[14px]">
+            <thead>
+              <tr className="border-b border-black/10 text-[12px] font-semibold uppercase tracking-wide text-secondary">
+                <th className="py-1.5 pr-4 font-semibold">Name</th>
+                <th className="py-1.5 font-semibold">Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              {people.map((person) => (
+                <tr key={person.email} className="border-b border-black/5 last:border-0">
+                  <td className="py-1.5 pr-4 font-medium text-primary">{person.name}</td>
+                  <td className="py-1.5 text-secondary">{person.email}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {people.map((person) => (
-                  <tr key={person.email} className="border-b border-black/5 last:border-0">
-                    <td className="py-1.5 pr-4 font-medium text-primary">{person.name}</td>
-                    <td className="py-1.5 text-secondary">{person.email}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-          {campaignRows.length > 0 ? (
-            <table className="w-full border-collapse text-left text-[14px]">
-              <thead>
-                <tr className="border-b border-black/10 text-[12px] font-semibold uppercase tracking-wide text-secondary">
-                  <th className="py-1.5 pr-4 font-semibold">Campaign</th>
-                  <th className="py-1.5 font-semibold">Timing</th>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+        {campaignRows.length > 0 ? (
+          <table className="w-full border-collapse text-left text-[14px]">
+            <thead>
+              <tr className="border-b border-black/10 text-[12px] font-semibold uppercase tracking-wide text-secondary">
+                <th className="py-1.5 pr-4 font-semibold">Campaign</th>
+                <th className="py-1.5 font-semibold">Timing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {campaignRows.map((campaign) => (
+                <tr key={campaign.name} className="border-b border-black/5 last:border-0">
+                  <td className="py-1.5 pr-4 font-medium text-primary">{campaign.name}</td>
+                  <td className="py-1.5 text-secondary">{campaign.timing}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {campaignRows.map((campaign) => (
-                  <tr key={campaign.name} className="border-b border-black/5 last:border-0">
-                    <td className="py-1.5 pr-4 font-medium text-primary">{campaign.name}</td>
-                    <td className="py-1.5 text-secondary">{campaign.timing}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : null}
-          {rest.map((block) => (
-            <div key={block} className="break-words">
-              <ChatMarkdown text={block} />
-            </div>
-          ))}
-        </div>
+              ))}
+            </tbody>
+          </table>
+        ) : null}
+        {rest.map((block) => (
+          <div key={block} className="break-words">
+            <ChatMarkdown text={block} />
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -1641,70 +1638,78 @@ function ChatView({ home }: { home: boolean }) {
                         turn.note
                       )
                       return (
-                    <div key={index} className="flex flex-col items-start gap-2">
-                      {card ? (
-                        <EmailCard
-                          view={card.view}
-                          sessionId={sessionId || ''}
-                          editable={Boolean(sessionId) && card.editable}
-                          onView={(next) =>
-                            setTurns((prev) => {
-                              const last = prev.reduce(
-                                (found, item, i) =>
-                                  item.role === 'assistant' ? i : found,
-                                -1
-                              )
-                              const lastTurn = last >= 0 ? prev[last] : undefined
-                              const ownId = turn.trace?.email_view?.draft_id
-                              const ownDraft = (
-                                turn.trace?.email_draft ||
-                                turn.emailDraft ||
-                                ''
-                              ).trim()
-                              const lastDraft = (
-                                lastTurn?.trace?.email_draft ||
-                                lastTurn?.emailDraft ||
-                                ''
-                              ).trim()
-                              const sameDraft = ownId
-                                ? ownId === lastTurn?.trace?.email_view?.draft_id
-                                : Boolean(ownDraft) && ownDraft === lastDraft
-                              const target =
-                                sameDraft && lastTurn?.trace?.tool !== 'execute'
-                                  ? last
-                                  : index
-                              return prev.map((item, i) =>
-                                i === target ? applyEmailView(item, next) : item
-                              )
-                            })
-                          }
-                        />
-                      ) : null}
-                      {turn.trace?.sent_view ? (
-                        <SentSummary view={turn.trace.sent_view} />
-                      ) : null}
-                      {turn.trace?.template_view ? (
-                        <TemplateCard view={turn.trace.template_view} />
-                      ) : null}
-                      {note ? (
-                        card || turn.trace?.sent_view || turn.trace?.template_view ? (
-                          <p className="assistant-bot-bubble w-fit max-w-[min(100%,36rem)] whitespace-pre-wrap break-words rounded-2xl rounded-tl-md px-4 py-3 text-[15px] leading-7 text-primary">
-                            {note}
-                          </p>
-                        ) : (
-                          <AssistantMessage
-                            text={note}
-                            campaigns={turn.trace?.campaigns_to_show}
-                            people={turn.trace?.people_to_show}
+                    <div key={index} className="flex w-full items-start gap-2.5">
+                      <span
+                        className="assistant-orb mt-0.5 h-5 w-5 shrink-0 rounded-full"
+                        aria-hidden
+                      />
+                      <div className="flex min-w-0 max-w-[min(100%,36rem)] flex-col items-start gap-2">
+                        {card ? (
+                          <EmailCard
+                            view={card.view}
+                            sessionId={sessionId || ''}
+                            editable={Boolean(sessionId) && card.editable}
+                            onView={(next) =>
+                              setTurns((prev) => {
+                                const last = prev.reduce(
+                                  (found, item, i) =>
+                                    item.role === 'assistant' ? i : found,
+                                  -1
+                                )
+                                const lastTurn = last >= 0 ? prev[last] : undefined
+                                const ownId = turn.trace?.email_view?.draft_id
+                                const ownDraft = (
+                                  turn.trace?.email_draft ||
+                                  turn.emailDraft ||
+                                  ''
+                                ).trim()
+                                const lastDraft = (
+                                  lastTurn?.trace?.email_draft ||
+                                  lastTurn?.emailDraft ||
+                                  ''
+                                ).trim()
+                                const sameDraft = ownId
+                                  ? ownId === lastTurn?.trace?.email_view?.draft_id
+                                  : Boolean(ownDraft) && ownDraft === lastDraft
+                                const target =
+                                  sameDraft && lastTurn?.trace?.tool !== 'execute'
+                                    ? last
+                                    : index
+                                return prev.map((item, i) =>
+                                  i === target ? applyEmailView(item, next) : item
+                                )
+                              })
+                            }
                           />
-                        )
-                      ) : null}
-                      {debug && turn.response ? (
-                        <ToolsCalled activity={turn.response.tool_activity ?? []} />
-                      ) : null}
-                      {developer && !chatHome && turn.trace ? (
-                        <TurnTrace trace={turn.trace} response={turn.response} />
-                      ) : null}
+                        ) : null}
+                        {turn.trace?.sent_view ? (
+                          <SentSummary view={turn.trace.sent_view} />
+                        ) : null}
+                        {turn.trace?.template_view ? (
+                          <TemplateCard view={turn.trace.template_view} />
+                        ) : null}
+                        {note ? (
+                          card ||
+                          turn.trace?.sent_view ||
+                          turn.trace?.template_view ? (
+                            <p className="assistant-bot-bubble w-fit max-w-full whitespace-pre-wrap break-words rounded-2xl rounded-tl-md px-4 py-3 text-[15px] leading-7 text-primary">
+                              {note}
+                            </p>
+                          ) : (
+                            <AssistantMessage
+                              text={note}
+                              campaigns={turn.trace?.campaigns_to_show}
+                              people={turn.trace?.people_to_show}
+                            />
+                          )
+                        ) : null}
+                        {debug && turn.response ? (
+                          <ToolsCalled activity={turn.response.tool_activity ?? []} />
+                        ) : null}
+                        {developer && !chatHome && turn.trace ? (
+                          <TurnTrace trace={turn.trace} response={turn.response} />
+                        ) : null}
+                      </div>
                     </div>
                       )
                     })()

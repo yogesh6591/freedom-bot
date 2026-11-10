@@ -836,17 +836,16 @@ export function EmailCard({
 
   return (
     <>
-    <article className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]">
-      <div className="flex items-center justify-between gap-2 px-3 pt-3">
-        <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
-        {modeLabel ? (
+    <article className="w-full max-w-full self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]">
+      {modeLabel ? (
+        <div className="flex items-center justify-end gap-2 px-3 pt-3">
           <span
             className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium tracking-wide ring-1 ring-inset ${modeChipClass(modeLabel)}`}
           >
             {modeLabel}
           </span>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <MailRow label="To">
         {previewPeople.length ? (

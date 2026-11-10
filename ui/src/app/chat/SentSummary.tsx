@@ -21,10 +21,9 @@ export function SentSummary({ view }: { view: SentView }) {
   return (
     <section
       aria-label="Emails queued"
-      className="w-full max-w-[36rem] self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]"
+      className="w-full max-w-full self-start overflow-hidden rounded-2xl border border-[#e6e6e6] bg-white text-[#202124] shadow-[0_1px_2px_rgba(60,64,67,0.15),0_2px_6px_rgba(60,64,67,0.1)]"
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3.5">
-        <span className="assistant-orb h-5 w-5 shrink-0 rounded-full" aria-hidden />
         <h3 className="text-[15px] font-semibold">
           Queued {pluralise(view.count, 'email')}
         </h3>
