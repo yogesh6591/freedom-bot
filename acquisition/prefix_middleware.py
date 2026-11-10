@@ -48,6 +48,8 @@ class AcquisitionPrefixMiddleware(BaseHTTPMiddleware):
             'url("/',
             'location.href = "/',
             "location.href = '/",
+            'valueUrl = "/',
+            "valueUrl = '/",
             'data-fb-booking-status-url="/',
             'data-fb-booked-url="/',
         ):

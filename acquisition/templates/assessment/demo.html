@@ -75,8 +75,11 @@
           var form = document.getElementById("fb-demo-continue-form");
           var wait = document.getElementById("fb-demo-wait");
           var alreadyWatched = {{ 'true' if payload.demo_watch_completed_at else 'false' }};
-          var valueUrl = "/a/{{ token }}/value";
           if (!video || !btn) return;
+
+          function goToValue() {
+            window.location.href = "/a/{{ token }}/value";
+          }
 
           function enableContinue() {
             btn.disabled = false;
@@ -88,7 +91,7 @@
           function unlock() {
             if (alreadyWatched) {
               enableContinue();
-              btn.onclick = function () { window.location.href = valueUrl; };
+              btn.onclick = goToValue;
               return;
             }
             fetch("/api/assessment/{{ token }}/demo/complete?watched=1", { method: "POST" })
@@ -98,7 +101,7 @@
                 enableContinue();
                 btn.onclick = function () {
                   if (form) form.submit();
-                  else window.location.href = valueUrl;
+                  else goToValue();
                 };
               })
               .catch(function () {
