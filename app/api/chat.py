@@ -68,6 +68,10 @@ class EditMessageRequest(BaseModel):
     domain: str = AUTO
 
 
+class RenameSessionRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
 @router.get("/context")
 def chat_context(
     domain: str = AUTO,
@@ -778,6 +782,23 @@ def delete_session(session_id: str, ctx: TenantContext = Depends(current_context
             raise HTTPException(status_code=404, detail="Conversation not found") from exc
         chat_attachments.delete_session(ctx, session_id)
     return {"ok": True}
+
+
+@router.patch("/sessions/{session_id}")
+def rename_session(
+    session_id: str,
+    body: RenameSessionRequest,
+    ctx: TenantContext = Depends(current_context),
+) -> dict[str, Any]:
+    """Rename one of the caller's conversations in the sidebar."""
+    with bound(ctx):
+        try:
+            title = chat_history.rename_session(ctx, session_id, body.title)
+        except chat_history.SessionNotFound as exc:
+            raise HTTPException(status_code=404, detail="Conversation not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Title is required") from exc
+    return {"ok": True, "session_id": session_id, "title": title}
 
 
 @router.get("/sessions/{session_id}")

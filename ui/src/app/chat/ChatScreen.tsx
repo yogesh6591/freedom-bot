@@ -701,6 +701,8 @@ function ChatView({ home }: { home: boolean }) {
   const [error, setError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameText, setRenameText] = useState('')
   const [sessionId, setSessionId] = useState<string | undefined>()
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [developer, setDeveloper] = useState(false)
@@ -708,6 +710,7 @@ function ChatView({ home }: { home: boolean }) {
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const editRef = useRef<HTMLTextAreaElement>(null)
+  const renameRef = useRef<HTMLInputElement>(null)
 
   useLayoutEffect(() => {
     const el = editRef.current
@@ -840,11 +843,55 @@ function ChatView({ home }: { home: boolean }) {
     try {
       await api.del(`/api/chat/sessions/${encodeURIComponent(id)}`)
       setHistory((rows) => rows.filter((row) => row.session_id !== id))
+      if (renamingId === id) {
+        setRenamingId(null)
+        setRenameText('')
+      }
       if (sessionId === id) startNewConversation()
     } catch (err) {
       setHistoryError(err instanceof Error ? err.message : 'Could not delete the conversation')
     }
   }
+
+  function beginRename(id: string) {
+    const item = history.find((row) => row.session_id === id)
+    setRenamingId(id)
+    setRenameText(item?.title || '')
+    setHistoryError(null)
+  }
+
+  async function saveRename(id: string) {
+    const next = renameText.trim()
+    const current = history.find((row) => row.session_id === id)?.title || ''
+    if (!next || next === current) {
+      setRenamingId(null)
+      setRenameText('')
+      return
+    }
+    try {
+      const data = await api.patch<{ title: string }>(
+        `/api/chat/sessions/${encodeURIComponent(id)}`,
+        { title: next }
+      )
+      setHistory((rows) =>
+        rows.map((row) =>
+          row.session_id === id ? { ...row, title: data.title || next } : row
+        )
+      )
+      setRenamingId(null)
+      setRenameText('')
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : 'Could not rename the conversation')
+    }
+  }
+
+  useEffect(() => {
+    if (!renamingId) return
+    const el = renameRef.current
+    if (!el) return
+    el.focus()
+    el.select()
+  }, [renamingId])
 
   useEffect(() => {
     try {
@@ -1035,26 +1082,62 @@ function ChatView({ home }: { home: boolean }) {
                 : 'border border-transparent hover:bg-background-elevated'
             }`}
           >
+            {renamingId === item.session_id ? (
+              <form
+                className="flex min-w-0 flex-1 items-center px-2 py-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  void saveRename(item.session_id)
+                }}
+              >
+                <input
+                  ref={renameRef}
+                  value={renameText}
+                  onChange={(event) => setRenameText(event.target.value)}
+                  onBlur={() => void saveRename(item.session_id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.preventDefault()
+                      setRenamingId(null)
+                      setRenameText('')
+                    }
+                  }}
+                  maxLength={120}
+                  aria-label="Rename conversation"
+                  className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-[12px] font-semibold text-primary outline-none focus:border-brand"
+                />
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void openSession(item.session_id)}
+                aria-current={
+                  item.session_id === sessionId ? 'true' : undefined
+                }
+                className="min-w-0 flex-1 rounded-lg px-3 py-3 text-left focus-visible:outline-brand"
+              >
+                <span
+                  className={`block truncate text-[12px] font-semibold ${item.session_id === sessionId ? 'text-brand' : 'text-primary'}`}
+                >
+                  {item.title || 'Untitled conversation'}
+                </span>
+                <span className="mt-1 block text-[11px] text-muted">
+                  {whenLabel(item.updated_at)}
+                </span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => void openSession(item.session_id)}
-              aria-current={
-                item.session_id === sessionId ? 'true' : undefined
-              }
-              className="min-w-0 flex-1 rounded-lg px-3 py-3 text-left focus-visible:outline-brand"
+              className="flex w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:text-primary focus-visible:outline-brand"
+              aria-label={`Rename ${item.title || 'conversation'}`}
+              title="Rename conversation"
+              onClick={() => beginRename(item.session_id)}
             >
-              <span
-                className={`block truncate text-[12px] font-semibold ${item.session_id === sessionId ? 'text-brand' : 'text-primary'}`}
-              >
-                {item.title || 'Untitled conversation'}
-              </span>
-              <span className="mt-1 block text-[11px] text-muted">
-                {whenLabel(item.updated_at)}
-              </span>
+              <Pencil size={14} aria-hidden />
             </button>
             <button
               type="button"
-              className="mr-1 flex w-9 shrink-0 items-center justify-center rounded-lg text-muted hover:text-red-600 focus-visible:outline-brand"
+              className="mr-1 flex w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:text-red-600 focus-visible:outline-brand"
               aria-label={`Delete ${item.title || 'conversation'}`}
               title="Delete conversation"
               onClick={() => void deleteConversation(item.session_id)}
@@ -1092,6 +1175,7 @@ function ChatView({ home }: { home: boolean }) {
           </p>
           {group.items.map((item) => {
             const active = item.session_id === sessionId
+            const renaming = renamingId === item.session_id
             return (
               <div
                 key={item.session_id}
@@ -1100,16 +1184,52 @@ function ChatView({ home }: { home: boolean }) {
                 }`}
               >
                 {active && <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-full bg-brand" aria-hidden />}
+                {renaming ? (
+                  <form
+                    className="flex min-w-0 flex-1 items-center py-1 pl-3 pr-1"
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      void saveRename(item.session_id)
+                    }}
+                  >
+                    <input
+                      ref={renameRef}
+                      value={renameText}
+                      onChange={(event) => setRenameText(event.target.value)}
+                      onBlur={() => void saveRename(item.session_id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                          event.preventDefault()
+                          setRenamingId(null)
+                          setRenameText('')
+                        }
+                      }}
+                      maxLength={120}
+                      aria-label="Rename conversation"
+                      className="w-full rounded-md border border-border bg-background px-2 py-1 text-[13px] font-semibold text-primary outline-none focus:border-brand"
+                    />
+                  </form>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void openSession(item.session_id)}
+                    aria-current={active ? 'true' : undefined}
+                    title={item.title || 'Untitled conversation'}
+                    className={`min-w-0 flex-1 truncate rounded-lg py-2 pl-3 pr-1 text-left text-[13px] focus-visible:outline-brand ${
+                      active ? 'font-semibold text-primary' : 'text-secondary group-hover:text-primary'
+                    }`}
+                  >
+                    {item.title || 'Untitled conversation'}
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => void openSession(item.session_id)}
-                  aria-current={active ? 'true' : undefined}
-                  title={item.title || 'Untitled conversation'}
-                  className={`min-w-0 flex-1 truncate rounded-lg py-2 pl-3 pr-1 text-left text-[13px] focus-visible:outline-brand ${
-                    active ? 'font-semibold text-primary' : 'text-secondary group-hover:text-primary'
-                  }`}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition-opacity hover:text-primary focus-visible:opacity-100 group-hover:opacity-100"
+                  aria-label={`Rename ${item.title || 'conversation'}`}
+                  title="Rename conversation"
+                  onClick={() => beginRename(item.session_id)}
                 >
-                  {item.title || 'Untitled conversation'}
+                  <Pencil size={14} aria-hidden />
                 </button>
                 <button
                   type="button"

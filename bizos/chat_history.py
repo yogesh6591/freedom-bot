@@ -138,7 +138,13 @@ def list_sessions(ctx: TenantContext, *, limit: int = 50) -> list[dict[str, Any]
                        MIN(created_at) AS started_at,
                        MAX(created_at) AS updated_at,
                        COUNT(*) FILTER (WHERE role = 'user') AS turns,
-                       (ARRAY_AGG(content ORDER BY created_at) FILTER (WHERE role = 'user'))[1] AS first_message
+                       (ARRAY_AGG(content ORDER BY created_at) FILTER (WHERE role = 'user'))[1] AS first_message,
+                       (
+                         ARRAY_AGG(meta->>'session_title' ORDER BY created_at)
+                         FILTER (
+                           WHERE COALESCE(meta->>'session_title', '') <> ''
+                         )
+                       )[1] AS custom_title
                 FROM chat_messages
                 WHERE user_id = :u
                 GROUP BY session_id
@@ -151,13 +157,49 @@ def list_sessions(ctx: TenantContext, *, limit: int = 50) -> list[dict[str, Any]
     return [
         {
             "session_id": r.session_id,
-            "title": _title(r.first_message),
+            "title": _display_title(r.custom_title, r.first_message),
             "turns": int(r.turns or 0),
             "started_at": r.started_at.isoformat() if r.started_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
         for r in rows
     ]
+
+
+def rename_session(ctx: TenantContext, session_id: str, title: str) -> str:
+    """Set a custom sidebar title for one of the caller's conversations.
+
+    Stored on the earliest message meta as ``session_title`` so listing can
+    prefer it over the auto title from the first user message.
+    """
+    cleaned = " ".join((title or "").split()).strip()
+    if not cleaned:
+        raise ValueError("title_required")
+    if len(cleaned) > 120:
+        cleaned = cleaned[:120].rstrip()
+    ensure_table(ctx)
+    with workspace_connection(ctx) as conn:
+        row = conn.execute(
+            text(
+                "SELECT id, meta FROM chat_messages "
+                "WHERE session_id = :s AND user_id = :u "
+                "ORDER BY created_at ASC, id ASC LIMIT 1"
+            ),
+            {"s": session_id, "u": ctx.user_id},
+        ).first()
+        if row is None:
+            raise SessionNotFound(session_id)
+        meta = row.meta or {}
+        if isinstance(meta, str):
+            meta = json.loads(meta)
+        if not isinstance(meta, dict):
+            meta = {}
+        meta["session_title"] = cleaned
+        conn.execute(
+            text("UPDATE chat_messages SET meta = CAST(:m AS JSONB) WHERE id = :i"),
+            {"m": json.dumps(meta, default=str), "i": row.id},
+        )
+    return cleaned
 
 
 def set_latest_email_draft(
@@ -359,3 +401,8 @@ def delete_messages(ctx: TenantContext, session_id: str, ids: list[str]) -> None
 def _title(first_message: Optional[str]) -> str:
     text_ = " ".join((first_message or "").split())
     return (text_[:77] + "…") if len(text_) > 80 else (text_ or "Conversation")
+
+
+def _display_title(custom_title: Optional[str], first_message: Optional[str]) -> str:
+    custom = " ".join((custom_title or "").split()).strip()
+    return custom if custom else _title(first_message)
