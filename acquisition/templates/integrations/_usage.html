@@ -1,0 +1,11 @@
+<div class="integration-box-body">
+  <p class="integration-box-desc"><strong>Prospeo</strong></p>
+  {% if prospeo.error %}<p class="integration-box-desc">{{ prospeo.error }}</p>
+  {% else %}<table class="data-table"><tbody>{% for k, v in prospeo.rows %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  <p class="integration-box-desc"><strong>Exa</strong></p>
+  {% if exa.note %}<p class="integration-box-desc">{{ exa.note }} <a href="https://dashboard.exa.ai" target="_blank" rel="noopener">Exa dashboard</a></p>
+  {% elif exa.error %}<p class="integration-box-desc">{{ exa.error }} <a href="https://dashboard.exa.ai" target="_blank" rel="noopener">Exa dashboard</a></p>
+  {% else %}<table class="data-table"><tbody>{% for k, v in exa.rows %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+  <p class="integration-box-desc"><strong>People the finder added</strong></p>
+  <table class="data-table"><tbody>{% for k, v in counts.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</tbody></table>
+</div>

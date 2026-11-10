@@ -96,6 +96,17 @@ def integrations_page(
     return templates.TemplateResponse(request, "integrations/index.html", context)
 
 
+@router.get("/integrations/usage", response_class=HTMLResponse)
+def finder_usage(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+    from acquisition.services import usage_service as usage
+
+    return templates.TemplateResponse(request, "integrations/_usage.html", {
+        "prospeo": usage.prospeo_usage(usage.user_id_from_request(request)),
+        "exa": usage.exa_usage(),
+        "counts": usage.finder_counts(db),
+    })
+
+
 # ---------------------------------------------------------------------------- tests (nothing is saved)
 @router.post("/integrations/openai/test", response_class=HTMLResponse)
 def openai_test(request: Request, service: OpenAIService = Depends(get_openai_service)) -> HTMLResponse:

@@ -141,6 +141,8 @@ class Settings(BaseSettings):
     discovery_enable_legacy_sources: bool = False
     # Legacy (unused in agentic path): Exa API key retained so old env files load.
     exa_api_key: str = ""
+    # Exa Team Management service key (not the search key): lets the Integrations page show the credit balance.
+    exa_admin_api_key: str = ""
     # Research provider for new prospects: auto | openai_web | web_search | mock | none
     research_provider: str = "auto"
     # Model for OpenAI web search (legacy harvest + research). Blank = Integrations model.
