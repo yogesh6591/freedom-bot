@@ -131,7 +131,11 @@ def send_payment_link(call: Call, who: str = "", approval_evidence: str = "") ->
         "email_draft": "", "same_for_all": False, "new_thread": True, "payment": True,
     }
     from app.outreach import card
+    from app.outreach.session import OutreachSession
 
+    session = OutreachSession(object(), call.state, latest_message=call.latest)
+    session._new_thread = True
+    session._mark_threads(call.db)
     card.refresh_preview(records.people_records(call.db, [p.email]), call.state)
     call.state["_show_card"] = True  # the chat turn shows the card (app/outreach/effects.py)
     return ("ok: the payment email is shown to the user as a card. Ask one short question: send it? "
