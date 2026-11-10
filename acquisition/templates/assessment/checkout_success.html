@@ -6,15 +6,18 @@
   <title>Payment confirmed · JeanneCAIO / FreedomBot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/assessment.css?v=77">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,550;9..144,650;9..144,700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=84">
 </head>
 <body class="assessment-body checkout-body checkout-body--success">
-{% from "assessment/_public_brand.html" import lockup %}
-
 {% if payload.success or payload.already_paid %}
 <div class="rcpt-stage">
-  <header class="rcpt-brand">{{ lockup() }}</header>
+  <header class="rcpt-brand">
+    <div class="checkout-brand">
+      <p class="checkout-brand-mark">FreedomBot</p>
+      <p class="checkout-brand-sub">JeanneCAIO</p>
+    </div>
+  </header>
 
   <div class="rcpt-burst" aria-hidden="true">
     <span></span><span></span><span></span><span></span><span></span>
@@ -108,11 +111,14 @@
 
 {% else %}
 <div class="checkout-shell">
-  <header class="checkout-top">
-    <div class="checkout-top-brand">{{ lockup() }}</div>
+  <header class="checkout-masthead">
+    <div class="checkout-brand">
+      <p class="checkout-brand-mark">FreedomBot</p>
+      <p class="checkout-brand-sub">JeanneCAIO</p>
+    </div>
   </header>
-  <main class="checkout-card">
-    <p class="checkout-eyebrow">Payment</p>
+  <main class="checkout-panel">
+    <p class="checkout-kicker">Payment</p>
     <h1 class="checkout-title">We couldn’t confirm payment yet</h1>
     <p class="checkout-lead">{{ payload.error_message or "Return to checkout to finish payment, or contact JeanneCAIO if you were charged." }}</p>
     <a class="checkout-pay-btn" href="/a/{{ token }}/checkout">Back to checkout</a>
