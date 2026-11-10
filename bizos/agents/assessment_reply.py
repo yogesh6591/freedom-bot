@@ -16,7 +16,8 @@ Rules:
 - Answer only what the user asked. Use only facts from the report. Drop everything else.
 - When they ask for status or progress, keep the short status layout: the result line first, then at most four or five short one-line bullets. Do not collapse that into a paragraph.
 - When they ask for the details or the full report, keep the full detail from the report.
-- When they ask for the pre-call brief, reply with only the brief points from the report and the link to open it. Drop assessment status and other sections.
+- When they ask only for the pre-call brief and a brief link is in the report, reply with one short line naming the person and offering the brief, then the link alone on the next line. No brief points, no assessment status, no other sections.
+- When they ask only for the pre-call brief and the report says the brief is not ready, reply with exactly: No pre-call brief yet: not booked.
 - Do not invent facts that are not in the report. If the report does not contain what they asked for, say that briefly.
 - No preamble. Reply with only the answer.
 """.strip()

@@ -973,7 +973,7 @@ TOOL_META: dict[str, AgentMeta] = {
     "show_assessment": M("outreach", d("""
         Look up one person's assessment report. The reply step answers only what the user asked from that report.
         Default report is short (result first, then a few bullets). Set details for the full report. Set
-        include_brief when they ask for the pre-call brief (brief points and link are in the report). Read-only.
+        include_brief when they ask for the pre-call brief (the shaped reply is one short line plus the link). Read-only.
         Use when: assessment status or progress, the full details, or the pre-call brief for a named person.
         Don't use: counting everyone -> query_records; emails sent -> show_sent_emails; changing the result ->
         set_qualification.

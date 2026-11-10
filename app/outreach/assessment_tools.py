@@ -155,42 +155,18 @@ def short_report(p: Prospect, s: dict, em: dict) -> str:
     return "\n".join(lines + _progress_lines(s, em))
 
 
-_BRIEF_LABELS = (
-    ("business_snapshot", "Business snapshot"),
-    ("possible_inefficiencies", "Possible inefficiencies"),
-    ("key_numbers", "Key numbers"),
-    ("financial_impact", "Financial impact"),
-    ("freedombot_opportunity", "FreedomBot opportunity"),
-    ("concerns", "Concerns"),
-    ("missing_information", "Missing information"),
-    ("prospect_questions", "Prospect questions"),
-    ("likely_fit", "Likely fit"),
-    ("discussion_points", "Discussion points"),
-)
-
-
-def _brief_lines(s: dict) -> list[str]:
-    """The stored pre-call brief points and the link to open it, when available."""
-    status = (s.get("pre_call_brief_status") or "").strip()
+def _brief_lines(s: dict, name: str) -> list[str]:
+    """Whether the pre-call brief is ready and the link to open it (no brief body in the report)."""
+    status = (s.get("pre_call_brief_status") or "").strip().lower()
     brief = s.get("pre_call_brief") if isinstance(s.get("pre_call_brief"), dict) else {}
-    lines: list[str] = []
-    if status:
-        lines.append(f"Pre-call brief status: {status}")
-    if brief:
-        lines.append("Pre-call brief:")
-        for key, label in _BRIEF_LABELS:
-            val = brief.get(key)
-            if isinstance(val, list):
-                items = [str(item).strip() for item in val if str(item).strip()]
-                if items:
-                    lines.append(f"{label}:")
-                    lines.extend(f"- {item}" for item in items)
-            elif isinstance(val, str) and val.strip():
-                lines.append(f"- {label}: {val.strip()}")
-    elif status and status.lower() != "ready":
-        lines.append("- Pre-call brief points are not ready yet.")
-    if s.get("brief_url"):
-        lines.append(f"- Open the pre-call brief in a new tab: {s['brief_url']}")
+    ready = status == "ready" and bool(brief) and bool(s.get("brief_url"))
+    lines = [f"Person: {name}"]
+    if ready:
+        lines.append("Pre-call brief: ready")
+        lines.append(f"Pre-call brief link: {s['brief_url']}")
+    else:
+        lines.append("Pre-call brief: not ready")
+        lines.append("Pre-call brief unavailable reason: not booked")
     return lines
 
 
@@ -239,7 +215,7 @@ def full_report(p: Prospect, s: dict, em: dict, include_brief: bool) -> str:
     if s["assessment_status"] == "started":
         lines.extend(_in_progress_answer_lines(s))
     if include_brief:
-        lines.extend(_brief_lines(s))
+        lines.extend(_brief_lines(s, p.executive_name))
     elif s.get("pre_call_brief_status"):
         lines.append(f"- Pre-call brief: {s['pre_call_brief_status']}")
     return "\n".join(lines)
