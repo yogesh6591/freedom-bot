@@ -100,16 +100,17 @@ def test_asking_clauses_future_wording_and_pending_requests_are_not_claims():
     assert "has been added" not in claimed
 
 
-def test_assessment_status_keeps_the_labelled_report():
+def test_assessment_shaped_lead_in_is_kept():
+    """compose no longer replaces a shaped assessment reply with the raw tool report."""
+    shaped = "Qualified.\n- Why: strong fit\n- Booking: confirmed"
     report = (
+        "Qualified, assessment finished Oct 28\n"
         "Shubham <a@b.com>\n"
-        "Overall: Unqualified (assessment finished Oct 28)\n"
-        "Set manually by an admin (the AI's own reasoning below may point the other way)."
+        "- Why: strong fit and more detail the user did not ask for"
     )
     ack = compose(
-        "Shubham is unqualified because of several concerns in one long paragraph.",
+        shaped,
         [ToolResult(tool="show_assessment", status="success", summary=report.splitlines()[0], data=report)],
         task=False,
     )
-    assert ack.text == report
-    assert "Overall:" in ack.text and "Set manually by an admin" in ack.text
+    assert ack.text == shaped

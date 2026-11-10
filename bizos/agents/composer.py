@@ -157,21 +157,13 @@ def compose(lead_in: str, results: Iterable[ToolResult], *, task: bool = True) -
 
     Write results are not appended. ``task`` is False for a question: an answer may truthfully say a
     record "was created" in March, so only a task's lead-in is cleaned of done-claims.
-    A successful show_assessment result is the labelled report the user asked to see; keep it.
+    show_assessment replies are shaped before compose (user message + report → answer only what
+    was asked); compose does not replace that text with the raw report.
     """
     results = list(results)
     writes = [r for r in results if _is_write(r.tool)]
     wrote = any(r.status == "success" for r in writes)
     pending_approval = any(r.status == "pending" and r.pending_kind == "approval" for r in writes)
-    reports = []
-    for r in results:
-        if r.tool != "show_assessment" or r.status != "success":
-            continue
-        body = r.data if isinstance(r.data, str) else r.summary
-        if (body or "").strip():
-            reports.append(body)
-    if reports and not wrote:
-        return Acknowledgement("\n\n".join(reports), False, pending_approval)
 
     text = (lead_in or "").strip()
     if not wrote and (task or writes):

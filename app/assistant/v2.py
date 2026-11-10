@@ -712,6 +712,18 @@ def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, gua
 
     route_domains = list((trace.get("route") or {}).get("domains") or [])
     results = [r for d in (guard.log if guard else []) if d.stage in ("policy", "duplicate") for r in d.results]
+    # show_assessment: one more model pass over the report + the user's message; keep only what they asked.
+    if guard is not None:
+        from bizos.agents.assessment_reply import assessment_reports, shape_assessment_reply
+        from bizos.rbac.registry import get_spec as _spec
+
+        reports = assessment_reports(results)
+        wrote = any(
+            r.status == "success" and bool(getattr(_spec(r.tool), "write", False)) for r in results
+        )
+        if reports and not wrote:
+            text = shape_assessment_reply(getattr(body, "message", "") or "", "\n\n".join(reports))
+            trace["assessment_reply_shaped"] = True
     acknowledgement = compose(text, results, task=task) if guard else None
     content = acknowledgement.text if acknowledgement else text
     new_actions = [a.to_dict() for a in actions.list_actions(limit=200, ctx=ctx) if a.id not in before]

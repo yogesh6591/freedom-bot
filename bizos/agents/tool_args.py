@@ -883,7 +883,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "show_assessment": _obj({
         "who": _s("Name or email of the person; leave empty to use the person already chosen"),
         "details": {"type": "boolean", "description": "True only when the user asks for the details or the full report"},
-        "include_brief": {"type": "boolean", "description": "Also include a link to the pre-call brief, not the brief written out"},
+        "include_brief": {"type": "boolean", "description": "True when the user asks for the pre-call brief; adds the brief points and link to the report"},
     }, []),
     "set_qualification": _obj({
         "who": _s("Name or email of the person; leave empty to use the person already chosen"),
