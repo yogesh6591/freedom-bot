@@ -32,7 +32,15 @@ from bizos.types import PolicyEffect
     ("GMAIL_MOVE_TO_TRASH", ["updateHint"], "destructive"),  # Composio calls it an update
     ("GMAIL_REPLY_TO_THREAD", [], "destructive"),
     ("YOUTUBE_CREATE_COMMENT_REPLY", ["createHint"], "destructive"),  # public post
+    ("FACEBOOK_CREATE_POST", ["createHint"], "destructive"),  # publishes on the Page
+    ("FACEBOOK_CREATE_PHOTO_POST", ["createHint"], "destructive"),
+    ("FACEBOOK_CREATE_MULTI_PHOTO_POST", ["createHint"], "destructive"),
+    ("FACEBOOK_CREATE_VIDEO_POST", ["createHint"], "destructive"),
+    ("FACEBOOK_UPDATE_POST", ["updateHint"], "destructive"),  # edits what is already public
+    ("FACEBOOK_RESCHEDULE_POST", ["updateHint"], "write"),  # moves a scheduled time, publishes nothing
+    ("FACEBOOK_GET_POST", ["readOnlyHint"], "read"),
     ("HUBSPOT_CREATE_CONTACT", ["createHint"], "write"),
+    ("HUBSPOT_CREATE_NOTE", ["createHint"], "write"),
     ("HUBSPOT_ARCHIVE_CONTACT", [], "destructive"),
     ("GOOGLECALENDAR_LIST_EVENTS", ["readOnlyHint", "destructiveHint"], "destructive"),
 ])
@@ -46,6 +54,14 @@ def test_a_mismatched_tool_is_refused_and_names_the_right_one(monkeypatch):
     assert toolkit == "youtube" and "integration_destructive_action" in problem
     assert acts.check("NOPE_DO_THING", acts.WRITE)[1].startswith("NOPE_DO_THING is not an action")
     assert "action must be" in acts.check("rm -rf /", acts.READ)[1]
+
+
+def test_a_facebook_post_runs_with_the_publishing_tool(monkeypatch):
+    """The live failure: asked to publish, the assistant chose the publishing tool and was refused."""
+    monkeypatch.setattr(acts, "describe", lambda slug: {"tier": acts.classify(slug, ["createHint"]), "app": "facebook"})
+    assert acts.check("FACEBOOK_CREATE_POST", acts.DESTRUCTIVE) == ("facebook", None)
+    toolkit, problem = acts.check("FACEBOOK_CREATE_POST", acts.WRITE)
+    assert toolkit == "facebook" and "integration_destructive_action" in problem
 
 
 def test_without_composio_the_tier_comes_from_the_name(monkeypatch):

@@ -67,6 +67,10 @@ _READ_VERBS = frozenset({
 })
 #: YouTube comment replies are posts on the public channel, whatever the verb says.
 _PUBLIC_POSTS = frozenset({"YOUTUBE_CREATE_COMMENT_REPLY", "YOUTUBE_POST_COMMENT", "YOUTUBE_UPDATE_COMMENT"})
+#: Creating or editing a post or comment publishes it (FACEBOOK_CREATE_POST, FACEBOOK_UPDATE_POST,
+#: LINKEDIN_CREATE_LINKED_IN_POST...), even though Composio calls it a create or an update.
+_PUBLISHING_VERBS = frozenset({"CREATE", "UPDATE"})
+_PUBLISHED_THINGS = frozenset({"POST", "COMMENT"})
 
 _RESULT_LIMIT = 12000  # characters of result JSON handed back to the model
 _SCHEMA_CACHE_TTL = 600.0
@@ -90,6 +94,8 @@ def classify(slug: str, tags: Optional[list[str]] = None) -> str:
     verb = words[0] if words else ""
     hints = {str(t) for t in (tags or [])}
     if name in _PUBLIC_POSTS or "destructiveHint" in hints:
+        return DESTRUCTIVE
+    if verb in _PUBLISHING_VERBS and set(words[1:]) & _PUBLISHED_THINGS:
         return DESTRUCTIVE
     read_only = "readOnlyHint" in hints and not hints & {"createHint", "updateHint"}
     if read_only and verb in _READ_VERBS:
