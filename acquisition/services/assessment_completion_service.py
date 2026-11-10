@@ -844,7 +844,32 @@ class AssessmentCompletionService:
             self.db.commit()
             self.db.refresh(profile)
             self.db.refresh(link)
+        self._copy_answers_to_prospect(link, profile)
         return profile
+
+    def _copy_answers_to_prospect(self, link: CampaignProspect, profile: AssessmentProfile) -> None:
+        """Headcount and revenue the prospect gave in the assessment replace the estimates on the prospect record."""
+        try:
+            prospect = getattr(link, "prospect", None)
+            if prospect is None:
+                return
+            state = normalize_structured_state(profile.structured_state)
+            changed = False
+            for field, column in (("headcount", "headcount_band"), ("revenue_range", "revenue_band")):
+                entry = state.get(field)
+                if not isinstance(entry, dict) or entry.get("status") != "known" or entry.get("source") != "assessment":
+                    continue
+                value = entry.get("value")
+                text = str(value).strip()[:100] if value not in (None, "") else ""
+                if text and getattr(prospect, column) != text:
+                    setattr(prospect, column, text)
+                    changed = True
+            if changed:
+                self.db.add(prospect)
+                self.db.commit()
+        except Exception:  # noqa: BLE001 - copying must never break finishing an assessment
+            logger.warning("Could not copy assessment answers to the prospect", exc_info=True)
+            self.db.rollback()
 
     def qualify_from_state(
         self,
