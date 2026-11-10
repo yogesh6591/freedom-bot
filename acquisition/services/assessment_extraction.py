@@ -142,6 +142,9 @@ COMPLETE FORM (every turn):
 - "Fields the assistant's last question asked about" tells you what a short reply (yes, no, none, not sure) is
   answering. Apply the reply to every field in that list that it answers, using the same rules.
 - Never leave a field missing because the answer is short, negative or unwelcome.
+- A second-hand answer counts. When the user reports what their boss, owner or team thinks, wants or
+  decides (for example that the boss does not want any change), record that as the answer for the
+  business, with the quote. Do not leave a field missing because the user is not the one who decides.
 - Never clear a previously known concrete value with a bare null / missing write.
 - Do not guess about topics nobody mentioned.
 """.strip()
@@ -1206,6 +1209,7 @@ def close_stalled_fields(
     *,
     latest_user: str,
     user_message_id: str | None,
+    min_asks: int = MAX_ASKS_PER_FIELD,
 ) -> tuple[dict[str, Any], list[str]]:
     """Loop guard: a field asked MAX_ASKS_PER_FIELD times and still missing is closed as unknown."""
     quote = (latest_user or "").strip()
@@ -1215,7 +1219,7 @@ def close_stalled_fields(
     ask = get_ask_state(state)
     closed: list[str] = []
     for field in ask["last_asked"]:
-        if ask["counts"].get(field, 0) < MAX_ASKS_PER_FIELD:
+        if ask["counts"].get(field, 0) < min_asks:
             continue
         if is_resolved(normalize_field(state.get(field))):
             continue

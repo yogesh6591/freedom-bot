@@ -216,6 +216,25 @@ class AssessmentChatService:
         except AssessmentChatError:
             raise
 
+        if not turn.get("available", True):
+            # The question writer gave nothing usable. Fields already asked once are closed as
+            # unknown so the prospect is never left on a dead-end question.
+            stalled_state, closed_fields = close_stalled_fields(
+                profile.structured_state,
+                latest_user=cleaned,
+                user_message_id=user_message_id,
+                min_asks=1,
+            )
+            if closed_fields:
+                logger.info("Assessment fields closed as unknown after a failed question: %s", closed_fields)
+                profile.structured_state = stalled_state
+                flag_modified(profile, "structured_state")
+                self.db.add(profile)
+                self.db.commit()
+                self.db.refresh(profile)
+                if is_ready_for_completion(profile.structured_state):
+                    return self.send_message(token, cleaned)
+
         clean_reply = (turn.get("assistant_message") or "").strip()
         if not clean_reply:
             raise AssessmentChatError(
@@ -227,9 +246,10 @@ class AssessmentChatService:
         messages = self._ordered_messages(conversation.id)
         if not (messages and messages[-1].role == AssessmentMessageRole.ASSISTANT and retrying):
             self._save_message(conversation, AssessmentMessageRole.ASSISTANT, clean_reply)
-            profile.structured_state = record_questions_asked(
-                profile.structured_state, turn.get("asked_fields")
-            )
+            if turn.get("available", True):
+                profile.structured_state = record_questions_asked(
+                    profile.structured_state, turn.get("asked_fields")
+                )
             flag_modified(profile, "structured_state")
             self.db.add(profile)
             self.db.commit()
@@ -440,7 +460,7 @@ class AssessmentChatService:
             "prospect can answer once and the assessment can finish right away.\n"
             "- Never run a field-by-field checklist or make the prospect feel they are filling a form.\n"
             "- Do not re-ask resolved fields (known / unknown / declined / not_applicable).\n"
-            "- A reply such as no, none, nothing, not really or not planning to IS a full answer to what was asked. Never ask for it again.\n"
+            "- A reply such as no, none, nothing, not really or not planning to IS a full answer to what was asked. Never ask for it again. assistant_message must never be empty: if something is still missing, ask for it in simple words.\n"
             "- Ask about not_yet_asked items first. An item in asked_once_unanswered may be asked one more time, only with the short help line on what form of answer works. Never ask the same item a third time.\n"
             "- Follow the conversation naturally from previous answers.\n"
             "- Never claim guaranteed ROI.\n"
