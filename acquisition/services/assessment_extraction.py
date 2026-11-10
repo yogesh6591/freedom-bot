@@ -120,8 +120,9 @@ Authority value meanings (semantic — do not use keyword shortcuts):
 status=unknown (field semantics) also applies when they cannot determine it; value=null then.
 
 REVENUE_RANGE (when status=known, normalize to one of these exact bands):
-  "$3–5M" | "$5–10M" | "$10–25M" | "$25–50M" | "$50M+"
-- Map the user's stated size to the nearest matching band (semantic understanding).
+  "Under $3M" | "$3–5M" | "$5–10M" | "$10–25M" | "$25–50M" | "$50M+"
+- Map the user's stated size to the matching band (semantic understanding). Any revenue below $3M, however small
+  (for example "under $500k" or "about $1M"), is "Under $3M": record it, never leave it out.
 - Do not invent a band without user evidence.
 
 Also include:
@@ -140,6 +141,7 @@ HEADCOUNT_SCOPES = frozenset({"company", "team", "unknown"})
 
 # Canonical acquisition revenue bands (format enum — not NL inference).
 REVENUE_RANGES = (
+    "Under $3M",
     "$3–5M",
     "$5–10M",
     "$10–25M",
@@ -150,6 +152,13 @@ REVENUE_RANGE_SET = frozenset(REVENUE_RANGES)
 
 # Format aliases → canonical band (punctuation/spacing only; no business inference).
 _REVENUE_ALIAS_KEYS: dict[str, str] = {
+    "under3m": "Under $3M",
+    "<3m": "Under $3M",
+    "lessthan3m": "Under $3M",
+    "below3m": "Under $3M",
+    "upto3m": "Under $3M",
+    "0-3m": "Under $3M",
+    "0m-3m": "Under $3M",
     "3-5m": "$3–5M",
     "3m-5m": "$3–5M",
     "5-10m": "$5–10M",
@@ -164,6 +173,43 @@ _REVENUE_ALIAS_KEYS: dict[str, str] = {
 }
 
 
+_AMOUNT_UNITS = {"k": 1e3, "thousand": 1e3, "m": 1e6, "mm": 1e6, "million": 1e6, "b": 1e9, "bn": 1e9, "billion": 1e9}
+_AMOUNT_QUALIFIERS = re.compile(
+    r"\b(about|around|approximately|approx|roughly|under|over|below|above|less than|more than|up to|upto|nearly|"
+    r"almost|close to|circa)\b\.?"
+)
+_AMOUNT_NOISE = re.compile(
+    r"[$~]|\busd\b|\b(?:a|per)\s+year\b|\bannually\b|\byearly\b|/\s*y(?:ea)?r\b|\bin\s+revenue\b|\brevenue\b|\bplus\b|\+"
+)
+_AMOUNT_SHAPE = re.compile(r"(\d+(?:\.\d+)?)\s*([a-z]+)?(?:\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*([a-z]+)?)?")
+
+
+def _band_from_amount(raw: str) -> str | None:
+    """Band for a clean dollar amount such as "$500k", "2.5 million" or "7-8M". Anything else (words, headcount) is None."""
+    has_dollar = "$" in raw or "usd" in raw.casefold()
+    text = _AMOUNT_NOISE.sub(" ", raw.casefold().replace(",", "").replace("\u2014", "-").replace("\u2013", "-"))
+    text = re.sub(r"\s+", " ", _AMOUNT_QUALIFIERS.sub(" ", text)).strip()
+    match = _AMOUNT_SHAPE.fullmatch(text)
+    if not match:
+        return None
+    first, unit_a, second, unit_b = match.groups()
+    unit_a, unit_b = unit_a or unit_b, unit_b or unit_a
+    for unit in (unit_a, unit_b):
+        if unit is not None and unit not in _AMOUNT_UNITS:
+            return None
+    amount = float(first) * _AMOUNT_UNITS.get(unit_a or "", 1)
+    if second is not None:
+        amount = (amount + float(second) * _AMOUNT_UNITS.get(unit_b or "", 1)) / 2
+    if unit_a is None and not has_dollar:
+        return None  # a bare number could be anything (people, a year, a count): only "$..." or a unit makes it money
+    if unit_a is None and amount < 1000:
+        return None
+    for limit, band in ((3e6, "Under $3M"), (5e6, "$3–5M"), (1e7, "$5–10M"), (2.5e7, "$10–25M"), (5e7, "$25–50M")):
+        if amount < limit:
+            return band
+    return "$50M+"
+
+
 def normalize_revenue_range(value: Any) -> str | None:
     """Map a revenue string to a canonical band, or None if not a known band."""
     if not isinstance(value, str) or not value.strip():
@@ -176,7 +222,7 @@ def normalize_revenue_range(value: Any) -> str | None:
     key = re.sub(r"\s+", "", key)
     key = key.replace("$", "")
     key = key.replace("million", "m").replace("plus", "+")
-    return _REVENUE_ALIAS_KEYS.get(key)
+    return _REVENUE_ALIAS_KEYS.get(key) or _band_from_amount(raw)
 
 
 AUTHORITY_ROLES = frozenset(

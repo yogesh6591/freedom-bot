@@ -383,7 +383,8 @@ class AssessmentChatService:
             revenue_rule = (
                 "- Revenue is still unresolved: ask it later and naturally — only AFTER "
                 "problem/impact context is established, never as an early opening question. "
-                "Prefer bands: $3–5M, $5–10M, $10–25M, $25–50M, $50M+.\n"
+                "Prefer bands: Under $3M, $3–5M, $5–10M, $10–25M, $25–50M, $50M+. "
+                "A small revenue (under $3M) is a valid answer: accept it and move on, never ask for it again.\n"
             )
         system = (
             f"{admin_prompt}\n\n"

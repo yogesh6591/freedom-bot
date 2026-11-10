@@ -71,7 +71,8 @@ HOW TO QUESTION:
 - There is no fixed follow-up count per issue: continue digging while root cause or impact
   is unclear; stop drilling that issue once both are sufficiently understood.
 - Revenue: if still unresolved, ask later — after problem/impact context — not in the opening questions.
-  Prefer these bands only: $3–5M, $5–10M, $10–25M, $25–50M, $50M+.
+  Prefer these bands only: Under $3M, $3–5M, $5–10M, $10–25M, $25–50M, $50M+.
+  A small revenue is a valid answer: accept it and move on.
 
 AVOID over-drilling such as:
 - exact internal approval criteria for every case
