@@ -68,6 +68,25 @@ def _row_to_ticket(row: Any) -> dict[str, Any]:
     }
 
 
+def requester_view(ticket: dict[str, Any]) -> dict[str, Any]:
+    """What the person who raised a ticket sees: status and the latest update.
+
+    Not the queue fields support works with (assignee, escalation reason, full history).
+    The chat's support tools and the Support page show the same thing.
+    """
+    history = ticket.get("history") or []
+    return {
+        "id": ticket["id"],
+        "subject": ticket["subject"],
+        "severity": ticket["severity"],
+        "status": ticket["status"],
+        "handled_by": "Cepoch support",
+        "created_at": ticket.get("created_at"),
+        "updated_at": ticket.get("updated_at"),
+        "latest_update": (history[-1].get("note") if history else "") or "",
+    }
+
+
 #: M14-18: a resubmission of an open ticket within this window is merged.
 DUPLICATE_WINDOW_HOURS = 72
 

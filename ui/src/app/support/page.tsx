@@ -21,16 +21,18 @@ import {
   timestamp
 } from '@/components/common/primitives'
 
+/** Support staff get the full ticket; the person who raised it gets status and the latest update. */
 interface Ticket {
   id: string
   subject: string
-  body: string
+  body?: string
   severity: string
   status: string
-  assignee: string
+  assignee?: string
   escalate_reason?: string | null
   updated_at?: string | null
-  history: { at: string; by: string; event: string; note: string }[]
+  latest_update?: string
+  history?: { at: string; by: string; event: string; note: string }[]
 }
 
 const FILTERS = [
@@ -65,6 +67,8 @@ function SupportView() {
   const [escalateReason, setEscalateReason] = useState('CEO_JUDGMENT')
   const [busy, setBusy] = useState(false)
   const [submitted, setSubmitted] = useState<string | null>(null)
+  // Operators and Admins work the queue; everyone else raises tickets and follows their own.
+  const [canManage, setCanManage] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -75,8 +79,9 @@ function SupportView() {
           : filter
             ? `/api/support/tickets?assignee=${filter}`
             : '/api/support/tickets'
-      const data = await api.get<{ items: Ticket[] }>(path)
+      const data = await api.get<{ items: Ticket[]; can_manage?: boolean }>(path)
       setItems(data.items)
+      setCanManage(Boolean(data.can_manage))
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load support')
@@ -99,7 +104,7 @@ function SupportView() {
         ticket: Ticket
       }>('/api/support/tickets', { subject, body, severity: 'NORMAL' })
       setSubmitted(result.message ?? null)
-      if (result.merged) setSelected(result.ticket)
+      if (result.merged && canManage) setSelected(result.ticket)
       setSubject('')
       setBody('')
       await load()
@@ -121,24 +126,30 @@ function SupportView() {
       <PageHeader
         eyebrow="Service desk"
         title="Support"
-        description="Track support requests and escalations in one place. Routine work stays with the support team."
+        description={
+          canManage
+            ? 'Track support requests and escalations in one place. Routine work stays with the support team.'
+            : 'Tell Cepoch support about a problem with FreedomBot and follow your tickets here.'
+        }
       />
-      <Panel
-        title="Support queues"
-        description="Escalate to an owner only for executive judgment, relationship risk, or at-risk accounts."
-      >
-        <SegmentedTabs aria-label="Queue filter">
-          {FILTERS.map((option) => (
-            <SegmentedTab
-              key={option.value || 'all'}
-              active={filter === option.value}
-              onClick={() => setFilter(option.value)}
-            >
-              {option.label}
-            </SegmentedTab>
-          ))}
-        </SegmentedTabs>
-      </Panel>
+      {canManage && (
+        <Panel
+          title="Support queues"
+          description="Escalate to an owner only for executive judgment, relationship risk, or at-risk accounts."
+        >
+          <SegmentedTabs aria-label="Queue filter">
+            {FILTERS.map((option) => (
+              <SegmentedTab
+                key={option.value || 'all'}
+                active={filter === option.value}
+                onClick={() => setFilter(option.value)}
+              >
+                {option.label}
+              </SegmentedTab>
+            ))}
+          </SegmentedTabs>
+        </Panel>
+      )}
 
       {error && <ErrorNote>{error}</ErrorNote>}
       {submitted && (
@@ -147,7 +158,7 @@ function SupportView() {
         </p>
       )}
 
-      <Panel title="Open a routine ticket">
+      <Panel title={canManage ? 'Open a routine ticket' : 'Raise a support ticket'}>
         <form
           className="max-w-[720px] space-y-4"
           onSubmit={(e) => void createTicket(e)}
@@ -176,7 +187,38 @@ function SupportView() {
       {loading ? (
         <LoadingBlock rows={4} />
       ) : items.length === 0 ? (
-        <EmptyState>No tickets in this queue.</EmptyState>
+        <EmptyState>
+          {canManage ? 'No tickets in this queue.' : "You haven't raised any tickets yet."}
+        </EmptyState>
+      ) : !canManage ? (
+        <Panel title="My tickets">
+          <ul className="space-y-3">
+            {items.map((ticket) => (
+              <li
+                key={ticket.id}
+                className="rounded-xl border border-border bg-background-secondary p-4"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone="info">{ticket.status}</Badge>
+                  <Badge tone={ticket.severity === 'CRITICAL' ? 'bad' : 'neutral'}>
+                    {ticket.severity}
+                  </Badge>
+                  <span className="font-geist text-sm font-semibold text-primary">
+                    {ticket.subject}
+                  </span>
+                </div>
+                {ticket.latest_update && (
+                  <p className="mt-2 whitespace-pre-wrap text-xs text-secondary">
+                    {ticket.latest_update}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-muted">
+                  {ticket.id} · {timestamp(ticket.updated_at)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </Panel>
       ) : (
         <div className="space-y-3">
           {items.map((ticket) => (
@@ -208,7 +250,7 @@ function SupportView() {
         </div>
       )}
 
-      {selected && (
+      {selected && canManage && (
         <Panel
           title={selected.subject}
           description={`${selected.assignee} · ${selected.status}`}

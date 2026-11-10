@@ -7,17 +7,24 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.api.deps import current_context, require_admin
+from app.api.deps import bound, client_settings, current_context, require_admin, run_scope
+from bizos.control.models import ClientSettings
 from bizos.tenancy.context import TenantContext
-from bizos.types import Role
+from bizos.tools.base import guarded_call
+from bizos.types import PolicyEffect, Role
 import bizos.support as support
 
 router = APIRouter(prefix="/api/support", tags=["support"])
 
 
+def is_support_staff(ctx: TenantContext) -> bool:
+    """Cepoch support works the queue: ADMIN or OPERATOR of the workspace."""
+    return ctx.has_role(Role.ADMIN) or ctx.has_role(Role.OPERATOR)
+
+
 def require_support_staff(ctx: TenantContext = Depends(current_context)) -> TenantContext:
     """Cepoch support: ADMIN or OPERATOR of the workspace."""
-    if not (ctx.has_role(Role.ADMIN) or ctx.has_role(Role.OPERATOR)):
+    if not is_support_staff(ctx):
         raise HTTPException(status_code=403, detail="Support inbox requires ADMIN or OPERATOR")
     return ctx
 
@@ -46,16 +53,21 @@ def list_support_tickets(
     assignee: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
     needs_jeanne: bool = Query(default=False),
-    ctx: TenantContext = Depends(require_support_staff),
+    ctx: TenantContext = Depends(current_context),
 ) -> dict[str, Any]:
+    """Support staff see the workspace queue; everyone else sees only the tickets they raised."""
+    staff = is_support_staff(ctx)
     items = support.list_tickets(
         client_id=ctx.client_id,
-        assignee=assignee,
+        assignee=assignee if staff else None,
         status=status,
-        needs_jeanne=needs_jeanne,
+        needs_jeanne=needs_jeanne if staff else False,
     )
+    if not staff:
+        items = [support.requester_view(t) for t in items if t.get("created_by") == ctx.user_id]
     return {
         "items": items,
+        "can_manage": staff,
         "disclaimer": "Routine support stays with Cepoch. Jeanne only on escalate (FB-046).",
     }
 
@@ -63,17 +75,24 @@ def list_support_tickets(
 @router.post("/tickets")
 def create_support_ticket(
     body: TicketCreate,
-    ctx: TenantContext = Depends(require_support_staff),
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    ticket, merged = support.submit_ticket(
-        client_id=ctx.client_id,
-        subject=body.subject,
-        body=body.body,
-        severity=body.severity,
-        created_by=ctx.user_id,
-    )
+    """Anyone signed in to the workspace may raise a ticket, as they can from the chat.
+
+    It runs through the same policy check as the chat's support_create_ticket tool.
+    """
+    arguments = {"subject": body.subject, "body": body.body, "severity": body.severity}
+    with bound(ctx):
+        outcome = guarded_call(run_scope(ctx, settings), "support_create_ticket", arguments)
+    if not outcome.ok:
+        code = 403 if outcome.effect == PolicyEffect.DENY else 400
+        raise HTTPException(status_code=code, detail=outcome.message or "The ticket was not raised.")
+    ticket = support.get_ticket(outcome.data["id"])
+    history = ticket.get("history") or []
+    merged = bool(history) and history[-1].get("event") == "duplicate_merged"
     return {
-        "ticket": ticket,
+        "ticket": ticket if is_support_staff(ctx) else support.requester_view(ticket),
         "merged": merged,
         "message": (
             "This matches an open ticket, so your details were added to it."

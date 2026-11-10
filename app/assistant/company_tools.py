@@ -696,18 +696,7 @@ def memory_escalate_conflict(scope: RunScope, args: dict[str, Any]) -> Connector
 from bizos import support
 
 
-def _render_support(ticket: dict[str, Any]) -> dict[str, Any]:
-    history = ticket.get("history") or []
-    return {
-        "id": ticket["id"],
-        "subject": ticket["subject"],
-        "severity": ticket["severity"],
-        "status": ticket["status"],
-        "handled_by": "Cepoch support",
-        "created_at": ticket.get("created_at"),
-        "updated_at": ticket.get("updated_at"),
-        "latest_update": (history[-1].get("note") if history else "") or "",
-    }
+_render_support = support.requester_view
 
 
 @effect("support_create_ticket")

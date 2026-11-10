@@ -100,10 +100,10 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Management',
     items: [
       {
+        // Everyone may raise a ticket; only Operators and Admins work the queue (the API decides).
         href: '/support',
         label: 'Support',
-        icon: Headset,
-        roles: ['OPERATOR', 'ADMIN']
+        icon: Headset
       },
       {
         href: '/audit',
