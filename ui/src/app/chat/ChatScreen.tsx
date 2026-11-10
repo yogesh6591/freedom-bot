@@ -61,6 +61,7 @@ import { SidebarSwitch } from '@/components/SidebarSwitch'
 import { IntegrationsView } from '@/components/IntegrationsView'
 import { ApprovalsMenu, useApprovalInbox } from './Approvals'
 import { AttachButton, FileChips, PendingFiles, useAttachments } from './Attachments'
+import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface Turn {
   id?: string
@@ -1379,7 +1380,12 @@ function ChatView({ home }: { home: boolean }) {
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
-            {chatHome && <ApprovalsMenu approvals={approvals} />}
+            {chatHome && (
+              <>
+                <ThemeToggle className="!h-9 !min-h-9 !w-9 !min-w-9 !rounded-full" />
+                <ApprovalsMenu approvals={approvals} />
+              </>
+            )}
             {!chatHome && (
             <>
             <button
