@@ -171,7 +171,7 @@ def compose(lead_in: str, results: Iterable[ToolResult], *, task: bool = True) -
         if (body or "").strip():
             reports.append(body)
     if reports and not wrote:
-        return Acknowledgement(reports[-1], False, pending_approval)
+        return Acknowledgement("\n\n".join(reports), False, pending_approval)
 
     text = (lead_in or "").strip()
     if not wrote and (task or writes):
