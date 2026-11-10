@@ -6,60 +6,58 @@
   <title>Business Assessment · JeanneCAIO / FreedomBot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650;9..144,700&family=Syne:wght@500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/assessment.css?v=82">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,550;9..144,650;9..144,700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=83">
 </head>
 <body class="assess">
-  <div class="assess-shell">
-    <aside class="assess-brand-panel" aria-label="JeanneCAIO / FreedomBot">
-      <div class="assess-brand-panel-inner">
-        <p class="assess-brand-kicker">JeanneCAIO</p>
-        <p class="assess-brand-mark">FreedomBot</p>
-        <p class="assess-brand-line">Business assessment</p>
-        <p class="assess-brand-copy">A short private interview. One question at a time. No account needed.</p>
-        <aside class="assess-topics-card" aria-live="polite" hidden>
-          <div class="assess-topics-head">
-            <p class="assess-topics-kicker">Covered</p>
-            <p class="assess-topics-count" id="progress-count" hidden></p>
-          </div>
-          <div class="assess-meter" aria-hidden="true">
-            <span class="assess-meter-fill" id="progress-meter"></span>
-          </div>
-          <ul class="assess-topics" id="progress-topics" aria-label="What we have covered so far" hidden></ul>
-          <p class="assess-topics-note" id="progress-note" hidden></p>
-        </aside>
+  <div class="assess-bg" aria-hidden="true"></div>
+
+  <div class="assess-wrap">
+    <header class="assess-top">
+      <div class="assess-brand">
+        <span class="assess-brand-mark">FreedomBot</span>
+        <span class="assess-brand-sub">JeanneCAIO · Business assessment</span>
       </div>
-    </aside>
+      <aside class="assess-topics-card" aria-live="polite" hidden>
+        <div class="assess-topics-head">
+          <p class="assess-topics-count" id="progress-count" hidden></p>
+        </div>
+        <div class="assess-meter" aria-hidden="true">
+          <span class="assess-meter-fill" id="progress-meter"></span>
+        </div>
+        <ul class="assess-topics" id="progress-topics" aria-label="Assessment topics" hidden></ul>
+      </aside>
+    </header>
 
     <main class="assess-stage">
       <section class="assess-panel is-active" id="assess-panel" data-state="ready">
-        <div class="assess-panel-body">
-          <p class="assess-lead" id="lead-text" hidden></p>
-          <p class="assess-step" id="step-label">Question</p>
-          <h1 class="assess-question" id="question-text">Preparing your first question…</h1>
-          <form id="assessment-form" class="assess-answer" autocomplete="off">
-            <label class="assess-answer-label" for="assessment-input">Your answer</label>
-            <div class="assess-answer-shell">
-              <textarea
-                id="assessment-input"
-                name="content"
-                rows="6"
-                required
-                maxlength="8000"
-                placeholder="Write a clear answer here…"
-              ></textarea>
-            </div>
-            <div class="assess-actions">
-              <p class="assess-answer-hint">Short is fine · Ctrl/Cmd + Enter</p>
-              <p id="assessment-error" class="assess-error" hidden></p>
-              <button id="assessment-send" class="assess-continue" type="submit" disabled>
-                <span class="assess-continue-label">Continue</span>
-                <span class="assess-continue-arrow" aria-hidden="true">→</span>
-                <span class="assess-loader" aria-hidden="true"></span>
-              </button>
-            </div>
-          </form>
-        </div>
+        <p class="assess-lead" id="lead-text" hidden></p>
+        <p class="assess-step" id="step-label">Question</p>
+        <h1 class="assess-question" id="question-text">Preparing your first question…</h1>
+
+        <form id="assessment-form" class="assess-answer" autocomplete="off">
+          <label class="assess-answer-label" for="assessment-input">Your answer</label>
+          <div class="assess-answer-shell">
+            <textarea
+              id="assessment-input"
+              name="content"
+              rows="5"
+              required
+              maxlength="8000"
+              placeholder="Type your answer…"
+            ></textarea>
+          </div>
+          <div class="assess-actions">
+            <p class="assess-answer-hint">Short is fine · Ctrl/Cmd + Enter</p>
+            <p id="assessment-error" class="assess-error" hidden></p>
+            <p class="assess-topics-note" id="progress-note" hidden></p>
+            <button id="assessment-send" class="assess-continue" type="submit" disabled>
+              <span class="assess-continue-label">Continue</span>
+              <span class="assess-continue-arrow" aria-hidden="true">→</span>
+              <span class="assess-loader" aria-hidden="true"></span>
+            </button>
+          </div>
+        </form>
       </section>
     </main>
   </div>
@@ -89,23 +87,18 @@
     let inflight = false;
 
     function syncSendEnabled() {
-      const empty = !(input.value || "").trim();
-      sendBtn.disabled = inflight || empty;
+      sendBtn.disabled = inflight || !(input.value || "").trim();
     }
 
     function lastAssistant(list) {
       for (let i = list.length - 1; i >= 0; i--) {
-        if (list[i] && list[i].role === "assistant" && (list[i].content || "").trim()) {
-          return list[i];
-        }
+        if (list[i] && list[i].role === "assistant" && (list[i].content || "").trim()) return list[i];
       }
       return null;
     }
 
     function assistantCount(list) {
-      return (list || []).filter(function (m) {
-        return m && m.role === "assistant";
-      }).length;
+      return (list || []).filter(function (m) { return m && m.role === "assistant"; }).length;
     }
 
     function renderTopics(progress) {
@@ -122,48 +115,32 @@
         const isCurrent = !topic.done && !currentSet;
         if (isCurrent) currentSet = true;
         li.className = "assess-topic" + (topic.done ? " is-done" : "") + (isCurrent ? " is-current" : "");
+        li.title = topic.label + (topic.done ? " (done)" : isCurrent ? " (now)" : "");
         const mark = document.createElement("span");
         mark.className = "assess-topic-mark";
         mark.setAttribute("aria-hidden", "true");
-        mark.textContent = topic.done ? "✓" : "";
-        const copy = document.createElement("span");
-        copy.className = "assess-topic-copy";
         const label = document.createElement("span");
         label.className = "assess-topic-label";
         label.textContent = topic.label;
-        copy.appendChild(label);
-        if (topic.done || isCurrent) {
-          const state = document.createElement("span");
-          state.className = "assess-topic-state";
-          state.textContent = topic.done ? "Done" : "Now";
-          copy.appendChild(state);
-        }
         li.appendChild(mark);
-        li.appendChild(copy);
+        li.appendChild(label);
         topicsEl.appendChild(li);
       });
       topicsEl.hidden = false;
       if (topicsCard) topicsCard.hidden = false;
-      if (topicsMeter) {
-        topicsMeter.style.width = (total ? Math.round((doneCount / total) * 100) : 0) + "%";
-      }
+      if (topicsMeter) topicsMeter.style.width = (total ? Math.round((doneCount / total) * 100) : 0) + "%";
       if (topicsCount) {
         topicsCount.hidden = false;
-        topicsCount.textContent = doneCount + " / " + total;
+        topicsCount.textContent = doneCount + " of " + total;
       }
       const left = Number(progress.remaining || 0);
       topicsNote.hidden = false;
-      topicsNote.textContent = left <= 0
-        ? "All topics covered."
-        : left === 1
-          ? "1 topic left"
-          : left + " topics left";
+      topicsNote.textContent = left <= 0 ? "All topics covered" : left + " left after this";
       return true;
     }
 
     function syncProgress(list, progress) {
-      const asked = assistantCount(list);
-      turn = Math.max(1, asked);
+      turn = Math.max(1, assistantCount(list));
       renderTopics(progress);
       stepLabel.textContent = "Question " + turn;
     }
@@ -171,9 +148,7 @@
     function splitLeadAndQuestion(text) {
       const raw = (text || "").trim() || "Tell me a bit about your business.";
       const parts = raw.split(/\n\s*\n/).map(function (p) { return p.trim(); }).filter(Boolean);
-      if (parts.length >= 2) {
-        return { lead: parts.slice(0, -1).join("\n\n"), question: parts[parts.length - 1] };
-      }
+      if (parts.length >= 2) return { lead: parts.slice(0, -1).join("\n\n"), question: parts[parts.length - 1] };
       const sentences = raw.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [raw];
       const cleaned = sentences.map(function (s) { return s.trim(); }).filter(Boolean);
       if (cleaned.length >= 2 && /^(hi|hello|hey|welcome)\b/i.test(cleaned[0])) {
@@ -184,13 +159,8 @@
 
     function renderPrompt(text) {
       const parts = splitLeadAndQuestion(text);
-      if (parts.lead) {
-        leadEl.hidden = false;
-        leadEl.textContent = parts.lead;
-      } else {
-        leadEl.hidden = true;
-        leadEl.textContent = "";
-      }
+      if (parts.lead) { leadEl.hidden = false; leadEl.textContent = parts.lead; }
+      else { leadEl.hidden = true; leadEl.textContent = ""; }
       questionEl.textContent = parts.question;
     }
 
@@ -214,7 +184,7 @@
         panel.classList.remove("is-enter");
         panel.classList.add("is-active");
         input.focus();
-      }, 280);
+      }, 260);
     }
 
     function setBusy(busy) {
@@ -233,17 +203,13 @@
 
     function resultPath() {
       var path = (window.location.pathname || "").replace(/\/$/, "");
-      if (path.slice(-7) === "/result") return path;
-      return path + "/result";
+      return path.slice(-7) === "/result" ? path : path + "/result";
     }
 
     function applySession(data, { animate } = { animate: false }) {
       messages = data.messages || messages;
       syncProgress(messages, data.progress);
-      if (data.completed) {
-        window.location.href = resultPath();
-        return;
-      }
+      if (data.completed) { window.location.href = resultPath(); return; }
       const assistant = lastAssistant(messages);
       if (assistant) showQuestion(assistant.content, { animate: animate });
     }
@@ -252,17 +218,14 @@
       setBusy(true);
       try {
         const res = await fetch("/api/assessment/" + encodeURIComponent(token) + "/greeting", {
-          method: "POST",
-          headers: { "Accept": "application/json" },
+          method: "POST", headers: { "Accept": "application/json" },
         });
         const data = await res.json();
         if (res.ok) applySession(data, { animate: false });
         else showError("Could not start the assessment. Please refresh.");
       } catch (e) {
         showError("Network error. Please refresh and try again.");
-      } finally {
-        setBusy(false);
-      }
+      } finally { setBusy(false); }
     }
 
     form.addEventListener("submit", async function (event) {
@@ -283,17 +246,11 @@
           setBusy(false);
           return;
         }
-        if (data.completed) {
-          setBusy(true);
-          window.location.href = resultPath();
-          return;
-        }
+        if (data.completed) { setBusy(true); window.location.href = resultPath(); return; }
         applySession(data, { animate: true });
       } catch (e) {
         showError("Network error. Your answer may be saved — press Continue to retry.");
-      } finally {
-        setBusy(false);
-      }
+      } finally { setBusy(false); }
     });
 
     input.addEventListener("input", syncSendEnabled);
