@@ -1037,18 +1037,23 @@ TOOL_META: dict[str, AgentMeta] = {
     # ------------------------------------------------------------------ outreach: payments
     "create_payment_offer": M("outreach", d("""
         Set the one-time amount a qualified, booked person can pay by card, and return their payment link. One
-        payment only, no subscriptions.
-        Use when: "offer Nina $5000", "create a payment link for Raj", "payment offer bana do".
-        Don't use: emailing the link -> send_payment_link; seeing who paid -> query_records.
+        payment only, no subscriptions. Does not email anyone.
+        Use when: "offer Nina $5000", "create a payment link for Raj", "payment offer bana do" (save the offer only).
+        Don't use: send / email / draft / show the payment link -> send_payment_link (pass the amount there);
+        seeing who paid -> query_records.
         Needs: a qualified person with a confirmed booking (name or email) and amount.
-        Effect: the offer and link are saved. {gate}
+        Effect: the offer and link are saved; nothing is emailed. {gate}
     """)),
     "send_payment_link": M("outreach", d("""
-        Put the payment-link email (short fixed wording) for the amount already offered on the email card. Nothing is sent yet.
-        Use when: "send Nina her payment link", "mail Raj the invoice link", "payment link bhejo".
-        Don't use: no amount set yet -> create_payment_offer; a written email -> propose_email.
-        Needs: who (name or email).
-        Effect: the email is shown as a card; the user approves it there and send_approved queues it. {gate}
+        Email the payment link (short fixed wording). Queues it straight away — no card, no "Send it?".
+        Use when: "send him a payment link for $700", "send Nina her payment link", "mail Raj the invoice link",
+        "payment link bhejo". Pass amount when the user named one.
+        When the user says "draft" or "show me first", put it on the email card instead and wait for send_approved.
+        Don't use: only saving an offer with no email -> create_payment_offer; a written email -> propose_email;
+        sending an already-shown payment card -> send_approved.
+        Needs: who (name or email); amount if no offer exists yet.
+        Effect: queued for sending (reply with the tool's one line), or shown as a card if they asked to draft
+        or preview. {gate}
     """)),
 
     # ------------------------------------------------------------------ outreach: journey content

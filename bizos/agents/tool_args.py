@@ -921,7 +921,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     }, ["amount"]),
     "send_payment_link": _obj({
         "who": _s("Name or email; leave empty to use the person already chosen"),
-        "approval_evidence": _s("On the second call: the user's yes, copied from their latest message"),
+        "amount": _f("One-time amount in US dollars when the user named it and no offer exists yet, for example 700"),
+        "approval_evidence": _s("Unused; keep empty. Approving a card uses send_approved."),
     }),
     # ------------------------------------------------------------------ outreach: journey content
     "show_journey_settings": _obj({}),

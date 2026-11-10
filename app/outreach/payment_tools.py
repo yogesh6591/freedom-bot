@@ -6,6 +6,7 @@ done by the prospect on the checkout page; nothing here takes money or records a
 
 from __future__ import annotations
 
+import re
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -26,6 +27,8 @@ from app.outreach.toolkit import Call, ToolError, tool
 
 CURRENCY = "USD"
 MAX_AMOUNT = Decimal("1000000")
+#: User asked to review the payment email on the card before it goes out.
+_CARD_FIRST = re.compile(r"(?i)\bshow me first\b|\bdraft\b")
 
 
 def _amount(value: object) -> Decimal:
@@ -112,19 +115,68 @@ def payment_problem(db, email: str, body: str) -> str:
     return ""
 
 
-@tool("send_payment_link", "who", "approval_evidence")
-def send_payment_link(call: Call, who: str = "", approval_evidence: str = "") -> str:
-    """Put the payment-link email for the amount a person was offered on the email card. It is sent like any
-    other email: the user approves it on the card (send_approved)."""
+def _wants_card_first(call: Call) -> bool:
+    """True when the user asked to draft or preview the payment email before sending."""
+    return bool(_CARD_FIRST.search(call.latest or ""))
+
+
+def _queue_payment_email(call: Call, p: Prospect, subject: str, body: str) -> str:
+    """Queue the payment email now (new thread). Returns the one-line reply for the user."""
+    from app.outreach import sender
+    from acquisition.services import outreach_service as svc
+
+    why = payment_problem(call.db, p.email, body)
+    if why:
+        raise ToolError(f"not sent - {why}. Nothing was queued.")
+    ready, reason = sender.readiness()
+    if not ready:
+        raise ToolError(f"not sent - {reason}. Nothing was queued.")
+    link = records.link_row(call.db, p.id)
+    price = datasets.fmt_money(link.checkout_offer_amount) if link is not None else ""
+    try:
+        svc.enqueue(
+            call.db,
+            prospect_ids=[p.id],
+            subject_template=subject,
+            body_template=body,
+            requested_by=call.user_id,
+            new_thread=True,
+        )
+        call.db.commit()
+    except svc.OutreachError as exc:
+        call.db.rollback()
+        raise ToolError(f"not sent - {exc}. Nothing was queued.") from exc
+    line = f"Payment link for {price} sent to {p.executive_name}."
+    return f"ok: {line} Reply to the user with that exact line."
+
+
+@tool("send_payment_link", "who", "amount", "approval_evidence")
+def send_payment_link(call: Call, who: str = "", amount: object = None, approval_evidence: str = "") -> str:
+    """Queue the payment-link email for the amount already offered, or put it on the card when the user
+    asked to draft / show it first. Pass amount when the user named one and no offer exists yet."""
     p, link = _person_link(call, who)
     if link.purchase_outcome == PurchaseOutcome.PURCHASED:
         raise ToolError(f"{p.executive_name} has already paid.")
-    if link.checkout_offered_at is None or link.checkout_offer_amount is None:
-        raise ToolError(f"{p.executive_name} has no payment offer yet. Create the offer first (needs an amount).")
+    if amount is not None and str(amount).strip() != "":
+        price = _amount(amount)
+        try:
+            offer_checkout(call.db, link, amount=str(price), currency=CURRENCY)
+        except JeanneCheckoutError as exc:
+            if exc.code == "booking_required":
+                raise ToolError(f"{p.executive_name} has no confirmed booking yet. A payment offer needs a booked call.") from exc
+            raise ToolError(exc.message) from exc
+        call.db.flush()
+    elif link.checkout_offered_at is None or link.checkout_offer_amount is None:
+        raise ToolError(f"{p.executive_name} has no payment offer yet. Pass amount, or create the offer first.")
     current = call.state.get("draft")
     if current and not current.get("payment"):
         raise ToolError("another email draft is already on the card. Send or cancel it first, then ask for the payment link.")
     subject, body = _payment_email(p, link, _signer_name(call))
+    if not _wants_card_first(call):
+        call.state.pop("draft", None)
+        call.state["recipients"] = []
+        return _queue_payment_email(call, p, subject, body)
+
     call.state["recipients"] = [{"email": p.email, "name": p.executive_name}]
     call.state["draft"] = {
         "id": uuid.uuid4().hex[:10], "email_subject": subject, "email_body": body, "email_template": True,
