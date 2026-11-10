@@ -144,10 +144,15 @@ def template_mode_on() -> bool:
         return False
 
 
-def apply_template_mode(visible: frozenset, *, on: bool) -> frozenset:
-    """Template sending on: the card tools are hidden and send_from_template is shown. Off: the reverse."""
+def apply_template_mode(visible: frozenset, *, on: bool, card_waiting: bool = False) -> frozenset:
+    """Template sending on: the card tools are hidden and send_from_template is shown. Off: the reverse.
+
+    When a card is already waiting for approval (payment or a normal draft), ``send_approved`` stays
+    available so the next turn can queue it without the model having to load outreach itself.
+    """
     if on:
-        return frozenset(t for t in visible if t not in _CARD_TOOLS) | (
+        hide = _CARD_TOOLS - ({"send_approved"} if card_waiting else frozenset())
+        return frozenset(t for t in visible if t not in hide) | (
             {_TEMPLATE_TOOL} if _TEMPLATE_TOOL in visible else frozenset())
     return frozenset(t for t in visible if t != _TEMPLATE_TOOL)
 
@@ -451,8 +456,12 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
         pinned = AUTO  # old clients may still send it; acquisition is part of the one assistant now
     packs = _packs_for(settings, pinned)
     outreach_allowed = bool(ctx.is_admin)
+    pending = _pending_state(saved) if outreach_allowed else {}
+    card_waiting = bool(isinstance(pending, dict) and pending.get("draft"))
     visible = visible_tools(scope, packs, outreach_allowed=outreach_allowed)
-    visible = apply_template_mode(visible, on=outreach_allowed and template_mode_on())
+    visible = apply_template_mode(
+        visible, on=outreach_allowed and template_mode_on(), card_waiting=card_waiting,
+    )
     menu = domain_menu(visible)
     history = _history(saved)
     # Short-term memory: the last turns' tool calls, so follow-ups ("another one", "cancel that") resolve.
@@ -511,6 +520,9 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
         loader.loaded = []
     elif files and FILES_TOOL in visible and FILES_TOOL not in loader.loaded:
         loader.loaded.append(FILES_TOOL)  # files in this conversation can be read on any task or question
+    # Card waiting (payment or normal draft): always load send_approved for this turn.
+    if card_waiting and outreach_allowed and "send_approved" not in loader.loaded:
+        loader.loaded.append("send_approved")
     for name in loader.loaded:
         if name in MERGED:
             guard.schemas[name] = schema_for(name, allowed_old)
