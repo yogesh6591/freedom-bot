@@ -6,15 +6,15 @@
   <title>Business Assessment · JeanneCAIO / FreedomBot</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/css/assessment.css?v=80">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/assessment.css?v=81">
 </head>
 <body class="assess">
 <div class="assess-bg" aria-hidden="true">
   <span class="assess-bg-orb assess-bg-orb--a"></span>
   <span class="assess-bg-orb assess-bg-orb--b"></span>
   <span class="assess-bg-orb assess-bg-orb--c"></span>
-  <span class="assess-bg-grid"></span>
+  <span class="assess-bg-grain"></span>
 </div>
 
   <div class="assess-frame">
@@ -26,7 +26,6 @@
     <main class="assess-stage">
       <div class="assess-slider" id="assess-slider">
         <section class="assess-panel is-active" id="assess-panel" data-state="ready">
-          <div class="assess-panel-accent" aria-hidden="true"></div>
           <div class="assess-panel-layout">
             <div class="assess-panel-body">
               <p class="assess-lead" id="lead-text" hidden></p>
@@ -38,14 +37,14 @@
                   <textarea
                     id="assessment-input"
                     name="content"
-                    rows="8"
+                    rows="7"
                     required
                     maxlength="8000"
                     placeholder="Share a clear, specific answer…"
                   ></textarea>
                 </div>
-                <p class="assess-answer-hint">A short answer is fine. Press Ctrl/Cmd + Enter to continue.</p>
                 <div class="assess-actions">
+                  <p class="assess-answer-hint">A short answer is fine · Ctrl/Cmd + Enter</p>
                   <p id="assessment-error" class="assess-error" hidden></p>
                   <button id="assessment-send" class="assess-continue" type="submit" disabled>
                     <span class="assess-continue-label">Continue</span>
@@ -56,7 +55,13 @@
               </form>
             </div>
             <aside class="assess-topics-card" aria-live="polite" hidden>
-              <p class="assess-topics-kicker">Covered so far</p>
+              <div class="assess-topics-head">
+                <p class="assess-topics-kicker">Progress</p>
+                <p class="assess-topics-count" id="progress-count" hidden></p>
+              </div>
+              <div class="assess-meter" aria-hidden="true">
+                <span class="assess-meter-fill" id="progress-meter"></span>
+              </div>
               <ul class="assess-topics" id="progress-topics" aria-label="What we have covered so far" hidden></ul>
               <p class="assess-topics-note" id="progress-note" hidden></p>
             </aside>
@@ -66,7 +71,7 @@
     </main>
 
     <footer class="assess-foot">
-      <p><span class="assess-foot-mark" aria-hidden="true"></span>One question at a time · Private assessment link · No account required</p>
+      <p><span class="assess-foot-mark" aria-hidden="true"></span>One question at a time · Private link · No account required</p>
     </footer>
   </div>
 
@@ -82,6 +87,8 @@
     const stepLabel = document.getElementById("step-label");
     const topicsEl = document.getElementById("progress-topics");
     const topicsNote = document.getElementById("progress-note");
+    const topicsCount = document.getElementById("progress-count");
+    const topicsMeter = document.getElementById("progress-meter");
     const topicsCard = document.querySelector(".assess-topics-card");
     const form = document.getElementById("assessment-form");
     const input = document.getElementById("assessment-input");
@@ -119,9 +126,14 @@
         return false;
       }
       topicsEl.innerHTML = "";
+      let currentSet = false;
+      const total = progress.topics.length;
+      const doneCount = progress.topics.filter(function (t) { return t.done; }).length;
       progress.topics.forEach(function (topic) {
         const li = document.createElement("li");
-        li.className = "assess-topic" + (topic.done ? " is-done" : "");
+        const isCurrent = !topic.done && !currentSet;
+        if (isCurrent) currentSet = true;
+        li.className = "assess-topic" + (topic.done ? " is-done" : "") + (isCurrent ? " is-current" : "");
         const mark = document.createElement("span");
         mark.className = "assess-topic-mark";
         mark.setAttribute("aria-hidden", "true");
@@ -137,6 +149,11 @@
           state.className = "assess-topic-state";
           state.textContent = "Answered";
           copy.appendChild(state);
+        } else if (isCurrent) {
+          const state = document.createElement("span");
+          state.className = "assess-topic-state";
+          state.textContent = "Now";
+          copy.appendChild(state);
         }
         li.appendChild(mark);
         li.appendChild(copy);
@@ -144,6 +161,14 @@
       });
       topicsEl.hidden = false;
       if (topicsCard) topicsCard.hidden = false;
+      if (topicsMeter) {
+        const pct = total ? Math.round((doneCount / total) * 100) : 0;
+        topicsMeter.style.width = pct + "%";
+      }
+      if (topicsCount) {
+        topicsCount.hidden = false;
+        topicsCount.textContent = doneCount + " / " + total;
+      }
       const left = Number(progress.remaining || 0);
       topicsNote.hidden = false;
       topicsNote.textContent = left <= 0
