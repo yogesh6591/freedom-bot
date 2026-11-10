@@ -129,12 +129,21 @@ Also include:
   "assessment_sufficient": true|false
   (true only if a useful CAIO snapshot can be produced without guessing)
 
-CRITICAL RULES:
-- OMIT a field only when no USER message in the conversation gives evidence for it.
-- Do NOT set status "unknown" merely because information is absent.
-- Absence means leave the field out of the JSON so it stays missing.
+COMPLETE FORM (every turn):
+- Required fields: company, goals, revenue_range, headcount, functions, workflows, pain_points,
+  time_cost_impact, bottlenecks, change_readiness, ai_readiness, authority.
+- Return an entry for EVERY required field that is not yet resolved in the existing state and that any USER
+  message touches. Leave a field out ONLY when no USER message says anything about that topic.
+- A negative or "none" reply IS an answer, never an absence. Examples of meaning (not keywords): "no problems",
+  "nothing is slow", "no delays", "nothing holds us up", "we are not planning any changes", "not really", "no".
+  Record them: status=known with a plain value that states the answer, for example "No delays reported" or
+  "Not planning any changes", with the evidence_quote. Use not_applicable when the topic clearly does not apply
+  to the business. Use unknown when they say they do not know. Use declined when they prefer not to say.
+- "Fields the assistant's last question asked about" tells you what a short reply (yes, no, none, not sure) is
+  answering. Apply the reply to every field in that list that it answers, using the same rules.
+- Never leave a field missing because the answer is short, negative or unwelcome.
 - Never clear a previously known concrete value with a bare null / missing write.
-- Do not guess.
+- Do not guess about topics nobody mentioned.
 """.strip()
 
 HEADCOUNT_SCOPES = frozenset({"company", "team", "unknown"})
@@ -507,6 +516,13 @@ def build_current_assessment_state(structured_state: dict[str, Any] | None) -> d
         "resolved_fields": resolved,
         "missing_fields": missing,
         "missing_field_hints": {key: FIELD_HINTS.get(key, key) for key in missing},
+        "ask_counts": {key: get_ask_state(structured_state)["counts"].get(key, 0) for key in missing},
+        "not_yet_asked": [
+            key for key in missing if get_ask_state(structured_state)["counts"].get(key, 0) == 0
+        ],
+        "asked_once_unanswered": [
+            key for key in missing if get_ask_state(structured_state)["counts"].get(key, 0) >= 1
+        ],
         # Nice to have: ask only if it fits naturally; never needed to finish.
         "optional_missing_fields": [
             key for key in OPTIONAL_ASSESSMENT_FIELDS if not is_resolved(data[key])
@@ -609,9 +625,11 @@ def validate_assistant_turn(raw: Any) -> dict[str, Any] | None:
     message = raw.get("assistant_message")
     if not isinstance(message, str) or not message.strip():
         return None
+    asked = raw.get("asked_fields")
     return {
         "assistant_message": message.strip(),
         "available": True,
+        "asked_fields": [str(x) for x in asked if isinstance(x, str)] if isinstance(asked, list) else [],
     }
 
 
@@ -1135,6 +1153,103 @@ def parse_extractor_json(raw: str) -> dict[str, Any]:
             logger.warning("Assessment extractor JSON parse failed")
             return {}
     return data if isinstance(data, dict) else {}
+
+
+ASK_STATE_KEY = "_field_ask_state"
+MAX_ASKS_PER_FIELD = 2
+
+
+def get_ask_state(structured_state: dict[str, Any] | None) -> dict[str, Any]:
+    """How many times each required field was asked, and which fields the last question covered."""
+    raw = (structured_state or {}).get(ASK_STATE_KEY)
+    counts: dict[str, int] = {}
+    last: list[str] = []
+    if isinstance(raw, dict):
+        c = raw.get("counts")
+        if isinstance(c, dict):
+            counts = {
+                k: v
+                for k, v in c.items()
+                if k in REQUIRED_ASSESSMENT_FIELDS and isinstance(v, int) and not isinstance(v, bool)
+            }
+        l = raw.get("last_asked")
+        if isinstance(l, list):
+            last = [k for k in l if k in REQUIRED_ASSESSMENT_FIELDS]
+    return {"counts": counts, "last_asked": last}
+
+
+def set_ask_state(
+    structured_state: dict[str, Any] | None, ask_state: dict[str, Any]
+) -> dict[str, Any]:
+    data = dict(structured_state or {})
+    data[ASK_STATE_KEY] = ask_state
+    return data
+
+
+def record_questions_asked(
+    structured_state: dict[str, Any] | None, asked_fields: list[str] | None
+) -> dict[str, Any]:
+    """Count one more ask for each still-missing field the new question covers."""
+    missing = missing_required_assessment_fields(structured_state)
+    asked = [f for f in (asked_fields or []) if f in missing]
+    if not asked and len(missing) <= 4:
+        asked = list(missing)
+    ask = get_ask_state(structured_state)
+    for field in asked:
+        ask["counts"][field] = ask["counts"].get(field, 0) + 1
+    ask["last_asked"] = asked
+    return set_ask_state(structured_state, ask)
+
+
+def close_stalled_fields(
+    structured_state: dict[str, Any] | None,
+    *,
+    latest_user: str,
+    user_message_id: str | None,
+) -> tuple[dict[str, Any], list[str]]:
+    """Loop guard: a field asked MAX_ASKS_PER_FIELD times and still missing is closed as unknown."""
+    quote = (latest_user or "").strip()
+    state = dict(structured_state or {})
+    if not quote or not user_message_id:
+        return state, []
+    ask = get_ask_state(state)
+    closed: list[str] = []
+    for field in ask["last_asked"]:
+        if ask["counts"].get(field, 0) < MAX_ASKS_PER_FIELD:
+            continue
+        if is_resolved(normalize_field(state.get(field))):
+            continue
+        state[field] = {
+            "value": None,
+            "status": FieldStatus.UNKNOWN.value,
+            "source": FIELD_SOURCE_ASSESSMENT,
+            "evidence_quote": quote[:500],
+            "evidence_message_id": str(user_message_id),
+        }
+        closed.append(field)
+    return state, closed
+
+
+def answers_sheet(state: dict[str, Any] | None) -> dict[str, Any]:
+    """The complete answers JSON: every field with its status, value and the prospect's own words.
+
+    The result, the qualification and the pre-call brief all read this one structure.
+    """
+    data = normalize_structured_state(state)
+    fields: dict[str, Any] = {}
+    for key in STRUCTURED_FIELD_KEYS:
+        entry = data[key]
+        item: dict[str, Any] = {"status": entry.get("status"), "value": entry.get("value")}
+        if entry.get("evidence_quote"):
+            item["quote"] = entry["evidence_quote"]
+        fields[key] = item
+    missing = missing_required_assessment_fields(state)
+    return {
+        "fields": fields,
+        "required_total": len(REQUIRED_ASSESSMENT_FIELDS),
+        "required_answered": len(REQUIRED_ASSESSMENT_FIELDS) - len(missing),
+        "required_unanswered": missing,
+    }
 
 
 def strip_assessment_ready_marker(text: str) -> tuple[str, bool]:

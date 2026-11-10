@@ -22,6 +22,7 @@ from acquisition.models.assessment import (
 )
 from acquisition.models.campaign import CampaignProspect
 from acquisition.services.assessment_extraction import (
+    answers_sheet,
     concrete_value,
     field_display,
     normalize_structured_state,
@@ -721,6 +722,7 @@ def build_pre_call_evidence(
             "meeting_timezone": link.meeting_timezone,
             "meeting_location": link.meeting_location,
         },
+        "assessment_answers": answers_sheet(state),
         "user_messages": user_msgs[-20:],
         "user_questions": _likely_questions(user_msgs),
         "material_missing_field_keys": missing_material,

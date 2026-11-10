@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -21,6 +22,7 @@ from acquisition.models.settings import (
 )
 from acquisition.services.assessment_extraction import (
     AUTHORITY_ROLES,
+    answers_sheet,
     backend_coverage_satisfied,
     evidence_quote_in_user_message,
     field_display,
@@ -897,7 +899,12 @@ class AssessmentCompletionService:
                     {"role": "system", "content": self._qualification_prompt()},
                     {
                         "role": "user",
-                        "content": f"Structured state:\n{state}\n\nConversation:\n{history}",
+                        "content": (
+                            "Complete assessment answers (JSON; every field has a status):\n"
+                            f"{json.dumps(answers_sheet(state), default=str)}\n\n"
+                            "How to read it: status known with a value like 'No delays reported' is a real answer (the prospect said there is no such issue). status unknown means the prospect did not know or did not give a clear answer: treat it as unknown, never as negative. Nothing is negative unless the prospect said so.\n\n"
+                            f"Conversation:\n{history}"
+                        ),
                     },
                 ]
             )
