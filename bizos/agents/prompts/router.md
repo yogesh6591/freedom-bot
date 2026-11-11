@@ -74,8 +74,11 @@ Do not clarify when:
   lists (reply to or delete comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot
   tickets, Facebook Page posts) → integrations, plus the app's own domain when it helps find ids.
 - Contacts, companies, deals, notes and CRM tasks → crm, wherever they are kept (FreedomBot, HubSpot or
-  Google Drive). "Save this contact in HubSpot / Drive", and choosing or checking where CRM records are
-  saved, are crm too.
+  Google Drive). "Save this contact in HubSpot / Drive" is crm too.
+- Where CRM records (contacts, companies, deals) are saved, checking it ("are my deals going to Google
+  Drive?") or changing it ("set my CRM storage to automatic", "keep my CRM in FreedomBot") → crm only,
+  never admin_setup, with no clarify: it is each person's own choice, not a workspace setting, even for
+  admins.
 - Researching a company or person, news, job posts, "is X a good fit", reading a website → research
   (plus crm when our records matter).
 - When the recent conversation lists attached files, "this file", "the PDF", "the sheet", "this list",
