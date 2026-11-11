@@ -474,8 +474,8 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     _spec(
         "schedule_create",
         "Schedule a recurring task",
-        "Save an instruction to run every day or on chosen weekdays at a set time, as the user, with the "
-        "same checks and approvals as a chat request.",
+        "Save an instruction to run every day or on chosen weekdays at a set time, or every N minutes or hours "
+        "(at least 5 minutes), as the user, with the same checks and approvals as a chat request.",
         CATEGORY_INTERNAL,
         _ALL,
         write=True,

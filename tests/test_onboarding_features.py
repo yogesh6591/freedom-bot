@@ -253,6 +253,59 @@ def test_next_run_for_daily_and_weekly_schedules():
             automation.parse_time(bad)
 
 
+def test_every_n_minutes_schedules_keep_their_beat_and_are_never_under_five_minutes(client_a, ctx_factory):
+    assert automation.parse_every(5) == 5 and automation.parse_every("50 min") == 50
+    assert automation.parse_every("2 hours") == 120 and automation.parse_every("1.5h") == 90
+    for too_often in (2, "1 minute", 0):
+        with pytest.raises(automation.ScheduleError, match="every 5 minutes"):
+            automation.parse_every(too_often)
+    owner = ctx_factory(client_a, "operator")
+    set_up_at = datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)
+    with tenant_scope(owner):
+        task, created = automation.create(owner, title="AI news", instruction=f"Post AI news {set_up_at.timestamp()}",
+                                          frequency="interval", every_minutes=5, time_of_day=None, tz="UTC",
+                                          now=set_up_at)
+        again, created_again = automation.create(owner, title="AI news", instruction=task["instruction"],
+                                                 frequency="interval", every_minutes="5 min", time_of_day="",
+                                                 tz="UTC", now=set_up_at)
+        hourly, _ = automation.create(owner, title="x", instruction=f"Hourly {set_up_at.timestamp()}",
+                                      frequency="interval", every_minutes=120, time_of_day="", tz="UTC")
+    assert created and not created_again and again["id"] == task["id"]
+    assert task["schedule"] == "every 5 minutes" and hourly["schedule"] == "every 2 hours"
+    first = datetime.fromisoformat(task["next_run_at"])
+    assert first == set_up_at + timedelta(minutes=5)
+    runs = []
+    runner = lambda ctx, settings, row: runs.append(row["id"]) or "posted"  # noqa: E731
+    # Picked up 40 seconds late: the next run stays on the beat (10:10, not 10:10:40).
+    automation.run_due(runner, now=first + timedelta(seconds=40), clients=[client_a])
+    with tenant_scope(owner):
+        after = automation.get(owner, task["id"])
+    assert datetime.fromisoformat(after["next_run_at"]) == first + timedelta(minutes=5)
+    # The server was down for 23 minutes: one catch-up run, then back on the beat.
+    automation.run_due(runner, now=first + timedelta(minutes=28), clients=[client_a])
+    with tenant_scope(owner):
+        after = automation.get(owner, task["id"])
+        for t in (task, hourly):
+            automation.cancel(owner, t["id"])
+    assert runs.count(task["id"]) == 2
+    assert datetime.fromisoformat(after["next_run_at"]) == first + timedelta(minutes=30)
+
+
+def test_an_interval_schedule_from_chat_needs_five_minutes_or_more(client_a, scope_factory):
+    from bizos.tools.base import guarded_call
+
+    scope = scope_factory(client_a, "admin", domain="general")
+    with tenant_scope(scope.ctx):
+        too_often = guarded_call(scope, "schedule_create", {"instruction": "Post AI news on our Facebook Page",
+                                                            "frequency": "interval", "every_minutes": 2})
+        missing = guarded_call(scope, "schedule_create", {"instruction": "Post AI news on our Facebook Page",
+                                                          "frequency": "interval"})
+        no_time = guarded_call(scope, "schedule_create", {"instruction": "Summarise my inbox", "frequency": "daily"})
+    assert not too_often.ok and "every 5 minutes" in too_often.message and "Nothing was saved" in too_often.message
+    assert not missing.ok and "every_minutes" in missing.message
+    assert not no_time.ok and "time must look like" in no_time.message
+
+
 def test_schedules_are_saved_once_and_only_their_owner_or_an_admin_stops_them(client_a, ctx_factory):
     owner, other, admin = (ctx_factory(client_a, p) for p in ("operator", "drafter", "admin"))
     with tenant_scope(owner):
@@ -309,6 +362,91 @@ def test_a_scheduled_run_cannot_set_up_more_schedules(client_a, scope_factory):
     with tenant_scope(scope.ctx):
         bad = guarded_call(scope, "schedule_create", {"instruction": "Post a tip", "frequency": "weekly", "time": "9"})
     assert not bad.ok and "weekdays" in bad.message
+
+
+def test_a_schedule_approved_for_someone_else_is_theirs_and_its_status_shows_on_the_card(client_a, scope_factory):
+    from bizos.actions import store as actions
+    from bizos.actions.preview import content_for
+    from bizos.tools.base import guarded_call
+    from bizos.tools.executor import execute_approved_action
+
+    operator = scope_factory(client_a, "operator", domain="general")
+    stamp = datetime.now().timestamp()
+    args = {"title": f"Weekly tip {stamp}", "instruction": f"Post our weekly AI tip {stamp}", "frequency": "weekly",
+            "time": "09:00", "weekdays": ["mon"], "timezone": "Asia/Kolkata"}
+    with tenant_scope(operator.ctx):
+        asked = guarded_call(operator, "schedule_create", args)
+        assert asked.effect.value == "REQUIRE_APPROVAL", asked.message
+        waiting = content_for(actions.get_action(asked.action_id, ctx=operator.ctx), ctx=operator.ctx)
+    assert waiting["kind"] == "schedule" and waiting["headline"] == f"Recurring task: Weekly tip {stamp}"
+    assert waiting["schedule"]["status"] == "not_set_up"
+    assert waiting["schedule"]["schedule"] == "every Mon at 09:00 (Asia/Kolkata)"
+
+    admin = scope_factory(client_a, "admin", domain="general")
+    with tenant_scope(admin.ctx):
+        actions.approve(asked.action_id, settings=client_a.settings, ctx=admin.ctx)
+        done = execute_approved_action(admin, asked.action_id)
+        assert done.ok, done.message
+        card = content_for(actions.get_action(asked.action_id, ctx=admin.ctx), ctx=admin.ctx)
+    task = card["schedule"]
+    assert task["id"].startswith("sch_") and task["status"] == "active" and task["next_run_at"]
+    # The requester's schedule, checked as them on every run, never as the admin who approved it.
+    assert task["created_by"] == operator.ctx.user_id and not task["made_by_run"]
+    with tenant_scope(operator.ctx):
+        automation.cancel(operator.ctx, task["id"])
+
+
+@pytest.fixture(scope="module")
+def app_client():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_requests_made_by_a_scheduled_run_show_their_schedule_on_approvals(client_a, ctx_factory, app_client):
+    from app.api.deps import run_scope
+    from bizos.actions import store as actions
+    from bizos.actions.preview import content_for
+    from bizos.tools.base import guarded_call
+
+    owner = ctx_factory(client_a, "operator")
+    stamp = datetime.now().timestamp()
+    with tenant_scope(owner):
+        task, _ = automation.create(owner, title=f"Planning {stamp}", instruction=f"Book the weekly review {stamp}",
+                                    frequency="daily", time_of_day="09:00", tz="UTC")
+    run_ctx = dataclasses.replace(owner, attributes={"scheduled_task": task["id"]})
+    scope = run_scope(run_ctx, client_a.settings, domain="planning")
+    assert scope.workflow_id == task["id"]
+    with tenant_scope(run_ctx):
+        asked = guarded_call(scope, "calendar_create_event", {
+            "title": f"Weekly review {stamp}", "starts_at": "2026-12-01T10:00:00+00:00",
+            "ends_at": "2026-12-01T11:00:00+00:00"})
+        assert asked.effect.value == "REQUIRE_APPROVAL", asked.message
+        action = actions.get_action(asked.action_id, ctx=owner)
+        card = content_for(action, ctx=owner)
+    assert action.workflow_id == task["id"]
+    assert card["schedule"]["id"] == task["id"] and card["schedule"]["made_by_run"]
+    assert card["schedule"]["status"] == "active" and card["schedule"]["schedule"] == "every day at 09:00 (UTC)"
+    # Typed in chat (no schedule): no schedule box.
+    typed = run_scope(owner, client_a.settings, domain="planning")
+    assert typed.workflow_id is None
+
+    login = app_client.post("/api/auth/login", json={"email": f"operator@{client_a.slug}.example.com",
+                                                     "password": "bizos-dev-password", "client_slug": client_a.slug})
+    assert login.status_code == 200, login.text
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+    listed = app_client.get("/api/approvals/schedules", headers=headers)
+    assert listed.status_code == 200, listed.text
+    row = next(r for r in listed.json()["items"] if r["id"] == task["id"])
+    assert row["status"] == "active" and row["awaiting_approval"] >= 1 and row["session_id"] == task["session_id"]
+    queue = app_client.get("/api/approvals?status=PENDING_APPROVAL", headers=headers).json()["items"]
+    shown = next(a for a in queue if a["id"] == asked.action_id)
+    assert shown["content"]["schedule"]["id"] == task["id"]
+    with tenant_scope(owner):
+        automation.cancel(owner, task["id"])
 
 
 # --------------------------------------------------------------------------- duplicate-free posting

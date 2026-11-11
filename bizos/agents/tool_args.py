@@ -217,13 +217,18 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "title": _s("Short name for the task, e.g. 'Weekly Facebook tip'"),
             "instruction": _s("What to do each time, in the user's words but without the timing, e.g. 'Write "
                               "a short AI tip and post it on our Facebook Page'"),
-            "frequency": _enum("How often", ["daily", "weekly"]),
-            "time": _s("Time of day, e.g. 09:00 or 6:30 PM"),
+            "frequency": _enum("How often: daily, weekly (chosen weekdays), or interval (every N minutes or "
+                               "hours)", ["daily", "weekly", "interval"]),
+            "time": _s("Time of day, e.g. 09:00 or 6:30 PM. Needed for daily and weekly; for interval only "
+                       "when the user gives a start time"),
+            "every_minutes": {"type": "integer", "minimum": 5,
+                              "description": "For interval: minutes between runs, at least 5 (every 5 minutes -> 5, "
+                                             "every 50 minutes -> 50, every 2 hours -> 120)"},
             "weekdays": {"type": "array", "description": "For weekly: the days it runs",
                          "items": {"type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
             "timezone": _s("IANA timezone, e.g. Asia/Kolkata (optional; default the workspace's)"),
         },
-        ["instruction", "frequency", "time"],
+        ["instruction", "frequency"],
     ),
     "schedule_list": _obj(
         {

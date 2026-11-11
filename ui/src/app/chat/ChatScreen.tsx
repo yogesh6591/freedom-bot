@@ -827,6 +827,14 @@ function ChatView({ home }: { home: boolean }) {
   useEffect(() => {
     if (!storageKey) return
     let saved: string | null = null
+    // A link such as /chat?session=ses_… (a scheduled task's runs, from Approvals) opens that one.
+    const linked = new URLSearchParams(window.location.search).get('session')
+    if (linked) {
+      window.history.replaceState(null, '', window.location.pathname)
+      void openSession(linked)
+      void loadHistory()
+      return
+    }
     try {
       saved = localStorage.getItem(storageKey)
     } catch {

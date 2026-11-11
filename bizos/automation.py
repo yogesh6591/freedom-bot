@@ -2,14 +2,16 @@
 Scheduled Tasks and Duplicate-Free Posting
 ==========================================
 
-A person asks the assistant to do something every day or every week ("every Monday at 9 post our weekly
-tip on the Facebook Page", "every day at 6 PM email me today's new leads"). The task is saved in the
+A person asks the assistant to do something every day, every week, or every few minutes or hours ("every
+Monday at 9 post our weekly tip on the Facebook Page", "every day at 6 PM email me today's new leads",
+"every 30 minutes post the latest AI news"). The task is saved in the
 workspace with the exact instruction, and a background loop runs it when it is due, **as that person,
 through the normal chat pipeline**: the same guard, policy check, approvals and audit as if they had typed
 it. A scheduled run is never less checked than a typed message; anything that needs approval waits in
 Approvals.
 
-* :func:`next_run` works out the next due time (daily, or on chosen weekdays, at HH:MM in a timezone).
+* :func:`next_run` works out the next due time (daily, or on chosen weekdays, at HH:MM in a timezone, or
+  every N minutes; never more often than every :data:`MIN_EVERY_MINUTES`).
 * :func:`claim` takes one due run atomically, so a slot runs once even with several API processes.
 * :func:`run_due` is one tick of the loop: every workspace, every due task.
 * :func:`already_posted` / :func:`record_post` keep public posts free of duplicates: the same text to the
@@ -34,8 +36,11 @@ from bizos.tenancy.context import TenantContext
 from bizos.tenancy.registry import readonly_connection, workspace_connection, workspace_location
 from bizos.util.ids import new_id
 
-DAILY, WEEKLY = "daily", "weekly"
-FREQUENCIES = (DAILY, WEEKLY)
+DAILY, WEEKLY, INTERVAL = "daily", "weekly", "interval"
+FREQUENCIES = (DAILY, WEEKLY, INTERVAL)
+#: Shortest and longest repeat for an "every N minutes" schedule. Each run is a full chat turn (model,
+#: tools, maybe a public post), so it is never more often than this.
+MIN_EVERY_MINUTES, MAX_EVERY_MINUTES = 5, 7 * 24 * 60
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 ACTIVE, CANCELLED, PAUSED = "active", "cancelled", "paused"
 #: Most active schedules one person may have (keeps a runaway request from filling the queue).
@@ -88,6 +93,26 @@ def parse_weekdays(values: Any) -> tuple[str, ...]:
     return tuple(d for d in WEEKDAYS if d in out)
 
 
+def parse_every(value: Any) -> int:
+    """5, '5', '5 min', '50 minutes', '2 hours', '1h', '90m' -> minutes between runs (5 to a week)."""
+    if isinstance(value, bool):
+        value = None
+    if isinstance(value, (int, float)):
+        minutes = int(value)
+    else:
+        raw = str(value or "").strip().lower()
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours)?", raw)
+        if not match:
+            raise ScheduleError("every_minutes must be a number of minutes, e.g. 5, 50 or 120 (every 2 hours).")
+        number = float(match.group(1))
+        minutes = int(round(number * 60)) if (match.group(2) or "m").startswith("h") else int(round(number))
+    if minutes < MIN_EVERY_MINUTES:
+        raise ScheduleError(f"the shortest repeat is every {MIN_EVERY_MINUTES} minutes (got {minutes}).")
+    if minutes > MAX_EVERY_MINUTES:
+        raise ScheduleError("for a gap longer than a week, use a weekly schedule.")
+    return minutes
+
+
 def parse_timezone(value: Any, default: str) -> str:
     name = str(value or "").strip() or default
     try:
@@ -98,8 +123,17 @@ def parse_timezone(value: Any, default: str) -> str:
 
 
 def next_run(frequency: str, time_of_day: str, tz: str, *, weekdays: Iterable[str] = (),
-             after: Optional[datetime] = None) -> datetime:
-    """The first due time strictly after ``after`` (UTC), for a daily or weekly schedule."""
+             after: Optional[datetime] = None, every_minutes: Optional[int] = None) -> datetime:
+    """The first due time strictly after ``after`` (UTC).
+
+    Daily or weekly: the next HH:MM on a matching day. Every N minutes: N minutes after ``after``, or the
+    next HH:MM when a start time is given.
+    """
+    if frequency == INTERVAL and not time_of_day:
+        return (after or datetime.now(timezone.utc)).astimezone(timezone.utc) + timedelta(
+            minutes=parse_every(every_minutes))
+    if frequency == INTERVAL:
+        frequency = DAILY
     zone = ZoneInfo(tz)
     now = (after or datetime.now(timezone.utc)).astimezone(zone)
     hour, minute = (int(p) for p in time_of_day.split(":"))
@@ -114,8 +148,18 @@ def next_run(frequency: str, time_of_day: str, tz: str, *, weekdays: Iterable[st
     raise ScheduleError("could not work out the next run time.")  # unreachable: 8 days cover every weekday
 
 
+def _every(minutes: int) -> str:
+    if minutes % 60:
+        return f"every {minutes} minutes"
+    hours = minutes // 60
+    return "every hour" if hours == 1 else f"every {hours} hours"
+
+
 def describe(task: dict[str, Any]) -> str:
-    """'every day at 09:00 (Asia/Kolkata)' / 'every Mon, Thu at 18:30 (Asia/Kolkata)'."""
+    """'every day at 09:00 (Asia/Kolkata)' / 'every Mon, Thu at 18:30 (Asia/Kolkata)' / 'every 5 minutes'."""
+    if task["frequency"] == INTERVAL:
+        start = f", from {task['time_of_day']} ({task['timezone']})" if task.get("time_of_day") else ""
+        return _every(int(task.get("every_minutes") or 0)) + start
     when = "every day" if task["frequency"] == DAILY else "every " + ", ".join(
         d.capitalize() for d in task.get("weekdays") or ())
     return f"{when} at {task['time_of_day']} ({task['timezone']})"
@@ -144,6 +188,7 @@ def ensure_tables(ctx: TenantContext) -> None:
                     frequency    TEXT NOT NULL,
                     weekdays     TEXT[] NOT NULL DEFAULT '{}',
                     time_of_day  TEXT NOT NULL,
+                    every_minutes INTEGER,
                     timezone     TEXT NOT NULL,
                     status       TEXT NOT NULL DEFAULT 'active',
                     created_by   TEXT NOT NULL,
@@ -158,6 +203,8 @@ def ensure_tables(ctx: TenantContext) -> None:
                 )
                 """
             ))
+            # Workspaces that made the table before "every N minutes" existed.
+            conn.execute(text("ALTER TABLE scheduled_tasks ADD COLUMN IF NOT EXISTS every_minutes INTEGER"))
             conn.execute(text(
                 "CREATE INDEX IF NOT EXISTS scheduled_tasks_due_idx ON scheduled_tasks (status, next_run_at)"
             ))
@@ -197,10 +244,15 @@ def _same(text_value: str) -> str:
 
 
 def create(ctx: TenantContext, *, title: str, instruction: str, frequency: str, time_of_day: Any,
-           weekdays: Any = (), tz: Any = None, default_tz: str = "UTC",
-           now: Optional[datetime] = None) -> tuple[dict[str, Any], bool]:
-    """Save a schedule for ``ctx``'s user. Returns ``(task, created)``; the same instruction on the same
-    schedule returns the existing task (``created`` False) instead of a duplicate."""
+           weekdays: Any = (), tz: Any = None, default_tz: str = "UTC", every_minutes: Any = None,
+           now: Optional[datetime] = None, owner_user_id: Optional[str] = None) -> tuple[dict[str, Any], bool]:
+    """Save a schedule for ``owner_user_id`` (default: ``ctx``'s user). Returns ``(task, created)``; the same
+    instruction on the same schedule returns the existing task (``created`` False) instead of a duplicate.
+
+    When an approver releases someone else's request, ``owner_user_id`` is that requester: the schedule is
+    theirs and every run is checked as them, never as the approver.
+    """
+    owner = owner_user_id or ctx.user_id
     instruction = " ".join(str(instruction or "").split())
     title = " ".join(str(title or "").split())[:120] or instruction[:60]
     if not instruction:
@@ -210,24 +262,27 @@ def create(ctx: TenantContext, *, title: str, instruction: str, frequency: str, 
         raise ScheduleError(f"instruction is too long (at most {MAX_INSTRUCTION} characters).")
     frequency = str(frequency or "").strip().lower()
     if frequency not in FREQUENCIES:
-        raise ScheduleError("frequency must be daily or weekly.")
-    at = parse_time(time_of_day)
+        raise ScheduleError("frequency must be daily, weekly or interval (every N minutes).")
+    every = parse_every(every_minutes) if frequency == INTERVAL else None
+    # Every N minutes may start at a time of day; daily and weekly need one.
+    at = parse_time(time_of_day) if (frequency != INTERVAL or str(time_of_day or "").strip()) else ""
     days = parse_weekdays(weekdays) if frequency == WEEKLY else ()
     if frequency == WEEKLY and not days:
         raise ScheduleError("a weekly schedule needs weekdays, e.g. ['mon'] or ['mon', 'thu'].")
     zone = parse_timezone(tz, default_tz)
-    due = next_run(frequency, at, zone, weekdays=days, after=now)
+    due = next_run(frequency, at, zone, weekdays=days, after=now, every_minutes=every)
     ensure_tables(ctx)
     with workspace_connection(ctx) as conn:
         for row in conn.execute(
-            text("SELECT * FROM scheduled_tasks WHERE created_by = :u AND status = 'active'"), {"u": ctx.user_id}
+            text("SELECT * FROM scheduled_tasks WHERE created_by = :u AND status = 'active'"), {"u": owner}
         ).fetchall():
             if (_same(row.instruction) == _same(instruction) and row.frequency == frequency
-                    and row.time_of_day == at and tuple(row.weekdays or ()) == days and row.timezone == zone):
+                    and row.time_of_day == at and tuple(row.weekdays or ()) == days and row.timezone == zone
+                    and (row.every_minutes or None) == every):
                 return _row(row), False
         active = conn.execute(
             text("SELECT count(*) FROM scheduled_tasks WHERE created_by = :u AND status = 'active'"),
-            {"u": ctx.user_id},
+            {"u": owner},
         ).scalar()
         if active >= MAX_ACTIVE_PER_USER:
             raise ScheduleError(f"you already have {active} active schedules (the limit is {MAX_ACTIVE_PER_USER}). "
@@ -235,11 +290,12 @@ def create(ctx: TenantContext, *, title: str, instruction: str, frequency: str, 
         task_id = new_id("sch")
         row = conn.execute(
             text(
-                "INSERT INTO scheduled_tasks (id, title, instruction, frequency, weekdays, time_of_day, timezone, "
-                "created_by, next_run_at, session_id) VALUES (:i, :t, :ins, :f, :w, :at, :tz, :u, :n, :s) RETURNING *"
+                "INSERT INTO scheduled_tasks (id, title, instruction, frequency, weekdays, time_of_day, "
+                "every_minutes, timezone, created_by, next_run_at, session_id) "
+                "VALUES (:i, :t, :ins, :f, :w, :at, :e, :tz, :u, :n, :s) RETURNING *"
             ),
-            {"i": task_id, "t": title, "ins": instruction, "f": frequency, "w": list(days), "at": at, "tz": zone,
-             "u": ctx.user_id, "n": due, "s": new_id("ses")},
+            {"i": task_id, "t": title, "ins": instruction, "f": frequency, "w": list(days), "at": at, "e": every,
+             "tz": zone, "u": owner, "n": due, "s": new_id("ses")},
         ).first()
     return _row(row), True
 
@@ -261,6 +317,17 @@ def list_tasks(ctx: TenantContext, *, everyone: bool = False, include_ended: boo
     return [_row(r) for r in rows]
 
 
+def lookup(ctx: TenantContext, task_ids: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """Several schedules by id in one read (the approval cards show the schedule each request belongs to)."""
+    ids = sorted({str(i) for i in task_ids if i})
+    if not ids:
+        return {}
+    ensure_tables(ctx)
+    with readonly_connection(ctx) as conn:
+        rows = conn.execute(text("SELECT * FROM scheduled_tasks WHERE id = ANY(:ids)"), {"ids": ids}).fetchall()
+    return {row.id: _row(row) for row in rows}
+
+
 def get(ctx: TenantContext, task_id: str) -> Optional[dict[str, Any]]:
     ensure_tables(ctx)
     with readonly_connection(ctx) as conn:
@@ -268,10 +335,13 @@ def get(ctx: TenantContext, task_id: str) -> Optional[dict[str, Any]]:
     return _row(row) if row else None
 
 
-def cancel(ctx: TenantContext, task_id: str) -> dict[str, Any]:
-    """Stop a schedule. Only the person who set it up, or an admin, may stop it."""
+def cancel(ctx: TenantContext, task_id: str, *, requested_by: Optional[str] = None) -> dict[str, Any]:
+    """Stop a schedule. Only the person who set it up, or an admin, may stop it.
+
+    ``requested_by`` is the person whose approved request an approver is releasing: their own schedule.
+    """
     task = get(ctx, task_id)
-    if task is None or (task["created_by"] != ctx.user_id and not ctx.is_admin):
+    if task is None or (task["created_by"] not in {ctx.user_id, requested_by} and not ctx.is_admin):
         raise ScheduleError(f"No schedule {task_id!r} that you can change. List them with schedule_list.")
     if task["status"] != ACTIVE:
         return task
@@ -297,10 +367,17 @@ def due(ctx: TenantContext, now: datetime) -> list[dict[str, Any]]:
 def claim(ctx: TenantContext, task: dict[str, Any], now: datetime) -> bool:
     """Take this due run: move next_run_at on, only if no one else already did. True when this caller won.
 
-    A run that was missed (the server was down) runs once now, not once per missed slot.
+    A run that was missed (the server was down) runs once now, not once per missed slot. Every-N-minutes
+    schedules keep their beat (10:00, 10:05, 10:10...) however late the tick picks them up.
     """
-    following = next_run(task["frequency"], task["time_of_day"], task["timezone"],
-                         weekdays=task.get("weekdays") or (), after=now)
+    if task["frequency"] == INTERVAL:
+        step = timedelta(minutes=parse_every(task.get("every_minutes")))
+        following = datetime.fromisoformat(task["next_run_at"]) + step
+        if following <= now:
+            following += step * ((now - following) // step + 1)
+    else:
+        following = next_run(task["frequency"], task["time_of_day"], task["timezone"],
+                             weekdays=task.get("weekdays") or (), after=now)
     with workspace_connection(ctx) as conn:
         won = conn.execute(
             text(

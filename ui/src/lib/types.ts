@@ -135,6 +135,40 @@ export interface ActionContent {
   summary: string
   fields: { label: string; value: string }[]
   lines: string[]
+  /** The recurring task this request sets up, stops, or was made by (null for anything else). */
+  schedule?: ScheduleInfo | null
+}
+
+/** One recurring scheduled task and how it stands now (bizos/automation.py). */
+export interface ScheduleInfo {
+  /** Null while the request to set it up has not been approved. */
+  id: string | null
+  title: string | null
+  instruction: string | null
+  /** "every Mon at 09:00 (Asia/Kolkata)" */
+  schedule: string | null
+  /** active, paused, cancelled, or not_set_up (still waiting, rejected or withdrawn). */
+  status: string
+  next_run_at: string | null
+  last_run_at: string | null
+  /** running, done, failed or skipped. */
+  last_status: string | null
+  last_result: string | null
+  run_count: number | null
+  created_by: string | null
+  session_id: string | null
+  /** True when a scheduled run made this request (not the request to set it up or stop it). */
+  made_by_run?: boolean
+}
+
+/** A row on the Approvals page's Scheduled tab. */
+export interface ScheduleRow extends ScheduleInfo {
+  created_by_name: string | null
+  /** Requests from this schedule's runs that are waiting for approval. */
+  awaiting_approval?: number
+  /** For a request to set one up that is still waiting. */
+  action_id?: string
+  requested_at?: string | null
 }
 
 export interface ActionRecord {

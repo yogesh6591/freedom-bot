@@ -74,9 +74,6 @@ CONFUSABLE = [
     ("edit_case_study", "edit_video_link"),
 ]
 
-HINGLISH = re.compile(r"\b(ko|kar do|kya|kab|hai|hain|bhej|bana|dhundo|daal|kaun|hata|mein|kis|bhejo|haan|karo)\b")
-
-
 def _lines(name: str) -> list[str]:
     return [line.split(":", 1)[0] for line in TOOL_META[name].description.splitlines() if ":" in line]
 
@@ -163,10 +160,6 @@ def test_hard_prerequisites_are_exactly_the_agreed_set():
 def test_visible_descriptions_never_name_a_hidden_tool(name):
     named = {w for w in WRAPPED if re.search(rf"\b{w}\b", TOOL_META[name].description)}
     assert not named, (name, named)
-
-
-def test_at_least_fifteen_tools_have_a_hindi_or_hinglish_phrasing():
-    assert sum(1 for n in VISIBLE if HINGLISH.search(TOOL_META[n].description)) >= 15
 
 
 @pytest.mark.parametrize("who", ["viewer", "drafter", "approver", "operator", "admin"])

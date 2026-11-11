@@ -51,7 +51,7 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "email": "Email: search and read threads, draft, reply in existing threads and email named CRM contacts; a first email to someone given only by email address belongs to outreach",
     "calendar": "Meetings: list, check availability, create, reschedule, cancel",
     "finance": "Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments",
-    "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations, recurring scheduled tasks (every day or week: set up, list, stop)",
+    "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations, recurring scheduled tasks (every few minutes, hours, days or weeks: set up, list, stop)",
     "youtube": "YouTube: search videos, our channel and videos, one video's details and comments, video transcripts (summaries, what the speaker says)",
     "admin_setup": "Workspace config: overview, setup, settings, enable or disable domain packs",
     "admin_launch": "Go-live: launch checklist, mark items, sign-off, handoff readiness",

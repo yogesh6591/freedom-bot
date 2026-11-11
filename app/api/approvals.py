@@ -42,15 +42,25 @@ class PayloadEdit(BaseModel):
     comment: Optional[str] = None
 
 
-def _named(items: list[Any], ctx: TenantContext) -> list[dict[str, Any]]:
-    """Action dicts with requester name + readable content for the approval cards."""
-    from bizos.actions.preview import content_for
+def _users(ctx: TenantContext) -> dict[str, Any]:
     from bizos.control import store as control
 
     try:
-        users = {u.id: u for u in control.list_users(ctx.client_id)}
+        return {u.id: u for u in control.list_users(ctx.client_id)}
     except Exception:
-        users = {}
+        return {}
+
+
+def _named(items: list[Any], ctx: TenantContext) -> list[dict[str, Any]]:
+    """Action dicts with requester name + readable content for the approval cards."""
+    from bizos import automation
+    from bizos.actions.preview import content_for, schedule_ids
+
+    users = _users(ctx)
+    try:
+        schedules = automation.lookup(ctx, schedule_ids(items))
+    except Exception:
+        schedules = {}
     out = []
     for a in items:
         d = a.to_dict()
@@ -58,7 +68,7 @@ def _named(items: list[Any], ctx: TenantContext) -> list[dict[str, Any]]:
         d["requested_by_name"] = (user.display_name or user.email) if user else None
         d["requested_by_email"] = user.email if user else None
         try:
-            d["content"] = content_for(a, ctx=ctx)
+            d["content"] = content_for(a, ctx=ctx, schedules=schedules)
         except Exception:
             d["content"] = {
                 "kind": "generic",
@@ -132,6 +142,50 @@ def research_progress(ctx: TenantContext = Depends(require_admin)) -> Optional[d
         return research_tools.progress(db)
     finally:
         db.close()
+
+
+@router.get("/schedules")
+def list_schedules(
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """The Scheduled tab on Approvals: each recurring task, how it stands, and what is waiting for it.
+
+    Read through the same guard as the chat's schedule_list (admins see everyone's). ``waiting`` are
+    requests to set up a schedule that still need approval, so they show before they exist.
+    """
+    from bizos.actions.preview import content_for, schedule_id
+    from bizos.tools.base import guarded_call
+
+    with bound(ctx):
+        outcome = guarded_call(run_scope(ctx, settings), "schedule_list",
+                               {"everyone": ctx.is_admin, "include_ended": True})
+        if not outcome.ok:
+            raise HTTPException(status_code=403, detail=outcome.message or "Not permitted")
+        pending = actions.list_actions(statuses=[ActionStatus.PENDING_APPROVAL], limit=500, ctx=ctx)
+        waiting_for: dict[str, int] = {}
+        for a in pending:
+            found = schedule_id(a)
+            if found and a.tool != "schedule_create":
+                waiting_for[found] = waiting_for.get(found, 0) + 1
+        users = _users(ctx)
+
+        def name(user_id: Optional[str]) -> Optional[str]:
+            user = users.get(user_id or "")
+            return (user.display_name or user.email) if user else None
+
+        rows = []
+        for row in outcome.data or []:
+            rows.append({**row, "created_by_name": name(row.get("created_by")),
+                         "awaiting_approval": waiting_for.get(row.get("id"), 0)})
+        waiting = []
+        for a in pending:
+            if a.tool != "schedule_create":
+                continue
+            info = content_for(a, ctx=ctx, schedules={}).get("schedule") or {}
+            waiting.append({**info, "action_id": a.id, "requested_at": a.to_dict().get("created_at"),
+                            "created_by_name": name(a.requested_by)})
+    return {"items": rows, "waiting": waiting}
 
 
 @router.get("/{action_id}")

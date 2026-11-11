@@ -257,7 +257,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "memory_escalate_conflict": "topic (str), item_ids (list[str]), question (str)",
     "support_create_ticket": "subject (str), body (str, optional), severity (NORMAL|HIGH|CRITICAL, optional)",
     "support_my_tickets": "no arguments",
-    "schedule_create": "instruction (str), frequency (daily|weekly), time (HH:MM), title (str, optional), weekdays (list of mon..sun, weekly only), timezone (str, optional)",
+    "schedule_create": "instruction (str), frequency (daily|weekly|interval), time (HH:MM; daily and weekly), every_minutes (int >= 5, interval only), title (str, optional), weekdays (list of mon..sun, weekly only), timezone (str, optional)",
     "schedule_list": "everyone (bool, optional, admins), include_ended (bool, optional)",
     "schedule_cancel": "schedule_id (str)",
     "crm_search_contacts": "query (str), lifecycle (str, optional), limit (int, optional)",

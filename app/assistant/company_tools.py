@@ -904,7 +904,8 @@ def support_my_tickets(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
     )
 
 # ------------------------------------------------------------------------------------------------
-# scheduled tasks  (bizos/automation.py) - recurring daily or weekly work, run as the person who set it up
+# scheduled tasks  (bizos/automation.py) - recurring work (daily, weekly or every N minutes), run as the person
+# who set it up
 # ------------------------------------------------------------------------------------------------
 from bizos import automation
 
@@ -913,15 +914,23 @@ def _schedule_fields(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
     """The schedule as it will be saved; raises automation.ScheduleError with a fixable message."""
     frequency = str(args.get("frequency") or "").strip().lower()
     if frequency not in automation.FREQUENCIES:
-        raise automation.ScheduleError("frequency must be daily or weekly.")
+        raise automation.ScheduleError("frequency must be daily, weekly or interval (every N minutes).")
     days = automation.parse_weekdays(args.get("weekdays") or ()) if frequency == automation.WEEKLY else ()
     if frequency == automation.WEEKLY and not days:
         raise automation.ScheduleError("a weekly schedule needs weekdays, e.g. ['mon'] or ['mon', 'thu'].")
+    every = None
+    if frequency == automation.INTERVAL:
+        if args.get("every_minutes") in (None, ""):
+            raise automation.ScheduleError("an interval schedule needs every_minutes, e.g. 5, 50 or 120.")
+        every = automation.parse_every(args.get("every_minutes"))
+    starts = str(args.get("time") or "").strip()
     return {
         "title": str(args.get("title") or ""),
         "instruction": str(args.get("instruction") or ""),
         "frequency": frequency,
-        "time_of_day": automation.parse_time(args.get("time")),
+        # Every N minutes starts N minutes from now unless a start time is given.
+        "time_of_day": "" if frequency == automation.INTERVAL and not starts else automation.parse_time(starts),
+        "every_minutes": every,
         "weekdays": days,
         "tz": automation.parse_timezone(args.get("timezone"), scope.settings.timezone or "UTC"),
     }
@@ -945,7 +954,8 @@ def _schedule_create_precheck(scope: RunScope, args: dict[str, Any]) -> Optional
 def schedule_create(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     try:
         fields = _schedule_fields(scope, args)
-        task, created = automation.create(scope.ctx, default_tz=scope.settings.timezone or "UTC", **fields)
+        task, created = automation.create(scope.ctx, default_tz=scope.settings.timezone or "UTC",
+                                          owner_user_id=scope.on_behalf_of or scope.ctx.user_id, **fields)
     except automation.ScheduleError as exc:
         return ConnectorResult.failure(f"{exc} Nothing was saved.")
     shown = {k: task[k] for k in ("id", "title", "instruction", "schedule", "next_run_at", "status")}
@@ -961,7 +971,7 @@ def schedule_list(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     everyone = bool(args.get("everyone")) and scope.ctx.is_admin
     tasks = automation.list_tasks(scope.ctx, everyone=everyone, include_ended=bool(args.get("include_ended")))
     keys = ("id", "title", "instruction", "schedule", "status", "next_run_at", "last_run_at", "last_status",
-            "last_result", "run_count", "created_by")
+            "last_result", "run_count", "created_by", "session_id")
     rows = [{k: t.get(k) for k in keys} for t in tasks[:50]]
     for row in rows:
         row["last_result"] = str(row.get("last_result") or "")[:300]
@@ -971,7 +981,8 @@ def schedule_list(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 @effect("schedule_cancel")
 def schedule_cancel(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     try:
-        task = automation.cancel(scope.ctx, str(args.get("schedule_id") or "").strip())
+        task = automation.cancel(scope.ctx, str(args.get("schedule_id") or "").strip(),
+                                 requested_by=scope.on_behalf_of)
     except automation.ScheduleError as exc:
         return ConnectorResult.failure(str(exc))
     return ConnectorResult(ok=True, data={"id": task["id"], "title": task["title"], "status": task["status"]},

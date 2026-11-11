@@ -14,8 +14,12 @@ from bizos.actions.models import Action
 from bizos.tenancy.context import TenantContext
 
 
-def content_for(action: Action, *, ctx: TenantContext) -> dict[str, Any]:
-    """Structured preview for one action. Always safe to put on the API."""
+def content_for(action: Action, *, ctx: TenantContext,
+                schedules: Optional[dict[str, dict[str, Any]]] = None) -> dict[str, Any]:
+    """Structured preview for one action. Always safe to put on the API.
+
+    ``schedules`` (id -> scheduled task, from :func:`schedule_ids`) saves one read per card on a list.
+    """
     payload = action.payload or {}
     tool = action.tool or ""
     result = (action.result or {}).get("data") if isinstance(action.result, dict) else None
@@ -23,12 +27,106 @@ def content_for(action: Action, *, ctx: TenantContext) -> dict[str, Any]:
         result = {}
     content = _content(action, tool, payload, result, ctx)
     content["line"] = _line(tool, payload, content)
+    content["schedule"] = _schedule_status(action, payload, result, ctx, schedules)
     return content
+
+
+# --------------------------------------------------------------------------- scheduled tasks
+
+_SCHEDULE_TOOLS = {"schedule_create", "schedule_cancel"}
+#: What the approver sees about the schedule; the instruction is the request itself.
+_SCHEDULE_KEYS = ("id", "title", "instruction", "schedule", "status", "next_run_at", "last_run_at", "last_status",
+                  "last_result", "run_count", "created_by", "session_id")
+
+
+def schedule_id(action: Action) -> Optional[str]:
+    """The scheduled task this request is about, or was made by, if any."""
+    tool = action.tool or ""
+    result = (action.result or {}).get("data") if isinstance(action.result, dict) else None
+    result = result if isinstance(result, dict) else {}
+    if tool == "schedule_create":
+        found = result.get("id")
+    elif tool == "schedule_cancel":
+        found = (action.payload or {}).get("schedule_id") or result.get("id")
+    else:
+        found = action.workflow_id
+    found = str(found or "").strip()
+    return found if found.startswith("sch_") else None
+
+
+def schedule_ids(actions: list[Action]) -> set[str]:
+    return {i for i in (schedule_id(a) for a in actions) if i}
+
+
+def _schedule_status(action: Action, payload: dict[str, Any], result: dict[str, Any], ctx: TenantContext,
+                     schedules: Optional[dict[str, dict[str, Any]]]) -> Optional[dict[str, Any]]:
+    """The schedule behind this card and how it stands now (active, stopped, next and last run)."""
+    from bizos import automation
+
+    tool = action.tool or ""
+    task_id = schedule_id(action)
+    if task_id is None and tool != "schedule_create":
+        return None
+    if task_id is not None:
+        if schedules is None:
+            schedules = automation.lookup(ctx, [task_id])
+        task = schedules.get(task_id)
+        if task is not None:
+            info = {k: task.get(k) for k in _SCHEDULE_KEYS}
+            info["last_result"] = str(info.get("last_result") or "")[:300]
+            info["made_by_run"] = tool not in _SCHEDULE_TOOLS
+            return info
+    # Not saved yet (still waiting, rejected or withdrawn): what it would be, from the request itself.
+    info = {k: None for k in _SCHEDULE_KEYS}
+    info.update(id=task_id, title=payload.get("title") or payload.get("instruction"),
+                instruction=payload.get("instruction"), schedule=_planned(payload), status="not_set_up",
+                run_count=0, created_by=action.requested_by, made_by_run=tool not in _SCHEDULE_TOOLS)
+    return info
+
+
+def _planned(payload: dict[str, Any]) -> Optional[str]:
+    """'every Mon at 09:00 (Asia/Kolkata)' for a schedule request that is not saved yet."""
+    from bizos import automation
+
+    try:
+        frequency = str(payload.get("frequency") or "").strip().lower()
+        days = automation.parse_weekdays(payload.get("weekdays") or ()) if frequency == automation.WEEKLY else ()
+        every = automation.parse_every(payload.get("every_minutes")) if frequency == automation.INTERVAL else None
+        starts = str(payload.get("time") or "").strip()
+        return automation.describe({
+            "frequency": frequency, "weekdays": days, "every_minutes": every,
+            "time_of_day": automation.parse_time(starts) if starts or frequency != automation.INTERVAL else "",
+            "timezone": str(payload.get("timezone") or "workspace time")})
+    except (automation.ScheduleError, ValueError, TypeError):
+        return None
+
+
+def _schedule_request(tool: str, payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """A request to set up or stop a recurring task: what it does and how often."""
+    what = str(payload.get("instruction") or "").strip()
+    title = str(payload.get("title") or result.get("title") or what[:60] or "Recurring task").strip()
+    fields = []
+    if what:
+        fields.append({"label": "Each time it will", "value": _short(what)})
+    when = _planned(payload) or result.get("schedule")
+    if when:
+        fields.append({"label": "How often", "value": str(when)})
+    if tool == "schedule_cancel":
+        headline = f"Stop the recurring task {payload.get('schedule_id') or ''}".strip()
+        lines = ["It will not run again. Requests it already made stay in this list."]
+    else:
+        headline = f"Recurring task: {title}"
+        lines = ["Each run is checked as the person who asked, like a chat message: anything that needs "
+                 "approval comes back here every time."]
+    return {"kind": "schedule", "headline": headline[:200], "fields": fields, "lines": lines,
+            "summary": headline[:200]}
 
 
 def _content(
     action: Action, tool: str, payload: dict[str, Any], result: dict[str, Any], ctx: TenantContext
 ) -> dict[str, Any]:
+    if tool in _SCHEDULE_TOOLS:
+        return _schedule_request(tool, payload, result)
     if tool == "finance_draft_invoice":
         return _invoice(action, payload, result, ctx)
     if tool.startswith("email_") or tool in {"gmail_send", "gmail_create_draft"}:
