@@ -2,8 +2,9 @@
 Composio Actions (any action of a connected app)
 ================================================
 
-Lets the assistant find and run any Composio action of the platforms a user connected (Gmail, Google
-Calendar, YouTube, HubSpot, and any other Composio platform), not only the ones a dedicated tool wraps.
+Lets the assistant find and run any Composio action of the apps a user connected (Gmail, Google Calendar,
+Google Drive, Google Sheets, Google Docs, YouTube, HubSpot and Facebook: ``composio.TOOLKITS``), not only the ones a
+dedicated tool wraps. Actions of any other platform are refused.
 Tools the user switched off in Integrations are neither offered nor run. Plain Python; the tools in
 ``app/assistant/company_tools.py`` call it after the guard and the policy check.
 
@@ -47,7 +48,9 @@ TOOL_FOR_TIER = {
 }
 
 #: Action-name prefix -> Composio toolkit slug (only toolkits users can connect, composio.TOOLKITS).
-_PREFIX_TOOLKIT = {"GMAIL": "gmail", "GOOGLECALENDAR": "googlecalendar", "YOUTUBE": "youtube", "HUBSPOT": "hubspot"}
+_PREFIX_TOOLKIT = {"GMAIL": "gmail", "GOOGLECALENDAR": "googlecalendar", "YOUTUBE": "youtube",
+                   "GOOGLEDRIVE": "googledrive", "GOOGLESHEETS": "googlesheets", "GOOGLEDOCS": "googledocs",
+                   "HUBSPOT": "hubspot", "FACEBOOK": "facebook"}
 
 #: Name words that make an action destructive anywhere in its name: it removes data, or it sends or
 #: publishes something that cannot be taken back (CLAUDE.md lists send with delete, deactivate, reset).
@@ -76,6 +79,19 @@ _RESULT_LIMIT = 12000  # characters of result JSON handed back to the model
 _SCHEMA_CACHE_TTL = 600.0
 _schema_cache: dict[str, tuple[float, dict[str, Any]]] = {}
 _cache_lock = threading.Lock()
+
+
+def is_new_public_post(slug: str) -> bool:
+    """Whether this action publishes new content (a Page post, a comment): checked for duplicates first.
+
+    Editing an existing post (``FACEBOOK_UPDATE_POST``) is not a new post.
+    """
+    name = str(slug or "").upper()
+    words = name.split("_")[1:]
+    verb = words[0] if words else ""
+    if name in {"YOUTUBE_CREATE_COMMENT_REPLY", "YOUTUBE_POST_COMMENT"}:
+        return True
+    return verb in {"CREATE", "POST", "PUBLISH"} and bool(set(words[1:]) & _PUBLISHED_THINGS)
 
 
 def toolkit_of(slug: str) -> Optional[str]:
@@ -372,6 +388,9 @@ def check(slug: str, tier: str) -> tuple[Optional[str], Optional[str]]:
         actual, toolkit = classify_by_name(name), toolkit_of(name)
     if not toolkit:
         return None, f"{name} is not an action of a connectable app. Use integration_find_action to find one."
+    if not composio.allowed_app(toolkit):
+        return None, (f"{name} belongs to an app FreedomBot does not use. It works with "
+                      f"{composio.allowed_apps_text()} only. Nothing was run.")
     if actual != tier:
         return toolkit, (f"{name} is a {actual} action; run it with {TOOL_FOR_TIER[actual]}, not "
                          f"{TOOL_FOR_TIER[tier]}. Nothing was run.")

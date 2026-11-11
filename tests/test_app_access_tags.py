@@ -82,7 +82,7 @@ def fake_apps(monkeypatch):
 
 def test_every_crm_email_and_calendar_tool_needs_its_tag():
     specs = [s for s in TOOL_SPECS if s.category in APP_AREAS]
-    assert len(specs) == 22
+    assert len(specs) == 26  # 22 + crm_create_company, crm_create_deal, crm_get_storage, crm_set_storage
     assert all(s.data_area == s.category for s in specs)
     assert set(APP_AREAS) <= set(DATA_AREAS)
 

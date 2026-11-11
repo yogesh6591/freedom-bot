@@ -6,8 +6,9 @@ Resolves an integration category to the concrete adapter a client has connected,
 and answers "which integrations are connected" for the policy engine.
 
 The mapping lives in the workspace's ``integrations`` table, so two clients can
-run different providers for the same category — one on the workspace CRM, another
-on HubSpot — without any code change above this layer.
+run different providers for the same category without any code change above this layer.
+CRM records go where each person chooses (bizos/crm_storage.py): FreedomBot's own tables by
+default, or their HubSpot, or a sheet in their Google Drive.
 
 Credentials are **never** returned from here. ``integrations.credential_ref`` names
 a row in the workspace ``secrets`` table, and only :mod:`bizos.connectors.secrets`
@@ -133,18 +134,31 @@ def get_connector(
     *,
     ctx: Optional[TenantContext] = None,
     owner_user_id: Optional[str] = None,
+    save_to: Optional[str] = None,
 ) -> Connector:
     """The adapter instance for one category in the current workspace.
 
     A user who connected their own account through Composio gets it for that
     category, ahead of the workspace-level row. ``owner_user_id`` names that user
     when it is not the caller (an approver executing someone else's request).
+    CRM follows that person's storage choice (bizos/crm_storage.py); ``save_to``
+    names a place the request asked for.
     """
     tenant = ctx or require_context()
     owner = owner_user_id or tenant.user_id
+    if category == "crm":
+        from bizos import crm_storage
+
+        return crm_storage.connector(tenant, owner_user_id, requested=save_to)
     toolkit = composio.connected_toolkit(composio.as_user(tenant, owner), category)
     if toolkit:
         return composio.CONNECTORS[toolkit](tenant, {"owner_user_id": owner})
+    return workspace_connector(category, ctx=tenant, owner_user_id=owner_user_id)
+
+
+def workspace_connector(category: str, *, ctx: TenantContext, owner_user_id: Optional[str] = None) -> Connector:
+    """The workspace-level adapter for ``category`` (the ``integrations`` row), ignoring personal app logins."""
+    tenant = ctx
     with readonly_connection(tenant) as conn:
         row = conn.execute(
             text(

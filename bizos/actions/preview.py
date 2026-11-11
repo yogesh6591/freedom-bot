@@ -43,7 +43,7 @@ def _content(
 
 
 def _app_action(tool: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """An app action (Gmail, Calendar, YouTube, HubSpot): which action, and every argument it will send."""
+    """An app action (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot, Facebook): which action, and every argument it will send."""
     from bizos.connectors.composio import app_name
     from bizos.connectors.composio_actions import toolkit_of
 

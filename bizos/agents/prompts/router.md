@@ -34,7 +34,7 @@ Do not clarify when:
 - a detail has a sensible default (meeting length, "next week")
 - the message content is not spelled out ("email Priya the pilot timeline now"): the executor writes it
 - several records might match (the executor handles that after searching)
-- the user means their own connected account ("my channel", "my inbox", "my calendar", "my HubSpot"):
+- the user means their own connected account ("my channel", "my inbox", "my calendar", "my Drive", "my HubSpot"):
   the account is already known from their connected apps
 
 ## Disambiguation
@@ -67,9 +67,15 @@ Do not clarify when:
   admin_alerts; prices, resale rules and margins, consult quotes, change orders → admin_commercial.
 - Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
 - Support tickets, bugs and problems with BizOS itself, company goals and strategic priorities → ops.
+- Anything to repeat every day or week ("every Monday post…", "daily at 8 summarise…"), and listing or
+  stopping those schedules → ops, plus the domain of the task itself.
 - Summaries, transcripts or "what does the speaker say" for a video → youtube. Doing something in
-  YouTube, Gmail, Calendar or HubSpot that no domain lists (reply to or delete comments, playlists,
-  labels, analytics, HubSpot tickets) → integrations, plus the app's own domain when it helps find ids.
+  YouTube, Gmail, Calendar, Google Drive, Google Sheets, Google Docs, HubSpot or Facebook that no domain
+  lists (reply to or delete comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot
+  tickets, Facebook Page posts) → integrations, plus the app's own domain when it helps find ids.
+- Contacts, companies, deals, notes and CRM tasks → crm, wherever they are kept (FreedomBot, HubSpot or
+  Google Drive). "Save this contact in HubSpot / Drive", and choosing or checking where CRM records are
+  saved, are crm too.
 - Researching a company or person, news, job posts, "is X a good fit", reading a website → research
   (plus crm when our records matter).
 - When the recent conversation lists attached files, "this file", "the PDF", "the sheet", "this list",

@@ -57,11 +57,14 @@ def _platform(item: Any) -> dict[str, Any]:
 
 
 def catalog() -> list[dict[str, Any]]:
-    """Every Composio platform, most used first (cached)."""
+    """The Composio platforms FreedomBot supports (composio.TOOLKITS), most used first (cached).
+
+    Composio offers about 1,700; only the supported apps are listed, so nothing else can be picked.
+    """
     global _catalog
     if time.monotonic() - _catalog[0] < CATALOG_TTL and _catalog[1]:
         return _catalog[1]
-    from bizos.connectors.composio import get_client
+    from bizos.connectors.composio import allowed_app, get_client
 
     with _lock:
         if time.monotonic() - _catalog[0] < CATALOG_TTL and _catalog[1]:
@@ -69,7 +72,7 @@ def catalog() -> list[dict[str, Any]]:
         client, items, cursor = get_client(), [], None
         for _ in range(10):  # 1,000 per page; the whole catalog is about 1,700
             page = client.toolkits.list(limit=1000, cursor=cursor, sort_by="usage")
-            items += [_platform(i) for i in page.items]
+            items += [_platform(i) for i in page.items if allowed_app(str(getattr(i, "slug", "")))]
             cursor = page.next_cursor
             if not cursor or not page.items:
                 break

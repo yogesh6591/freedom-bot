@@ -272,6 +272,8 @@ export function IntegrationsView({
         </div>
       )}
 
+      {!compact && <CrmStorageCard />}
+
       {configured !== false && (
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +283,7 @@ export function IntegrationsView({
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search platforms, e.g. Slack, Notion, Salesforce"
+                placeholder="Search apps, e.g. Gmail, Drive, HubSpot, Facebook"
                 className="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-[14px] outline-none focus:border-purple-300"
               />
             </label>
@@ -575,6 +577,102 @@ function PlatformDialog({
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+type CrmStorage = {
+  choice: string
+  choice_name: string
+  saving_to: string
+  saving_to_name: string
+  note: string
+  available: Record<string, boolean>
+  sheet_url: string | null
+  message?: string
+  pending_approval?: boolean
+}
+
+const STORAGE_OPTIONS: { value: string; label: string; needs?: string }[] = [
+  { value: 'auto', label: 'Automatic (HubSpot when connected, otherwise FreedomBot)' },
+  { value: 'freedombot', label: 'FreedomBot database' },
+  { value: 'hubspot', label: 'HubSpot', needs: 'hubspot' },
+  { value: 'google_drive', label: 'Google Drive (a FreedomBot CRM sheet)', needs: 'google_drive' }
+]
+
+/** Where the signed-in user's new CRM records are saved. Hidden for people without CRM access. */
+function CrmStorageCard() {
+  const [info, setInfo] = useState<CrmStorage | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [note, setNote] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    try {
+      setInfo(await api.get<CrmStorage>('/api/integrations/crm-storage'))
+    } catch {
+      setInfo(null)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  async function choose(destination: string) {
+    setSaving(true)
+    setNote(null)
+    try {
+      const out = await api.put<CrmStorage>('/api/integrations/crm-storage', { destination })
+      if (out.pending_approval) {
+        setNote(out.message ?? 'Sent for approval. It changes once an admin approves it.')
+      } else {
+        setInfo(out)
+        setNote(out.message ?? null)
+      }
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : 'Could not change where CRM records are saved')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!info) return null
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-border bg-background-elevated px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[14px] font-medium text-primary">Save CRM records in</p>
+          <p className="text-[12px] text-muted">
+            Contacts, companies and deals you add go to {info.saving_to_name}. Existing records stay where they are.
+          </p>
+        </div>
+        <label className="min-w-[16rem]">
+          <span className="sr-only">Save CRM records in</span>
+          <select
+            value={info.choice}
+            disabled={saving}
+            onChange={(e) => void choose(e.target.value)}
+            className="h-9 w-full rounded-lg border border-border bg-background px-2 text-[13px]"
+          >
+            {STORAGE_OPTIONS.map((o) => {
+              const off = o.needs ? !info.available[o.needs] : false
+              return (
+                <option key={o.value} value={o.value} disabled={off && o.value !== info.choice}>
+                  {o.label}
+                  {off ? ' (connect it first)' : ''}
+                </option>
+              )
+            })}
+          </select>
+        </label>
+      </div>
+      {info.note && <p className="text-[12px] text-amber-700">{info.note}</p>}
+      {info.saving_to === 'google_drive' && info.sheet_url && (
+        <a href={info.sheet_url} target="_blank" rel="noreferrer" className="text-[12px] text-purple-700 underline">
+          Open the FreedomBot CRM sheet
+        </a>
+      )}
+      {note && <p className="text-[12px] text-secondary">{note}</p>}
     </div>
   )
 }

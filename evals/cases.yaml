@@ -30796,7 +30796,7 @@
     synced_search: run
   expected_outcome: answer
 - id: t_synced_search_002
-  query: Anything changed in HubSpot today?
+  query: Anything new on my calendar today?
   user:
     name: Meena
     roles:
@@ -30997,15 +30997,15 @@
   expected_gates: {integration_read_action: run}
   expected_outcome: answer
 - id: t_integration_read_action_002
-  query: Show my HubSpot tickets
+  query: Show the files in my Google Drive
   user: {name: Meena, roles: [DRAFTER]}
   fixtures:
     results:
-      integration_find_action: {connected_apps: [hubspot], actions: [{action_id: HUBSPOT_LIST_TICKETS, title: List tickets, tier: read, run_with: integration_read_action, arguments: {limit: {type: integer}}}]}
-      integration_read_action: {action: HUBSPOT_LIST_TICKETS, result: {results: [{id: '901', properties: {subject: Login issue}}]}}
+      integration_find_action: {connected_apps: [googledrive], actions: [{action_id: GOOGLEDRIVE_LIST_FILES, title: List files, tier: read, run_with: integration_read_action, arguments: {page_size: {type: integer}}}]}
+      integration_read_action: {action: GOOGLEDRIVE_LIST_FILES, result: {files: [{id: '901', name: Q4 plan.docx}]}}
   expected_tool_calls: [integration_find_action, integration_read_action]
   expected_args:
-    integration_read_action: {action: HUBSPOT_LIST_TICKETS}
+    integration_read_action: {action: GOOGLEDRIVE_LIST_FILES}
   expected_gates: {integration_read_action: run}
   expected_outcome: answer
 - id: t_integration_read_action_003
@@ -31409,3 +31409,292 @@
       - {item_id: mem_10, key: refund_period, title: Refund period, content: 30 days, category: fact}
   expected_reply_contains: ["30 days"]
   expected_outcome: answer
+
+# --------------------------------------------------------------------------- own CRM: companies and deals
+- id: t_crm_create_company_001
+  query: "Add QA NovaTech Solutions to our CRM as a company: domain qa-novatech.example.com, industry Information Technology"
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      crm_search_companies: []
+  expected_tool_calls: [crm_create_company]
+  expected_args:
+    crm_create_company: {name: QA NovaTech Solutions}
+  expected_gates: {crm_create_company: approval}
+  expected_outcome: approval
+
+- id: t_crm_create_company_002
+  query: "Create a company called Initech, initech.com"
+  user: {name: Dev, roles: [OPERATOR]}
+  workspace: auto_permissive
+  fixtures:
+    results:
+      crm_search_companies: []
+  expected_tool_calls: [crm_create_company]
+  expected_args:
+    crm_create_company: {name: Initech}
+  expected_gates: {crm_create_company: run}
+  expected_outcome: run
+
+- id: t_crm_create_company_003
+  query: "Naya company add karo CRM mein: Umbrella Corp, umbrella.com"
+  user: {name: Meena, roles: [ADMIN]}
+  fixtures:
+    results:
+      crm_search_companies: []
+  expected_tool_calls: [crm_create_company]
+  expected_gates: {crm_create_company: approval}
+  expected_outcome: approval
+
+- id: t_crm_create_company_004
+  query: "Add Hooli as a new company in the CRM"
+  user: {name: Ravi, roles: [VIEWER]}
+  expected_hidden: [crm_create_company]
+  forbidden_tool_calls: [crm_create_company]
+  expected_outcome: not_permitted
+
+- id: t_crm_create_deal_001
+  query: "Create a $25,000 deal called 'QA NovaTech AI Automation Project' for QA NovaTech Solutions, contact Ethan Parker, closing 2026-12-31"
+  user: {name: Dev, roles: [OPERATOR]}
+  workspace: auto_permissive
+  fixtures:
+    results:
+      crm_search_companies:
+      - {id: co_77, name: QA NovaTech Solutions, domain: qa-novatech.example.com}
+    contacts:
+    - {id: C-401, name: Ethan Parker, email: ethan.parker@qa-novatech.example.com, company: QA NovaTech Solutions, lifecycle_stage: lead}
+  expected_tool_calls: [crm_create_deal]
+  expected_args:
+    crm_create_deal: {name: QA NovaTech AI Automation Project, company_id: co_77}
+  expected_gates: {crm_create_deal: run}
+  expected_outcome: run
+
+- id: t_crm_create_deal_002
+  query: "Add a deal 'Globex renewal 2027' worth 12000 for Globex"
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      crm_search_companies:
+      - {id: co_12, name: Globex, domain: globex.com}
+  expected_tool_calls: [crm_create_deal]
+  expected_args:
+    crm_create_deal: {name: Globex renewal 2027, company_id: co_12}
+  expected_gates: {crm_create_deal: approval}
+  expected_outcome: approval
+
+- id: t_crm_create_deal_003
+  query: "Acme ke liye naya deal banao, 'Acme support retainer', 6000 dollars"
+  user: {name: Meena, roles: [ADMIN]}
+  fixtures:
+    results:
+      crm_search_companies:
+      - {id: co_5, name: Acme, domain: acme.com}
+  expected_tool_calls: [crm_create_deal]
+  expected_gates: {crm_create_deal: approval}
+  expected_outcome: approval
+
+- id: t_crm_create_deal_004
+  query: "Create a deal for Globex worth 5000"
+  user: {name: Ravi, roles: [VIEWER]}
+  expected_hidden: [crm_create_deal]
+  forbidden_tool_calls: [crm_create_deal]
+  expected_outcome: not_permitted
+
+# --------------------------------------------------------------------------- where CRM records are saved
+- id: t_crm_get_storage_001
+  query: "Where are my CRM contacts saved?"
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      crm_get_storage: {choice: auto, choice_name: Automatic, saving_to: freedombot, saving_to_name: FreedomBot, note: "", available: {freedombot: true, hubspot: false, google_drive: false}, sheet_url: null}
+  expected_tool_calls: [crm_get_storage]
+  expected_gates: {crm_get_storage: run}
+  expected_reply_contains: ["FreedomBot"]
+  expected_outcome: answer
+
+- id: t_crm_get_storage_002
+  query: "Mera CRM data kahan save hota hai, HubSpot ya FreedomBot?"
+  user: {name: Meena, roles: [ADMIN]}
+  fixtures:
+    results:
+      crm_get_storage: {choice: hubspot, choice_name: HubSpot, saving_to: hubspot, saving_to_name: HubSpot, note: "", available: {freedombot: true, hubspot: true, google_drive: false}, sheet_url: null}
+  expected_tool_calls: [crm_get_storage]
+  expected_gates: {crm_get_storage: run}
+  expected_reply_contains: ["HubSpot"]
+  expected_outcome: answer
+
+- id: t_crm_get_storage_003
+  query: "Are my new deals going into Google Drive right now?"
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      crm_get_storage: {choice: google_drive, choice_name: Google Drive, saving_to: google_drive, saving_to_name: Google Drive, note: "", available: {freedombot: true, hubspot: false, google_drive: true}, sheet_url: "https://docs.google.com/spreadsheets/d/sheet_1"}
+  expected_tool_calls: [crm_get_storage]
+  expected_gates: {crm_get_storage: run}
+  expected_reply_contains: ["Google Drive"]
+  expected_outcome: answer
+
+- id: t_crm_set_storage_001
+  query: "From now on save my CRM records in FreedomBot's own database"
+  user: {name: Dev, roles: [OPERATOR]}
+  expected_tool_calls: [crm_set_storage]
+  expected_args:
+    crm_set_storage: {destination: freedombot}
+  expected_gates: {crm_set_storage: approval}
+  expected_outcome: approval
+
+- id: t_crm_set_storage_002
+  query: "Keep my contacts and deals in FreedomBot from now on, not anywhere else"
+  user: {name: Dev, roles: [OPERATOR]}
+  workspace: auto_permissive
+  expected_tool_calls: [crm_set_storage]
+  expected_args:
+    crm_set_storage: {destination: freedombot}
+  expected_gates: {crm_set_storage: run}
+  expected_outcome: run
+
+- id: t_crm_set_storage_003
+  query: "Set my CRM storage back to automatic"
+  user: {name: Meena, roles: [ADMIN]}
+  expected_tool_calls: [crm_set_storage]
+  expected_args:
+    crm_set_storage: {destination: auto}
+  expected_gates: {crm_set_storage: approval}
+  expected_outcome: approval
+
+- id: t_crm_set_storage_004
+  query: "From now on save all my CRM records in FreedomBot"
+  user: {name: Ravi, roles: [VIEWER]}
+  expected_hidden: [crm_set_storage]
+  forbidden_tool_calls: [crm_set_storage]
+  expected_outcome: not_permitted
+
+- id: t_crm_create_contact_004
+  query: "Save Ethan Parker, ethan.parker@qa-novatech.example.com, as a contact in FreedomBot (not HubSpot)"
+  user: {name: Dev, roles: [OPERATOR]}
+  workspace: auto_permissive
+  fixtures:
+    results:
+      crm_search_contacts: []
+  expected_tool_calls: [crm_create_contact]
+  expected_args:
+    crm_create_contact: {first_name: Ethan, save_to: freedombot}
+  expected_gates: {crm_create_contact: run}
+  expected_outcome: run
+
+# --------------------------------------------------------------------------- recurring scheduled tasks
+- id: t_schedule_create_001
+  query: "Every Monday at 9 AM, write a short AI tip and post it on our Facebook Page"
+  user: {name: Dev, roles: [OPERATOR]}
+  workspace: auto_permissive
+  expected_tool_calls: [schedule_create]
+  expected_args:
+    schedule_create: {frequency: weekly}
+  gate_args:
+    schedule_create: {instruction: Write a short AI tip and post it on our Facebook Page, frequency: weekly, time: "09:00", weekdays: [mon]}
+  expected_gates: {schedule_create: run}
+  forbidden_tool_calls: [integration_destructive_action]
+  expected_outcome: run
+
+- id: t_schedule_create_002
+  query: "Every day at 6 PM email me a summary of today's new leads"
+  user: {name: Dev, roles: [OPERATOR]}
+  expected_tool_calls: [schedule_create]
+  expected_args:
+    schedule_create: {frequency: daily}
+  gate_args:
+    schedule_create: {instruction: Email me a summary of today's new leads, frequency: daily, time: "18:00"}
+  expected_gates: {schedule_create: approval}
+  expected_outcome: approval
+
+- id: t_schedule_create_003
+  query: "Har din subah 8 baje mera inbox summarise karo"
+  user: {name: Meena, roles: [ADMIN]}
+  expected_tool_calls: [schedule_create]
+  expected_args:
+    schedule_create: {frequency: daily}
+  gate_args:
+    schedule_create: {instruction: Summarise my inbox, frequency: daily, time: "08:00"}
+  expected_gates: {schedule_create: approval}
+  expected_outcome: approval
+
+- id: t_schedule_create_004
+  query: "Every day at 8 AM summarise my inbox"
+  user: {name: Ravi, roles: [VIEWER]}
+  expected_hidden: [schedule_create]
+  forbidden_tool_calls: [schedule_create]
+  expected_outcome: not_permitted
+
+- id: t_schedule_list_001
+  query: "What recurring tasks have I scheduled?"
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_101, title: Weekly Facebook tip, instruction: Write a short AI tip and post it on our Facebook Page, schedule: "every Mon at 09:00 (Asia/Kolkata)", status: active, next_run_at: "2026-11-16T03:30:00+00:00"}
+  expected_tool_calls: [schedule_list]
+  expected_gates: {schedule_list: run}
+  expected_reply_contains: ["Facebook"]
+  expected_outcome: answer
+
+- id: t_schedule_list_002
+  query: "Show my scheduled tasks"
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    results:
+      schedule_list: []
+  expected_tool_calls: [schedule_list]
+  expected_gates: {schedule_list: run}
+  expected_outcome: answer
+
+- id: t_schedule_list_003
+  query: "Mere saare schedules dikhao, kab chalenge?"
+  user: {name: Meena, roles: [ADMIN]}
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_202, title: Daily inbox summary, instruction: Summarise my inbox, schedule: "every day at 08:00 (Asia/Kolkata)", status: active, next_run_at: "2026-11-12T02:30:00+00:00"}
+  expected_tool_calls: [schedule_list]
+  expected_gates: {schedule_list: run}
+  expected_reply_contains: ["inbox"]
+  expected_outcome: answer
+
+- id: t_schedule_cancel_001
+  query: "Stop my daily inbox summary"
+  user: {name: Dev, roles: [OPERATOR]}
+  workspace: auto_permissive
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_202, title: Daily inbox summary, instruction: Summarise my inbox, schedule: "every day at 08:00 (Asia/Kolkata)", status: active}
+  expected_tool_calls: [schedule_list, schedule_cancel]
+  expected_args:
+    schedule_cancel: {schedule_id: sch_202}
+  expected_gates: {schedule_cancel: run}
+  expected_outcome: run
+
+- id: t_schedule_cancel_002
+  query: "Cancel my Monday Facebook post schedule"
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_101, title: Weekly Facebook tip, instruction: Write a short AI tip and post it on our Facebook Page, schedule: "every Mon at 09:00 (Asia/Kolkata)", status: active}
+  expected_tool_calls: [schedule_list, schedule_cancel]
+  expected_args:
+    schedule_cancel: {schedule_id: sch_101}
+  expected_gates: {schedule_cancel: approval}
+  expected_outcome: approval
+
+- id: t_schedule_cancel_003
+  query: "Woh weekly Facebook wala schedule band karo"
+  user: {name: Meena, roles: [ADMIN]}
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_101, title: Weekly Facebook tip, instruction: Write a short AI tip and post it on our Facebook Page, schedule: "every Mon at 09:00 (Asia/Kolkata)", status: active}
+  expected_tool_calls: [schedule_list, schedule_cancel]
+  expected_args:
+    schedule_cancel: {schedule_id: sch_101}
+  expected_gates: {schedule_cancel: approval}
+  expected_outcome: approval

@@ -39,6 +39,9 @@ from bizos.connectors.untrusted import wrap_many
 from bizos.tenancy.context import TenantContext
 
 #: Composio toolkit slug -> integration category and display metadata.
+#: These are the only apps FreedomBot connects or runs actions in. Any other Composio platform is refused,
+#: even if someone connected it in Composio directly. CRM records go where each user chooses
+#: (bizos/crm_storage.py): FreedomBot's own database (the default), HubSpot or a sheet in Google Drive.
 TOOLKITS: dict[str, dict[str, str]] = {
     "gmail": {
         "category": "email",
@@ -55,12 +58,43 @@ TOOLKITS: dict[str, dict[str, str]] = {
         "name": "YouTube",
         "description": "Search YouTube and check your channel, videos and comments.",
     },
+    "googledrive": {
+        "category": "storage",
+        "name": "Google Drive",
+        "description": "Find, upload, organise and share files in your Drive.",
+    },
+    "googlesheets": {
+        "category": "sheets",
+        "name": "Google Sheets",
+        "description": "Create sheets, add rows and read data from your spreadsheets.",
+    },
+    "googledocs": {
+        "category": "docs",
+        "name": "Google Docs",
+        "description": "Create and edit documents, and read what is in them.",
+    },
     "hubspot": {
         "category": "crm",
         "name": "HubSpot",
         "description": "Use your HubSpot CRM: contacts, companies, deals, notes and tasks.",
     },
+    "facebook": {
+        "category": "social",
+        "name": "Facebook",
+        "description": "Post to your Facebook Page and read its posts and comments.",
+    },
 }
+
+
+def allowed_app(toolkit: str) -> bool:
+    """Whether FreedomBot may connect or use this app (one of TOOLKITS)."""
+    return (toolkit or "").strip().lower() in TOOLKITS
+
+
+def allowed_apps_text() -> str:
+    """The app names, for messages: "Gmail, Google Calendar, ... and Facebook"."""
+    names = [meta["name"] for meta in TOOLKITS.values()]
+    return ", ".join(names[:-1]) + " and " + names[-1]
 
 _STATUS_TTL = 30.0
 _BODY_LIMIT = 4000
@@ -120,15 +154,11 @@ def as_user(ctx: TenantContext, user_id: Optional[str]) -> TenantContext:
 
 
 def _check_toolkit(toolkit: str) -> str:
-    """A platform slug this server knows: the four built-in apps or any Composio catalog platform."""
-    from bizos.connectors import composio_catalog
-
+    """A platform slug FreedomBot supports: one of TOOLKITS. Anything else is refused."""
     slug = (toolkit or "").strip().lower()
     if slug in TOOLKITS:
         return slug
-    if not composio_catalog.SLUG.match(slug) or composio_catalog.platform(slug) is None:
-        raise ValueError(f"Unsupported toolkit {toolkit!r}")
-    return slug
+    raise ValueError(f"{toolkit!r} is not available. FreedomBot connects {allowed_apps_text()} only.")
 
 
 def app_name(toolkit: str) -> str:
@@ -149,8 +179,9 @@ def invalidate(ctx: TenantContext) -> None:
 
 
 def _active_accounts(ctx: TenantContext) -> dict[str, Optional[str]]:
-    """toolkit slug -> ACTIVE connected account id, for the built-in apps (None when not connected) and
-    any other Composio platform the user connected."""
+    """toolkit slug -> ACTIVE connected account id, for the supported apps (None when not connected).
+
+    An account the user connected to any other Composio platform is ignored, so it can never be used."""
     uid = composio_user_id(ctx)
     cached = _status_cache.get(uid)
     if cached and time.monotonic() - cached[0] < _STATUS_TTL:
@@ -162,7 +193,7 @@ def _active_accounts(ctx: TenantContext) -> dict[str, Optional[str]]:
             for account in getattr(listing, "items", None) or []:
                 toolkit = getattr(getattr(account, "toolkit", None), "slug", "") or ""
                 slug = toolkit.lower()
-                if slug and found.get(slug) is None:
+                if slug in TOOLKITS and found.get(slug) is None:
                     found[slug] = account.id
         except Exception as exc:
             log_warning(f"Composio status lookup failed for {uid}: {exc}")
@@ -177,7 +208,9 @@ def connected_toolkit(ctx: TenantContext, category: str) -> Optional[str]:
         return None
     accounts = _active_accounts(ctx)
     for slug, meta in TOOLKITS.items():
-        if meta["category"] == category and accounts.get(slug):
+        # Only apps with a dedicated connector serve a category (Drive, Sheets, Docs and Facebook run
+        # through the app actions instead; a CRM sheet in Drive is chosen in bizos/crm_storage.py).
+        if meta["category"] == category and slug in CONNECTORS and accounts.get(slug):
             return slug
     return None
 
@@ -243,6 +276,8 @@ def execute(ctx: TenantContext, toolkit: str, action: str, arguments: dict[str, 
     """Run one Composio tool against this user's connected account, if they allow that tool."""
     from bizos.connectors import composio_catalog
 
+    if not allowed_app(toolkit):
+        raise ConnectorError(f"{toolkit} is not available. FreedomBot works with {allowed_apps_text()} only.")
     name = app_name(toolkit)
     account_id = _active_accounts(ctx).get(toolkit)
     if not account_id:
@@ -997,6 +1032,8 @@ _HS_PAGE = 100
 _HS_MAX_ROWS = 2000
 #: HubSpot association type ids (HUBSPOT_DEFINED) for a note or task linked to a contact or deal.
 _HS_ASSOC = {("note", "contact"): 202, ("note", "deal"): 214, ("task", "contact"): 204, ("task", "deal"): 216}
+#: HubSpot association type ids (HUBSPOT_DEFINED) for a new deal linked to its company and its contact.
+_HS_DEAL_TO_COMPANY, _HS_DEAL_TO_CONTACT = 5, 3
 
 
 def _hs_unwrap(data: Any) -> Any:
@@ -1378,6 +1415,80 @@ class ComposioHubSpotConnector(_ComposioIdentity, Connector):
         contact_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
         return ConnectorResult(ok=True, data={"id": contact_id}, summary=f"HubSpot contact {first_name} {last_name} created".strip(),
                                metadata={"provider": self.provider})
+
+    def create_company(self, *, name: str, domain: Optional[str] = None, industry: Optional[str] = None,
+                       size: Optional[str] = None, description: Optional[str] = None) -> ConnectorResult:
+        """Add a HubSpot company, or return the one already there with the same name or domain."""
+        from bizos.connectors.mock_crm import _domain
+
+        name = " ".join(str(name or "").split())
+        if not name:
+            return ConnectorResult.failure("name is required: the company's name, e.g. 'Globex Corp'.")
+        site = _domain(domain)
+        try:
+            for query in [q for q in (site, name) if q]:
+                rows, _ = self._search("HUBSPOT_SEARCH_COMPANIES", query=query, properties=_HS_COMPANY_PROPS, limit=20)
+                for row in map(_hs_company, rows):
+                    if str(row.get("name") or "").casefold() == name.casefold() or (
+                            site and _domain(row.get("domain")) == site):
+                        return ConnectorResult(
+                            ok=True, data={**row, "existing": True},
+                            summary=f"HubSpot company {row.get('name')} already exists ({row['id']}); nothing new was created",
+                            metadata={"provider": self.provider})
+            args: dict[str, Any] = {k: v for k, v in {"name": name, "domain": site,
+                                                      "description": (description or "").strip()}.items() if v}
+            if str(size or "").strip().isdigit():
+                args["numberofemployees"] = str(size).strip()  # HubSpot keeps a head count, not a range
+            # HubSpot accepts only its own industry codes, so a free-text industry goes in the description.
+            if industry:
+                args["description"] = " ".join(p for p in (f"Industry: {industry.strip()}.", args.get("description")) if p)
+            # HUBSPOT_CREATE_COMPANY takes no owner field, so the company has no HubSpot owner.
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_COMPANY", args))
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        company_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
+        return ConnectorResult(ok=True, data={"id": company_id, "name": name, "domain": site or None, "existing": False},
+                               summary=f"HubSpot company {name} created", metadata={"provider": self.provider})
+
+    def create_deal(self, *, name: str, amount: Any = 0, stage: str = "new", close_date: Optional[str] = None,
+                    company_id: Optional[str] = None, contact_id: Optional[str] = None,
+                    currency: str = "USD") -> ConnectorResult:
+        """Add a HubSpot deal linked to its company and contact, or return the same-named deal already there."""
+        from bizos.connectors.mock_crm import check_deal_fields
+
+        name, value, closes, problem = check_deal_fields(name, amount, close_date)
+        if problem:
+            return ConnectorResult.failure(problem)
+        hs_stage = _HS_STAGES.get((stage or "new").strip().lower(), (stage or "new").strip())
+        try:
+            contact = self._contact_id(str(contact_id)) if contact_id else None
+            if contact_id and not contact:
+                return ConnectorResult.failure(
+                    f"No HubSpot contact {contact_id!r}. Find it with crm_search_contacts or add it with crm_create_contact.")
+            rows, _ = self._search("HUBSPOT_SEARCH_DEALS", query=name, properties=_HS_DEAL_PROPS, limit=20)
+            same = next((d for d in map(_hs_deal, rows) if str(d.get("name") or "").casefold() == name.casefold()), None)
+            if same:
+                return ConnectorResult(
+                    ok=True, data={**same, "existing": True},
+                    summary=f"HubSpot deal {same.get('name')} already exists ({same['id']}); nothing new was created",
+                    metadata={"provider": self.provider})
+            args: dict[str, Any] = {"dealname": name, "amount": str(value), "pipeline": "default", "dealstage": hs_stage,
+                                    "deal_currency_code": (currency or "USD").strip().upper()[:3] or "USD"}
+            if closes:
+                args["closedate"] = f"{closes.isoformat()}T00:00:00Z"
+            assoc = [{"to": {"id": str(ref)}, "types": [{"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": kind}]}
+                     for ref, kind in ((company_id, _HS_DEAL_TO_COMPANY), (contact, _HS_DEAL_TO_CONTACT)) if ref]
+            if assoc:
+                args["associations"] = assoc
+            data = _hs_unwrap(self._run("HUBSPOT_CREATE_DEAL", self._with_owner(args)))
+        except ConnectorError as exc:
+            return ConnectorResult.failure(str(exc))
+        deal_id = str(data.get("id")) if isinstance(data, dict) and data.get("id") else None
+        return ConnectorResult(
+            ok=True,
+            data={"id": deal_id, "name": name, "stage": hs_stage, "amount": str(value), "company_id": company_id or None,
+                  "contact_id": contact, "existing": False},
+            summary=f"HubSpot deal {name} created ({hs_stage}, {value})", metadata={"provider": self.provider})
 
     def update_deal_stage(self, deal_id: str, *, stage: str) -> ConnectorResult:
         hs_stage = _HS_STAGES.get((stage or "").strip().lower(), stage)
