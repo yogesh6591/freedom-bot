@@ -966,12 +966,49 @@ def schedule_create(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
                            summary=f"scheduled {task['id']}: {task['schedule']}, next run {task['next_run_at']}")
 
 
+def _schedule_changes(args: dict[str, Any]) -> dict[str, Any]:
+    """Only what the user asked to change; everything left out stays as it is."""
+    return {"title": args.get("title"), "instruction": args.get("instruction"), "frequency": args.get("frequency"),
+            "time_of_day": args.get("time"), "weekdays": args.get("weekdays"),
+            "every_minutes": args.get("every_minutes"), "tz": args.get("timezone")}
+
+
+@precheck("schedule_update")
+def _schedule_update_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    if scope.ctx.attributes.get("scheduled_task"):
+        return "A scheduled run cannot change schedules. Nothing was changed."
+    schedule_id = str(args.get("schedule_id") or "").strip()
+    task = automation.get(scope.ctx, schedule_id) if schedule_id else None
+    allowed = {scope.ctx.user_id, scope.on_behalf_of}
+    if task is None or (task["created_by"] not in allowed and not scope.ctx.is_admin):
+        return f"No schedule {schedule_id!r} that you can change. List them with schedule_list. Nothing was changed."
+    try:
+        automation.plan_update(task, **_schedule_changes(args))
+    except automation.ScheduleError as exc:
+        return f"{exc} Nothing was changed."
+    return None
+
+
+@effect("schedule_update")
+def schedule_update(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    try:
+        task, changes = automation.update(scope.ctx, str(args.get("schedule_id") or "").strip(),
+                                          requested_by=scope.on_behalf_of, **_schedule_changes(args))
+    except automation.ScheduleError as exc:
+        return ConnectorResult.failure(f"{exc} Nothing was changed.")
+    shown = {k: task[k] for k in ("id", "title", "instruction", "schedule", "next_run_at", "status")}
+    return ConnectorResult(ok=True, data={**shown, "changed": changes},
+                           summary=f"schedule {task['id']} changed ({', '.join(changes)}): {task['schedule']}, "
+                                   f"next run {task['next_run_at']}")
+
+
 @effect("schedule_list")
 def schedule_list(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     everyone = bool(args.get("everyone")) and scope.ctx.is_admin
     tasks = automation.list_tasks(scope.ctx, everyone=everyone, include_ended=bool(args.get("include_ended")))
     keys = ("id", "title", "instruction", "schedule", "status", "next_run_at", "last_run_at", "last_status",
-            "last_result", "run_count", "created_by", "session_id")
+            "last_result", "run_count", "created_by", "session_id", "frequency", "time_of_day", "weekdays",
+            "every_minutes", "timezone")
     rows = [{k: t.get(k) for k in keys} for t in tasks[:50]]
     for row in rows:
         row["last_result"] = str(row.get("last_result") or "")[:300]

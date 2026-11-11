@@ -161,9 +161,16 @@ export interface ScheduleInfo {
   made_by_run?: boolean
 }
 
-/** A row on the Approvals page's Scheduled tab. */
+/** A schedule in the Scheduled lists (chat Approvals panel and the Approvals page). */
 export interface ScheduleRow extends ScheduleInfo {
   created_by_name: string | null
+  /** daily, weekly or interval (every N minutes). */
+  frequency?: string
+  /** "HH:MM"; empty for an interval with no start time. */
+  time_of_day?: string
+  weekdays?: string[]
+  every_minutes?: number | null
+  timezone?: string
   /** Requests from this schedule's runs that are waiting for approval. */
   awaiting_approval?: number
   /** For a request to set one up that is still waiting. */

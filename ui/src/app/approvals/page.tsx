@@ -12,14 +12,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { AppShell } from '@/components/AppShell'
+import { ScheduleList } from '@/components/schedules/ScheduleList'
 import { useSession } from '@/components/SessionProvider'
 import { api } from '@/lib/api'
-import type {
-  ActionRecord,
-  ActionStatus,
-  ScheduleInfo,
-  ScheduleRow
-} from '@/lib/types'
+import type { ActionRecord, ActionStatus, ScheduleInfo } from '@/lib/types'
 import {
   Badge,
   Btn,
@@ -607,144 +603,11 @@ function ScheduleBox({
   )
 }
 
-/** Every recurring task (admins: everyone's), and requests to set one up that still wait. */
+/** Every recurring task (admins: everyone's) with Edit and Stop, and requests to set one up that still wait. */
 function SchedulesTab() {
-  const { me } = useSession()
-  const [items, setItems] = useState<ScheduleRow[]>([])
-  const [waiting, setWaiting] = useState<ScheduleRow[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    let live = true
-    void (async () => {
-      try {
-        const data = await api.get<{
-          items: ScheduleRow[]
-          waiting: ScheduleRow[]
-        }>('/api/approvals/schedules')
-        if (!live) return
-        setItems(data.items)
-        setWaiting(data.waiting)
-        setError(null)
-      } catch (err) {
-        if (live)
-          setError(
-            err instanceof Error ? err.message : 'Could not load the schedules'
-          )
-      } finally {
-        if (live) setLoading(false)
-      }
-    })()
-    return () => {
-      live = false
-    }
-  }, [])
-
-  if (loading) return <LoadingBlock rows={3} />
-  if (error) return <ErrorNote>{error}</ErrorNote>
-  if (items.length === 0 && waiting.length === 0)
-    return (
-      <EmptyState>
-        No scheduled tasks yet. Ask FreedomBot, for example: “Every Monday at 9
-        AM write a short AI tip and post it on our Facebook Page.”
-      </EmptyState>
-    )
-
   return (
-    <div className="space-y-6">
-      {waiting.length > 0 && (
-        <section className="space-y-3" aria-label="Waiting for approval">
-          <h2 className="font-geist text-sm font-semibold text-primary">
-            Waiting for approval to start
-          </h2>
-          {waiting.map((row) => (
-            <ScheduleCard key={row.action_id} row={row} meId={me?.user.id} />
-          ))}
-        </section>
-      )}
-      {items.length > 0 && (
-        <section className="space-y-3" aria-label="Schedules">
-          <h2 className="font-geist text-sm font-semibold text-primary">
-            Schedules
-          </h2>
-          {items.map((row) => (
-            <ScheduleCard key={row.id} row={row} meId={me?.user.id} />
-          ))}
-        </section>
-      )}
-    </div>
-  )
-}
-
-function ScheduleCard({ row, meId }: { row: ScheduleRow; meId?: string }) {
-  const status = scheduleStatus(
-    row,
-    row.action_id ? 'PENDING_APPROVAL' : undefined
-  )
-  const mine = !!meId && row.created_by === meId
-  const ended = row.status !== 'active' && row.status !== 'not_set_up'
-  const waitingCount = row.awaiting_approval ?? 0
-  return (
-    <article
-      className={cn(
-        'rounded-2xl border bg-background-secondary px-5 py-4 shadow-panel sm:px-6',
-        ended
-          ? 'border-border opacity-75'
-          : 'border-purple-200 dark:border-purple-800'
-      )}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={status.tone}>{status.label}</Badge>
-        {waitingCount > 0 && (
-          <Badge tone="warn">
-            {waitingCount === 1
-              ? '1 request waiting for approval'
-              : `${waitingCount} requests waiting for approval`}
-          </Badge>
-        )}
-        {row.id && (
-          <span className="font-dmmono text-[10px] text-muted">{row.id}</span>
-        )}
-      </div>
-      <h3 className="mt-2 font-geist text-base font-semibold text-primary">
-        {row.title || row.instruction || 'Scheduled task'}
-      </h3>
-      {row.instruction && row.instruction !== row.title && (
-        <p className="mt-1 text-sm text-secondary">{row.instruction}</p>
-      )}
-      <dl className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-        <Meta label="How often" value={row.schedule ?? '—'} />
-        <Meta
-          label={row.action_id ? 'First run' : 'Next run'}
-          value={
-            ended
-              ? 'Will not run again'
-              : row.next_run_at
-                ? timestamp(row.next_run_at)
-                : 'After approval'
-          }
-        />
-        <Meta label="Last run" value={lastRun(row)} />
-        <Meta
-          label="Set up by"
-          value={mine ? 'You' : row.created_by_name || row.created_by || '—'}
-        />
-      </dl>
-      {row.last_result && (
-        <p className="mt-3 line-clamp-2 border-t border-border pt-3 text-sm text-muted">
-          <span className="font-medium text-secondary">Last result: </span>
-          {row.last_result}
-        </p>
-      )}
-      {mine && row.session_id && (row.run_count ?? 0) > 0 && (
-        <Link
-          href={`/chat?session=${encodeURIComponent(row.session_id)}`}
-          className="ui-transition mt-3 inline-block font-geist text-xs font-medium text-brand hover:underline"
-        >
-          Open the chat with every run →
-        </Link>
-      )}
-    </article>
+    <section className="rounded-2xl border border-border bg-background-secondary p-4 shadow-panel sm:p-5">
+      <ScheduleList />
+    </section>
   )
 }

@@ -6,11 +6,13 @@
  *
  * The bell polls GET /api/approvals/inbox. Approving or rejecting calls the normal approval endpoints, so
  * every server-side check (approver role, no self-approval, execute rights) still applies; the UI only
- * shows the result straight away.
+ * shows the result straight away. The dropdown also lists the recurring scheduled tasks (view, edit, stop),
+ * loaded when it opens rather than on every poll.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Bell, BellRing, CheckCircle2, Clock, Loader2, Search, X, XCircle } from 'lucide-react'
+import { Bell, BellRing, CalendarClock, CheckCircle2, Clock, Loader2, Search, X, XCircle } from 'lucide-react'
+import { ScheduleList } from '@/components/schedules/ScheduleList'
 import { api, ApiError } from '@/lib/api'
 
 export interface ApprovalItem {
@@ -296,9 +298,12 @@ function Card({
 
 /** The bell with its dropdown: what waits for this user (Approve / Reject) and their own requests. */
 export function ApprovalsMenu({
-  approvals
+  approvals,
+  onOpenSession
 }: {
   approvals: ReturnType<typeof useApprovalInbox>
+  /** Opens a conversation in the chat (a scheduled task's runs). */
+  onOpenSession?: (sessionId: string) => void
 }) {
   const [open, setOpen] = useState(false)
   const box = useRef<HTMLDivElement | null>(null)
@@ -338,6 +343,14 @@ export function ApprovalsMenu({
           onClose={() => setOpen(false)}
           onChanged={() => void approvals.refresh()}
           onDecided={(kind) => approvals.showFlash(kind)}
+          onOpenSession={
+            onOpenSession
+              ? (id) => {
+                  setOpen(false)
+                  onOpenSession(id)
+                }
+              : undefined
+          }
         />
       )}
     </div>
@@ -399,13 +412,15 @@ function ApprovalsPanel({
   research,
   onClose,
   onChanged,
-  onDecided
+  onDecided,
+  onOpenSession
 }: {
   inbox: Inbox | null
   research: ResearchInfo | null
   onClose: () => void
   onChanged: () => void
   onDecided: (kind: Decided['kind']) => void
+  onOpenSession?: (sessionId: string) => void
 }) {
   const [decided, setDecided] = useState<Record<string, Decided>>({})
   // Cards decided here stay visible with their outcome after they leave the waiting list.
@@ -484,6 +499,12 @@ function ApprovalsPanel({
                 )}
               </section>
             ) : null}
+            <section>
+              <p className="mb-2 flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-wide text-secondary">
+                <CalendarClock size={13} /> Scheduled tasks
+              </p>
+              <ScheduleList compact onOpenRuns={onOpenSession} />
+            </section>
             <section>
               <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-secondary">Your requests</p>
               {mine.length === 0 ? (

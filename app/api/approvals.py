@@ -20,7 +20,7 @@ from bizos.actions import store as actions
 from bizos.control.models import ClientSettings
 from bizos.tenancy.context import TenantContext
 from bizos.tools.executor import NotExecutable, can_execute, execute_approved_action
-from bizos.types import ActionStatus, Role
+from bizos.types import ActionStatus, PolicyEffect, Role
 
 router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 
@@ -186,6 +186,55 @@ def list_schedules(
             waiting.append({**info, "action_id": a.id, "requested_at": a.to_dict().get("created_at"),
                             "created_by_name": name(a.requested_by)})
     return {"items": rows, "waiting": waiting}
+
+
+class ScheduleChange(BaseModel):
+    """Only the fields that change; the rest of the schedule stays as it is."""
+
+    title: Optional[str] = Field(default=None, max_length=120)
+    instruction: Optional[str] = Field(default=None, max_length=2000)
+    frequency: Optional[str] = Field(default=None, max_length=20)
+    time: Optional[str] = Field(default=None, max_length=20)
+    weekdays: Optional[list[str]] = Field(default=None, max_length=7)
+    every_minutes: Optional[int] = None
+    timezone: Optional[str] = Field(default=None, max_length=64)
+
+
+def _schedule_outcome(ctx: TenantContext, settings: ClientSettings, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Change or stop a schedule through the same guard and policy check as the chat's schedule tools."""
+    from bizos.tools.base import guarded_call
+
+    with bound(ctx):
+        outcome = guarded_call(run_scope(ctx, settings), tool, arguments)
+    if outcome.effect == PolicyEffect.REQUIRE_APPROVAL and outcome.action_id:
+        return {"pending_approval": True, "action_id": outcome.action_id,
+                "message": "Sent for approval. It changes once an approver accepts it."}
+    if not outcome.ok:
+        code = 403 if outcome.effect == PolicyEffect.DENY else 400
+        raise HTTPException(status_code=code, detail=outcome.message or "That did not work.")
+    return {**(outcome.data or {}), "message": outcome.message}
+
+
+@router.put("/schedules/{schedule_id}")
+def change_schedule(
+    schedule_id: str,
+    body: ScheduleChange,
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Edit one schedule (the chat's schedule_update tool)."""
+    return _schedule_outcome(ctx, settings, "schedule_update",
+                             {"schedule_id": schedule_id, **body.model_dump(exclude_none=True)})
+
+
+@router.delete("/schedules/{schedule_id}")
+def stop_schedule(
+    schedule_id: str,
+    ctx: TenantContext = Depends(current_context),
+    settings: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Stop one schedule so it never runs again (the chat's schedule_cancel tool)."""
+    return _schedule_outcome(ctx, settings, "schedule_cancel", {"schedule_id": schedule_id})
 
 
 @router.get("/{action_id}")

@@ -1508,7 +1508,7 @@ function ChatView({ home }: { home: boolean }) {
             {chatHome && (
               <>
                 <ThemeToggle className="!h-9 !min-h-9 !w-9 !min-w-9 !rounded-full" />
-                <ApprovalsMenu approvals={approvals} />
+                <ApprovalsMenu approvals={approvals} onOpenSession={(id) => void openSession(id)} />
               </>
             )}
             {!chatHome && (

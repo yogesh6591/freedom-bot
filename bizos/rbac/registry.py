@@ -492,6 +492,18 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         tags=frozenset({"read", "automation"}),
     ),
     _spec(
+        "schedule_update",
+        "Change a scheduled task",
+        "Change what one recurring scheduled task does or when it runs. Only its owner or an admin may change "
+        "it; each run is still checked like a chat request.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        write=True,
+        risk=RiskLevel.MEDIUM,
+        permissions=matrix.WRITE_INTERNAL,
+        tags=frozenset({"write", "automation"}),
+    ),
+    _spec(
         "schedule_cancel",
         "Stop a scheduled task",
         "Stop one recurring scheduled task so it never runs again. Only its owner or an admin may stop it.",

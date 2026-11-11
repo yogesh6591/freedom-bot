@@ -68,9 +68,11 @@ Do not clarify when:
 - Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
 - Support tickets, bugs and problems with BizOS itself, company goals and strategic priorities → ops.
 - Anything to repeat every few minutes, hours, days or weeks ("every Monday post…", "daily at 8 summarise…",
-  "every 5 minutes post AI news…"), and listing or stopping those schedules → ops, plus the domain of the
-  task itself (posting to an app → integrations; finding news → research; the inbox → email). Never the
-  task's domain alone: without ops it would run once instead of being scheduled.
+  "every 5 minutes post AI news…"), and listing, changing or stopping those schedules → ops, plus the
+  domain of the task itself (posting to an app → integrations; finding news → research; the inbox → email).
+  Never the task's domain alone: without ops it would run once instead of being scheduled. Moving or changing
+  a recurring post, summary or task (its time, its days, how often) changes its schedule → ops, never
+  calendar: calendar is only for meetings and events.
 - Summaries, transcripts or "what does the speaker say" for a video → youtube. Doing something in
   YouTube, Gmail, Calendar, Google Drive, Google Sheets, Google Docs, HubSpot or Facebook that no domain
   lists (reply to or delete comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot

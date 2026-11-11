@@ -161,6 +161,22 @@ class World:
                                    summary=f"{name} done")
         return run
 
+    def schedule_lookup(self, real: Callable) -> Callable:
+        """``automation.get`` over ``results.schedule_list`` first (the schedule prechecks read it), then the
+        workspace. A fixture schedule belongs to the case's user and is active unless it says otherwise."""
+
+        def get(ctx: Any, task_id: str):
+            rows = self.results.get("schedule_list")
+            for row in rows if isinstance(rows, list) else []:
+                if isinstance(row, dict) and row.get("id") == task_id:
+                    return {"title": "", "instruction": "", "frequency": "weekly", "time_of_day": "09:00",
+                            "weekdays": ["mon"], "every_minutes": None, "timezone": "Asia/Kolkata",
+                            "status": "active", "next_run_at": "2026-11-16T03:30:00+00:00", **row,
+                            "created_by": ctx.user_id}
+            return real(ctx, task_id)
+
+        return get
+
     def find_user(self, real: Callable) -> Callable:
         """``_find_user`` over the fixture users first (merged admin tools plan against it), then the workspace."""
         from bizos.control.models import User

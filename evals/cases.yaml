@@ -29504,6 +29504,53 @@
   expected_reply_contains: ["inbox"]
   expected_outcome: answer
 
+- id: t_schedule_update_001
+  query: "Make my AI news schedule run every 30 minutes instead"
+  user: {name: Dev, roles: [OPERATOR]}
+  workspace: auto_permissive
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_301, title: AI news, instruction: Find the latest AI news and post it on our Facebook Page, schedule: "every 5 minutes", frequency: interval, every_minutes: 5, time_of_day: "", status: active}
+  expected_tool_calls: [schedule_list, schedule_update]
+  expected_args:
+    schedule_update: {schedule_id: sch_301, every_minutes: 30}
+  expected_gates: {schedule_update: run}
+  forbidden_tool_calls: [schedule_cancel, schedule_create]
+  expected_outcome: run
+
+- id: t_schedule_update_002
+  query: "Move my Monday Facebook tip to 10 AM"
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_101, title: Weekly Facebook tip, instruction: Write a short AI tip and post it on our Facebook Page, schedule: "every Mon at 09:00 (Asia/Kolkata)", status: active}
+  expected_tool_calls: [schedule_list, schedule_update]
+  expected_args:
+    schedule_update: {schedule_id: sch_101}
+  gate_args:
+    schedule_update: {schedule_id: sch_101, time: "10:00"}
+  expected_gates: {schedule_update: approval}
+  forbidden_tool_calls: [schedule_cancel, schedule_create]
+  expected_outcome: approval
+
+- id: t_schedule_update_003
+  query: "Change the weekly Facebook tip so it posts on Thursdays as well"
+  user: {name: Meena, roles: [ADMIN]}
+  fixtures:
+    results:
+      schedule_list:
+      - {id: sch_101, title: Weekly Facebook tip, instruction: Write a short AI tip and post it on our Facebook Page, schedule: "every Mon at 09:00 (Asia/Kolkata)", status: active}
+  expected_tool_calls: [schedule_list, schedule_update]
+  expected_args:
+    schedule_update: {schedule_id: sch_101}
+  gate_args:
+    schedule_update: {schedule_id: sch_101, weekdays: [mon, thu]}
+  expected_gates: {schedule_update: approval}
+  forbidden_tool_calls: [schedule_cancel, schedule_create]
+  expected_outcome: approval
+
 - id: t_schedule_cancel_001
   query: "Stop my daily inbox summary"
   user: {name: Dev, roles: [OPERATOR]}

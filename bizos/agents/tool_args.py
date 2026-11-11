@@ -236,6 +236,21 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "include_ended": {"type": "boolean", "description": "Also show stopped ones (default false)"},
         }
     ),
+    "schedule_update": _obj(
+        {
+            "schedule_id": _s("Schedule id (sch_...) from schedule_list or schedule_create"),
+            "title": _s("New short name, only if it changes"),
+            "instruction": _s("New instruction (what to do each time, without the timing), only if it changes"),
+            "frequency": _enum("New frequency, only if it changes", ["daily", "weekly", "interval"]),
+            "time": _s("New time of day, e.g. 09:00 or 6:30 PM, only if it changes"),
+            "every_minutes": {"type": "integer", "minimum": 5,
+                              "description": "For interval: new minutes between runs, at least 5 (every 2 hours -> 120)"},
+            "weekdays": {"type": "array", "description": "For weekly: the new days it runs",
+                         "items": {"type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
+            "timezone": _s("New IANA timezone, e.g. Asia/Kolkata, only if it changes"),
+        },
+        ["schedule_id"],
+    ),
     "schedule_cancel": _obj(
         {"schedule_id": _s("Schedule id (sch_...) from schedule_list or schedule_create")},
         ["schedule_id"],

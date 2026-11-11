@@ -354,6 +354,83 @@ def cancel(ctx: TenantContext, task_id: str, *, requested_by: Optional[str] = No
     return _row(row)
 
 
+def plan_update(task: dict[str, Any], *, title: Any = None, instruction: Any = None, frequency: Any = None,
+                time_of_day: Any = None, weekdays: Any = None, every_minutes: Any = None, tz: Any = None,
+                now: Optional[datetime] = None) -> dict[str, Any]:
+    """A schedule after a change, checked exactly like a new one. Nothing is written; raises ScheduleError.
+
+    Only what is given changes. ``changes`` lists what is different; a change to the timing moves the next run.
+    """
+    if task["status"] != ACTIVE:
+        raise ScheduleError(f"{task['id']} is stopped, so it cannot be changed. Set up a new schedule instead.")
+    new_instruction = " ".join(str(instruction).split()) if instruction is not None else task["instruction"]
+    if not new_instruction:
+        raise ScheduleError("instruction cannot be empty: say what to do each time.")
+    if len(new_instruction) > MAX_INSTRUCTION:
+        raise ScheduleError(f"instruction is too long (at most {MAX_INSTRUCTION} characters).")
+    new_title = (" ".join(str(title).split())[:120] if title is not None else task["title"]) or new_instruction[:60]
+    freq = str(frequency).strip().lower() if frequency not in (None, "") else task["frequency"]
+    if freq not in FREQUENCIES:
+        raise ScheduleError("frequency must be daily, weekly or interval (every N minutes).")
+    given_time = time_of_day is not None
+    if freq == INTERVAL:
+        every = parse_every(every_minutes if every_minutes not in (None, "") else task.get("every_minutes"))
+        if given_time:
+            at = parse_time(time_of_day) if str(time_of_day).strip() else ""
+        else:
+            at = task["time_of_day"] if freq == task["frequency"] else ""
+    else:
+        every = None
+        at = parse_time(time_of_day if given_time and str(time_of_day).strip() else (task["time_of_day"] or None))
+    days = (parse_weekdays(weekdays) if weekdays is not None else tuple(task.get("weekdays") or ())) \
+        if freq == WEEKLY else ()
+    if freq == WEEKLY and not days:
+        raise ScheduleError("a weekly schedule needs weekdays, e.g. ['mon'] or ['mon', 'thu'].")
+    zone = parse_timezone(tz, task["timezone"])
+    after = {"title": new_title, "instruction": new_instruction, "frequency": freq, "time_of_day": at,
+             "weekdays": list(days), "every_minutes": every, "timezone": zone}
+    labels = {"title": "name", "instruction": "what it does", "frequency": "how often", "time_of_day": "time",
+              "weekdays": "weekdays", "every_minutes": "how often", "timezone": "timezone"}
+    before = {**task, "weekdays": list(task.get("weekdays") or ()), "every_minutes": task.get("every_minutes")}
+    changes = list(dict.fromkeys(labels[k] for k in after if after[k] != before.get(k)))
+    if not changes:
+        raise ScheduleError("nothing to change: say what should be different (what it does, how often, or when).")
+    timing = ("frequency", "time_of_day", "weekdays", "every_minutes", "timezone")
+    if any(after[k] != before.get(k) for k in timing):
+        after["next_run_at"] = next_run(freq, at, zone, weekdays=days, after=now, every_minutes=every)
+    else:
+        after["next_run_at"] = datetime.fromisoformat(task["next_run_at"]) if task.get("next_run_at") else None
+    after["changes"] = changes
+    after["schedule"] = describe(after)
+    return after
+
+
+def update(ctx: TenantContext, task_id: str, *, requested_by: Optional[str] = None,
+           **fields: Any) -> tuple[dict[str, Any], list[str]]:
+    """Change a schedule (same id, same runs so far). Only the person who set it up, or an admin, may change it.
+
+    ``requested_by`` is the person whose approved request an approver is releasing.
+    """
+    task = get(ctx, task_id)
+    if task is None or (task["created_by"] not in {ctx.user_id, requested_by} and not ctx.is_admin):
+        raise ScheduleError(f"No schedule {task_id!r} that you can change. List them with schedule_list.")
+    plan = plan_update(task, **fields)
+    with workspace_connection(ctx) as conn:
+        row = conn.execute(
+            text(
+                "UPDATE scheduled_tasks SET title = :t, instruction = :ins, frequency = :f, weekdays = :w, "
+                "time_of_day = :at, every_minutes = :e, timezone = :tz, next_run_at = :n, updated_at = NOW() "
+                "WHERE id = :i AND status = 'active' RETURNING *"
+            ),
+            {"t": plan["title"], "ins": plan["instruction"], "f": plan["frequency"], "w": plan["weekdays"],
+             "at": plan["time_of_day"], "e": plan["every_minutes"], "tz": plan["timezone"],
+             "n": plan["next_run_at"], "i": task_id},
+        ).first()
+    if row is None:
+        raise ScheduleError(f"{task_id} was stopped meanwhile, so nothing was changed.")
+    return _row(row), plan["changes"]
+
+
 def due(ctx: TenantContext, now: datetime) -> list[dict[str, Any]]:
     ensure_tables(ctx)
     with readonly_connection(ctx) as conn:

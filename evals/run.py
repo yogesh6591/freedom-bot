@@ -7,7 +7,7 @@ Eval runner
     python -m evals.run --all --configs v2,v2-norouter    # every case, plus the canaries
 
 By default runs the QUICK set below (12 cases over the main paths and the newest features); `--cases` picks
-ids or id prefixes, and `--all` runs every case in evals/cases.yaml. Runs each case through each configuration with a real model and mocked tools
+ids or id prefixes, and `--all` runs every case in evals/cases.yaml. The scoring canaries run only with --all. Runs each case through each configuration with a real model and mocked tools
 (evals/world.py), scores it (evals/scoring.py) and appends each result to evals/reports/<run id>/*.jsonl the
 moment it is scored; the report (report.md, summary.json) is built from those files. A crash loses at most
 the case in progress: `--resume <run id>` runs only what is not saved yet, `--report <run id>` rebuilds the
@@ -301,6 +301,10 @@ def patch_world(mp, world, fixtures: dict) -> None:
 
     mp.setattr(company, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
     mp.setattr(company, "_find_user", world.find_user(company._find_user))
+    # Schedule prechecks look the schedule up; evals answer from fixtures.results.schedule_list.
+    from bizos import automation
+
+    mp.setattr(automation, "get", world.schedule_lookup(automation.get))
     mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     # App-action prechecks look actions up in Composio; evals classify by name and never reach it.
     from bizos.connectors import composio_actions
@@ -937,7 +941,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         run_dir = REPORTS / time.strftime("%Y%m%d-%H%M%S")
         run_dir.mkdir(parents=True, exist_ok=False)
         quick = not args.all and not args.cases
-        meta = {"cases": "" if args.all else (args.cases or ",".join(QUICK)), "quick": quick, "labels": labels,
+        meta = {"cases": "" if args.all else (args.cases or ",".join(QUICK)), "quick": quick, "all": args.all,
+                "labels": labels,
                 "model": app_settings.model_id(), "started": time.strftime("%Y-%m-%d %H:%M:%S")}
         (run_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
 
@@ -946,7 +951,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     cases = load_cases(meta["cases"])
     done = recorded(run_dir)
     for label, kind in meta["labels"]:
-        todo = [i for i in eligible(kind, cases, canaries=not meta.get("quick")) if i not in done.get(label, {})]
+        todo = [i for i in eligible(kind, cases, canaries=meta.get("all", not meta.get("quick")))
+                if i not in done.get(label, {})]
         print(f"{label}: {len(todo)} to run, {len(done.get(label, {}))} already saved", flush=True)
         if todo and not run_pipeline(kind, label, todo, args.workers, run_dir):
             reason = (run_dir / ABORT).read_text(encoding="utf-8").strip()

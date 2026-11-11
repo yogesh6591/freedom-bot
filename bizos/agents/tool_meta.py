@@ -517,21 +517,30 @@ TOOL_META: dict[str, AgentMeta] = {
         Set up a recurring task that runs daily, on chosen weekdays, or every N minutes (at least 5), as
         this user, checked like chat. Runs start fresh: the instruction names what they need.
         Use when: "every Monday at 9 post our tip", "every 5 minutes post AI news".
-        Don't use: doing it once now -> that task's tool; a meeting -> calendar_create_event.
+        Don't use: once now -> that task's tool; changing one -> schedule_update; a meeting -> calendar_create_event.
         Effect: it runs on schedule until stopped. {gate}
     """)),
     "schedule_list": M("ops", d("""
         List the user's recurring scheduled tasks with what each does, when it runs next, and how its last
         run went. Admins can list everyone's.
         Use when: "what have I scheduled", "show my recurring tasks", "did the Monday post run".
-        Don't use: setting one up -> schedule_create; stopping one -> schedule_cancel; approval requests ->
-        approvals_list.
+        Don't use: setting one up -> schedule_create; changing one -> schedule_update; stopping one ->
+        schedule_cancel; approval requests -> approvals_list.
     """)),
+    "schedule_update": M("ops", d("""
+        Change what one recurring scheduled task does or when it runs. Only what is given changes; it keeps
+        its id. Only its owner or an admin can change it.
+        Use when: "make my AI news schedule every 30 minutes", "move the Monday post to 10 AM".
+        Don't use: a new one -> schedule_create; stopping one -> schedule_cancel; listing -> schedule_list.
+        Needs: schedule_id from schedule_list or schedule_create.
+        Effect: the next run follows the change. {gate}
+    """), id_fields=("schedule_id",)),
     "schedule_cancel": M("ops", d("""
         Stop one recurring scheduled task so it never runs again. Only the person who set it up, or an
         admin, can stop it.
         Use when: "stop the daily inbox summary", "cancel my Monday Facebook post".
-        Don't use: listing them -> schedule_list; withdrawing an approval request -> approvals_cancel.
+        Don't use: listing them -> schedule_list; changing one -> schedule_update; withdrawing an approval
+        request -> approvals_cancel.
         Needs: schedule_id from schedule_list or schedule_create.
         Effect: the task stops; past runs are not undone. {gate}
     """), id_fields=("schedule_id",)),

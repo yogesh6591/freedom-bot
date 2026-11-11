@@ -33,7 +33,7 @@ def content_for(action: Action, *, ctx: TenantContext,
 
 # --------------------------------------------------------------------------- scheduled tasks
 
-_SCHEDULE_TOOLS = {"schedule_create", "schedule_cancel"}
+_SCHEDULE_TOOLS = {"schedule_create", "schedule_update", "schedule_cancel"}
 #: What the approver sees about the schedule; the instruction is the request itself.
 _SCHEDULE_KEYS = ("id", "title", "instruction", "schedule", "status", "next_run_at", "last_run_at", "last_status",
                   "last_result", "run_count", "created_by", "session_id")
@@ -46,7 +46,7 @@ def schedule_id(action: Action) -> Optional[str]:
     result = result if isinstance(result, dict) else {}
     if tool == "schedule_create":
         found = result.get("id")
-    elif tool == "schedule_cancel":
+    elif tool in {"schedule_cancel", "schedule_update"}:
         found = (action.payload or {}).get("schedule_id") or result.get("id")
     else:
         found = action.workflow_id
@@ -114,12 +114,46 @@ def _schedule_request(tool: str, payload: dict[str, Any], result: dict[str, Any]
     if tool == "schedule_cancel":
         headline = f"Stop the recurring task {payload.get('schedule_id') or ''}".strip()
         lines = ["It will not run again. Requests it already made stay in this list."]
+    elif tool == "schedule_update":
+        headline = f"Change the recurring task {payload.get('schedule_id') or ''}".strip()
+        fields = _schedule_edits(payload)
+        lines = ["Only these change; the schedule keeps its id and past runs. Each run is still checked like "
+                 "a chat message."]
     else:
         headline = f"Recurring task: {title}"
         lines = ["Each run is checked as the person who asked, like a chat message: anything that needs "
                  "approval comes back here every time."]
     return {"kind": "schedule", "headline": headline[:200], "fields": fields, "lines": lines,
             "summary": headline[:200]}
+
+
+def _schedule_edits(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """What a change request sets, in plain words."""
+    from bizos import automation
+
+    out = []
+    if payload.get("title"):
+        out.append({"label": "New name", "value": _short(payload["title"])})
+    if payload.get("instruction"):
+        out.append({"label": "Each time it will", "value": _short(payload["instruction"])})
+    frequency = str(payload.get("frequency") or "").strip().lower()
+    if payload.get("every_minutes") not in (None, ""):
+        try:
+            out.append({"label": "How often", "value": automation.describe(
+                {"frequency": automation.INTERVAL, "every_minutes": automation.parse_every(payload["every_minutes"])})})
+        except automation.ScheduleError:
+            out.append({"label": "How often", "value": f"every {payload['every_minutes']} minutes"})
+    elif frequency:
+        out.append({"label": "How often", "value": {"daily": "every day", "weekly": "chosen weekdays"}.get(
+            frequency, frequency)})
+    if payload.get("weekdays"):
+        days = payload["weekdays"]
+        out.append({"label": "Weekdays", "value": ", ".join(days) if isinstance(days, list) else str(days)})
+    if payload.get("time"):
+        out.append({"label": "Time", "value": str(payload["time"])})
+    if payload.get("timezone"):
+        out.append({"label": "Timezone", "value": str(payload["timezone"])})
+    return out
 
 
 def _content(
@@ -335,7 +369,7 @@ _VERBS = {
 #: The payload value that says what the request is about (first one present wins).
 _DETAIL_KEYS = (
     "title", "subject", "name", "decision", "new_content", "content", "body", "question", "topic",
-    "customer", "company", "query", "add_tags", "event_id", "record_id", "contact_id", "deal_id",
+    "customer", "company", "query", "add_tags", "event_id", "record_id", "contact_id", "deal_id", "schedule_id",
 )
 
 #: The same, for app actions (their arguments use each app's own names).
