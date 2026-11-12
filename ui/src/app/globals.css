@@ -329,16 +329,42 @@ html.theme-transition * {
   opacity: 0.45;
   box-shadow: none;
 }
-/* Chat mic: WhatsApp / ChatGPT-style listening bar in the composer */
+/* Chat mic: fixed-height ChatGPT-style listening bar (theme-aware).
+   Only the wave bars change height — the bar itself never grows/shrinks. */
+.voice-listening {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  overflow: hidden;
+  border-radius: 1rem;
+  padding: 0 0.35rem 0 0.65rem;
+  box-sizing: border-box;
+}
 .voice-listening-live {
-  background: rgb(244 63 94 / 0.06);
-  box-shadow: inset 0 0 0 1px rgb(244 63 94 / 0.14);
+  background: rgb(var(--color-brand) / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(var(--color-brand) / 0.16);
 }
 .dark .voice-listening-live {
-  background: rgb(244 63 94 / 0.12);
-  box-shadow: inset 0 0 0 1px rgb(244 63 94 / 0.22);
+  background: rgb(var(--color-brand) / 0.14);
+  box-shadow: inset 0 0 0 1px rgb(var(--color-brand) / 0.22);
+}
+.voice-listening-busy {
+  background: rgb(var(--color-primary) / 0.04);
+}
+.dark .voice-listening-busy {
+  background: rgb(255 255 255 / 0.05);
 }
 .voice-pulse-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: rgb(244 63 94);
   animation: voice-pulse 1.1s ease-in-out infinite;
   box-shadow: 0 0 0 0 rgb(244 63 94 / 0.55);
 }
@@ -347,9 +373,88 @@ html.theme-transition * {
   70% { transform: scale(1.15); box-shadow: 0 0 0 8px rgb(244 63 94 / 0); }
   100% { transform: scale(1); box-shadow: 0 0 0 0 rgb(244 63 94 / 0); }
 }
+.voice-wave {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  max-height: 28px;
+  overflow: hidden;
+  gap: 2px;
+  padding: 0 2px;
+}
 .voice-wave-bar {
+  display: inline-block;
+  width: 2.5px;
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 4px;
+  border-radius: 999px;
   transform-origin: center;
   will-change: height, opacity;
+  transition: height 70ms ease-out, opacity 70ms ease-out;
+}
+.voice-wave-bar-live {
+  background: rgb(var(--color-brand));
+}
+.dark .voice-wave-bar-live {
+  background: rgb(var(--color-brand-soft));
+}
+.voice-wave-bar-idle {
+  background: rgb(var(--color-muted) / 0.45);
+}
+.voice-timer {
+  flex-shrink: 0;
+  min-width: 2.4rem;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgb(var(--color-muted));
+}
+.voice-stop {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: rgb(244 63 94);
+  color: #fff;
+  box-shadow: 0 8px 18px -8px rgb(244 63 94 / 0.9);
+  transition: transform 120ms ease;
+}
+.voice-stop:hover {
+  transform: scale(1.03);
+}
+.voice-stop:active {
+  transform: scale(0.96);
+}
+.voice-stop-busy {
+  background: rgb(var(--color-muted) / 0.2);
+  color: rgb(var(--color-muted));
+  box-shadow: none;
+}
+.voice-cancel {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 999px;
+  color: rgb(var(--color-muted));
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.voice-cancel:hover {
+  color: rgb(var(--color-primary));
+  background: rgb(var(--color-primary) / 0.06);
+}
+.dark .voice-cancel:hover {
+  background: rgb(255 255 255 / 0.08);
 }
 
 @layer utilities {

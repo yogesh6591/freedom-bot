@@ -2,17 +2,18 @@
 
 /**
  * Chat mic: record → POST /api/chat/transcribe → append text.
- * While listening, the text field becomes a live voice-reactive waveform
- * (WhatsApp / ChatGPT-style), driven by the real microphone level.
+ * While recording, the text field becomes a fixed-height, theme-aware waveform
+ * bar (ChatGPT-style): pulse dot, live waves, timer, stop, grey cancel.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Loader2, Mic, Square, Trash2 } from 'lucide-react'
+import { Loader2, Mic, Square, X } from 'lucide-react'
 import { api, ApiError } from '@/lib/api'
 
 type MicState = 'idle' | 'recording' | 'transcribing'
 
-const BAR_COUNT = 32
+const BAR_COUNT = 40
+const WAVE_MAX_PX = 26
 
 function pickMime(): string | undefined {
   if (typeof MediaRecorder === 'undefined') return undefined
@@ -36,6 +37,50 @@ function formatElapsed(ms: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+/** Soft UI tones for start / stop / cancel (pleasant, short). */
+function playPleaseTone(kind: 'start' | 'stop' | 'cancel') {
+  if (typeof window === 'undefined') return
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new AudioCtx()
+    const now = ctx.currentTime
+    const gain = ctx.createGain()
+    gain.connect(ctx.destination)
+    gain.gain.setValueAtTime(0.0001, now)
+
+    const beep = (freq: number, t0: number, dur: number, peak = 0.045) => {
+      const osc = ctx.createOscillator()
+      osc.type = 'sine'
+      osc.frequency.setValueAtTime(freq, t0)
+      osc.connect(gain)
+      gain.gain.cancelScheduledValues(t0)
+      gain.gain.setValueAtTime(0.0001, t0)
+      gain.gain.exponentialRampToValueAtTime(peak, t0 + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+      osc.start(t0)
+      osc.stop(t0 + dur + 0.02)
+    }
+
+    if (kind === 'start') {
+      beep(660, now, 0.09, 0.04)
+      beep(880, now + 0.08, 0.11, 0.035)
+    } else if (kind === 'stop') {
+      beep(720, now, 0.08, 0.04)
+      beep(540, now + 0.07, 0.12, 0.03)
+    } else {
+      beep(420, now, 0.14, 0.035)
+    }
+
+    window.setTimeout(() => {
+      void ctx.close()
+    }, 450)
+  } catch {
+    /* ignore — tone is optional UX */
+  }
+}
+
 /** Whisper often inserts newlines between sentences — keep one continuous chat line. */
 function flattenSpoken(spoken: string): string {
   return spoken.replace(/\s+/g, ' ').trim()
@@ -53,22 +98,16 @@ export function appendSpoken(existing: string, spoken: string): string {
 
 function VoiceWaveform({ levels, active }: { levels: number[]; active: boolean }) {
   return (
-    <div
-      className="voice-wave flex h-9 min-w-0 flex-1 items-center justify-center gap-[3px]"
-      aria-hidden
-    >
+    <div className="voice-wave" aria-hidden>
       {levels.map((level, i) => {
-        const h = Math.max(3, Math.round(3 + level * 30))
+        const h = Math.max(3, Math.round(3 + level * (WAVE_MAX_PX - 3)))
         return (
           <span
             key={i}
-            className={`voice-wave-bar inline-block w-[3px] rounded-full ${
-              active ? 'bg-rose-500' : 'bg-muted/50'
-            }`}
+            className={`voice-wave-bar ${active ? 'voice-wave-bar-live' : 'voice-wave-bar-idle'}`}
             style={{
               height: `${h}px`,
-              opacity: active ? 0.45 + level * 0.55 : 0.35,
-              transition: 'height 75ms ease-out, opacity 75ms ease-out'
+              opacity: active ? 0.4 + level * 0.6 : 0.3
             }}
           />
         )
@@ -78,8 +117,8 @@ function VoiceWaveform({ levels, active }: { levels: number[]; active: boolean }
 }
 
 /**
- * Replaces the textarea + mic while recording: live waveform in the text bar,
- * discard / stop controls. Idle: normal textarea + mic button.
+ * Replaces the textarea + mic while recording: fixed-height waveform bar.
+ * Idle: normal textarea + mic button.
  */
 export function VoiceComposerField({
   disabled,
@@ -101,7 +140,7 @@ export function VoiceComposerField({
   onListeningChange?: (listening: boolean) => void
 }) {
   const [state, setState] = useState<MicState>('idle')
-  const [levels, setLevels] = useState<number[]>(() => Array.from({ length: BAR_COUNT }, () => 0.12))
+  const [levels, setLevels] = useState<number[]>(() => Array.from({ length: BAR_COUNT }, () => 0.14))
   const [elapsedMs, setElapsedMs] = useState(0)
 
   const mediaRef = useRef<MediaStream | null>(null)
@@ -127,7 +166,7 @@ export function VoiceComposerField({
     }
     audioCtxRef.current = null
     analyserRef.current = null
-    setLevels(Array.from({ length: BAR_COUNT }, () => 0.12))
+    setLevels(Array.from({ length: BAR_COUNT }, () => 0.14))
   }, [])
 
   const stopTracks = useCallback(() => {
@@ -143,8 +182,8 @@ export function VoiceComposerField({
     const ctx = new AudioCtx()
     const source = ctx.createMediaStreamSource(stream)
     const analyser = ctx.createAnalyser()
-    analyser.fftSize = 128
-    analyser.smoothingTimeConstant = 0.65
+    analyser.fftSize = 256
+    analyser.smoothingTimeConstant = 0.72
     source.connect(analyser)
     audioCtxRef.current = ctx
     analyserRef.current = analyser
@@ -154,21 +193,19 @@ export function VoiceComposerField({
       const node = analyserRef.current
       if (!node) return
       node.getByteFrequencyData(data)
-      // Focus on voice band; mirror for a symmetric WhatsApp-style wave.
-      const usable = Math.max(8, Math.floor(data.length * 0.55))
-      const half = Math.ceil(BAR_COUNT / 2)
-      const left: number[] = []
-      for (let i = 0; i < half; i++) {
-        const idx = Math.min(usable - 1, Math.floor((i / half) * usable))
+      const usable = Math.max(12, Math.floor(data.length * 0.5))
+      const next: number[] = []
+      for (let i = 0; i < BAR_COUNT; i++) {
+        // Sample across the voice band, then boost both outer ends.
+        const idx = Math.min(usable - 1, Math.floor((i / (BAR_COUNT - 1)) * (usable - 1)))
         const raw = (data[idx] ?? 0) / 255
-        // Lift quiet speech so the bar still moves when someone talks softly.
-        const boosted = Math.min(1, Math.pow(raw, 0.7) * 1.35)
-        left.push(boosted)
+        const boosted = Math.min(1, Math.pow(raw, 0.65) * 1.4)
+        const t = i / (BAR_COUNT - 1)
+        const edge = Math.pow(Math.abs(t - 0.5) * 2, 1.15) // 0 center → 1 edges
+        const envelope = 0.55 + 0.45 * edge
+        next.push(Math.min(1, boosted * envelope + 0.06))
       }
-      const right = [...left].reverse()
-      const next =
-        BAR_COUNT % 2 === 0 ? [...left, ...right] : [...left, left[left.length - 1] ?? 0.1, ...right]
-      setLevels(next.slice(0, BAR_COUNT))
+      setLevels(next)
       rafRef.current = requestAnimationFrame(tick)
     }
     void ctx.resume().then(() => {
@@ -222,6 +259,7 @@ export function VoiceComposerField({
       return
     }
     discardRef.current = false
+    playPleaseTone('start')
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -283,6 +321,7 @@ export function VoiceComposerField({
   }
 
   function stop() {
+    playPleaseTone('stop')
     const recorder = recorderRef.current
     if (!recorder || recorder.state === 'inactive') {
       stopMeter()
@@ -302,8 +341,24 @@ export function VoiceComposerField({
   }
 
   function discard() {
+    playPleaseTone('cancel')
     discardRef.current = true
-    stop()
+    const recorder = recorderRef.current
+    if (!recorder || recorder.state === 'inactive') {
+      stopMeter()
+      stopTracks()
+      setState('idle')
+      setElapsedMs(0)
+      return
+    }
+    try {
+      recorder.stop()
+    } catch {
+      stopMeter()
+      stopTracks()
+      setState('idle')
+      setElapsedMs(0)
+    }
   }
 
   const recording = state === 'recording'
@@ -316,63 +371,53 @@ export function VoiceComposerField({
 
   if (listening) {
     return (
-      <>
-        <div
-          className={`voice-listening flex min-h-[44px] min-w-0 flex-1 items-center gap-2 rounded-2xl px-2 py-1 ${
-            recording ? 'voice-listening-live' : ''
-          }`}
-          role="status"
-          aria-live="polite"
-          aria-label={recording ? 'Listening' : 'Transcribing'}
-        >
-          {recording ? (
+      <div
+        className={`voice-listening ${recording ? 'voice-listening-live' : 'voice-listening-busy'}`}
+        role="status"
+        aria-live="polite"
+        aria-label={recording ? 'Recording' : 'Transcribing'}
+      >
+        {recording ? (
+          <span className="voice-pulse-dot" aria-hidden />
+        ) : (
+          <Loader2 size={14} className="shrink-0 animate-spin text-muted" aria-hidden />
+        )}
+
+        <VoiceWaveform levels={levels} active={recording} />
+
+        {recording ? (
+          <span className="voice-timer tabular-nums">{formatElapsed(elapsedMs)}</span>
+        ) : (
+          <span className="voice-timer text-muted">…</span>
+        )}
+
+        {recording ? (
+          <>
+            <button
+              type="button"
+              aria-label="Stop recording"
+              title="Stop"
+              onClick={stop}
+              className="voice-stop"
+            >
+              <Square size={13} fill="currentColor" strokeWidth={0} aria-hidden />
+            </button>
             <button
               type="button"
               aria-label="Cancel recording"
               title="Cancel"
               onClick={discard}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-rose-500/10 hover:text-rose-500"
+              className="voice-cancel"
             >
-              <Trash2 size={16} aria-hidden />
+              <X size={18} strokeWidth={2} aria-hidden />
             </button>
-          ) : (
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center text-muted">
-              <Loader2 size={16} className="animate-spin" aria-hidden />
-            </span>
-          )}
-
-          <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-            <div className="flex items-center gap-2">
-              {recording ? (
-                <span className="voice-pulse-dot h-2 w-2 shrink-0 rounded-full bg-rose-500" aria-hidden />
-              ) : null}
-              <span className="text-[12px] font-medium tracking-wide text-rose-500">
-                {recording ? 'Listening…' : 'Transcribing…'}
-              </span>
-              {recording ? (
-                <span className="tabular-nums text-[12px] text-muted">{formatElapsed(elapsedMs)}</span>
-              ) : null}
-            </div>
-            <VoiceWaveform levels={levels} active={recording} />
-          </div>
-
-          {recording ? (
-            <button
-              type="button"
-              aria-label="Stop recording"
-              title="Stop recording"
-              onClick={stop}
-              className="voice-stop mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-500 text-white shadow-[0_8px_18px_-8px_rgb(244_63_94_/_0.9)] transition-transform hover:scale-[1.03] active:scale-95"
-            >
-              <Square size={14} fill="currentColor" strokeWidth={0} aria-hidden />
-            </button>
-          ) : (
-            <span className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted/20 text-muted">
-              <Loader2 size={16} className="animate-spin" aria-hidden />
-            </span>
-          )}
-        </div>
-      </>
+          </>
+        ) : (
+          <span className="voice-stop voice-stop-busy" aria-hidden>
+            <Loader2 size={16} className="animate-spin" />
+          </span>
+        )}
+      </div>
     )
   }
 
