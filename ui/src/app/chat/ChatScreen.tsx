@@ -61,6 +61,7 @@ import { SidebarSwitch } from '@/components/SidebarSwitch'
 import { IntegrationsView } from '@/components/IntegrationsView'
 import { ApprovalsMenu, useApprovalInbox } from './Approvals'
 import { AttachButton, FileChips, PendingFiles, useAttachments } from './Attachments'
+import { appendSpoken, VoiceComposerField } from './VoiceMic'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface Turn {
@@ -692,6 +693,8 @@ function ChatView({ home }: { home: boolean }) {
   const [turns, setTurns] = useState<Turn[]>([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  /** True while the mic is listening or Whisper is transcribing — composer shows the wave bar. */
+  const [voiceListening, setVoiceListening] = useState(false)
   /** Files waiting to go with the next message (uploaded and read as soon as they are picked). */
   const attachments = useAttachments()
   /** The reply while it streams in: the current step and the words so far (replaced by the final reply). */
@@ -1894,20 +1897,26 @@ function ChatView({ home }: { home: boolean }) {
             >
               <PendingFiles files={attachments.files} onRemove={attachments.remove} />
               <div className="flex items-end gap-2">
-              <AttachButton onPick={attachments.add} disabled={busy} />
-              <label htmlFor="chat-input" className="sr-only">
-                Message
-              </label>
-              <textarea
-                id="chat-input"
-                ref={inputRef}
-                rows={1}
+              {!voiceListening ? (
+                <AttachButton onPick={attachments.add} disabled={busy} />
+              ) : null}
+              <VoiceComposerField
+                disabled={busy}
                 value={input}
-                onChange={(event) => {
-                  setInput(event.target.value)
-                  const el = event.target
-                  el.style.height = 'auto'
-                  el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+                onChange={setInput}
+                inputRef={inputRef}
+                onListeningChange={setVoiceListening}
+                onError={(message) => setError(message)}
+                onTranscript={(spoken) => {
+                  setError(null)
+                  setInput((prev) => appendSpoken(prev, spoken))
+                  requestAnimationFrame(() => {
+                    const el = inputRef.current
+                    if (!el) return
+                    el.style.height = 'auto'
+                    el.style.height = `${Math.min(el.scrollHeight, 200)}px`
+                    el.focus()
+                  })
                 }}
                 onKeyDown={(event) => {
                   if (
@@ -1919,22 +1928,21 @@ function ChatView({ home }: { home: boolean }) {
                     event.currentTarget.form?.requestSubmit()
                   }
                 }}
-                placeholder="Message the assistant"
-                disabled={busy}
-                className="max-h-[200px] min-h-[40px] w-full resize-none border-0 bg-transparent py-2 text-[15px] leading-6 text-primary outline-none placeholder:text-muted/70 disabled:opacity-60"
               />
-              <button
-                type="submit"
-                disabled={busy || attachments.uploading || (!input.trim() && !attachments.ready.length)}
-                aria-label="Send"
-                className="assistant-send mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed"
-              >
-                {busy ? (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-r-transparent" />
-                ) : (
-                  <ArrowUp size={16} aria-hidden />
-                )}
-              </button>
+              {!voiceListening ? (
+                <button
+                  type="submit"
+                  disabled={busy || attachments.uploading || (!input.trim() && !attachments.ready.length)}
+                  aria-label="Send"
+                  className="assistant-send mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full disabled:cursor-not-allowed"
+                >
+                  {busy ? (
+                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-r-transparent" />
+                  ) : (
+                    <ArrowUp size={16} aria-hidden />
+                  )}
+                </button>
+              ) : null}
               </div>
             </form>
             {chatHome && (

@@ -30,10 +30,39 @@ services:
       timeout: 5s
       retries: 20
 
+  # Local OpenAI Whisper base.en via whisper.cpp (CPU). Internal only — no host ports.
+  # Built from source: official GHCR image is amd64-only; we need linux/arm64 for this Mac and prod t4g.
+  whisper:
+    build:
+      context: ./docker/whisper
+      args:
+        WHISPER_CPP_REF: v1.9.5
+    image: freedom-bot-whisper:base-en
+    platform: linux/arm64
+    restart: unless-stopped
+    volumes:
+      - whisper-models:/models
+    environment:
+      WHISPER_MODEL: base.en
+      WHISPER_THREADS: "2"
+    # No `ports:` — reachable only as http://whisper:8080 on the compose network.
+    expose:
+      - "8080"
+    mem_limit: 768m
+    cpus: "2.0"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+
   api:
     build: .
     depends_on:
       db:
+        condition: service_healthy
+      whisper:
         condition: service_healthy
     # Integrations (Composio: Gmail, Google Calendar, YouTube) read their keys straight from .env, as in
     # ai-automation-saas. Optional, so the stack still starts without a .env file.
@@ -58,6 +87,8 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3001}
       AGENTOS_URL: ${AGENTOS_URL:-http://127.0.0.1:8001}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Chat mic → local whisper.cpp (base.en). Internal compose DNS only.
+      WHISPER_URL: ${WHISPER_URL:-http://whisper:8080}
       # COMPOSIO_API_KEY comes from .env (env_file above); an empty default here would override it.
       COMPOSIO_CACHE_DIR: /app/.composio-cache
       # FB-043: shared secret for the checkout/contract sale webhook.
@@ -119,3 +150,4 @@ services:
 volumes:
   bizos-db:
   composio-cache:
+  whisper-models:

@@ -168,6 +168,11 @@ def openai_api_key() -> str | None:
     return getenv("OPENAI_API_KEY", "").strip() or None
 
 
+def whisper_url() -> str:
+    """Local whisper.cpp HTTP base URL for the chat mic (default compose service)."""
+    return (getenv("WHISPER_URL", "") or "http://whisper:8080").strip().rstrip("/")
+
+
 def assistant_model() -> str:
     """Agno chat model (executor, router, legacy Agent). ``provider:model``.
 

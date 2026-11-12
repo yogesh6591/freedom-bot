@@ -25,6 +25,36 @@ services:
       retries: 20
       start_period: 10s
 
+  # Local OpenAI Whisper base.en via whisper.cpp (CPU, ARM64). Internal network only.
+  # Profile-gated: normal `up -d --build api ui` does NOT start this. Enable later with
+  # `docker compose -p freedom-bot-core -f compose.prod.yaml --profile whisper up -d whisper`.
+  whisper:
+    build:
+      context: ./docker/whisper
+      args:
+        WHISPER_CPP_REF: v1.9.5
+    image: freedom-bot-core-whisper:base-en
+    platform: linux/arm64
+    container_name: fb-core-whisper
+    restart: unless-stopped
+    profiles: ["whisper"]
+    volumes:
+      - fb_core_whisper_models:/models
+    environment:
+      WHISPER_MODEL: base.en
+      WHISPER_THREADS: "2"
+    # No host `ports:` — only reachable as http://whisper:8080 on freedom-bot-core-net.
+    expose:
+      - "8080"
+    mem_limit: 768m
+    cpus: "2.0"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 180s
+
   api:
     build: .
     container_name: fb-core-api
@@ -74,6 +104,8 @@ services:
       ACQUISITION_URL_PREFIX: /acquire
       PUBLIC_BASE_URL: https://freedombot-core.cloud.cepoch.com/acquire
       COMPOSIO_API_KEY: ${COMPOSIO_API_KEY:-}
+      # Chat mic → local whisper.cpp when the whisper profile/service is running.
+      WHISPER_URL: ${WHISPER_URL:-http://whisper:8080}
     ports:
       - "127.0.0.1:8030:8000"
     command: >
@@ -109,3 +141,4 @@ networks:
 
 volumes:
   fb_core_pgdata:
+  fb_core_whisper_models:

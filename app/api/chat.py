@@ -334,6 +334,133 @@ async def upload_attachment(
                                      body=extracted["text"], meta=extracted["meta"])
 
 
+#: Chat-mic uploads stay small; whisper.cpp converts WebM/Opus via ffmpeg (--convert).
+_TRANSCRIBE_MAX_BYTES = 10 * 1024 * 1024
+_TRANSCRIBE_EXTENSIONS = (".webm", ".wav", ".mp3", ".mp4", ".m4a", ".ogg", ".mpeg", ".mpga")
+_TRANSCRIBE_TIMEOUT_SEC = 60.0
+#: One in-flight transcription at a time (CPU whisper.cpp on a shared host).
+_transcribe_lock = threading.Lock()
+
+
+def _guess_audio_content_type(filename: str) -> str:
+    lower = filename.lower()
+    if lower.endswith(".wav"):
+        return "audio/wav"
+    if lower.endswith(".mp3") or lower.endswith(".mpga") or lower.endswith(".mpeg"):
+        return "audio/mpeg"
+    if lower.endswith(".mp4") or lower.endswith(".m4a"):
+        return "audio/mp4"
+    if lower.endswith(".ogg"):
+        return "audio/ogg"
+    return "audio/webm"
+
+
+def _flatten_transcript(text: str) -> str:
+    """Whisper often puts newlines between sentences; chat drafts stay one continuous line."""
+    return " ".join(text.split())
+
+
+def _text_from_whisper_payload(payload: Any) -> str:
+    """Pull the transcript string out of whisper-server JSON (or plain text)."""
+    if isinstance(payload, str):
+        return _flatten_transcript(payload)
+    if not isinstance(payload, dict):
+        return ""
+    text = payload.get("text")
+    if isinstance(text, str) and text.strip():
+        return _flatten_transcript(text)
+    # Some builds return segments only.
+    segments = payload.get("transcription") or payload.get("segments") or []
+    if isinstance(segments, list):
+        parts = []
+        for seg in segments:
+            if isinstance(seg, dict) and isinstance(seg.get("text"), str):
+                parts.append(seg["text"].strip())
+            elif isinstance(seg, str):
+                parts.append(seg.strip())
+        return _flatten_transcript(" ".join(p for p in parts if p))
+    return ""
+
+
+@router.post("/transcribe")
+async def transcribe_audio(
+    file: UploadFile = File(...),
+    ctx: TenantContext = Depends(current_context),
+) -> dict[str, str]:
+    """Turn a short voice recording into text with local whisper.cpp (OpenAI ``base.en``).
+
+    The UI appends the result to whatever is already in the message box, so speaking mid-draft
+    never replaces typed words. Auth is the same session cookie as every other chat call.
+    """
+    import httpx
+
+    from bizos import settings as bizos_settings
+
+    filename = (file.filename or "recording.webm").strip() or "recording.webm"
+    lower = filename.lower()
+    if not lower.endswith(_TRANSCRIBE_EXTENSIONS):
+        # Browsers usually send webm/ogg; give ffmpeg/whisper a usable name if omitted.
+        filename = "recording.webm"
+
+    data = await file.read(_TRANSCRIBE_MAX_BYTES + 1)
+    if not data:
+        raise HTTPException(status_code=400, detail="Recording was empty.")
+    if len(data) > _TRANSCRIBE_MAX_BYTES:
+        raise HTTPException(status_code=400, detail="Recording is too large (max 10 MB).")
+
+    if not _transcribe_lock.acquire(blocking=False):
+        raise HTTPException(
+            status_code=429,
+            detail="Another transcription is already running. Try again in a moment.",
+        )
+
+    url = f"{bizos_settings.whisper_url()}/inference"
+    try:
+        try:
+            async with httpx.AsyncClient(timeout=_TRANSCRIBE_TIMEOUT_SEC) as client:
+                response = await client.post(
+                    url,
+                    files={"file": (filename, data, _guess_audio_content_type(filename))},
+                    data={
+                        "response_format": "json",
+                        "temperature": "0.0",
+                        "temperature_inc": "0.2",
+                    },
+                )
+        except httpx.TimeoutException as exc:
+            log.warning("chat.transcribe timeout user=%s url=%s", ctx.user_id, url)
+            raise HTTPException(
+                status_code=504,
+                detail="Transcription timed out. Try a shorter recording.",
+            ) from exc
+        except httpx.HTTPError as exc:
+            log.exception("chat.transcribe transport failed for user=%s", ctx.user_id)
+            raise HTTPException(
+                status_code=502,
+                detail="Speech to text is unavailable right now. Try again in a moment.",
+            ) from exc
+
+        if response.status_code >= 400:
+            log.error(
+                "chat.transcribe upstream status=%s body=%s",
+                response.status_code,
+                (response.text or "")[:300],
+            )
+            raise HTTPException(
+                status_code=502,
+                detail="Could not transcribe the recording. Try again in a moment.",
+            )
+
+        try:
+            payload: Any = response.json()
+        except ValueError:
+            payload = response.text
+        text = _text_from_whisper_payload(payload)
+        return {"text": text}
+    finally:
+        _transcribe_lock.release()
+
+
 @router.post("/stream")
 def chat_stream(
     body: ChatRequest,
