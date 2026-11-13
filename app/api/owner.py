@@ -63,6 +63,15 @@ def get_owner_portfolio(
     return owner.owner_portfolio()
 
 
+@router.get("/workspaces")
+def get_all_workspaces(
+    ctx: TenantContext = Depends(require_platform_owner),
+) -> dict[str, Any]:
+    """Every workspace and its members. Platform owners only, never a client's ADMIN."""
+    _ = ctx
+    return owner.all_workspaces()
+
+
 @router.put("/portfolio/{client_id}")
 def put_portfolio(
     client_id: str,

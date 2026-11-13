@@ -643,12 +643,8 @@ OWNER_WORKSPACE_SLUG = "cepoch"
 OWNER_EMAIL = "jeanne@cepoch.example.com"
 
 
-def ensure_owner_workspace() -> dict[str, Any]:
-    """Create Cepoch's internal workspace and the demo platform owner (idempotent).
-
-    The owner view spans every client, so it is reached from here — never from a
-    client's own workspace, whose ADMIN must not see other clients.
-    """
+def ensure_internal_workspace() -> Client:
+    """Create or fetch Cepoch's internal workspace, where platform owners sign in (idempotent)."""
     cfg = ClientSettings()
     cfg.internal_workspace = True
     owner_ws = ensure_client(
@@ -660,6 +656,16 @@ def ensure_owner_workspace() -> dict[str, Any]:
         owner_ws = control.update_client_settings(
             owner_ws.id, ClientSettings.from_dict(payload), updated_by="bootstrap"
         )
+    return owner_ws
+
+
+def ensure_owner_workspace() -> dict[str, Any]:
+    """Create Cepoch's internal workspace and the demo platform owner (idempotent).
+
+    The owner view spans every client, so it is reached from here — never from a
+    client's own workspace, whose ADMIN must not see other clients.
+    """
+    owner_ws = ensure_internal_workspace()
     try:
         user = control.create_user(
             client_id=owner_ws.id,

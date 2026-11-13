@@ -263,6 +263,52 @@ def save_portfolio(
     return portfolio
 
 
+def _members(client: Client) -> list[dict[str, Any]]:
+    """Who belongs to one workspace. Never includes passwords or tokens."""
+    users = control.list_users(client.id)
+    rows = [
+        {
+            "id": u.id,
+            "email": u.email,
+            "display_name": u.display_name,
+            "role": str(u.primary_role),
+            "job_role": u.job_role_label,
+            "status": u.status,
+            "last_login_at": u.last_login_at.isoformat() if u.last_login_at else None,
+            "platform_owner": bool(u.platform_owner),
+        }
+        for u in users
+    ]
+    rows.sort(key=lambda r: (r["status"] != "ACTIVE", r["display_name"].casefold()))
+    return rows
+
+
+def all_workspaces() -> dict[str, Any]:
+    """Every workspace on this platform with its members, for platform owners only."""
+    items = []
+    for c in control.list_clients():
+        members = _members(c)
+        items.append(
+            {
+                "client_id": c.id,
+                "slug": c.slug,
+                "company_name": c.company_name,
+                "status": c.status,
+                "internal": bool(getattr(c.settings, "internal_workspace", False)),
+                "created_at": c.created_at.isoformat() if getattr(c, "created_at", None) else None,
+                "member_count": len(members),
+                "active_member_count": sum(1 for m in members if m["status"] == "ACTIVE"),
+                "members": members,
+            }
+        )
+    items.sort(key=lambda w: (w["internal"], w["company_name"].casefold()))
+    return {
+        "workspace_count": len(items),
+        "member_count": sum(w["member_count"] for w in items),
+        "workspaces": items,
+    }
+
+
 def _client_row(client: Client, now: datetime) -> dict[str, Any]:
     tickets = list_tickets(client_id=client.id)
     override = _portfolio_blob(client).get("override") or {}
@@ -285,6 +331,7 @@ def _client_row(client: Client, now: datetime) -> dict[str, Any]:
         "needs_me": needs,
         "needs_me_count": len(needs),
         "history": _history(client, tickets),
+        "members": _members(client),
         "revenue": {
             "placeholder": bool(rules.get("placeholder")),
             "customer_price_usd": rules.get("customer_price_usd"),

@@ -18,6 +18,8 @@ import {
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
 import { PricingStudio } from '@/components/admin/Pricing'
+import { AllWorkspaces } from '@/components/owner/WorkspaceMembers'
+import { useSession } from '@/components/SessionProvider'
 import {
   DATA_TAGS,
   JOB_ROLES,
@@ -116,7 +118,10 @@ function AdminView() {
     | 'policies'
     | 'domains'
     | 'tools'
+    | 'workspaces'
   >('setup')
+  const { me } = useSession()
+  const platformOwner = Boolean(me?.user.is_platform_owner)
   return (
     <PageStack>
       <PageHeader
@@ -135,7 +140,8 @@ function AdminView() {
               'users',
               'policies',
               'domains',
-              'tools'
+              'tools',
+              ...(platformOwner ? (['workspaces'] as const) : [])
             ] as const
           ).map((name) => (
             <SegmentedTab
@@ -157,6 +163,7 @@ function AdminView() {
       {tab === 'policies' && <Policies />}
       {tab === 'domains' && <Domains />}
       {tab === 'tools' && <Tools />}
+      {tab === 'workspaces' && platformOwner && <AllWorkspaces />}
     </PageStack>
   )
 }

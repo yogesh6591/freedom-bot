@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { api } from '@/lib/api'
 import { NewClientPanel } from './NewClientPanel'
+import { AllWorkspaces, MemberTable, type WorkspaceMember } from '@/components/owner/WorkspaceMembers'
 import {
   Badge,
   Btn,
@@ -51,6 +52,7 @@ interface PortfolioClient {
   needs_me_count: number
   needs_me: NeedsMeItem[]
   history: { at: string; kind: string; text: string }[]
+  members?: WorkspaceMember[]
   revenue: {
     placeholder?: boolean
     customer_price_usd?: number | null
@@ -227,6 +229,8 @@ function OwnerView() {
           )}
         </Panel>
       )}
+
+      <AllWorkspaces />
     </PageStack>
   )
 }
@@ -314,6 +318,15 @@ function ClientCard({
           )}
         </div>
       </div>
+
+      <details className="mt-3 border-t border-border pt-3">
+        <summary className="type-caption cursor-pointer">
+          Members ({client.members?.length ?? 0})
+        </summary>
+        <div className="mt-2">
+          <MemberTable members={client.members ?? []} />
+        </div>
+      </details>
 
       {client.history.length > 0 && (
         <div className="mt-3 border-t border-border pt-3">
