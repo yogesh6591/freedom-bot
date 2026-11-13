@@ -55,6 +55,9 @@ def shape_assessment_reply(user_message: str, report: str, *, model: Any = None)
     except Exception as exc:  # noqa: BLE001 - never fail the chat turn on a shaping miss
         log.warning("assessment reply shaping failed: %s", exc)
         return report
+    from bizos import usage
+
+    usage.record(output, step="assessment_reply", model=agent.model)
     content = getattr(output, "content", None)
     if isinstance(content, str) and content.strip():
         return content.strip()

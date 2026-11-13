@@ -161,3 +161,22 @@ def purge(ctx: TenantContext = Depends(require_role(Role.ADMIN))) -> dict[str, A
     days = control.get_client(ctx.client_id).settings.retention_policy.audit_days
     with bound(ctx):
         return audit.purge_expired(days, ctx=ctx)
+
+
+@router.get("/token-usage")
+def token_usage(
+    days: int = Query(default=30, ge=1, le=365),
+    user_id: Optional[str] = None,
+    limit: int = Query(default=200, ge=1, le=1000),
+    ctx: TenantContext = Depends(require_role(Role.ADMIN)),
+) -> dict[str, Any]:
+    """Tokens and estimated cost per chat query in this workspace. Admins only."""
+    from bizos import usage
+    from bizos.control import store as control
+
+    with bound(ctx):
+        data = usage.report(ctx, days=days, user_id=user_id or None, limit=limit)
+    names = {u.id: (u.display_name or u.email) for u in control.list_users(ctx.client_id)}
+    for row in (*data["by_user"], *data["items"]):
+        row["user_name"] = names.get(row["user_id"], row["user_id"])
+    return data

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AppShell } from '@/components/AppShell'
 import { useSession } from '@/components/SessionProvider'
 import { api } from '@/lib/api'
+import { TokenUsage } from '@/components/audit/TokenUsage'
 import type { AuditRow } from '@/lib/types'
 import {
   Badge,
@@ -15,6 +16,8 @@ import {
   PageStack,
   PageHeader,
   Panel,
+  SegmentedTab,
+  SegmentedTabs,
   inputClass,
   modeTone,
   riskTone,
@@ -25,12 +28,57 @@ import {
 export default function AuditPage() {
   return (
     <AppShell>
-      <AuditView />
+      <AuditTabs />
     </AppShell>
   )
 }
 
-function AuditView() {
+/** Activity for everyone who may read the audit log; Token usage for admins only. */
+function AuditTabs() {
+  const { hasRole } = useSession()
+  const [tab, setTab] = useState<'activity' | 'tokens'>('activity')
+  if (!hasRole('ADMIN') || tab === 'activity') {
+    return (
+      <AuditView
+        tabs={hasRole('ADMIN') ? <AuditTabBar tab={tab} onChange={setTab} /> : null}
+      />
+    )
+  }
+  return (
+    <PageStack>
+      <PageHeader
+        eyebrow="Activity & compliance"
+        title="Audit log"
+        description="Tokens used by every question in your workspace, per person and per model."
+      />
+      <AuditTabBar tab={tab} onChange={setTab} />
+      <TokenUsage />
+    </PageStack>
+  )
+}
+
+function AuditTabBar({
+  tab,
+  onChange
+}: {
+  tab: 'activity' | 'tokens'
+  onChange: (tab: 'activity' | 'tokens') => void
+}) {
+  return (
+    <div className="-mt-2">
+      <SegmentedTabs aria-label="Audit sections">
+        <SegmentedTab active={tab === 'activity'} onClick={() => onChange('activity')}>
+          Activity
+        </SegmentedTab>
+        <SegmentedTab active={tab === 'tokens'} onClick={() => onChange('tokens')}>
+          Token usage
+        </SegmentedTab>
+      </SegmentedTabs>
+    </div>
+  )
+}
+
+function AuditView({ tabs }: { tabs?: React.ReactNode }) {
   const [filters, setFilters] = useState({
     event_type: '',
     user_id: '',
@@ -101,6 +149,7 @@ function AuditView() {
         title="Audit log"
         description="Review actions, decisions, and tool activity across your workspace."
       />
+      {tabs}
       <Panel
         title="Find events"
         description={`${total} events recorded in this workspace — who acted, what, with which tool, in which mode. Append-only: entries cannot be edited, and are deleted only by the retention rule${

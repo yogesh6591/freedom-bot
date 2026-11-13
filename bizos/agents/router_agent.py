@@ -73,6 +73,9 @@ def route_query(prompt: str, query: str, *, model: Any = None) -> RouteResult:
         output = agent.run(input=query)
     except Exception as exc:  # noqa: BLE001 - a routing failure must not fail the request
         return _fallback(f"router error: {type(exc).__name__}: {exc}")
+    from bizos import usage
+
+    usage.record(output, step="router", model=agent.model)
     content = output.content
     if isinstance(content, Route):
         return RouteResult(content)

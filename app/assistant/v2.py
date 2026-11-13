@@ -57,6 +57,8 @@ from bizos.tools.dry_run import bound_scope, policy_gate
 from bizos.types import ActionStatus
 from bizos.util.ids import new_id
 
+from bizos import usage  # noqa: E402
+
 log = logging.getLogger(__name__)
 
 TOOL_CALL_LIMIT = 60
@@ -596,6 +598,7 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
             raise
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"Model call failed: {exc}") from exc
+        usage.record(output, step="assistant", model=model)
         if output.status == RunStatus.error:
             raise HTTPException(status_code=502, detail=f"Model call failed: {output.content}")
         text, explanation = _final(output)

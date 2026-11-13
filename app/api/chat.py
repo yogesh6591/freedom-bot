@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import time
 import os
 import queue
 import re
@@ -270,11 +271,27 @@ def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings,
     ``emit`` streams progress from the v2 pipeline.
     """
     from app.assistant import v2
+    from bizos import usage
 
     if _engine() == "legacy":
         return _legacy_chat(body, ctx, settings)
-    with bound(ctx):
-        return v2.handle(body, ctx, settings, **({"emit": emit} if emit else {}))
+    started = time.monotonic()
+    response: Optional[dict[str, Any]] = None
+    with bound(ctx), usage.collect() as collected:
+        try:
+            response = v2.handle(body, ctx, settings, **({"emit": emit} if emit else {}))
+            return response
+        finally:
+            # Audit > Token usage: one row per turn, saved even when the turn failed.
+            usage.save(
+                ctx,
+                collected,
+                query=body.message,
+                session_id=(response or {}).get("session_id") or body.session_id,
+                source="scheduled" if ctx.attributes.get("scheduled_task") else "chat",
+                status="ok" if response is not None else "error",
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
 
 
 @router.post("")
