@@ -212,6 +212,49 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["subject"],
     ),
+    "schedule_create": _obj(
+        {
+            "title": _s("Short name for the task, e.g. 'Weekly Facebook tip'"),
+            "instruction": _s("What to do each time, in the user's words but without the timing, e.g. 'Write "
+                              "a short AI tip and post it on our Facebook Page'"),
+            "frequency": _enum("How often: daily, weekly (chosen weekdays), or interval (every N minutes or "
+                               "hours)", ["daily", "weekly", "interval"]),
+            "time": _s("Time of day, e.g. 09:00 or 6:30 PM. Needed for daily and weekly; for interval only "
+                       "when the user gives a start time"),
+            "every_minutes": {"type": "integer", "minimum": 5,
+                              "description": "For interval: minutes between runs, at least 5 (every 5 minutes -> 5, "
+                                             "every 50 minutes -> 50, every 2 hours -> 120)"},
+            "weekdays": {"type": "array", "description": "For weekly: the days it runs",
+                         "items": {"type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
+            "timezone": _s("IANA timezone, e.g. Asia/Kolkata (optional; default the workspace's)"),
+        },
+        ["instruction", "frequency"],
+    ),
+    "schedule_list": _obj(
+        {
+            "everyone": {"type": "boolean", "description": "Admins only: every person's schedules (default false)"},
+            "include_ended": {"type": "boolean", "description": "Also show stopped ones (default false)"},
+        }
+    ),
+    "schedule_update": _obj(
+        {
+            "schedule_id": _s("Schedule id (sch_...) from schedule_list or schedule_create"),
+            "title": _s("New short name, only if it changes"),
+            "instruction": _s("New instruction (what to do each time, without the timing), only if it changes"),
+            "frequency": _enum("New frequency, only if it changes", ["daily", "weekly", "interval"]),
+            "time": _s("New time of day, e.g. 09:00 or 6:30 PM, only if it changes"),
+            "every_minutes": {"type": "integer", "minimum": 5,
+                              "description": "For interval: new minutes between runs, at least 5 (every 2 hours -> 120)"},
+            "weekdays": {"type": "array", "description": "For weekly: the new days it runs",
+                         "items": {"type": "string", "enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}},
+            "timezone": _s("New IANA timezone, e.g. Asia/Kolkata, only if it changes"),
+        },
+        ["schedule_id"],
+    ),
+    "schedule_cancel": _obj(
+        {"schedule_id": _s("Schedule id (sch_...) from schedule_list or schedule_create")},
+        ["schedule_id"],
+    ),
     "support_my_tickets": _obj({}),
     "crm_search_contacts": _obj(
         {
@@ -280,8 +323,49 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "title": _s("Job title"),
             "lifecycle": _s("Lifecycle stage"),
             "tags": _arr("Tags"),
+            "save_to": {"type": "string", "enum": ["freedombot", "hubspot", "google_drive"],
+                        "description": "Only when the user names a place for this record: freedombot (our own "
+                                       "database), hubspot, or google_drive. Leave out to use the user's usual place."},
         },
         ["first_name"],
+    ),
+    "crm_create_company": _obj(
+        {
+            "name": _s("Company name, e.g. 'QA NovaTech Solutions'"),
+            "domain": _s("Web domain, e.g. novatech.com (optional)"),
+            "industry": _s("Industry, e.g. Information Technology (optional)"),
+            "size": _s("Company size, e.g. 11-50 (optional)"),
+            "description": _s("One or two lines about the company (optional)"),
+            "save_to": {"type": "string", "enum": ["freedombot", "hubspot", "google_drive"],
+                        "description": "Only when the user names a place for this record: freedombot (our own "
+                                       "database), hubspot, or google_drive. Leave out to use the user's usual place."},
+        },
+        ["name"],
+    ),
+    "crm_create_deal": _obj(
+        {
+            "name": _s("Deal name, e.g. 'NovaTech AI Automation Project'"),
+            "amount": {"type": "number", "description": "Deal value as a number, e.g. 25000 (no currency sign)"},
+            "stage": _s("Pipeline stage, e.g. new, qualified, proposal, negotiation, won, lost (default new)"),
+            "close_date": _s("Expected close date as YYYY-MM-DD (optional)"),
+            "company_id": _s("Company id from crm_search_companies or crm_create_company (optional)"),
+            "contact_id": _s("Contact id from crm_search_contacts or crm_create_contact (optional)"),
+            "currency": _s("Three-letter currency code (default USD)"),
+            "save_to": {"type": "string", "enum": ["freedombot", "hubspot", "google_drive"],
+                        "description": "Only when the user names a place for this record: freedombot (our own "
+                                       "database), hubspot, or google_drive. Leave out to use the user's usual place."},
+        },
+        ["name", "amount"],
+    ),
+    "crm_get_storage": _obj({}),
+    "crm_set_storage": _obj(
+        {
+            "destination": {"type": "string", "enum": ["freedombot", "hubspot", "google_drive", "auto"],
+                            "description": "Where new CRM records go: freedombot (our own database), hubspot, "
+                                           "google_drive (a FreedomBot CRM sheet in Drive), or auto (HubSpot when "
+                                           "connected, otherwise FreedomBot)"},
+        },
+        ["destination"],
     ),
     "crm_update_deal_stage": _obj(
         {"deal_id": _s("Deal id"), "stage": _s("New stage")},
@@ -394,7 +478,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "integration_find_action": _obj(
         {
             "query": _s("What the action should do, in plain words, e.g. 'reply to a youtube comment'"),
-            "app": _s("Only this connected app, by its slug, e.g. gmail, youtube, hubspot, slack, notion "
+            "app": _s("Only this connected app, by its slug: gmail, googlecalendar, googledrive, googlesheets, "
+                      "googledocs, youtube, hubspot or facebook "
                       "(optional; default every connected app)"),
             "limit": _i("Max actions (default 8, at most 15)"),
         },

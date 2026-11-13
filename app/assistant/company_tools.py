@@ -19,10 +19,92 @@ from bizos.connectors.registry import get_connector
 from bizos.tools.base import RunScope, effect, precheck, risk_inputs
 
 
-def _crm(scope: RunScope):
-    # An approved change runs on the requester's own CRM login, like email and calendar, so the
-    # record in HubSpot shows the person who asked for it rather than the approver.
-    return get_connector("crm", ctx=scope.ctx, owner_user_id=scope.on_behalf_of)
+def _crm(scope: RunScope, args: Optional[dict[str, Any]] = None):
+    # An approved change runs on the requester's own CRM login and storage choice (bizos/crm_storage.py),
+    # like email and calendar, so the record shows the person who asked for it rather than the approver.
+    return _Placed(get_connector("crm", ctx=scope.ctx, owner_user_id=scope.on_behalf_of,
+                                 save_to=(args or {}).get("save_to") or None))
+
+
+#: CRM connector methods that only read; every other method that returns a result changes something.
+_CRM_READS = frozenset({"search_contacts", "get_contact", "search_companies", "search_deals", "pipeline_summary",
+                        "find_duplicate", "health"})
+
+
+def _where(crm: Any, result: ConnectorResult, *, wrote: bool) -> ConnectorResult:
+    """Say in the result where the records were saved or read (FreedomBot, HubSpot or Google Drive)."""
+    from bizos import crm_storage
+
+    place = getattr(crm, "storage", None)
+    if not place:
+        return result
+    name = crm_storage.label(place)
+    result.metadata = {**(result.metadata or {}), "crm_storage": place, "crm_storage_name": name}
+    if result.ok:
+        note = getattr(crm, "storage_note", "") or ""
+        where = f"Saved in {name}." if wrote else f"From {name}."
+        result.summary = " ".join(p for p in (str(result.summary or "").rstrip(".") + ".", where, note) if p.strip())
+    return result
+
+
+class _Placed:
+    """A CRM connector whose results say where the records are kept."""
+
+    def __init__(self, crm: Any) -> None:
+        self._crm = crm
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._crm, name)
+        if not callable(attr):
+            return attr
+
+        def call(*a: Any, **kw: Any) -> Any:
+            out = attr(*a, **kw)
+            return _where(self._crm, out, wrote=name not in _CRM_READS) if isinstance(out, ConnectorResult) else out
+
+        return call
+
+
+def _crm_call(scope: RunScope, args: dict[str, Any], method: str, **kwargs: Any) -> ConnectorResult:
+    return getattr(_crm(scope, args), method)(**kwargs)
+
+
+#: CRM tools that take ``save_to`` (a place named in the request: FreedomBot, HubSpot or Google Drive).
+_SAVE_TO_TOOLS = ("crm_create_contact", "crm_create_company", "crm_create_deal")
+
+
+def _save_to_problem(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    """Refuse a place that is unknown or not connected for the person, before any approval is queued."""
+    from bizos import crm_storage
+
+    requested = args.get("save_to")
+    if requested in (None, ""):
+        return None
+    place = crm_storage.parse(requested)
+    if place is None:
+        return f"save_to must be FreedomBot, HubSpot or Google Drive (got {requested!r}). Nothing was saved."
+    owner = scope.on_behalf_of or scope.ctx.user_id
+    if place != crm_storage.AUTO and not crm_storage.connected(scope.ctx, owner).get(place):
+        return crm_storage._missing(place)
+    return None
+
+
+def _storage_risk(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
+    """A record saved into Google Drive is an outside write: rate it HIGH like any other Google Sheets change."""
+    from bizos import crm_storage
+    from bizos.types import RiskLevel
+
+    owner = scope.on_behalf_of or scope.ctx.user_id
+    try:
+        place, _ = crm_storage.resolve(scope.ctx, owner, args.get("save_to") or None)
+    except Exception:  # noqa: BLE001 - an unknown or missing place is refused by the precheck
+        return {}
+    return {"risk_override": RiskLevel.HIGH} if place == crm_storage.GOOGLE_DRIVE else {}
+
+
+for _tool in _SAVE_TO_TOOLS:
+    precheck(_tool)(_save_to_problem)
+    risk_inputs(_tool)(_storage_risk)
 
 
 # ------------------------------------------------------------------- reads
@@ -37,12 +119,13 @@ def crm_search_contacts(scope: RunScope, args: dict[str, Any]) -> ConnectorResul
 
 @effect("crm_get_contact")
 def crm_get_contact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).get_contact(str(args.get("contact_id", "")))
+    return _crm_call(scope, args, "get_contact", contact_id=str(args.get("contact_id", "")))
 
 
 @effect("crm_search_companies")
 def crm_search_companies(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).search_companies(args.get("query", ""), limit=int(args.get("limit", 20)))
+    return _crm_call(scope, args, "search_companies", query=args.get("query", ""),
+                     limit=int(args.get("limit", 20)))
 
 
 @effect("crm_search_deals")
@@ -54,7 +137,7 @@ def crm_search_deals(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @effect("crm_pipeline_summary")
 def crm_pipeline_summary(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).pipeline_summary()
+    return _crm_call(scope, args, "pipeline_summary")
 
 
 # ------------------------------------------------------------------ writes
@@ -114,7 +197,8 @@ def _update_field_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any
 
 @effect("crm_create_contact")
 def crm_create_contact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).create_contact(
+    return _crm_call(
+        scope, args, "create_contact",
         first_name=str(args.get("first_name", "")),
         last_name=str(args.get("last_name", "")),
         email=args.get("email"),
@@ -126,9 +210,89 @@ def crm_create_contact(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
     )
 
 
+@effect("crm_create_company")
+def crm_create_company(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    return _crm_call(
+        scope, args, "create_company",
+        name=str(args.get("name") or ""),
+        domain=args.get("domain"),
+        industry=args.get("industry"),
+        size=args.get("size"),
+        description=args.get("description"),
+    )
+
+
+@effect("crm_create_deal")
+def crm_create_deal(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    return _crm_call(
+        scope, args, "create_deal",
+        name=str(args.get("name") or ""),
+        amount=args.get("amount"),
+        stage=str(args.get("stage") or "new"),
+        close_date=args.get("close_date"),
+        company_id=args.get("company_id"),
+        contact_id=args.get("contact_id"),
+        currency=str(args.get("currency") or "USD"),
+    )
+
+
+@effect("crm_get_storage")
+def crm_get_storage(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """Where this person's CRM records are saved now, their saved choice, and which places are connected."""
+    from bizos import crm_storage
+
+    info = crm_storage.describe(scope.ctx, scope.on_behalf_of or scope.ctx.user_id)
+    connected = [crm_storage.label(p) for p, ok in info["available"].items() if ok]
+    summary = (f"CRM records are saved in {info['saving_to_name']} (your choice: {info['choice_name']}). "
+               f"Connected: {', '.join(connected)}.")
+    if info["note"]:
+        summary += f" {info['note']}"
+    return ConnectorResult(ok=True, data=info, summary=summary)
+
+
+@precheck("crm_set_storage")
+def _set_storage_problem(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    from bizos import crm_storage
+
+    place = crm_storage.parse(args.get("destination"))
+    if place is None:
+        return ("destination must be freedombot, hubspot, google_drive or auto "
+                f"(got {args.get('destination')!r}). Nothing was changed.")
+    owner = scope.on_behalf_of or scope.ctx.user_id
+    if place in crm_storage.APP_FOR and not crm_storage.connected(scope.ctx, owner).get(place):
+        return crm_storage._missing(place).replace("nothing was saved there", "the choice was not changed")
+    return None
+
+
+@effect("crm_set_storage")
+def crm_set_storage(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """Save where this person's new CRM records go. Existing records are not moved."""
+    from bizos import crm_storage
+
+    owner = scope.on_behalf_of or scope.ctx.user_id
+    place = crm_storage.parse(args.get("destination"))
+    if place is None:
+        return ConnectorResult.failure("destination must be freedombot, hubspot, google_drive or auto.")
+    if place in crm_storage.APP_FOR and not crm_storage.connected(scope.ctx, owner).get(place):
+        return ConnectorResult.failure(crm_storage._missing(place).replace("nothing was saved there",
+                                                                           "the choice was not changed"))
+    crm_storage.save(scope.ctx, owner, place)
+    info = crm_storage.describe(scope.ctx, owner)
+    if place == crm_storage.AUTO:
+        summary = (f"CRM records will be saved automatically: HubSpot when it is connected, otherwise FreedomBot. "
+                   f"Right now that is {info['saving_to_name']}.")
+    elif place == crm_storage.GOOGLE_DRIVE:
+        summary = ("New CRM records will be saved in Google Drive, in a sheet named FreedomBot CRM (made on first use). "
+                   "Existing records stay where they are.")
+    else:
+        summary = f"New CRM records will be saved in {crm_storage.label(place)}. Existing records stay where they are."
+    return ConnectorResult(ok=True, data=info, summary=summary)
+
+
 @effect("crm_update_deal_stage")
 def crm_update_deal_stage(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    return _crm(scope).update_deal_stage(str(args.get("deal_id", "")), stage=str(args.get("stage", "")))
+    return _crm_call(scope, args, "update_deal_stage", deal_id=str(args.get("deal_id", "")),
+                     stage=str(args.get("stage", "")))
 
 
 @risk_inputs("crm_update_deal_stage")
@@ -738,6 +902,129 @@ def support_my_tickets(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
         data=[_render_support(t) for t in mine[:20]],
         summary=f"{len(mine)} support ticket(s) raised by this user",
     )
+
+# ------------------------------------------------------------------------------------------------
+# scheduled tasks  (bizos/automation.py) - recurring work (daily, weekly or every N minutes), run as the person
+# who set it up
+# ------------------------------------------------------------------------------------------------
+from bizos import automation
+
+
+def _schedule_fields(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
+    """The schedule as it will be saved; raises automation.ScheduleError with a fixable message."""
+    frequency = str(args.get("frequency") or "").strip().lower()
+    if frequency not in automation.FREQUENCIES:
+        raise automation.ScheduleError("frequency must be daily, weekly or interval (every N minutes).")
+    days = automation.parse_weekdays(args.get("weekdays") or ()) if frequency == automation.WEEKLY else ()
+    if frequency == automation.WEEKLY and not days:
+        raise automation.ScheduleError("a weekly schedule needs weekdays, e.g. ['mon'] or ['mon', 'thu'].")
+    every = None
+    if frequency == automation.INTERVAL:
+        if args.get("every_minutes") in (None, ""):
+            raise automation.ScheduleError("an interval schedule needs every_minutes, e.g. 5, 50 or 120.")
+        every = automation.parse_every(args.get("every_minutes"))
+    starts = str(args.get("time") or "").strip()
+    return {
+        "title": str(args.get("title") or ""),
+        "instruction": str(args.get("instruction") or ""),
+        "frequency": frequency,
+        # Every N minutes starts N minutes from now unless a start time is given.
+        "time_of_day": "" if frequency == automation.INTERVAL and not starts else automation.parse_time(starts),
+        "every_minutes": every,
+        "weekdays": days,
+        "tz": automation.parse_timezone(args.get("timezone"), scope.settings.timezone or "UTC"),
+    }
+
+
+@precheck("schedule_create")
+def _schedule_create_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    if scope.ctx.attributes.get("scheduled_task"):
+        return "A scheduled run cannot set up more schedules. Nothing was saved."
+    if not str(args.get("instruction") or "").strip():
+        return ("instruction is required: what to do each time, without the timing, e.g. 'Post our weekly AI "
+                "tip on the Facebook Page'.")
+    try:
+        _schedule_fields(scope, args)
+    except automation.ScheduleError as exc:
+        return f"{exc} Nothing was saved."
+    return None
+
+
+@effect("schedule_create")
+def schedule_create(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    try:
+        fields = _schedule_fields(scope, args)
+        task, created = automation.create(scope.ctx, default_tz=scope.settings.timezone or "UTC",
+                                          owner_user_id=scope.on_behalf_of or scope.ctx.user_id, **fields)
+    except automation.ScheduleError as exc:
+        return ConnectorResult.failure(f"{exc} Nothing was saved.")
+    shown = {k: task[k] for k in ("id", "title", "instruction", "schedule", "next_run_at", "status")}
+    if not created:
+        return ConnectorResult(ok=True, data={**shown, "existing": True},
+                               summary=f"already scheduled as {task['id']} ({task['schedule']}); nothing new was saved")
+    return ConnectorResult(ok=True, data=shown,
+                           summary=f"scheduled {task['id']}: {task['schedule']}, next run {task['next_run_at']}")
+
+
+def _schedule_changes(args: dict[str, Any]) -> dict[str, Any]:
+    """Only what the user asked to change; everything left out stays as it is."""
+    return {"title": args.get("title"), "instruction": args.get("instruction"), "frequency": args.get("frequency"),
+            "time_of_day": args.get("time"), "weekdays": args.get("weekdays"),
+            "every_minutes": args.get("every_minutes"), "tz": args.get("timezone")}
+
+
+@precheck("schedule_update")
+def _schedule_update_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    if scope.ctx.attributes.get("scheduled_task"):
+        return "A scheduled run cannot change schedules. Nothing was changed."
+    schedule_id = str(args.get("schedule_id") or "").strip()
+    task = automation.get(scope.ctx, schedule_id) if schedule_id else None
+    allowed = {scope.ctx.user_id, scope.on_behalf_of}
+    if task is None or (task["created_by"] not in allowed and not scope.ctx.is_admin):
+        return f"No schedule {schedule_id!r} that you can change. List them with schedule_list. Nothing was changed."
+    try:
+        automation.plan_update(task, **_schedule_changes(args))
+    except automation.ScheduleError as exc:
+        return f"{exc} Nothing was changed."
+    return None
+
+
+@effect("schedule_update")
+def schedule_update(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    try:
+        task, changes = automation.update(scope.ctx, str(args.get("schedule_id") or "").strip(),
+                                          requested_by=scope.on_behalf_of, **_schedule_changes(args))
+    except automation.ScheduleError as exc:
+        return ConnectorResult.failure(f"{exc} Nothing was changed.")
+    shown = {k: task[k] for k in ("id", "title", "instruction", "schedule", "next_run_at", "status")}
+    return ConnectorResult(ok=True, data={**shown, "changed": changes},
+                           summary=f"schedule {task['id']} changed ({', '.join(changes)}): {task['schedule']}, "
+                                   f"next run {task['next_run_at']}")
+
+
+@effect("schedule_list")
+def schedule_list(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    everyone = bool(args.get("everyone")) and scope.ctx.is_admin
+    tasks = automation.list_tasks(scope.ctx, everyone=everyone, include_ended=bool(args.get("include_ended")))
+    keys = ("id", "title", "instruction", "schedule", "status", "next_run_at", "last_run_at", "last_status",
+            "last_result", "run_count", "created_by", "session_id", "frequency", "time_of_day", "weekdays",
+            "every_minutes", "timezone")
+    rows = [{k: t.get(k) for k in keys} for t in tasks[:50]]
+    for row in rows:
+        row["last_result"] = str(row.get("last_result") or "")[:300]
+    return ConnectorResult(ok=True, data=rows, summary=f"{len(rows)} schedule(s)")
+
+
+@effect("schedule_cancel")
+def schedule_cancel(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    try:
+        task = automation.cancel(scope.ctx, str(args.get("schedule_id") or "").strip(),
+                                 requested_by=scope.on_behalf_of)
+    except automation.ScheduleError as exc:
+        return ConnectorResult.failure(str(exc))
+    return ConnectorResult(ok=True, data={"id": task["id"], "title": task["title"], "status": task["status"]},
+                           summary=f"schedule {task['id']} stopped; it will not run again")
+
 
 # ------------------------------------------------------------------------------------------------
 # approvals  (bizos/tools/approvals.py) - Approval Tool Effects
@@ -2364,6 +2651,8 @@ def _app_action_problem(scope: RunScope, args: dict[str, Any], tier: str) -> Opt
         toolkit, problem = app_actions.check(str(args.get("action") or ""), tier)
     except ConnectorError as exc:
         return str(exc)
+    if not problem:
+        problem = _duplicate_post_problem(scope, toolkit, args, tier)
     if problem or scope.on_behalf_of:
         return problem
     reference = _ACTION_REFERENCE.get((toolkit, app_actions.READ if tier == app_actions.READ else app_actions.WRITE))
@@ -2373,7 +2662,24 @@ def _app_action_problem(scope: RunScope, args: dict[str, Any], tier: str) -> Opt
     return None
 
 
+def _duplicate_post_problem(scope: RunScope, toolkit: Optional[str], args: dict[str, Any], tier: str) -> Optional[str]:
+    """A new public post whose content already went to the same place is refused (checked again when an
+    approved post is released, so two identical requests never both go out)."""
+    from bizos import automation
+
+    slug = str(args.get("action") or "").strip().upper()
+    if tier != app_actions.DESTRUCTIVE or not toolkit or not app_actions.is_new_public_post(slug):
+        return None
+    earlier = automation.already_posted(scope.ctx, toolkit, args.get("arguments") or {})
+    if earlier is None:
+        return None
+    return (f"Not posted: the same content was already published there on {earlier['posted_at'][:10]} "
+            f"({earlier['action']}: \"{earlier['preview']}\"). Nothing was run. Change the text to post "
+            "something new.")
+
+
 def _run_app_action(scope: RunScope, args: dict[str, Any], tier: str) -> ConnectorResult:
+    from bizos import automation
     from bizos.connectors.base import ConnectorError
 
     slug = str(args.get("action") or "").strip().upper()
@@ -2382,6 +2688,10 @@ def _run_app_action(scope: RunScope, args: dict[str, Any], tier: str) -> Connect
     except ConnectorError as exc:
         return ConnectorResult.failure(f"{exc} If the arguments were wrong, check them with "
                                        f"integration_find_action and try again.")
+    if tier == app_actions.DESTRUCTIVE and app_actions.is_new_public_post(slug):
+        toolkit = app_actions.toolkit_of(slug) or slug.split("_", 1)[0].lower()
+        automation.record_post(scope.ctx, toolkit, slug, args.get("arguments") or {},
+                               posted_by=scope.on_behalf_of or scope.ctx.user_id)
     done = "ran" if tier == app_actions.READ else "done"
     return ConnectorResult(ok=True, data={"action": slug, "result": data, "_untrusted_source": f"app_{slug.lower()}"},
                            summary=f"{slug} {done}" + (" (result cut; narrow the request)" if truncated else ""))

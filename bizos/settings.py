@@ -237,6 +237,11 @@ def memory_vector_search() -> bool:
     return getenv("MEMORY_VECTOR_SEARCH", "on").strip().casefold() not in ("0", "off", "false", "no")
 
 
+def scheduled_tasks_enabled() -> bool:
+    """The recurring-task loop (bizos/automation.py). On unless SCHEDULED_TASKS_ENABLED is off."""
+    return getenv("SCHEDULED_TASKS_ENABLED", "on").strip().casefold() not in ("0", "off", "false", "no")
+
+
 def integration_sync_enabled() -> bool:
     """Background sync of each user's Composio sources (bizos/sync). On unless INTEGRATION_SYNC_ENABLED is off."""
     return getenv("INTEGRATION_SYNC_ENABLED", "on").strip().casefold() not in ("0", "off", "false", "no")

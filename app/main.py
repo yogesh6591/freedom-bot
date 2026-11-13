@@ -89,9 +89,22 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         stop_research = research_tools.start()
     except Exception as exc:  # noqa: BLE001 - the API must start even if the research worker cannot
         log_warning(f"bizos: prospect research not started: {exc}")
+    stop_schedules = None
+    if settings.scheduled_tasks_enabled():
+        try:
+            from app.assistant.scheduled_runner import run_in_chat
+            from bizos import automation
+
+            stop_schedules = automation.start(run_in_chat)
+        except Exception as exc:  # noqa: BLE001 - the API must start even if the schedule loop cannot
+            log_warning(f"bizos: scheduled tasks not started: {exc}")
+    else:
+        log_info("scheduled tasks: off (SCHEDULED_TASKS_ENABLED)")
     try:
         yield
     finally:
+        if stop_schedules:
+            stop_schedules()
         if stop_research:
             stop_research()
         if stop_outreach:

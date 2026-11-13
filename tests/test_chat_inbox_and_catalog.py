@@ -77,9 +77,9 @@ def test_search_finds_platforms_and_says_which_can_be_connected(fake_catalog):
     assert [p["slug"] for p in catalog.search("", connected=frozenset({"slack"}))["items"]][0] == "slack"
 
 
-def test_a_platform_that_needs_admin_setup_is_not_offered_as_connectable(fake_catalog, client_a, ctx_factory, monkeypatch):
-    monkeypatch.setattr(composio, "get_client", lambda: pytest.fail("no sign-in link for a platform that cannot connect"))
-    with pytest.raises(ValueError, match="needs an admin to set it up"):
+def test_a_platform_outside_the_supported_apps_is_never_offered(fake_catalog, client_a, ctx_factory, monkeypatch):
+    monkeypatch.setattr(composio, "get_client", lambda: pytest.fail("no sign-in link for an unsupported platform"))
+    with pytest.raises(ValueError, match="FreedomBot connects"):
         composio.connect_url(ctx_factory(client_a, "admin"), "serpapi")
 
 
@@ -113,28 +113,32 @@ def test_a_switched_off_tool_never_runs(client_a, ctx_factory, monkeypatch):
             catalog.choose(ctx, "gmail", None)
 
 
-def test_find_hides_switched_off_tools_and_any_platform_works(client_a, ctx_factory, monkeypatch):
+def test_find_hides_switched_off_tools_and_other_platforms_are_refused(client_a, ctx_factory, monkeypatch):
     from types import SimpleNamespace as NS
 
     ctx = ctx_factory(client_a, "operator")
-    raw = [NS(slug="SLACK_LIST_CHANNELS", name="List channels", description="", tags=["readOnlyHint"],
-              toolkit=NS(slug="slack"), input_parameters={}, is_deprecated=False),
+    raw = [NS(slug="GOOGLESHEETS_GET_SPREADSHEET_INFO", name="Get spreadsheet info", description="",
+              tags=["readOnlyHint"], toolkit=NS(slug="googlesheets"), input_parameters={}, is_deprecated=False),
+           NS(slug="GOOGLESHEETS_BATCH_UPDATE", name="Update spreadsheet values", description="", tags=["updateHint"],
+              toolkit=NS(slug="googlesheets"), input_parameters={}, is_deprecated=False),
            NS(slug="SLACK_SEND_MESSAGE", name="Send message", description="", tags=["createHint"],
               toolkit=NS(slug="slack"), input_parameters={}, is_deprecated=False)]
-    monkeypatch.setattr(acts, "connected_toolkits", lambda c: ["slack"])
+    monkeypatch.setattr(acts, "connected_toolkits", lambda c: ["googlesheets"])
     monkeypatch.setattr(composio, "get_client", lambda: NS(tools=NS(
-        get_raw_composio_tools=lambda **k: raw,
+        get_raw_composio_tools=lambda **k: [t for t in raw if t.toolkit.slug in (k.get("toolkits") or ["googlesheets"])],
         get_raw_composio_tool_by_slug=lambda slug: next(t for t in raw if t.slug == slug))))
     with tenant_scope(ctx):
-        catalog.choose(ctx, "slack", ["SLACK_LIST_CHANNELS"])
+        catalog.choose(ctx, "googlesheets", ["GOOGLESHEETS_GET_SPREADSHEET_INFO"])
         try:
-            found = acts.find(ctx, "slack channels")
-            assert [a["action_id"] for a in found["actions"]] == ["SLACK_LIST_CHANNELS"]
-            assert found["actions"][0]["app"] == "slack"
-            # A platform outside the four built-in apps is runnable with the matching tier.
-            assert acts.check("SLACK_SEND_MESSAGE", acts.DESTRUCTIVE) == ("slack", None)
+            found = acts.find(ctx, "spreadsheet info")
+            assert [a["action_id"] for a in found["actions"]] == ["GOOGLESHEETS_GET_SPREADSHEET_INFO"]
+            assert found["actions"][0]["app"] == "googlesheets"
+            assert acts.check("GOOGLESHEETS_BATCH_UPDATE", acts.WRITE) == ("googlesheets", None)
+            # Any other Composio platform is refused, even with the matching tier.
+            toolkit, problem = acts.check("SLACK_SEND_MESSAGE", acts.DESTRUCTIVE)
+            assert toolkit is None and "does not use" in problem
         finally:
-            catalog.choose(ctx, "slack", None)
+            catalog.choose(ctx, "googlesheets", None)
 
 
 def test_find_ranks_plain_phrasings_when_composio_search_misses(client_a, ctx_factory, monkeypatch):

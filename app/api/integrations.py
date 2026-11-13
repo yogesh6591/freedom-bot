@@ -7,16 +7,18 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.api.deps import bound, current_context, require_admin
+from app.api.deps import bound, client_settings, current_context, require_admin, run_scope
 from bizos.audit import events as audit
 from bizos.connectors import composio
 from bizos.connectors import composio_catalog as catalog
 from bizos.connectors import registry as connectors
 from bizos import settings
 from bizos.connectors.base import ConnectorNotConfigured
+from bizos.control.models import ClientSettings
 from bizos.sync import store as sync_store
 from bizos.tenancy.context import TenantContext
-from bizos.types import AuditEventType
+from bizos.tools.base import guarded_call
+from bizos.types import AuditEventType, PolicyEffect
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
@@ -200,6 +202,41 @@ def composio_disconnect(toolkit: str, ctx: TenantContext = Depends(current_conte
 
 
 _SYNC_SOURCE = {"gmail": "gmail", "googlecalendar": "calendar", "youtube": "youtube", "hubspot": "hubspot"}
+
+
+class CrmStorageChoice(BaseModel):
+    destination: str = Field(..., max_length=40)
+
+
+def _storage_outcome(ctx: TenantContext, settings_: ClientSettings, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Run a CRM storage tool through the same guard and policy check as the chat."""
+    with bound(ctx):
+        outcome = guarded_call(run_scope(ctx, settings_), tool, arguments)
+    if outcome.effect == PolicyEffect.REQUIRE_APPROVAL and outcome.action_id:
+        return {"pending_approval": True, "action_id": outcome.action_id, "message": outcome.message}
+    if not outcome.ok:
+        code = 403 if outcome.effect == PolicyEffect.DENY else 400
+        raise HTTPException(status_code=code, detail=outcome.message or "That did not work.")
+    return {**(outcome.data or {}), "message": outcome.message}
+
+
+@router.get("/crm-storage")
+def crm_storage_status(
+    ctx: TenantContext = Depends(current_context),
+    settings_: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Where the signed-in user's CRM records are saved (FreedomBot, HubSpot or Google Drive)."""
+    return _storage_outcome(ctx, settings_, "crm_get_storage", {})
+
+
+@router.put("/crm-storage")
+def crm_storage_choose(
+    body: CrmStorageChoice,
+    ctx: TenantContext = Depends(current_context),
+    settings_: ClientSettings = Depends(client_settings),
+) -> dict[str, Any]:
+    """Choose where the signed-in user's new CRM records are saved (the chat's crm_set_storage tool)."""
+    return _storage_outcome(ctx, settings_, "crm_set_storage", {"destination": body.destination})
 
 
 @router.get("/composio/sync")

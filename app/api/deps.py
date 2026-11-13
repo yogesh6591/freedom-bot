@@ -178,7 +178,11 @@ def run_scope(
     requested_mode: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> RunScope:
-    """Build a RunScope from verified request context."""
+    """Build a RunScope from verified request context.
+
+    A scheduled run (bizos/automation.py) carries its schedule id as the workflow id, so every request it
+    makes is stored with it and the approval card can say which schedule asked.
+    """
     mode = ExecutionMode.parse(requested_mode) if requested_mode else None
     return RunScope(
         ctx=ctx,
@@ -186,4 +190,5 @@ def run_scope(
         domain=domain,
         requested_mode=mode,  # type: ignore[arg-type]
         session_id=session_id,
+        workflow_id=ctx.attributes.get("scheduled_task") or None,
     )

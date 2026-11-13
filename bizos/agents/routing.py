@@ -47,11 +47,11 @@ Domain = Literal[
 DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "memory": "Company knowledge: search facts and SOPs, look up a fact or its history, add facts, SOPs and decisions, correct facts, escalate conflicts (policy, contract and brand questions also need finance or ops)",
     "approvals": "Approval requests: list, view, submit, approve/reject/request changes, cancel",
-    "crm": "Contacts, companies, deals: search, view, notes, tasks, tags, create contacts, update contact fields, bulk updates by lifecycle stage, deal stages, delete records",
+    "crm": "Contacts, companies, deals (in FreedomBot, the user's HubSpot or their Google Drive, as they choose): search, view, notes, tasks, tags, create contacts, companies and deals, update contact fields, bulk updates by lifecycle stage, deal stages, delete records, where CRM records are saved",
     "email": "Email: search and read threads, draft, reply in existing threads and email named CRM contacts; a first email to someone given only by email address belongs to outreach",
     "calendar": "Meetings: list, check availability, create, reschedule, cancel",
     "finance": "Finance policies (discounts, refunds, credits, payment terms), pending billables, invoices, invoice drafts, adjustments",
-    "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations",
+    "ops": "Legal clauses and contract terms, brand voice and tone, strategy priorities, candidate matching, counsel flags, support tickets, n8n automations, recurring scheduled tasks (every few minutes, hours, days or weeks: set up, list, change, stop)",
     "youtube": "YouTube: search videos, our channel and videos, one video's details and comments, video transcripts (summaries, what the speaker says)",
     "admin_setup": "Workspace config: overview, setup, settings, enable or disable domain packs",
     "admin_launch": "Go-live: launch checklist, mark items, sign-off, handoff readiness",
@@ -60,7 +60,7 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "admin_permissions": "Tool rules: which roles can use a tool, and tightening how it runs",
     "admin_commercial": "Pricing, resale rules, consulting quotes, change orders",
     "outreach": "Acquisition (admins only): prospects (count, search, show, add, edit, delete), emails to prospects and follow-ups, the sent-email log, assessment progress and reports, approve or unapprove, bookings (read, move, cancel), payment offers, the prospect journey page, finding new prospects, and web research with scores on saved prospects",
-    "integrations": "Anything else in the user's connected apps (Gmail, Calendar, YouTube, HubSpot, Slack, Notion or any other connected platform) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, HubSpot tickets and objects; find an app action and run it",
+    "integrations": "Anything else in the user's connected apps (Gmail, Calendar, Google Drive, Google Sheets, Google Docs, YouTube, HubSpot or Facebook) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot tickets and objects, Facebook Page posts; find an app action and run it",
     "research": "The public web: research a company or person, news, job posts, read a web page",
     "files": "Files the user attached in this chat (PDF, Word, CSV, Excel, text): summarise, answer questions about them, use their contents (e.g. the people or emails listed in them)",
 }

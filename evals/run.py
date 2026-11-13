@@ -2,10 +2,12 @@
 Eval runner
 ===========
 
-    python -m evals.run --configs v2,v2,v2-norouter,current,v2-strong --workers 4
+    python -m evals.run                                   # the quick set: 12 cases, v2 only
     python -m evals.run --configs v2 --cases calendar_tz_,campaign_mixed_001
+    python -m evals.run --all --configs v2,v2-norouter    # every case, plus the canaries
 
-Runs every case in evals/cases.yaml through each configuration with a real model and mocked tools
+By default runs the QUICK set below (12 cases over the main paths and the newest features); `--cases` picks
+ids or id prefixes, and `--all` runs every case in evals/cases.yaml. The scoring canaries run only with --all. Runs each case through each configuration with a real model and mocked tools
 (evals/world.py), scores it (evals/scoring.py) and appends each result to evals/reports/<run id>/*.jsonl the
 moment it is scored; the report (report.md, summary.json) is built from those files. A crash loses at most
 the case in progress: `--resume <run id>` runs only what is not saved yet, `--report <run id>` rebuilds the
@@ -88,6 +90,24 @@ CANARIES = ROOT / "evals" / "canaries.yaml"
 def load_canaries() -> list[dict]:
     """Deliberately wrong cases. Each must fail; one that passes means the scoring is broken."""
     return yaml.safe_load(CANARIES.read_text(encoding="utf-8"))
+
+
+#: What a plain `python -m evals.run` runs: one case per main path, kept small so it can run after every
+#: change. The full set (`--all`) stays in evals/cases.yaml for a release check.
+QUICK = (
+    "t_crm_create_contact_004",   # CRM record saved where asked (FreedomBot)
+    "t_crm_get_storage_001",      # where CRM records are saved
+    "t_crm_set_storage_001",      # changing where they are saved
+    "t_schedule_create_001",      # weekly schedule
+    "t_schedule_create_005",      # every 5 minutes
+    "t_schedule_create_004",      # a viewer cannot schedule
+    "t_schedule_cancel_001",      # stopping a schedule
+    "t_email_send_001",           # sending email
+    "t_cal_create_001",           # booking a meeting
+    "t_appr_list_001",            # the approval queue
+    "t_mem_search_001",           # company memory
+    "adversarial_001",            # instructions hidden in an email are ignored
+)
 
 
 def load_cases(selector: str = "") -> list[dict]:
@@ -281,6 +301,10 @@ def patch_world(mp, world, fixtures: dict) -> None:
 
     mp.setattr(company, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
     mp.setattr(company, "_find_user", world.find_user(company._find_user))
+    # Schedule prechecks look the schedule up; evals answer from fixtures.results.schedule_list.
+    from bizos import automation
+
+    mp.setattr(automation, "get", world.schedule_lookup(automation.get))
     mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     # App-action prechecks look actions up in Composio; evals classify by name and never reach it.
     from bizos.connectors import composio_actions
@@ -605,9 +629,9 @@ def run_isolated(case: dict, pipeline: str) -> dict:
             print(f"could not remove workspace {client.slug}: {type(exc).__name__}", flush=True)
 
 
-def eligible(pipeline: str, cases: list[dict]) -> list[str]:
+def eligible(pipeline: str, cases: list[dict], *, canaries: bool = True) -> list[str]:
     ids = [c["id"] for c in cases if not (pipeline == "v2-norouter" and is_campaign_case(c))]
-    return ids + [c["id"] for c in load_canaries()]
+    return ids + ([c["id"] for c in load_canaries()] if canaries else [])
 
 
 def run_pipeline(pipeline: str, label: str, ids: list[str], workers: int, run_dir: Path) -> bool:
@@ -754,7 +778,7 @@ def category(case_id: str) -> str:
                          ("policy_route_", "policy routing")):
         if case_id.startswith(prefix):
             return name
-    return "hinglish" if "hinglish" in case_id else "earlier phases"
+    return "earlier phases"
 
 
 def by_category(rows_by: dict[str, list[dict]]) -> str:
@@ -869,9 +893,10 @@ def build_report(run_dir: Path) -> int:
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--configs", default="v2,v2-norouter",
+    parser.add_argument("--configs", default="v2",
                         help=f"comma-separated configurations to run, repeats allowed ({', '.join(PIPELINES)})")
-    parser.add_argument("--cases", default="", help="comma-separated ids or id prefixes")
+    parser.add_argument("--cases", default="", help="comma-separated ids or id prefixes (default: the QUICK set)")
+    parser.add_argument("--all", action="store_true", help="run every case in evals/cases.yaml, plus the canaries")
     parser.add_argument("--workers", type=int, default=4,
                         help="parallel worker processes (4: the dev Mac has 8 GiB shared with Docker)")
     parser.add_argument("--cleanup", action="store_true", help="remove eval workspaces a killed run left behind")
@@ -915,8 +940,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             labels += [(f"{LABELS[kind]} run {i}" if n > 1 else LABELS[kind], kind) for i in range(1, n + 1)]
         run_dir = REPORTS / time.strftime("%Y%m%d-%H%M%S")
         run_dir.mkdir(parents=True, exist_ok=False)
-        meta = {"cases": args.cases, "labels": labels, "model": app_settings.model_id(),
-                "started": time.strftime("%Y-%m-%d %H:%M:%S")}
+        quick = not args.all and not args.cases
+        meta = {"cases": "" if args.all else (args.cases or ",".join(QUICK)), "quick": quick, "all": args.all,
+                "labels": labels,
+                "model": app_settings.model_id(), "started": time.strftime("%Y-%m-%d %H:%M:%S")}
         (run_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
 
     migrate_control_plane()  # once, here: workers running it at the same time collide
@@ -924,7 +951,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     cases = load_cases(meta["cases"])
     done = recorded(run_dir)
     for label, kind in meta["labels"]:
-        todo = [i for i in eligible(kind, cases) if i not in done.get(label, {})]
+        todo = [i for i in eligible(kind, cases, canaries=meta.get("all", not meta.get("quick")))
+                if i not in done.get(label, {})]
         print(f"{label}: {len(todo)} to run, {len(done.get(label, {}))} already saved", flush=True)
         if todo and not run_pipeline(kind, label, todo, args.workers, run_dir):
             reason = (run_dir / ABORT).read_text(encoding="utf-8").strip()

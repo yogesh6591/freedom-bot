@@ -34,7 +34,7 @@ Do not clarify when:
 - a detail has a sensible default (meeting length, "next week")
 - the message content is not spelled out ("email Priya the pilot timeline now"): the executor writes it
 - several records might match (the executor handles that after searching)
-- the user means their own connected account ("my channel", "my inbox", "my calendar", "my HubSpot"):
+- the user means their own connected account ("my channel", "my inbox", "my calendar", "my Drive", "my HubSpot"):
   the account is already known from their connected apps
 
 ## Disambiguation
@@ -59,7 +59,7 @@ Do not clarify when:
   credits and payment terms → finance; legal clauses and contract terms, brand voice and tone,
   strategy priorities → ops. Never memory alone for these.
 - Approving, rejecting or reviewing pending requests → approvals.
-- A short confirmation ("yes", "send it", "go ahead", "haan") continues the previous turn's domain.
+- A short confirmation ("yes", "send it", "go ahead") continues the previous turn's domain.
 - Workspace configuration is admin work, never memory, finance or crm (admins only):
   goals, SOPs and setup → admin_setup; packs on or off → admin_setup; one tool's mode ("every email as a
   draft", "notes should only ever be drafts") or who may use a tool → admin_permissions; launch checklist,
@@ -67,23 +67,32 @@ Do not clarify when:
   admin_alerts; prices, resale rules and margins, consult quotes, change orders → admin_commercial.
 - Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
 - Support tickets, bugs and problems with BizOS itself, company goals and strategic priorities → ops.
+- Anything to repeat every few minutes, hours, days or weeks ("every Monday post…", "daily at 8 summarise…",
+  "every 5 minutes post AI news…"), and listing, changing or stopping those schedules → ops, plus the
+  domain of the task itself (posting to an app → integrations; finding news → research; the inbox → email).
+  Never the task's domain alone: without ops it would run once instead of being scheduled. Moving or changing
+  a recurring post, summary or task (its time, its days, how often) changes its schedule → ops, never
+  calendar: calendar is only for meetings and events.
 - Summaries, transcripts or "what does the speaker say" for a video → youtube. Doing something in
-  YouTube, Gmail, Calendar or HubSpot that no domain lists (reply to or delete comments, playlists,
-  labels, analytics, HubSpot tickets) → integrations, plus the app's own domain when it helps find ids.
+  YouTube, Gmail, Calendar, Google Drive, Google Sheets, Google Docs, HubSpot or Facebook that no domain
+  lists (reply to or delete comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot
+  tickets, Facebook Page posts) → integrations, plus the app's own domain when it helps find ids.
+- Contacts, companies, deals, notes and CRM tasks → crm, wherever they are kept (FreedomBot, HubSpot or
+  Google Drive). "Save this contact in HubSpot / Drive" is crm too.
+- Where CRM records (contacts, companies, deals) are saved, checking it ("are my deals going to Google
+  Drive?") or changing it ("set my CRM storage to automatic", "keep my CRM in FreedomBot") → crm only,
+  never admin_setup, with no clarify: it is each person's own choice, not a workspace setting, even for
+  admins.
 - Researching a company or person, news, job posts, "is X a good fit", reading a website → research
   (plus crm when our records matter).
 - When the recent conversation lists attached files, "this file", "the PDF", "the sheet", "this list",
   "these people" or a question about their content → files, plus the domain of what is done with the
   contents (emailing the people listed → the domain the email rules above give; adding them to the CRM → crm; a video to become the demo or welcome video → outreach).
   Never clarify which file when only one is attached.
-- Hindi and Hinglish are routed exactly like English.
 
 ## Examples
 "Make Ravi an admin"
 → {"domains":["admin_users"],"kind":"task","entities":{"user":"Ravi"},"clarify":null}
-
-"Ravi ko finance access de do"
-→ {"domains":["admin_users"],"kind":"task","entities":{"user":"Ravi","access":"finance"},"clarify":null}
 
 "Move the Acme deal to won and email Raj a thank-you"
 → {"domains":["crm","email"],"kind":"task","entities":{"deal":"Acme","stage":"won","contact":"Raj"},"clarify":null}
@@ -171,6 +180,9 @@ Do not clarify when:
 
 "Send it to him"   (no earlier messages)
 → {"domains":[],"kind":"task","entities":{},"clarify":"Who should I send it to, and what should I send?"}
+
+"Every 15 minutes check the leads sheet for new rows and add them to the CRM"
+→ {"domains":["ops","integrations","crm"],"kind":"task","entities":{"every":"15 minutes","sheet":"leads sheet"},"clarify":null}
 
 "Thanks!"
 → {"domains":[],"kind":"chitchat","entities":{},"clarify":null}

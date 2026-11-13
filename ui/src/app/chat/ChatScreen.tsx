@@ -830,6 +830,14 @@ function ChatView({ home }: { home: boolean }) {
   useEffect(() => {
     if (!storageKey) return
     let saved: string | null = null
+    // A link such as /chat?session=ses_… (a scheduled task's runs, from Approvals) opens that one.
+    const linked = new URLSearchParams(window.location.search).get('session')
+    if (linked) {
+      window.history.replaceState(null, '', window.location.pathname)
+      void openSession(linked)
+      void loadHistory()
+      return
+    }
     try {
       saved = localStorage.getItem(storageKey)
     } catch {
@@ -1363,7 +1371,7 @@ function ChatView({ home }: { home: boolean }) {
                         <Plug size={15} className="text-brand" aria-hidden />
                         <span className="min-w-0">
                           <span className="block font-medium">Integrations</span>
-                          <span className="block text-[11px] text-muted">Gmail, Calendar, YouTube, HubSpot</span>
+                          <span className="block text-[11px] text-muted">Gmail, Drive, Sheets, Docs, Calendar, YouTube, HubSpot, Facebook</span>
                         </span>
                       </button>
                       {!me?.user.roles.includes('ADMIN') && (
@@ -1503,7 +1511,7 @@ function ChatView({ home }: { home: boolean }) {
             {chatHome && (
               <>
                 <ThemeToggle className="!h-9 !min-h-9 !w-9 !min-w-9 !rounded-full" />
-                <ApprovalsMenu approvals={approvals} />
+                <ApprovalsMenu approvals={approvals} onOpenSession={(id) => void openSession(id)} />
               </>
             )}
             {!chatHome && (

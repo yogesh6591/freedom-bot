@@ -4,14 +4,18 @@
  * Approval queue (§8).
  *
  * List + Approve / Reject with the proposed payload visible so an approver
- * knows what they are agreeing to. UI only — API contract unchanged.
+ * knows what they are agreeing to. Requests that set up, stop or come from a
+ * recurring scheduled task show that schedule and how it stands; the
+ * Scheduled tab lists every schedule with its next and last run.
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { AppShell } from '@/components/AppShell'
+import { ScheduleList } from '@/components/schedules/ScheduleList'
 import { useSession } from '@/components/SessionProvider'
 import { api } from '@/lib/api'
-import type { ActionRecord } from '@/lib/types'
+import type { ActionRecord, ActionStatus, ScheduleInfo } from '@/lib/types'
 import {
   Badge,
   Btn,
@@ -24,9 +28,13 @@ import {
   SegmentedTabs,
   riskTone,
   statusTone,
-  timestamp
+  timestamp,
+  type Tone
 } from '@/components/common/primitives'
 import { cn } from '@/lib/utils'
+
+/** Not an action status: the tab that lists the recurring scheduled tasks. */
+const SCHEDULED = 'SCHEDULED'
 
 const FILTERS = [
   { value: 'PENDING_APPROVAL', label: 'Pending' },
@@ -35,7 +43,8 @@ const FILTERS = [
   { value: 'COMPLETED', label: 'Completed' },
   { value: 'REJECTED', label: 'Rejected' },
   { value: 'FAILED', label: 'Failed' },
-  { value: '', label: 'All' }
+  { value: '', label: 'All' },
+  { value: SCHEDULED, label: 'Scheduled' }
 ]
 
 const STATUS_LABEL: Record<string, string> = {
@@ -69,6 +78,7 @@ function ApprovalsView() {
     hasRole('OPERATOR') || hasRole('APPROVER') || hasRole('ADMIN')
 
   const load = useCallback(async () => {
+    if (filter === SCHEDULED) return
     setLoading(true)
     try {
       const path = filter
@@ -120,26 +130,32 @@ function ApprovalsView() {
         </SegmentedTabs>
       </div>
 
-      {error && <ErrorNote>{error}</ErrorNote>}
-      {loading && <LoadingBlock rows={4} />}
-      {!loading && items.length === 0 && (
-        <EmptyState>
-          Nothing in this filter. Switch tabs or ask FreedomBot to propose an
-          action.
-        </EmptyState>
-      )}
+      {filter === SCHEDULED ? (
+        <SchedulesTab />
+      ) : (
+        <>
+          {error && <ErrorNote>{error}</ErrorNote>}
+          {loading && <LoadingBlock rows={4} />}
+          {!loading && items.length === 0 && (
+            <EmptyState>
+              Nothing in this filter. Switch tabs or ask FreedomBot to propose
+              an action.
+            </EmptyState>
+          )}
 
-      <div className="space-y-4">
-        {items.map((action) => (
-          <ActionCard
-            key={action.id}
-            action={action}
-            canApprove={canApprove}
-            canExecute={canExecute}
-            onChanged={load}
-          />
-        ))}
-      </div>
+          <div className="space-y-4">
+            {items.map((action) => (
+              <ActionCard
+                key={action.id}
+                action={action}
+                canApprove={canApprove}
+                canExecute={canExecute}
+                onChanged={load}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </PageStack>
   )
 }
@@ -204,6 +220,13 @@ function ActionCard({
           <Badge tone={riskTone(action.risk_level)}>
             {action.risk_level} risk
           </Badge>
+          {action.content?.schedule && (
+            <Badge tone="brand">
+              {action.content.schedule.made_by_run
+                ? 'From a scheduled task'
+                : 'Scheduled task'}
+            </Badge>
+          )}
           {action.domain && (
             <span className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 font-dmmono text-[10px] uppercase tracking-wide text-purple-800 dark:border-purple-700 dark:bg-purple-900/40 dark:text-purple-200">
               {action.domain}
@@ -296,6 +319,13 @@ function ActionCard({
               )}
             </section>
           )}
+
+        {action.content?.schedule && (
+          <ScheduleBox
+            schedule={action.content.schedule}
+            actionStatus={action.status}
+          />
+        )}
 
         {/* Quiet metadata */}
         <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
@@ -453,4 +483,131 @@ function initials(name: string): string {
 
 function humanTool(tool: string): string {
   return tool.replaceAll('_', ' ')
+}
+
+// ---------------------------------------------------------------- scheduled tasks
+
+const SCHEDULE_STATUS: Record<string, { label: string; tone: Tone }> = {
+  active: { label: 'Active', tone: 'good' },
+  paused: { label: 'Paused', tone: 'warn' },
+  cancelled: { label: 'Stopped', tone: 'neutral' }
+}
+
+const NOT_SET_UP: Partial<Record<ActionStatus, string>> = {
+  PENDING_APPROVAL: 'Starts once approved',
+  APPROVED: 'Approved, not set up yet',
+  DRAFT: 'Draft, not set up',
+  REJECTED: 'Not set up (rejected)',
+  CANCELLED: 'Not set up (withdrawn)',
+  FAILED: 'Not set up (failed)'
+}
+
+const LAST_RUN: Record<string, string> = {
+  running: 'running now',
+  done: 'done',
+  failed: 'failed',
+  skipped: 'skipped'
+}
+
+function scheduleStatus(
+  schedule: ScheduleInfo,
+  actionStatus?: ActionStatus
+): { label: string; tone: Tone } {
+  if (schedule.status === 'not_set_up') {
+    const label =
+      (actionStatus && NOT_SET_UP[actionStatus]) || 'Waiting for approval'
+    return {
+      label,
+      tone:
+        !actionStatus || actionStatus === 'PENDING_APPROVAL'
+          ? 'warn'
+          : 'neutral'
+    }
+  }
+  return (
+    SCHEDULE_STATUS[schedule.status] ?? {
+      label: schedule.status,
+      tone: 'neutral'
+    }
+  )
+}
+
+function lastRun(schedule: ScheduleInfo): string {
+  if (!schedule.last_run_at) return 'Not run yet'
+  const how = schedule.last_status ? LAST_RUN[schedule.last_status] : null
+  return `${timestamp(schedule.last_run_at)}${how ? ` · ${how}` : ''}`
+}
+
+/** The recurring task behind an approval card: what it is and how it stands now. */
+function ScheduleBox({
+  schedule,
+  actionStatus
+}: {
+  schedule: ScheduleInfo
+  actionStatus: ActionStatus
+}) {
+  const { me } = useSession()
+  const status = scheduleStatus(schedule, actionStatus)
+  const mine = !!me && schedule.created_by === me.user.id
+  const ended = schedule.status !== 'active'
+  return (
+    <section
+      aria-label="Scheduled task"
+      className="rounded-xl border border-purple-200 bg-purple-50/40 px-4 py-4 dark:border-purple-800 dark:bg-purple-950/25"
+    >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <p className="font-dmmono text-[10px] font-medium uppercase tracking-[0.08em] text-muted">
+          {schedule.made_by_run
+            ? 'Made by the scheduled task'
+            : 'Scheduled task'}
+        </p>
+        <Badge tone={status.tone}>{status.label}</Badge>
+      </div>
+      {schedule.made_by_run && schedule.title && (
+        <p className="mb-3 font-geist text-sm font-medium text-primary">
+          {schedule.title}
+        </p>
+      )}
+      <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+        <Meta label="How often" value={schedule.schedule ?? '—'} />
+        <Meta
+          label={schedule.status === 'not_set_up' ? 'First run' : 'Next run'}
+          value={
+            ended && schedule.status !== 'not_set_up'
+              ? 'Will not run again'
+              : schedule.next_run_at
+                ? timestamp(schedule.next_run_at)
+                : schedule.status === 'not_set_up'
+                  ? 'After approval'
+                  : '—'
+          }
+        />
+        <Meta label="Last run" value={lastRun(schedule)} />
+        <Meta label="Runs so far" value={String(schedule.run_count ?? 0)} />
+      </dl>
+      {schedule.last_result && (
+        <p className="mt-3 line-clamp-3 border-t border-purple-200/70 pt-3 text-sm text-secondary dark:border-purple-800/60">
+          <span className="font-medium text-primary">Last result: </span>
+          {schedule.last_result}
+        </p>
+      )}
+      {mine && schedule.session_id && (schedule.run_count ?? 0) > 0 && (
+        <Link
+          href={`/chat?session=${encodeURIComponent(schedule.session_id)}`}
+          className="ui-transition mt-3 inline-block font-geist text-xs font-medium text-brand hover:underline"
+        >
+          Open the chat with every run →
+        </Link>
+      )}
+    </section>
+  )
+}
+
+/** Every recurring task (admins: everyone's) with Edit and Stop, and requests to set one up that still wait. */
+function SchedulesTab() {
+  return (
+    <section className="rounded-2xl border border-border bg-background-secondary p-4 shadow-panel sm:p-5">
+      <ScheduleList />
+    </section>
+  )
 }

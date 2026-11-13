@@ -5,8 +5,9 @@ Workspace CRM Connector
 A fully working CRM backed by the client's **own workspace tables**
 (``crm_contacts``, ``crm_companies``, ``crm_deals``, ``crm_notes``, ``crm_tasks``).
 
-This is not a stub. It is a real, queryable CRM with the same capability surface
-a HubSpot or Salesforce adapter would expose, which is what makes the four
+This is FreedomBot's own CRM and the default place CRM records are kept: in the client's own
+database, with no outside CRM needed. A person may choose HubSpot or a sheet in Google Drive instead
+(bizos/crm_storage.py). It is a real, queryable CRM, which is what makes the four
 execution modes, the approval queue and the workflows testable end-to-end without
 a vendor account — and what makes the tenant-isolation test meaningful, since the
 records genuinely live inside each client's isolated database.
@@ -34,6 +35,44 @@ from bizos.util.ids import new_id
 UPDATABLE_CONTACT_FIELDS = frozenset(
     {"first_name", "last_name", "email", "phone", "company", "title", "owner", "lifecycle"}
 )
+
+
+def _domain(value: Optional[str]) -> str:
+    """A web domain as stored: lower case, no scheme, no www, no path ("https://www.Acme.com/x" -> "acme.com")."""
+    site = str(value or "").strip().lower()
+    for prefix in ("https://", "http://"):
+        if site.startswith(prefix):
+            site = site[len(prefix):]
+    site = site.split("/", 1)[0]
+    return site[4:] if site.startswith("www.") else site
+
+
+def check_deal_fields(name: Any, amount: Any, close_date: Any) -> tuple[str, Decimal, Optional[Any], Optional[str]]:
+    """A new deal's name, amount and close date checked: (name, amount, close date, problem or None).
+
+    Shared by every place a deal can be saved (FreedomBot, HubSpot, Google Drive), so all three accept
+    and refuse the same input.
+    """
+    from datetime import date
+
+    clean = " ".join(str(name or "").split())
+    if not clean:
+        return "", Decimal(0), None, "name is required: the deal's name, e.g. 'Globex renewal 2027'."
+    try:
+        value = Decimal(str(amount if amount not in (None, "") else 0).replace(",", "").lstrip("$"))
+    except Exception:
+        return clean, Decimal(0), None, f"amount must be a number, e.g. 25000 (got {amount!r})."
+    if not value.is_finite():
+        return clean, Decimal(0), None, f"amount must be a number, e.g. 25000 (got {amount!r})."
+    if value < 0:
+        return clean, Decimal(0), None, "amount cannot be negative."
+    closes = None
+    if close_date:
+        try:
+            closes = date.fromisoformat(str(close_date)[:10])
+        except ValueError:
+            return clean, value, None, f"close_date must be a date like 2026-12-31 (got {close_date!r})."
+    return clean, value, closes, None
 
 
 class CrmConnector(Connector):
@@ -310,6 +349,127 @@ class CrmConnector(Connector):
             ok=True,
             data={"id": contact_id},
             summary=f"contact {first_name} {last_name} created",
+        )
+
+    def create_company(
+        self,
+        *,
+        name: str,
+        domain: Optional[str] = None,
+        industry: Optional[str] = None,
+        size: Optional[str] = None,
+        description: Optional[str] = None,
+    ) -> ConnectorResult:
+        """Add a company, or return the existing one with the same name or web domain (never a duplicate)."""
+        name = " ".join(str(name or "").split())
+        if not name:
+            return ConnectorResult.failure("name is required: the company's name, e.g. 'Globex Corp'.")
+        site = _domain(domain)
+        with workspace_connection(self.ctx) as conn:
+            existing = conn.execute(
+                text(
+                    "SELECT id, name, domain FROM crm_companies WHERE lower(name) = lower(:n) "
+                    "OR (:d <> '' AND lower(domain) = :d) ORDER BY created_at LIMIT 1"
+                ),
+                {"n": name, "d": site},
+            ).first()
+            if existing is not None:
+                return ConnectorResult(
+                    ok=True,
+                    data={"id": existing.id, "name": existing.name, "domain": existing.domain, "existing": True},
+                    summary=f"company {existing.name} already exists ({existing.id}); nothing new was created",
+                )
+            company_id = new_id("co")
+            conn.execute(
+                text(
+                    "INSERT INTO crm_companies (id, name, domain, industry, size, properties) "
+                    "VALUES (:i, :n, :d, :ind, :s, CAST(:p AS JSONB))"
+                ),
+                {
+                    "i": company_id,
+                    "n": name,
+                    "d": site or None,
+                    "ind": (industry or "").strip() or None,
+                    "s": (size or "").strip() or None,
+                    "p": json.dumps({"description": (description or "").strip(), "created_by": self._author}),
+                },
+            )
+        return ConnectorResult(
+            ok=True,
+            data={"id": company_id, "name": name, "domain": site or None, "existing": False},
+            summary=f"company {name} created",
+        )
+
+    def create_deal(
+        self,
+        *,
+        name: str,
+        amount: Any = 0,
+        stage: str = "new",
+        close_date: Optional[str] = None,
+        company_id: Optional[str] = None,
+        contact_id: Optional[str] = None,
+        currency: str = "USD",
+    ) -> ConnectorResult:
+        """Add a deal linked to a company and a contact, or return the existing deal of the same name there."""
+        name, value, closes, problem = check_deal_fields(name, amount, close_date)
+        if problem:
+            return ConnectorResult.failure(problem)
+        stage = str(stage or "new").strip() or "new"
+        with workspace_connection(self.ctx) as conn:
+            if company_id and conn.execute(
+                text("SELECT 1 FROM crm_companies WHERE id = :i"), {"i": company_id}
+            ).first() is None:
+                return ConnectorResult.failure(
+                    f"No company {company_id!r}. Find it with crm_search_companies or add it with crm_create_company."
+                )
+            contact = None
+            if contact_id:
+                contact = conn.execute(
+                    text("SELECT id FROM crm_contacts WHERE id = :i OR lower(email) = lower(:i) LIMIT 1"),
+                    {"i": contact_id},
+                ).scalar()
+                if contact is None:
+                    return ConnectorResult.failure(
+                        f"No contact {contact_id!r}. Find it with crm_search_contacts or add it with crm_create_contact."
+                    )
+            existing = conn.execute(
+                text(
+                    "SELECT id, name, stage, amount FROM crm_deals WHERE lower(name) = lower(:n) "
+                    "AND company_id IS NOT DISTINCT FROM :c ORDER BY created_at LIMIT 1"
+                ),
+                {"n": name, "c": company_id or None},
+            ).first()
+            if existing is not None:
+                return ConnectorResult(
+                    ok=True,
+                    data={"id": existing.id, "name": existing.name, "stage": existing.stage,
+                          "amount": str(existing.amount), "existing": True},
+                    summary=f"deal {existing.name} already exists ({existing.id}); nothing new was created",
+                )
+            deal_id = new_id("deal")
+            conn.execute(
+                text(
+                    "INSERT INTO crm_deals (id, name, contact_id, company_id, stage, amount, currency, "
+                    "close_date, owner) VALUES (:i, :n, :c, :co, :s, :a, :cur, :cd, :o)"
+                ),
+                {
+                    "i": deal_id,
+                    "n": name,
+                    "c": contact,
+                    "co": company_id or None,
+                    "s": stage,
+                    "a": value,
+                    "cur": (currency or "USD").strip().upper()[:3] or "USD",
+                    "cd": closes,
+                    "o": self._author,
+                },
+            )
+        return ConnectorResult(
+            ok=True,
+            data={"id": deal_id, "name": name, "stage": stage, "amount": str(value), "company_id": company_id or None,
+                  "contact_id": contact, "existing": False},
+            summary=f"deal {name} created ({stage}, {value})",
         )
 
     def update_deal_stage(self, deal_id: str, *, stage: str) -> ConnectorResult:

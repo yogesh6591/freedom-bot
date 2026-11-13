@@ -23,7 +23,7 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 
 ## Rules
 - 40 to 90 words. No marketing words. No internal details (table names, services).
-- Use-when phrasings sound like real users. For the 15 most-used tools add one Hindi or Hinglish phrasing.
+- Use-when phrasings sound like real users, in English.
 - Every tool in a confusable group names its siblings in "Don't use".
 - Arguments: enums for fixed values; every field has a description; ID fields say where the ID comes from;
   prefer add/remove lists over replacing whole lists; validator messages tell the model how to fix the call.
@@ -72,7 +72,7 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 "email_send_message": AgentMeta(domain="email", id_fields=(), requires_prior=(), description=d("""
     Send one email now to specific people the user named.
     Use when: the user clearly asks to send - "email Priya that the contract is signed",
-    "Raj ko mail bhej do ki meeting confirm hai".
+    "tell Raj by email that the meeting is confirmed".
     Don't use: saving for review -> email_create_draft; campaigns or emailing a selected list
     -> propose_email, approve_move, send_approved.
     Needs: recipient addresses from crm_get_contact, admin_list_users, or the user's message.

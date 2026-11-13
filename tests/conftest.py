@@ -39,6 +39,7 @@ os.environ["JWT_SECRET"] = "test-only-signing-key-please-do-not-reuse-anywhere-0
 os.environ["MEMORY_VECTOR_SEARCH"] = "off"
 # The background integration sync must not start inside tests.
 os.environ["INTEGRATION_SYNC_ENABLED"] = "off"
+os.environ["SCHEDULED_TASKS_ENABLED"] = "off"
 # Tests never reach Composio (CLAUDE.md: mocked tools only); tests that need it patch it in.
 os.environ["COMPOSIO_API_KEY"] = ""
 

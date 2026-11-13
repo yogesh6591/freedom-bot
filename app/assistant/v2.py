@@ -662,9 +662,10 @@ def _connected_apps_text(ctx: Any) -> str:
     if not slugs:
         return ""
     names = ", ".join(f"{composio.app_name(s)} ({s})" for s in sorted(slugs))
-    return ("## Connected apps\n" + names + ". Email, calendar, YouTube and CRM tools use Gmail, Google Calendar, "
-            "YouTube and HubSpot; reach any other connected app with integration_find_action (app = the name in "
-            "brackets).")
+    return ("## Connected apps\n" + names + ". Email, calendar and YouTube tools use Gmail, Google Calendar and "
+            "YouTube. CRM tools save where the user chose (crm_get_storage): FreedomBot's own CRM, HubSpot or a "
+            "sheet in Google Drive. Reach Drive, Sheets, Docs, HubSpot and Facebook actions with "
+            "integration_find_action (app = the name in brackets).")
 
 
 def _write_state(guard: Guard) -> tuple[bool, bool, bool]:

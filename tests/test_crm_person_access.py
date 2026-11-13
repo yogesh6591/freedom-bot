@@ -110,16 +110,16 @@ def test_the_admin_skip_approval_option_does_not_lift_a_persons_level(client_scr
 
 @pytest.fixture
 def fake_crm(monkeypatch):
-    """The workspace CRM stands in for HubSpot; records whose login each CRM call used."""
+    """The workspace CRM (nothing connected); records whose login each CRM call used."""
     from bizos.tools import base as tools_base
 
     monkeypatch.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     logins = []
     real = company_tools.get_connector
 
-    def recording(category, *, ctx=None, owner_user_id=None):
+    def recording(category, *, ctx=None, owner_user_id=None, **kwargs):
         logins.append(owner_user_id or (ctx.user_id if ctx else None))
-        return real(category, ctx=ctx, owner_user_id=owner_user_id)
+        return real(category, ctx=ctx, owner_user_id=owner_user_id, **kwargs)
 
     monkeypatch.setattr(company_tools, "get_connector", recording)
     return logins
