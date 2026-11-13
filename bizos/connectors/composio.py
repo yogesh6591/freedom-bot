@@ -83,6 +83,86 @@ TOOLKITS: dict[str, dict[str, str]] = {
         "name": "Facebook",
         "description": "Post to your Facebook Page and read its posts and comments.",
     },
+    "googletasks": {
+        "category": "tasks",
+        "name": "Google Tasks",
+        "description": "See, add, complete and organise your Google Tasks lists.",
+    },
+    "googlemeet": {
+        "category": "meetings",
+        "name": "Google Meet",
+        "description": "Create Meet links and read past meetings, recordings and transcripts.",
+    },
+    "googleslides": {
+        "category": "slides",
+        "name": "Google Slides",
+        "description": "Create presentations and read or update their slides.",
+    },
+    "googlecontacts": {
+        "category": "contacts",
+        "name": "Google Contacts",
+        "description": "Find, add and update people in your Google Contacts.",
+    },
+    "googleforms": {
+        "category": "forms",
+        "name": "Google Forms",
+        "description": "Create forms and read their responses.",
+    },
+    "googlephotos": {
+        "category": "photos",
+        "name": "Google Photos",
+        "description": "Find photos and albums, and upload to them.",
+    },
+    "google_chat": {
+        "category": "chat",
+        "name": "Google Chat",
+        "description": "Read spaces and messages, and send messages in Google Chat.",
+    },
+    "google_maps": {
+        "category": "maps",
+        "name": "Google Maps",
+        "description": "Search places, get directions, distances and place details.",
+    },
+    "google_analytics": {
+        "category": "analytics",
+        "name": "Google Analytics",
+        "description": "Run reports on your website traffic, sources and conversions.",
+    },
+    "google_search_console": {
+        "category": "seo",
+        "name": "Google Search Console",
+        "description": "See search clicks, queries and indexing for your sites.",
+    },
+    "googleads": {
+        "category": "ads",
+        "name": "Google Ads",
+        "description": "Read campaign performance and manage campaigns, ads and keywords.",
+    },
+    "google_business_profile": {
+        "category": "business_profile",
+        "name": "Google Business Profile",
+        "description": "Read and reply to reviews and manage your business listing and posts.",
+    },
+    "googlebigquery": {
+        "category": "data",
+        "name": "Google BigQuery",
+        "description": "Run queries and read datasets and tables in BigQuery.",
+    },
+    "zoom": {
+        "category": "meetings",
+        "name": "Zoom",
+        "description": "Schedule, change and cancel Zoom meetings, and read recordings and participants.",
+    },
+    "instagram": {
+        "category": "social",
+        "name": "Instagram",
+        "description": "Post to your Instagram business account, and read and reply to comments and messages.",
+    },
+    "linkedin": {
+        "category": "social",
+        "name": "LinkedIn",
+        "description": "Post and comment on LinkedIn as you or your company page, and read your profile.",
+    },
     "apollo": {
         "category": "prospecting",
         "name": "Apollo",
@@ -213,7 +293,7 @@ def connected_toolkit(ctx: TenantContext, category: str) -> Optional[str]:
         return None
     accounts = _active_accounts(ctx)
     for slug, meta in TOOLKITS.items():
-        # Only apps with a dedicated connector serve a category (Drive, Sheets, Docs, Facebook and Apollo run
+        # Only apps with a dedicated connector serve a category (every other app runs
         # through the app actions instead; a CRM sheet in Drive is chosen in bizos/crm_storage.py).
         if meta["category"] == category and slug in CONNECTORS and accounts.get(slug):
             return slug

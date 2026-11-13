@@ -579,7 +579,7 @@ def start(runner: Runner, *, interval: float = 60.0) -> Callable[[], None]:
 
 #: Arguments that hold what a post says, and where it goes (Facebook, YouTube comments...).
 _TEXT_ARGS = ("message", "text", "caption", "content", "description", "comment", "text_original",
-              "textOriginal", "body", "title")
+              "textOriginal", "body", "title", "commentary")
 _LINK_ARGS = ("link", "url", "photo_url", "image_url", "video_url", "file_url")
 _TARGET_ARGS = ("page_id", "pageId", "page", "channel_id", "channelId", "video_id", "videoId", "parent_id",
                 "parentId", "post_id", "object_id", "group_id")

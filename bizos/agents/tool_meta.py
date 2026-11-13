@@ -395,13 +395,14 @@ TOOL_META: dict[str, AgentMeta] = {
         Find free slots of a given length (30 minutes by default) between two times.
         Use when: "am I free Tuesday at 3", "find a 30-minute slot next week".
         Don't use: what is already booked -> calendar_list_events; booking the slot ->
-        calendar_create_event.
+        calendar_create_event; a Zoom meeting at a time the user gave -> integration_find_action.
     """)),
     "calendar_create_event": M("calendar", d("""
         Book a meeting on the user's calendar with a title, start, end and attendees.
         Use when: "book 30 minutes with Priya on Tuesday at 3".
         Don't use: checking free time -> calendar_check_availability; moving a meeting ->
-        calendar_reschedule_event; a CRM follow-up -> crm_create_task.
+        calendar_reschedule_event; a CRM follow-up -> crm_create_task; a Zoom meeting ->
+        integration_find_action.
         Needs: attendee emails from crm_get_contact, admin_list_users, or the user's message.
         Effect: on a connected calendar, attendees get an invitation. {gate}
     """), id_fields=("attendees",), suggested_prior=("calendar_check_availability",)),
@@ -607,11 +608,11 @@ TOOL_META: dict[str, AgentMeta] = {
 
     # ------------------------------------------------------------------ integrations
     "integration_find_action": M("integrations", d("""
-        Find actions of the user's connected apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot,
-        Facebook and Apollo) for anything the other tools cannot do. Returns each action's name, which tool runs it and its
+        Find actions of the user's connected apps (Google apps, YouTube, HubSpot, Facebook, Instagram,
+        LinkedIn, Zoom, Apollo) for anything the other tools cannot do. Returns each action's name, which tool runs it and its
         arguments. Changes nothing.
         Use when: no dedicated tool fits - "reply to the top comment", "save this to a Google Sheet",
-        "label these emails", "post this on our Facebook page", "find CTOs at fintechs in Apollo".
+        "post this on LinkedIn", "schedule a Zoom call", "find CTOs at fintechs in Apollo".
         Don't use: a dedicated tool exists (email_search_threads, crm_search_deals, youtube_video...);
         the public web -> web_search.
     """)),

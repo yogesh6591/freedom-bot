@@ -28825,6 +28825,44 @@
   forbidden_tool_calls: [platform_overview]
   expected_hidden: [platform_overview]
   expected_outcome: not_permitted
+- id: t_zoom_create_meeting_001
+  query: Schedule a Zoom meeting called Pilot review tomorrow at 3pm for 30 minutes
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    now: '2026-11-13T10:00:00+05:30'
+    results:
+      integration_find_action: {connected_apps: [zoom], actions: [{action_id: ZOOM_CREATE_A_MEETING, title: Create a meeting, tier: write, run_with: integration_write_action, arguments: {userId: {type: string}, topic: {type: string}, start_time: {type: string}, duration: {type: integer}, timezone: {type: string}}}]}
+  expected_domains: [integrations]
+  expected_tool_calls: [integration_find_action, integration_write_action]
+  expected_args:
+    integration_write_action: {action: ZOOM_CREATE_A_MEETING}
+  expected_gates: {integration_find_action: run, integration_write_action: approval}
+  expected_outcome: approval
+- id: t_linkedin_post_001
+  query: 'Post on my LinkedIn: We just launched FreedomBot for small businesses!'
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [linkedin], actions: [{action_id: LINKEDIN_GET_MY_INFO, title: Get my info, tier: read, run_with: integration_read_action, arguments: {}}, {action_id: LINKEDIN_CREATE_LINKED_IN_POST, title: Create a LinkedIn post, tier: destructive, run_with: integration_destructive_action, arguments: {author: {type: string, required: true}, commentary: {type: string, required: true}, visibility: {type: string}}}]}
+      integration_read_action: {action: LINKEDIN_GET_MY_INFO, result: {author_id: 'urn:li:person:abc123', name: Ada Lovelace}}
+  expected_domains: [integrations]
+  expected_tool_calls: [integration_find_action, integration_destructive_action]
+  expected_args:
+    integration_destructive_action: {action: LINKEDIN_CREATE_LINKED_IN_POST}
+  expected_gates: {integration_destructive_action: approval}
+  expected_outcome: approval
+- id: t_googletasks_list_001
+  query: What is on my Google Tasks list?
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [googletasks], actions: [{action_id: GOOGLETASKS_LIST_TASK_LISTS, title: List task lists, tier: read, run_with: integration_read_action, arguments: {}}, {action_id: GOOGLETASKS_LIST_TASKS, title: List tasks, tier: read, run_with: integration_read_action, arguments: {tasklist_id: {type: string, required: true}}}]}
+      integration_read_action: {action: GOOGLETASKS_LIST_TASKS, result: {items: [{id: t1, title: Send the Globex proposal, status: needsAction}, {id: t2, title: Book the venue, status: needsAction}], task_lists: [{id: '@default', title: My Tasks}]}}
+  expected_domains: [integrations]
+  expected_tool_calls: [integration_find_action, integration_read_action]
+  expected_gates: {integration_find_action: run, integration_read_action: run}
+  expected_reply_contains: ["Globex"]
+  expected_outcome: answer
 - id: t_apollo_search_001
   query: Search my Apollo contacts for CTOs at fintech companies
   user: {name: Dev, roles: [OPERATOR]}

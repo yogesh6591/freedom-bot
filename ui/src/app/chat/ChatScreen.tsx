@@ -1371,7 +1371,7 @@ function ChatView({ home }: { home: boolean }) {
                         <Plug size={15} className="text-brand" aria-hidden />
                         <span className="min-w-0">
                           <span className="block font-medium">Integrations</span>
-                          <span className="block text-[11px] text-muted">Gmail, Drive, Sheets, Docs, Calendar, YouTube, HubSpot, Facebook, Apollo</span>
+                          <span className="block text-[11px] text-muted">Google apps, YouTube, HubSpot, Facebook, Instagram, LinkedIn, Zoom, Apollo</span>
                         </span>
                       </button>
                       {!me?.user.roles.includes('ADMIN') && (

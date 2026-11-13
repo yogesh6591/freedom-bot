@@ -667,7 +667,7 @@ def _connected_apps_text(ctx: Any) -> str:
     names = ", ".join(f"{composio.app_name(s)} ({s})" for s in sorted(slugs))
     return ("## Connected apps\n" + names + ". Email, calendar and YouTube tools use Gmail, Google Calendar and "
             "YouTube. CRM tools save where the user chose (crm_get_storage): FreedomBot's own CRM, HubSpot or a "
-            "sheet in Google Drive. Reach Drive, Sheets, Docs, HubSpot, Facebook and Apollo actions with "
+            "sheet in Google Drive. Reach every other app (Drive, Sheets, Docs, HubSpot, Zoom, LinkedIn...) with "
             "integration_find_action (app = the name in brackets).")
 
 

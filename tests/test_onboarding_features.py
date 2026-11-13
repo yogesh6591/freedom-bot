@@ -1,6 +1,6 @@
 """Onboarding branch: CRM records saved where each person chooses (FreedomBot by default, HubSpot or a
 sheet in Google Drive), recurring scheduled tasks with duplicate-free posting, and only the eight supported
-apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot, Facebook, Apollo).
+apps (composio.TOOLKITS: the Google apps, YouTube, HubSpot, Facebook, Instagram, LinkedIn, Zoom, Apollo).
 
 Mocked tools only: nothing reaches Composio, HubSpot, Facebook or any Google service.
 """
@@ -479,7 +479,10 @@ def test_the_same_post_to_the_same_page_is_refused(client_a, scope_factory, monk
 
 def test_only_the_eight_apps_can_be_connected_or_used(monkeypatch):
     assert set(composio.TOOLKITS) == {"gmail", "googlecalendar", "googledrive", "googlesheets", "googledocs",
-                                      "youtube", "hubspot", "facebook", "apollo"}
+                                      "youtube", "hubspot", "facebook", "apollo", "googletasks", "googlemeet",
+                                      "googleslides", "googlecontacts", "googleforms", "googlephotos", "google_chat",
+                                      "google_maps", "google_analytics", "google_search_console", "googleads",
+                                      "google_business_profile", "googlebigquery", "zoom", "instagram", "linkedin"}
     for slug in ("slack", "notion", "salesforce"):
         with pytest.raises(ValueError, match="FreedomBot connects"):
             composio._check_toolkit(slug)

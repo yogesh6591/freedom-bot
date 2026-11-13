@@ -78,9 +78,15 @@ Do not clarify when:
   a recurring post, summary or task (its time, its days, how often) changes its schedule → ops, never
   calendar: calendar is only for meetings and events.
 - Summaries, transcripts or "what does the speaker say" for a video → youtube. Doing something in
-  YouTube, Gmail, Calendar, Google Drive, Google Sheets, Google Docs, HubSpot, Facebook or Apollo that no
-  domain lists (reply to or delete comments, playlists, labels, analytics, Drive files, Sheets rows, Docs,
-  HubSpot tickets, Facebook Page posts) → integrations, plus the app's own domain when it helps find ids.
+  any connected app that no domain lists → integrations, plus the app's own domain when it helps find ids.
+  The apps: YouTube, Gmail, Calendar, Google Drive, Sheets, Docs, Slides, Tasks, Meet, Contacts, Forms,
+  Photos, Chat, Maps, Analytics, Search Console, Ads, Business Profile, BigQuery, HubSpot, Facebook,
+  Instagram, LinkedIn, Zoom and Apollo (reply to or delete comments, playlists, labels, analytics, Drive
+  files, Sheets rows, Docs, posts on Facebook, Instagram or LinkedIn, Google Chat messages, ad campaigns,
+  reviews, BigQuery queries).
+- Zoom meetings (schedule, move, cancel, recordings) and Google Meet links → integrations, never calendar
+  alone; add calendar only when the user also wants it on their Google Calendar. Google Tasks and Google
+  Contacts named as such → integrations, not CRM tasks or contacts.
 - Anything that names Apollo (search people or companies in Apollo, enrich a lead, Apollo contacts, deals,
   tasks or sequences) → integrations. Saving what Apollo found into the CRM adds crm.
 - Contacts, companies, deals, notes and CRM tasks → crm, wherever they are kept (FreedomBot, HubSpot or
@@ -108,6 +114,9 @@ Do not clarify when:
 
 "How many clients do we have?" (platform is listed)
 → {"domains":["platform"],"kind":"question","entities":{},"clarify":null}
+
+"Schedule a Zoom call with Priya tomorrow at 3pm"
+→ {"domains":["integrations","crm"],"kind":"task","entities":{"app":"Zoom","contact":"Priya","when":"tomorrow 3pm"},"clarify":null}
 
 "Find CTOs at fintech companies in London on Apollo"
 → {"domains":["integrations"],"kind":"question","entities":{"app":"Apollo","title":"CTO","industry":"fintech","location":"London"},"clarify":null}

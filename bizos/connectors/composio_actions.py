@@ -3,7 +3,7 @@ Composio Actions (any action of a connected app)
 ================================================
 
 Lets the assistant find and run any Composio action of the apps a user connected (Gmail, Google Calendar,
-Google Drive, Google Sheets, Google Docs, YouTube, HubSpot, Facebook and Apollo: ``composio.TOOLKITS``), not only the ones a
+the Google apps, YouTube, HubSpot, Facebook, Instagram, LinkedIn, Zoom and Apollo: ``composio.TOOLKITS``), not only the ones a
 dedicated tool wraps. Actions of any other platform are refused.
 Tools the user switched off in Integrations are neither offered nor run. Plain Python; the tools in
 ``app/assistant/company_tools.py`` call it after the guard and the policy check.
@@ -50,7 +50,16 @@ TOOL_FOR_TIER = {
 #: Action-name prefix -> Composio toolkit slug (only toolkits users can connect, composio.TOOLKITS).
 _PREFIX_TOOLKIT = {"GMAIL": "gmail", "GOOGLECALENDAR": "googlecalendar", "YOUTUBE": "youtube",
                    "GOOGLEDRIVE": "googledrive", "GOOGLESHEETS": "googlesheets", "GOOGLEDOCS": "googledocs",
-                   "HUBSPOT": "hubspot", "FACEBOOK": "facebook", "APOLLO": "apollo"}
+                   "HUBSPOT": "hubspot", "FACEBOOK": "facebook", "APOLLO": "apollo",
+                   "ZOOM": "zoom", "INSTAGRAM": "instagram", "LINKEDIN": "linkedin", "GOOGLETASKS": "googletasks",
+                   "GOOGLEMEET": "googlemeet", "GOOGLESLIDES": "googleslides", "GOOGLEADS": "googleads",
+                   "GOOGLEPHOTOS": "googlephotos", "GOOGLEBIGQUERY": "googlebigquery",
+                   "GOOGLECONTACTS": "googlecontacts", "GOOGLEFORMS": "googleforms"}
+#: Apps whose action names start with more than one word (``GOOGLE_SEARCH_CONSOLE_ADD_SITE``). Longest first.
+_LONG_PREFIX_TOOLKIT = {"GOOGLE_SEARCH_CONSOLE": "google_search_console",
+                        "GOOGLE_BUSINESS_PROFILE": "google_business_profile",
+                        "GOOGLE_ANALYTICS": "google_analytics", "GOOGLE_MAPS": "google_maps",
+                        "GOOGLE_CHAT": "google_chat"}
 
 #: Name words that make an action destructive anywhere in its name: it removes data, or it sends or
 #: publishes something that cannot be taken back (CLAUDE.md lists send with delete, deactivate, reset).
@@ -72,6 +81,15 @@ _READ_VERBS = frozenset({
 #: (or putting contacts into one, or switching their status in one) is a send: destructive, whatever the verb.
 _SENDS_EMAIL = frozenset({
     "APOLLO_ACTIVATE_SEQUENCE", "APOLLO_ADD_CONTACTS_TO_SEQUENCE", "APOLLO_UPDATE_CONTACT_STATUS_IN_SEQUENCE",
+    # A Google Chat message is sent the moment it is created or edited; a LinkedIn share is a public post;
+    # adding a Zoom registrant emails them the invitation.
+    "GOOGLE_CHAT_CREATE_MESSAGE", "GOOGLE_CHAT_UPDATE_MESSAGE", "GOOGLE_CHAT_REPLACE_MESSAGE",
+    "LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE", "ZOOM_ADD_A_MEETING_REGISTRANT", "ZOOM_ADD_A_WEBINAR_REGISTRANT",
+})
+#: New public posts whose names the general rule misses: checked for duplicates before they go out.
+_NEW_POSTS = frozenset({
+    "YOUTUBE_CREATE_COMMENT_REPLY", "YOUTUBE_POST_COMMENT", "LINKEDIN_CREATE_ARTICLE_OR_URL_SHARE",
+    "INSTAGRAM_POST_IG_MEDIA_COMMENTS", "INSTAGRAM_REPLY_TO_COMMENT",
 })
 #: YouTube comment replies are posts on the public channel, whatever the verb says.
 _PUBLIC_POSTS = frozenset({"YOUTUBE_CREATE_COMMENT_REPLY", "YOUTUBE_POST_COMMENT", "YOUTUBE_UPDATE_COMMENT"})
@@ -92,16 +110,26 @@ def is_new_public_post(slug: str) -> bool:
     Editing an existing post (``FACEBOOK_UPDATE_POST``) is not a new post.
     """
     name = str(slug or "").upper()
-    words = name.split("_")[1:]
+    words = _split(name)[1]
     verb = words[0] if words else ""
-    if name in {"YOUTUBE_CREATE_COMMENT_REPLY", "YOUTUBE_POST_COMMENT"}:
+    if name in _NEW_POSTS:
         return True
     return verb in {"CREATE", "POST", "PUBLISH"} and bool(set(words[1:]) & _PUBLISHED_THINGS)
 
 
+def _split(name: str) -> tuple[Optional[str], list[str]]:
+    """(app, the words after the app's prefix) for an action name. Unknown apps: the first word is the prefix."""
+    upper = str(name or "").upper()
+    for prefix, toolkit in _LONG_PREFIX_TOOLKIT.items():
+        if upper.startswith(prefix + "_"):
+            return toolkit, upper[len(prefix) + 1:].split("_")
+    head, _, rest = upper.partition("_")
+    return _PREFIX_TOOLKIT.get(head), rest.split("_") if rest else []
+
+
 def toolkit_of(slug: str) -> Optional[str]:
     """The built-in app an action belongs to, from its name (``YOUTUBE_LIST_COMMENTS`` -> ``youtube``)."""
-    return _PREFIX_TOOLKIT.get(str(slug or "").split("_", 1)[0].upper())
+    return _split(slug)[0]
 
 
 def classify(slug: str, tags: Optional[list[str]] = None) -> str:
@@ -111,7 +139,7 @@ def classify(slug: str, tags: Optional[list[str]] = None) -> str:
     a read verb later in the name counts only when no destructive word is present.
     """
     name = str(slug or "").upper()
-    words = name.split("_")[1:]
+    words = _split(name)[1]
     verb = words[0] if words else ""
     hints = {str(t) for t in (tags or [])}
     if name in _PUBLIC_POSTS or name in _SENDS_EMAIL or "destructiveHint" in hints:
@@ -131,7 +159,8 @@ def classify(slug: str, tags: Optional[list[str]] = None) -> str:
 def classify_by_name(slug: str) -> str:
     """The tier from the name alone (a read verb counts as the read-only hint). Used only when Composio
     is not configured, where nothing can run anyway, and by the evals, which never reach Composio."""
-    verb = (str(slug or "").upper().split("_") + ["", ""])[1]
+    words = _split(slug)[1]
+    verb = words[0] if words else ""
     return classify(slug, ["readOnlyHint"] if verb in _READ_VERBS else [])
 
 
