@@ -25,6 +25,9 @@ import {
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { cn } from '@/lib/utils'
 
+/** Where a platform owner lands after the admin sign-in: onboarding new workspaces. */
+const OWNER_HOME = '/admin/settings?tab=workspaces'
+
 const CAPABILITIES = [
   {
     icon: MessageSquareText,
@@ -208,7 +211,8 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
   useEffect(() => {
     if (!me) return
     if (!admin) router.replace('/chat')
-    else if (adminUnlocked(me.user.id)) router.replace('/admin/chat')
+    else if (adminUnlocked(me.user.id))
+      router.replace(me.user.is_platform_owner ? OWNER_HOME : '/admin/chat')
   }, [me, admin, router])
 
   const adminPanel = admin
@@ -230,9 +234,14 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
       await refresh()
       // Other open tabs must stop showing the previous workspace (M01-06).
       announceSessionChange()
-      const fresh = await api.get<{ user: { id: string } }>('/api/auth/me', { anyWorkspace: true })
+      const fresh = await api.get<{ user: { id: string; is_platform_owner?: boolean } }>('/api/auth/me', {
+        anyWorkspace: true
+      })
       setAdminUnlocked(adminPanel ? fresh.user.id || session.user?.id || null : null)
-      router.replace(adminPanel ? '/admin/chat' : '/chat')
+      // Platform owners onboard new workspaces from Administration, not from the chat.
+      router.replace(
+        adminPanel ? (fresh.user.is_platform_owner ? OWNER_HOME : '/admin/chat') : '/chat'
+      )
     } catch (err) {
       setError(signInError(err))
     } finally {

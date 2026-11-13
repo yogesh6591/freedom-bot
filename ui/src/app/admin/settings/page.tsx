@@ -19,6 +19,7 @@ import {
 import { AppShell } from '@/components/AppShell'
 import { PricingStudio } from '@/components/admin/Pricing'
 import { AllWorkspaces } from '@/components/owner/WorkspaceMembers'
+import { NewClientPanel } from '@/app/owner/NewClientPanel'
 import { useSession } from '@/components/SessionProvider'
 import {
   DATA_TAGS,
@@ -122,6 +123,19 @@ function AdminView() {
   >('setup')
   const { me } = useSession()
   const platformOwner = Boolean(me?.user.is_platform_owner)
+  const [workspacesVersion, setWorkspacesVersion] = useState(0)
+  // Platform owners open on Workspaces (onboarding new clients); ?tab= picks a tab.
+  const [pickedTab, setPickedTab] = useState(false)
+  useEffect(() => {
+    if (pickedTab || !me) return
+    const wanted = new URLSearchParams(window.location.search).get('tab')
+    if (wanted === 'workspaces' ? platformOwner : wanted && wanted !== 'workspaces') {
+      setTab(wanted as typeof tab)
+    } else if (platformOwner) {
+      setTab('workspaces')
+    }
+    setPickedTab(true)
+  }, [me, platformOwner, pickedTab])
   return (
     <PageStack>
       <PageHeader
@@ -163,7 +177,12 @@ function AdminView() {
       {tab === 'policies' && <Policies />}
       {tab === 'domains' && <Domains />}
       {tab === 'tools' && <Tools />}
-      {tab === 'workspaces' && platformOwner && <AllWorkspaces />}
+      {tab === 'workspaces' && platformOwner && (
+        <>
+          <NewClientPanel onCreated={async () => setWorkspacesVersion((v) => v + 1)} />
+          <AllWorkspaces key={workspacesVersion} />
+        </>
+      )}
     </PageStack>
   )
 }
