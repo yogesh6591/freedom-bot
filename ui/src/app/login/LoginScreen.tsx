@@ -59,7 +59,6 @@ function signInError(err: unknown): string {
 type FormProps = {
   email: string
   password: string
-  clientSlug: string
   showPassword: boolean
   busy: boolean
   error: string | null
@@ -68,7 +67,6 @@ type FormProps = {
   idPrefix: string
   setEmail: (value: string) => void
   setPassword: (value: string) => void
-  setClientSlug: (value: string) => void
   setShowPassword: (value: boolean | ((current: boolean) => boolean)) => void
   onSubmit: (event: FormEvent) => void
   appearance?: 'home' | 'admin'
@@ -77,7 +75,6 @@ type FormProps = {
 function SignInForm({
   email,
   password,
-  clientSlug,
   showPassword,
   busy,
   error,
@@ -86,7 +83,6 @@ function SignInForm({
   idPrefix,
   setEmail,
   setPassword,
-  setClientSlug,
   setShowPassword,
   onSubmit,
   appearance = 'home'
@@ -156,27 +152,6 @@ function SignInForm({
             </button>
           </span>
         </div>
-        <details className={`group ${admin ? 'rounded-xl border border-border bg-background' : 'rounded-lg border border-border bg-background-elevated/35'}`}>
-          <summary className="cursor-pointer rounded-xl px-3.5 py-3 text-[12px] font-medium text-secondary marker:text-muted hover:text-primary focus-visible:outline-brand">
-            Signing in to a different workspace?
-          </summary>
-          <div className="border-t border-border px-3.5 py-3.5">
-            <Field
-              label="Workspace identifier (optional)"
-              htmlFor={`${idPrefix}-workspace`}
-              hint="Use this if your email belongs to more than one company."
-            >
-              <input
-                id={`${idPrefix}-workspace`}
-                className={fieldClass}
-                placeholder="e.g. acme"
-                autoComplete="off"
-                value={clientSlug}
-                onChange={(event) => setClientSlug(event.target.value)}
-              />
-            </Field>
-          </div>
-        </details>
         <Btn
           type="submit"
           loading={busy}
@@ -200,6 +175,12 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [clientSlug, setClientSlug] = useState('')
+  // No workspace box on the form: sign-in finds the workspace from the email. An email used in more than
+  // one company can still pick one with a link like /?workspace=acme.
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('workspace')
+    if (wanted) setClientSlug(wanted.trim())
+  }, [])
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNoticeText] = useState<string | null>(null)
@@ -253,7 +234,6 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
     <SignInForm
       email={email}
       password={password}
-      clientSlug={clientSlug}
       showPassword={showPassword}
       busy={busy}
       error={error}
@@ -262,7 +242,6 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
       idPrefix={adminPanel ? 'admin-login' : 'login'}
       setEmail={setEmail}
       setPassword={setPassword}
-      setClientSlug={setClientSlug}
       setShowPassword={setShowPassword}
       onSubmit={submit}
       appearance={adminPanel ? 'admin' : 'home'}
