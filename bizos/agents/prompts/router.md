@@ -65,6 +65,10 @@ Do not clarify when:
   draft", "notes should only ever be drafts") or who may use a tool → admin_permissions; launch checklist,
   waiving or marking items, sign-off, assessment handoff → admin_launch; alerts and baselines →
   admin_alerts; prices, resale rules and margins, consult quotes, change orders → admin_commercial.
+- Questions about the platform's clients when platform is listed above ("how many clients do we have",
+  "list our clients", "which clients are at risk", "who are Globex's users", "how many workspaces") →
+  platform only. These are FreedomBot's client companies, never CRM customers. Without platform listed,
+  clients and customers are CRM records → crm.
 - Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
 - Support tickets, bugs and problems with BizOS itself, company goals and strategic priorities → ops.
 - Anything to repeat every few minutes, hours, days or weeks ("every Monday post…", "daily at 8 summarise…",
@@ -74,9 +78,11 @@ Do not clarify when:
   a recurring post, summary or task (its time, its days, how often) changes its schedule → ops, never
   calendar: calendar is only for meetings and events.
 - Summaries, transcripts or "what does the speaker say" for a video → youtube. Doing something in
-  YouTube, Gmail, Calendar, Google Drive, Google Sheets, Google Docs, HubSpot or Facebook that no domain
-  lists (reply to or delete comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot
-  tickets, Facebook Page posts) → integrations, plus the app's own domain when it helps find ids.
+  YouTube, Gmail, Calendar, Google Drive, Google Sheets, Google Docs, HubSpot, Facebook or Apollo that no
+  domain lists (reply to or delete comments, playlists, labels, analytics, Drive files, Sheets rows, Docs,
+  HubSpot tickets, Facebook Page posts) → integrations, plus the app's own domain when it helps find ids.
+- Anything that names Apollo (search people or companies in Apollo, enrich a lead, Apollo contacts, deals,
+  tasks or sequences) → integrations. Saving what Apollo found into the CRM adds crm.
 - Contacts, companies, deals, notes and CRM tasks → crm, wherever they are kept (FreedomBot, HubSpot or
   Google Drive). "Save this contact in HubSpot / Drive" is crm too.
 - Where CRM records (contacts, companies, deals) are saved, checking it ("are my deals going to Google
@@ -99,6 +105,12 @@ Do not clarify when:
 
 "Summarize my last video and reply to the top 3 comments"
 → {"domains":["youtube","integrations"],"kind":"task","entities":{"video":"last video","count":"3"},"clarify":null}
+
+"How many clients do we have?" (platform is listed)
+→ {"domains":["platform"],"kind":"question","entities":{},"clarify":null}
+
+"Find CTOs at fintech companies in London on Apollo"
+→ {"domains":["integrations"],"kind":"question","entities":{"app":"Apollo","title":"CTO","industry":"fintech","location":"London"},"clarify":null}
 
 "Is Globex a good fit for us? Research them"
 → {"domains":["research","crm"],"kind":"question","entities":{"company":"Globex"},"clarify":null}

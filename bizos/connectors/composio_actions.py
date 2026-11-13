@@ -3,7 +3,7 @@ Composio Actions (any action of a connected app)
 ================================================
 
 Lets the assistant find and run any Composio action of the apps a user connected (Gmail, Google Calendar,
-Google Drive, Google Sheets, Google Docs, YouTube, HubSpot and Facebook: ``composio.TOOLKITS``), not only the ones a
+Google Drive, Google Sheets, Google Docs, YouTube, HubSpot, Facebook and Apollo: ``composio.TOOLKITS``), not only the ones a
 dedicated tool wraps. Actions of any other platform are refused.
 Tools the user switched off in Integrations are neither offered nor run. Plain Python; the tools in
 ``app/assistant/company_tools.py`` call it after the guard and the policy check.
@@ -50,7 +50,7 @@ TOOL_FOR_TIER = {
 #: Action-name prefix -> Composio toolkit slug (only toolkits users can connect, composio.TOOLKITS).
 _PREFIX_TOOLKIT = {"GMAIL": "gmail", "GOOGLECALENDAR": "googlecalendar", "YOUTUBE": "youtube",
                    "GOOGLEDRIVE": "googledrive", "GOOGLESHEETS": "googlesheets", "GOOGLEDOCS": "googledocs",
-                   "HUBSPOT": "hubspot", "FACEBOOK": "facebook"}
+                   "HUBSPOT": "hubspot", "FACEBOOK": "facebook", "APOLLO": "apollo"}
 
 #: Name words that make an action destructive anywhere in its name: it removes data, or it sends or
 #: publishes something that cannot be taken back (CLAUDE.md lists send with delete, deactivate, reset).
@@ -67,6 +67,11 @@ _DESTRUCTIVE_VERBS = _DESTRUCTIVE_WORDS | frozenset({
 _READ_VERBS = frozenset({
     "GET", "LIST", "SEARCH", "FETCH", "FIND", "READ", "QUERY", "LOAD", "CHECK", "COUNT", "RETRIEVE",
     "DOWNLOAD", "VIEW", "LOOKUP", "DESCRIBE", "EXPORT",
+})
+#: Apollo sequences email people on their own once a contact is in an active sequence, so starting one
+#: (or putting contacts into one, or switching their status in one) is a send: destructive, whatever the verb.
+_SENDS_EMAIL = frozenset({
+    "APOLLO_ACTIVATE_SEQUENCE", "APOLLO_ADD_CONTACTS_TO_SEQUENCE", "APOLLO_UPDATE_CONTACT_STATUS_IN_SEQUENCE",
 })
 #: YouTube comment replies are posts on the public channel, whatever the verb says.
 _PUBLIC_POSTS = frozenset({"YOUTUBE_CREATE_COMMENT_REPLY", "YOUTUBE_POST_COMMENT", "YOUTUBE_UPDATE_COMMENT"})
@@ -109,7 +114,7 @@ def classify(slug: str, tags: Optional[list[str]] = None) -> str:
     words = name.split("_")[1:]
     verb = words[0] if words else ""
     hints = {str(t) for t in (tags or [])}
-    if name in _PUBLIC_POSTS or "destructiveHint" in hints:
+    if name in _PUBLIC_POSTS or name in _SENDS_EMAIL or "destructiveHint" in hints:
         return DESTRUCTIVE
     if verb in _PUBLISHING_VERBS and set(words[1:]) & _PUBLISHED_THINGS:
         return DESTRUCTIVE

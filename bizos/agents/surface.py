@@ -258,6 +258,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "support_create_ticket": "subject (str), body (str, optional), severity (NORMAL|HIGH|CRITICAL, optional)",
     "support_my_tickets": "no arguments",
     "schedule_create": "instruction (str), frequency (daily|weekly|interval), time (HH:MM; daily and weekly), every_minutes (int >= 5, interval only), title (str, optional), weekdays (list of mon..sun, weekly only), timezone (str, optional)",
+    "platform_overview": "client (str, optional: company name or workspace identifier)",
     "schedule_list": "everyone (bool, optional, admins), include_ended (bool, optional)",
     "schedule_update": "schedule_id (str), then only what changes: title, instruction, frequency (daily|weekly|interval), time (HH:MM), every_minutes (int >= 5), weekdays (list of mon..sun), timezone",
     "schedule_cancel": "schedule_id (str)",

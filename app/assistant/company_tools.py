@@ -1002,6 +1002,43 @@ def schedule_update(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
                                    f"next run {task['next_run_at']}")
 
 
+@effect("platform_overview")
+def platform_overview(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """Every client workspace (control-plane metadata only). The policy check already limits it to platform owners."""
+    import bizos.owner as owner_view
+
+    portfolio = owner_view.owner_portfolio()
+    spaces = {w["client_id"]: w for w in owner_view.all_workspaces()["workspaces"]}
+    clients = []
+    for c in portfolio["clients"]:
+        ws = spaces.get(c["client_id"], {})
+        clients.append({
+            "company_name": c["company_name"], "workspace_id": c["slug"], "status": c["status"],
+            "go_live_stage": c["implementation_status"], "risk": c["account_risk"],
+            "bought": c["purchased_domains"], "members": ws.get("member_count", len(c.get("members") or [])),
+            "active_members": ws.get("active_member_count"), "needs_owner": c["needs_me_count"],
+            "since": ws.get("created_at"),
+        })
+    data: dict[str, Any] = {
+        "client_count": portfolio["client_count"], "live": portfolio["live_count"],
+        "at_risk": portfolio["at_risk_count"], "watch": portfolio["watch_count"],
+        "needs_owner": portfolio["needs_me_count"], "clients": clients,
+        "note": "Client workspaces only; Cepoch's own internal workspace is not counted.",
+    }
+    wanted = str(args.get("client") or "").strip().casefold()
+    if wanted:
+        match = next((w for w in spaces.values()
+                      if wanted in (w["slug"].casefold(), w["company_name"].casefold())), None) or next(
+            (w for w in spaces.values() if wanted in w["company_name"].casefold()), None)
+        if match is None:
+            return ConnectorResult(ok=True, data=data,
+                                   summary=f"no client named {args.get('client')!r}; {data['client_count']} client(s)")
+        data["client"] = {"company_name": match["company_name"], "workspace_id": match["slug"],
+                          "members": [{k: m[k] for k in ("display_name", "email", "role", "status", "last_login_at")}
+                                      for m in match["members"]]}
+    return ConnectorResult(ok=True, data=data, summary=f"{data['client_count']} client(s)")
+
+
 @effect("schedule_list")
 def schedule_list(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     everyone = bool(args.get("everyone")) and scope.ctx.is_admin

@@ -232,8 +232,11 @@ def context_for(client, case: dict):
     email = f"{prefix}@{client.slug}.example.com"
     record = next(u for u in control.list_users(client.id) if u.email == email)
     ctx = control.build_context(record)
+    # A platform owner (Cepoch staff) case: build_context reads the flag from the account, so set it here.
+    attributes = {**ctx.attributes, "platform_owner": bool(user.get("platform_owner"))}
     return dataclasses.replace(
         ctx, roles=frozenset(Role(r) for r in roles), display_name=user.get("name") or ctx.display_name,
+        attributes=attributes,
         data_scopes=frozenset(user["data_scopes"] if "data_scopes" in user else ALL_AREAS),
     )
 

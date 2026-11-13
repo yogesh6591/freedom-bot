@@ -101,6 +101,9 @@ class ToolSpec:
     #: admin's own authority, as on the page, so DRAFT and WAIT_FOR_APPROVAL do
     #: not queue it; ADVISE still forbids it.
     admin_config: bool = False
+    #: Reads every client workspace on the platform. Only Cepoch platform owners may see or run it,
+    #: whatever their role in their own workspace (rule_platform_owner).
+    platform_owner_only: bool = False
     #: Free-form tags used by domain packs to select tools.
     tags: frozenset[str] = field(default_factory=frozenset)
     #: Restricted data area this tool reads or writes (FB-037). A caller without
@@ -482,6 +485,17 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         risk=RiskLevel.MEDIUM,
         permissions=matrix.WRITE_INTERNAL,
         tags=frozenset({"write", "automation"}),
+    ),
+    _spec(
+        "platform_overview",
+        "Platform overview",
+        "Platform owners only: every client workspace on this FreedomBot platform, with counts, status, risk, "
+        "what each bought and its members. Read only.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        permissions=matrix.ADMIN_ONLY,
+        platform_owner_only=True,
+        tags=frozenset({"read", "platform"}),
     ),
     _spec(
         "schedule_list",
@@ -914,7 +928,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
     _spec(
         "integration_find_action",
         "Find an app action",
-        "Search the actions of the user's connected apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube or Facebook) "
+        "Search the actions of the user's connected apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot, Facebook or Apollo) "
         "and return each action's tier and arguments. Changes nothing.",
         CATEGORY_INTEGRATIONS,
         _ALL,

@@ -40,7 +40,7 @@ ALWAYS_ON = ("memory_search", "synced_search", "integration_find_action", "integ
 Domain = Literal[
     "memory", "approvals", "crm", "email", "calendar", "finance", "ops", "youtube",
     "admin_setup", "admin_launch", "admin_alerts", "admin_users", "admin_permissions",
-    "admin_commercial", "outreach", "integrations", "research", "files",
+    "admin_commercial", "outreach", "integrations", "research", "files", "platform",
 ]
 
 #: What the router reads for each domain (ARCHITECTURE.md §7).
@@ -60,8 +60,9 @@ DOMAIN_DESCRIPTIONS: dict[str, str] = {
     "admin_permissions": "Tool rules: which roles can use a tool, and tightening how it runs",
     "admin_commercial": "Pricing, resale rules, consulting quotes, change orders",
     "outreach": "Acquisition (admins only): prospects (count, search, show, add, edit, delete), emails to prospects and follow-ups, the sent-email log, assessment progress and reports, approve or unapprove, bookings (read, move, cancel), payment offers, the prospect journey page, finding new prospects, and web research with scores on saved prospects",
-    "integrations": "Anything else in the user's connected apps (Gmail, Calendar, Google Drive, Google Sheets, Google Docs, YouTube, HubSpot or Facebook) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot tickets and objects, Facebook Page posts; find an app action and run it",
+    "integrations": "Anything else in the user's connected apps (Gmail, Calendar, Google Drive, Google Sheets, Google Docs, YouTube, HubSpot, Facebook or Apollo) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, HubSpot tickets and objects, Facebook Page posts, Apollo people and company search, enrichment and sequences; find an app action and run it",
     "research": "The public web: research a company or person, news, job posts, read a web page",
+    "platform": "Platform owners only: the clients of this FreedomBot platform (every client workspace): how many, who they are, status, risk, go-live stage, what they bought, their members and users, what needs the owner",
     "files": "Files the user attached in this chat (PDF, Word, CSV, Excel, text): summarise, answer questions about them, use their contents (e.g. the people or emails listed in them)",
 }
 

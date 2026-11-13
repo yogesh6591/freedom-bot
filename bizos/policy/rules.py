@@ -123,6 +123,17 @@ def rule_rbac(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
     return None
 
 
+def rule_platform_owner(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """Platform-wide tools (every client's workspace) are for Cepoch platform owners only, never a client's ADMIN."""
+    if getattr(inp.spec, "platform_owner_only", False) and not req.ctx.attributes.get("platform_owner"):
+        return Constraint(
+            "PLATFORM_OWNER_ONLY",
+            DENY,
+            f"{inp.spec.title} is available to Cepoch platform owners only",
+        )
+    return None
+
+
 def rule_data_area(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """FB-037: tools over a restricted data area need that area in the user's scopes."""
     from bizos.policy.app_modes import AREA_LABELS
@@ -497,6 +508,7 @@ RULES: tuple[Rule, ...] = (
     rule_domain_enabled,
     rule_integration_connected,
     rule_rbac,
+    rule_platform_owner,
     rule_data_area,
     rule_phi,
     rule_ssn,

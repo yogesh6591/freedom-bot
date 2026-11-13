@@ -83,6 +83,11 @@ TOOLKITS: dict[str, dict[str, str]] = {
         "name": "Facebook",
         "description": "Post to your Facebook Page and read its posts and comments.",
     },
+    "apollo": {
+        "category": "prospecting",
+        "name": "Apollo",
+        "description": "Find people and companies, enrich leads, and manage contacts, deals and sequences in Apollo.",
+    },
 }
 
 
@@ -208,7 +213,7 @@ def connected_toolkit(ctx: TenantContext, category: str) -> Optional[str]:
         return None
     accounts = _active_accounts(ctx)
     for slug, meta in TOOLKITS.items():
-        # Only apps with a dedicated connector serve a category (Drive, Sheets, Docs and Facebook run
+        # Only apps with a dedicated connector serve a category (Drive, Sheets, Docs, Facebook and Apollo run
         # through the app actions instead; a CRM sheet in Drive is chosen in bizos/crm_storage.py).
         if meta["category"] == category and slug in CONNECTORS and accounts.get(slug):
             return slug

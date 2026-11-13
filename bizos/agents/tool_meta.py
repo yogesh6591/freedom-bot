@@ -25,7 +25,7 @@ from bizos.tools.dry_run import APPROVAL, DRAFT, RUN
 DOMAINS = (
     "memory", "approvals", "crm", "email", "calendar", "finance", "ops", "youtube",
     "admin_setup", "admin_launch", "admin_alerts", "admin_users", "admin_permissions",
-    "admin_commercial", "outreach", "integrations", "research", "files",
+    "admin_commercial", "outreach", "integrations", "research", "files", "platform",
 )
 
 #: The last sentence of a write's "Effect:" line, by gate. A denied tool is never shown.
@@ -520,6 +520,14 @@ TOOL_META: dict[str, AgentMeta] = {
         Don't use: once now -> that task's tool; changing one -> schedule_update; a meeting -> calendar_create_event.
         Effect: it runs on schedule until stopped. {gate}
     """)),
+    "platform_overview": M("platform", d("""
+        Platform owners only: every client workspace on this FreedomBot platform. Gives how many clients
+        there are, each one's status, risk, go-live stage, what they bought and how many members, and what
+        needs the owner. With client, also that client's members (name, email, role, last sign-in).
+        Use when: "how many clients do we have", "list our clients", "who are Globex's users", "which
+        clients are at risk".
+        Don't use: CRM customers or contacts -> crm_search_contacts; this workspace's own users -> admin_users.
+    """)),
     "schedule_list": M("ops", d("""
         List the user's recurring scheduled tasks with what each does, when it runs next, and how its last
         run went. Admins can list everyone's.
@@ -599,11 +607,11 @@ TOOL_META: dict[str, AgentMeta] = {
 
     # ------------------------------------------------------------------ integrations
     "integration_find_action": M("integrations", d("""
-        Find actions of the user's connected apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot
-        and Facebook) for anything the other tools cannot do. Returns each action's name, which tool runs it and its
+        Find actions of the user's connected apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot,
+        Facebook and Apollo) for anything the other tools cannot do. Returns each action's name, which tool runs it and its
         arguments. Changes nothing.
         Use when: no dedicated tool fits - "reply to the top comment", "save this to a Google Sheet",
-        "label these emails", "YouTube analytics for last month", "post this on our Facebook page".
+        "label these emails", "post this on our Facebook page", "find CTOs at fintechs in Apollo".
         Don't use: a dedicated tool exists (email_search_threads, crm_search_deals, youtube_video...);
         the public web -> web_search.
     """)),

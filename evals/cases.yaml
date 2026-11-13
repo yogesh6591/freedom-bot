@@ -28793,6 +28793,76 @@
     integration_write_action: {action: YOUTUBE_ADD_VIDEO_TO_PLAYLIST}
   expected_gates: {integration_find_action: run, integration_write_action: approval}
   expected_outcome: approval
+- id: t_platform_overview_001
+  query: How many clients do we have?
+  user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  fixtures:
+    results:
+      platform_overview: {client_count: 4, live: 1, at_risk: 1, watch: 0, needs_owner: 2, clients: [{company_name: Acme Corp, workspace_id: acme, status: ACTIVE, go_live_stage: live, risk: healthy, members: 14}, {company_name: Globex Ltd, workspace_id: globex_ltd, status: ACTIVE, go_live_stage: setup, risk: at_risk, members: 2}, {company_name: TechLabs, workspace_id: techlabs, status: ACTIVE, go_live_stage: setup, risk: healthy, members: 5}, {company_name: Globex, workspace_id: globex, status: ACTIVE, go_live_stage: not_started, risk: healthy, members: 1}]}
+  expected_domains: [platform]
+  expected_tool_calls: [platform_overview]
+  forbidden_tool_calls: [crm_search_contacts]
+  expected_gates: {platform_overview: run}
+  expected_reply_contains: ["4"]
+  expected_outcome: answer
+- id: t_platform_overview_002
+  query: Who are the users in the Globex Ltd workspace?
+  user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  fixtures:
+    results:
+      platform_overview: {client_count: 4, live: 1, at_risk: 1, watch: 0, needs_owner: 2, clients: [{company_name: Acme Corp, workspace_id: acme, status: ACTIVE, go_live_stage: live, risk: healthy, members: 14}, {company_name: Globex Ltd, workspace_id: globex_ltd, status: ACTIVE, go_live_stage: setup, risk: at_risk, members: 2}, {company_name: TechLabs, workspace_id: techlabs, status: ACTIVE, go_live_stage: setup, risk: healthy, members: 5}, {company_name: Globex, workspace_id: globex, status: ACTIVE, go_live_stage: not_started, risk: healthy, members: 1}], client: {company_name: Globex Ltd, workspace_id: globex_ltd, members: [{display_name: Priya Shah, email: priya@globex.example.com, role: ADMIN, status: ACTIVE}, {display_name: Sam Lee, email: sam@globex.example.com, role: OPERATOR, status: ACTIVE}]}}
+  expected_domains: [platform]
+  expected_tool_calls: [platform_overview]
+  expected_args:
+    platform_overview: {client: Globex Ltd}
+  expected_gates: {platform_overview: run}
+  expected_reply_contains: ["Priya"]
+  expected_outcome: answer
+- id: t_platform_overview_003_client_admin
+  query: How many client workspaces are on the platform?
+  user: {name: Amelia, roles: [ADMIN]}
+  expected_tool_calls: []
+  forbidden_tool_calls: [platform_overview]
+  expected_hidden: [platform_overview]
+  expected_outcome: not_permitted
+- id: t_apollo_search_001
+  query: Search my Apollo contacts for CTOs at fintech companies
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [apollo], actions: [{action_id: APOLLO_SEARCH_CONTACTS, title: Search contacts, tier: read, run_with: integration_read_action, arguments: {q_keywords: {type: string}, person_titles: {type: array}}}]}
+      integration_read_action: {action: APOLLO_SEARCH_CONTACTS, result: {contacts: [{name: Asha Rao, title: CTO, organization_name: PayLedger}, {name: Tom Hale, title: CTO, organization_name: Finlo}]}}
+  expected_domains: [integrations]
+  expected_tool_calls: [integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: APOLLO_SEARCH_CONTACTS}
+  expected_gates: {integration_find_action: run, integration_read_action: run}
+  expected_outcome: answer
+- id: t_apollo_create_contact_001
+  query: Add Asha Rao, CTO at PayLedger, asha@payledger.example.com, as a contact in Apollo
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [apollo], actions: [{action_id: APOLLO_CREATE_CONTACT, title: Create contact, tier: write, run_with: integration_write_action, arguments: {first_name: {type: string}, last_name: {type: string}, email: {type: string}, title: {type: string}, organization_name: {type: string}}}]}
+  expected_domains: [integrations]
+  expected_tool_calls: [integration_find_action, integration_write_action]
+  expected_args:
+    integration_write_action: {action: APOLLO_CREATE_CONTACT}
+  expected_gates: {integration_find_action: run, integration_write_action: approval}
+  expected_outcome: approval
+- id: t_apollo_sequence_001
+  query: Add Asha Rao to my Apollo sequence "Fintech intro"
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    results:
+      integration_find_action: {connected_apps: [apollo], actions: [{action_id: APOLLO_SEARCH_SEQUENCES, title: Search sequences, tier: read, run_with: integration_read_action, arguments: {q_name: {type: string}}}, {action_id: APOLLO_SEARCH_CONTACTS, title: Search contacts, tier: read, run_with: integration_read_action, arguments: {q_keywords: {type: string}}}, {action_id: APOLLO_ADD_CONTACTS_TO_SEQUENCE, title: Add contacts to sequence, tier: destructive, run_with: integration_destructive_action, arguments: {sequence_id: {type: string, required: true}, contact_ids: {type: array, required: true}, send_email_from_email_account_id: {type: string}}}]}
+      integration_read_action: {action: APOLLO_SEARCH_SEQUENCES, result: {emailer_campaigns: [{id: seq_42, name: Fintech intro}], contacts: [{id: ct_7, name: Asha Rao}]}}
+  expected_domains: [integrations]
+  expected_tool_calls: [integration_find_action, integration_destructive_action]
+  expected_args:
+    integration_destructive_action: {action: APOLLO_ADD_CONTACTS_TO_SEQUENCE}
+  expected_gates: {integration_destructive_action: approval}
+  expected_outcome: approval
 - id: t_integration_read_action_001
   query: How many views did my channel get per day this month?
   user: {name: Ada, roles: [ADMIN]}

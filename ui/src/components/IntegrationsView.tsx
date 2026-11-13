@@ -283,7 +283,7 @@ export function IntegrationsView({
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search apps, e.g. Gmail, Drive, HubSpot, Facebook"
+                placeholder="Search apps, e.g. Gmail, Drive, HubSpot, Apollo"
                 className="h-10 w-full rounded-lg border border-border bg-background pl-9 pr-3 text-[14px] outline-none focus:border-purple-300"
               />
             </label>

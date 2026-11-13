@@ -1,6 +1,6 @@
 """Onboarding branch: CRM records saved where each person chooses (FreedomBot by default, HubSpot or a
 sheet in Google Drive), recurring scheduled tasks with duplicate-free posting, and only the eight supported
-apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot, Facebook).
+apps (Gmail, Calendar, Drive, Sheets, Docs, YouTube, HubSpot, Facebook, Apollo).
 
 Mocked tools only: nothing reaches Composio, HubSpot, Facebook or any Google service.
 """
@@ -479,13 +479,15 @@ def test_the_same_post_to_the_same_page_is_refused(client_a, scope_factory, monk
 
 def test_only_the_eight_apps_can_be_connected_or_used(monkeypatch):
     assert set(composio.TOOLKITS) == {"gmail", "googlecalendar", "googledrive", "googlesheets", "googledocs",
-                                      "youtube", "hubspot", "facebook"}
+                                      "youtube", "hubspot", "facebook", "apollo"}
     for slug in ("slack", "notion", "salesforce"):
         with pytest.raises(ValueError, match="FreedomBot connects"):
             composio._check_toolkit(slug)
     assert acts.check("GOOGLESHEETS_BATCH_UPDATE", acts.WRITE) == ("googlesheets", None)
     assert acts.check("FACEBOOK_CREATE_POST", acts.DESTRUCTIVE) == ("facebook", None)
     assert acts.check("HUBSPOT_CREATE_CONTACT", acts.WRITE) == ("hubspot", None)
+    assert acts.classify_by_name("APOLLO_SEARCH_CONTACTS") == acts.READ
+    assert acts.classify_by_name("APOLLO_ADD_CONTACTS_TO_SEQUENCE") == acts.DESTRUCTIVE
     assert acts.check("SLACK_SEND_MESSAGE", acts.DESTRUCTIVE)[0] is None
 
     def account(slug, ident):

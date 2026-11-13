@@ -230,6 +230,9 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["instruction", "frequency"],
     ),
+    "platform_overview": _obj(
+        {"client": _s("Optional: one client's company name or workspace identifier, to list its members too")}
+    ),
     "schedule_list": _obj(
         {
             "everyone": {"type": "boolean", "description": "Admins only: every person's schedules (default false)"},
