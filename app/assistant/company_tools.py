@@ -1002,6 +1002,71 @@ def schedule_update(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
                                    f"next run {task['next_run_at']}")
 
 
+def _new_client_problem(args: dict[str, Any]) -> Optional[str]:
+    """Why platform_create_client cannot run with these arguments, before anything is made (or None)."""
+    from bizos.tenancy import new_client
+    from bizos.util.ids import slugify
+
+    name = " ".join(str(args.get("company_name") or "").split())
+    email = str(args.get("admin_email") or "").strip()
+    if not name:
+        return "Give the new client's company name. Nothing was created."
+    if not ops._EMAIL.match(email):
+        return f"{email or 'The admin email'!r} is not a valid email address. Nothing was created."
+    workspace = slugify(str(args.get("workspace_id") or "").strip() or name)
+    if new_client._slug_taken(workspace):
+        return (f"The workspace identifier {workspace!r} is already taken. Give another workspace_id, or check "
+                "platform_overview in case this client already exists. Nothing was created.")
+    return None
+
+
+@precheck("platform_create_client")
+def _platform_create_client_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
+    if scope.ctx.attributes.get("scheduled_task"):
+        return "A scheduled run cannot create client workspaces. Nothing was created."
+    return _new_client_problem(args)
+
+
+@effect("platform_create_client")
+def platform_create_client(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """A new client with its own workspace and first admin, as on Administration > Workspaces > New client."""
+    from bizos.tenancy import new_client
+
+    problem = _new_client_problem(args)
+    if problem:
+        return ConnectorResult.failure(problem)
+    password = _temporary_password()
+    try:
+        made = new_client.create_client(
+            company_name=str(args.get("company_name") or ""),
+            slug=str(args.get("workspace_id") or "").strip() or None,
+            purchased_domains=_list(args.get("bought")) or None,
+            admin_name=str(args.get("admin_name") or ""),
+            admin_email=str(args.get("admin_email") or ""),
+            admin_password=password,
+            actor=scope.ctx,
+        )
+    except ops.AdminError as exc:
+        return ConnectorResult.failure(f"{exc.message} Nothing was created.")
+    except new_client.SetupFailed as exc:
+        return ConnectorResult.failure(str(exc))
+    client = made["client"]
+    return ConnectorResult(
+        ok=True,
+        data={
+            "company_name": client["company_name"], "workspace_id": client["slug"],
+            "bought": client["purchased_domains"], "admin_email": made["admin"]["email"],
+            "admin_name": made["admin"]["display_name"], "temporary_password": password,
+            "sign_in": ("on this site with that email and the temporary password" if made["signs_in_here"]
+                        else "on the client's own deployment"),
+            "note": "Show the temporary password once so the owner can send it to the admin. FreedomBot does not "
+                    "email it.",
+        },
+        summary=f"created client {client['company_name']} (workspace {client['slug']}) with admin "
+                f"{made['admin']['email']}",
+    )
+
+
 @effect("platform_overview")
 def platform_overview(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Every client workspace (control-plane metadata only). The policy check already limits it to platform owners."""

@@ -529,6 +529,14 @@ TOOL_META: dict[str, AgentMeta] = {
         clients are at risk".
         Don't use: CRM customers or contacts -> crm_search_contacts; this workspace's own users -> admin_users.
     """)),
+    "platform_create_client": M("platform", d("""
+        Platform owners only: onboard a new client company. Creates its own isolated workspace from the
+        FreedomBot template and its first admin login, and returns a temporary password once.
+        Use when: "create a new client Siatech with admin roger@siatech.com", "onboard Initech".
+        Don't use: a login in this workspace -> admin_create_user; a CRM company -> crm_create_company.
+        Needs: the company name and the admin's email from the user's message.
+        Effect: the client's admin can sign in. {gate}
+    """)),
     "schedule_list": M("ops", d("""
         List the user's recurring scheduled tasks with what each does, when it runs next, and how its last
         run went. Admins can list everyone's.

@@ -67,7 +67,9 @@ Do not clarify when:
   admin_alerts; prices, resale rules and margins, consult quotes, change orders → admin_commercial.
 - Questions about the platform's clients when platform is listed above ("how many clients do we have",
   "list our clients", "which clients are at risk", "who are Globex's users", "how many workspaces") →
-  platform only. These are FreedomBot's client companies, never CRM customers. Without platform listed,
+  platform only. These are FreedomBot's client companies, never CRM customers. Creating or onboarding a new
+  client company ("create a new client Siatech with admin roger@siatech.com", "onboard Initech") → platform
+  only, never admin_users: it makes a separate workspace, not a login in this one. Without platform listed,
   clients and customers are CRM records → crm.
 - Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
 - Support tickets, bugs and problems with BizOS itself, company goals and strategic priorities → ops.
@@ -114,6 +116,9 @@ Do not clarify when:
 
 "How many clients do we have?" (platform is listed)
 → {"domains":["platform"],"kind":"question","entities":{},"clarify":null}
+
+"Onboard a new client Siatech, admin roger@siatech.com" (platform is listed)
+→ {"domains":["platform"],"kind":"task","entities":{"company":"Siatech","admin_email":"roger@siatech.com"},"clarify":null}
 
 "Schedule a Zoom call with Priya tomorrow at 3pm"
 → {"domains":["integrations","crm"],"kind":"task","entities":{"app":"Zoom","contact":"Priya","when":"tomorrow 3pm"},"clarify":null}

@@ -230,6 +230,18 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["instruction", "frequency"],
     ),
+    "platform_create_client": _obj(
+        {
+            "company_name": _s("The new client's company name"),
+            "admin_email": _s("Email of the client's first admin, from the user's message"),
+            "admin_name": _s("Optional: the admin's name"),
+            "workspace_id": _s("Optional: workspace identifier (lowercase, used to sign in); made from the name if empty"),
+            "bought": {"type": "array", "description": "Optional: areas the client bought; the standard package if empty",
+                       "items": {"type": "string", "enum": ["general", "operations", "sales", "intake", "planning",
+                                                            "strategy", "finance", "brand", "legal"]}},
+        },
+        ["company_name", "admin_email"],
+    ),
     "platform_overview": _obj(
         {"client": _s("Optional: one client's company name or workspace identifier, to list its members too")}
     ),

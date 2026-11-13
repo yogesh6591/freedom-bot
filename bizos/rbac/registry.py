@@ -498,6 +498,22 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         tags=frozenset({"read", "platform"}),
     ),
     _spec(
+        "platform_create_client",
+        "Create a client workspace",
+        "Platform owners only: onboard a new client company with its own isolated workspace and first admin. "
+        "A temporary password for the admin is generated and returned once.",
+        CATEGORY_ADMIN,
+        _ALL,
+        write=True,
+        risk=RiskLevel.MEDIUM,
+        permissions=matrix.ADMIN_ONLY,
+        # The same authority as Administration > Workspaces > New client, so it is not queued as a draft.
+        admin_config=True,
+        platform_owner_only=True,
+        view_min_role=Role.ADMIN,
+        tags=frozenset({"write", "platform"}),
+    ),
+    _spec(
         "schedule_list",
         "List scheduled tasks",
         "List the user's recurring scheduled tasks (admins may list everyone's) with the next and last run.",

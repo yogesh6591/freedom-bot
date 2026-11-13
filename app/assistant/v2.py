@@ -709,6 +709,23 @@ def _run_streaming(agent: Agent, messages: list, emit: Callable[[dict], None], g
     return output
 
 
+def _with_temporary_passwords(content: str, results: list) -> str:
+    """A login a tool just made (new client admin, new user, reset) is useless without its temporary password.
+
+    The model sometimes leaves it out, so it is added here from the tool's own result, once, word for word.
+    """
+    lines = []
+    for r in results:
+        data = r.data if isinstance(getattr(r, "data", None), dict) else {}
+        password = str(data.get("temporary_password") or "")
+        if r.status != "success" or not password or password in content:
+            continue
+        who = data.get("admin_email") or data.get("email") or "the new login"
+        lines.append(f"Temporary password for {who}: `{password}` (shown once; send it to them yourself, "
+                     "FreedomBot does not email it).")
+    return content.rstrip() + "\n\n" + "\n".join(lines) if lines else content
+
+
 def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, guard: Optional[Guard],
              trace: dict, task: bool = True, outreach: Any = None,
              attachments: Optional[list[dict]] = None) -> dict[str, Any]:
@@ -730,6 +747,7 @@ def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, gua
             trace["assessment_reply_shaped"] = True
     acknowledgement = compose(text, results, task=task) if guard else None
     content = acknowledgement.text if acknowledgement else text
+    content = _with_temporary_passwords(content, results)
     new_actions = [a.to_dict() for a in actions.list_actions(limit=200, ctx=ctx) if a.id not in before]
     activity = [{"tool": d.tool, "ok": any(r.status != "error" for r in d.results)}
                 for d in (guard.log if guard else []) if d.stage == "policy"]

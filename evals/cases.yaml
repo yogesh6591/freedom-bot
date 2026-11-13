@@ -28863,6 +28863,38 @@
   expected_gates: {integration_find_action: run, integration_read_action: run}
   expected_reply_contains: ["Globex"]
   expected_outcome: answer
+- id: t_platform_create_client_001
+  query: Create a new client Siatech and make roger@siatech.example.com its admin
+  user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  fixtures:
+    results:
+      platform_create_client: {company_name: Siatech, workspace_id: siatech, bought: [general, operations, sales, intake, planning], admin_email: roger@siatech.example.com, admin_name: Client admin, temporary_password: Xq7-pL2vR9tKw3sZ, sign_in: on this site with that email and the temporary password}
+  expected_domains: [platform]
+  expected_tool_calls: [platform_create_client]
+  forbidden_tool_calls: [admin_create_user, crm_create_company]
+  expected_args:
+    platform_create_client: {company_name: Siatech, admin_email: roger@siatech.example.com}
+  expected_gates: {platform_create_client: run}
+  expected_reply_contains: ["Xq7-pL2vR9tKw3sZ"]
+  expected_outcome: run
+- id: t_platform_create_client_002
+  query: Onboard Initech Labs as a new client with workspace id initech_labs, admin Dana Fox dana@initech.example.com, they bought sales and finance
+  user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  fixtures:
+    results:
+      platform_create_client: {company_name: Initech Labs, workspace_id: initech_labs, bought: [general, sales, finance], admin_email: dana@initech.example.com, admin_name: Dana Fox, temporary_password: Hf4-Qm8wZ2nBv6Ty, sign_in: on this site with that email and the temporary password}
+  expected_domains: [platform]
+  expected_tool_calls: [platform_create_client]
+  expected_args:
+    platform_create_client: {company_name: Initech Labs, admin_email: dana@initech.example.com, workspace_id: initech_labs}
+  expected_gates: {platform_create_client: run}
+  expected_outcome: run
+- id: t_platform_create_client_003_client_admin
+  query: Create a new client company Siatech with admin roger@siatech.example.com
+  user: {name: Amelia, roles: [ADMIN]}
+  forbidden_tool_calls: [platform_create_client]
+  expected_hidden: [platform_create_client, platform_overview]
+  expected_outcome: not_permitted
 - id: t_apollo_search_001
   query: Search my Apollo contacts for CTOs at fintech companies
   user: {name: Dev, roles: [OPERATOR]}
