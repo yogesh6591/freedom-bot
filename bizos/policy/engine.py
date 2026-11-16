@@ -37,6 +37,16 @@ from bizos.rbac.permissions import EffectivePermission, resolve as resolve_permi
 from bizos.rbac.registry import ToolSpec, get_spec
 from bizos.types import DataClassification, ExecutionMode, PolicyEffect, RiskLevel
 
+#: Approval rules an Admin never skips: decisions reserved to a licensed human, tools declared as always
+#: needing approval, the workspace's own always-require-approval list, and a level set for one person.
+ADMIN_CANNOT_SKIP = frozenset({
+    "LICENSED_JUDGMENT",
+    "LICENSED_CONTENT",
+    "TOOL_ALWAYS_REQUIRES_APPROVAL",
+    "CLIENT_ALWAYS_REQUIRES_APPROVAL",
+    *PERSON_RULES,
+})
+
 
 class PolicyViolation(Exception):
     """Raised when code attempts an action the engine denied.
@@ -107,21 +117,18 @@ def evaluate(req: PolicyRequest, *, domain_mode: Optional[ExecutionMode] = None)
         reason = f"executing approved action {req.approved_action_id or ''}".strip()
         rule_code = "APPROVED_ACTION_EXECUTION"
 
-    # Opt-in (approval_policy.admins_skip_approval, off by default): an Admin's action that would only
-    # wait for approval runs now. Only REQUIRE_APPROVAL changes: denials, draft-only, guardrails and the
-    # workspace's always-require-approval list still bind.
-    policy = req.settings.approval_policy
+    # Always on (owner decision, no workspace switch): an Admin's action that would only wait for
+    # approval runs now. Only REQUIRE_APPROVAL changes: denials, draft-only, Advise mode and data
+    # blocks still bind, and so do the rules in ADMIN_CANNOT_SKIP (licensed decisions, tools that
+    # always need approval, the workspace's always-require-approval list, a level set for one person).
     if (
         effect == PolicyEffect.REQUIRE_APPROVAL
-        and getattr(policy, "admins_skip_approval", False)
         and req.ctx.is_admin
         and permission.can_execute_approved
-        and req.tool not in (policy.always_require_approval or [])
-        # A level an admin set for this one person is meant to bind, admins included.
-        and not any(c.code in PERSON_RULES for c in constraints)
+        and not any(c.code in ADMIN_CANNOT_SKIP for c in constraints)
     ):
         effect = PolicyEffect.ALLOW
-        reason = "this workspace lets admins act without waiting for approval"
+        reason = "admins act without waiting for approval"
         rule_code = "ADMIN_SKIPS_APPROVAL"
 
     return PolicyDecision(

@@ -763,9 +763,9 @@
     contacts: [{id: C-310, name: "Raj Mehta", email: "raj@acme.com", company: "Acme"}]
   expected_domains: [outreach, crm]
   expected_tool_calls: [send_approved, crm_create_note]
-  expected_gates: {send_approved: run, crm_create_note: approval}
+  expected_gates: {send_approved: run, crm_create_note: run}
   forbidden_tool_calls: [email_send_message]
-  expected_outcome: [run, approval]
+  expected_outcome: run
 
 - id: campaign_mixed_router_miss_001
   # The router misses campaign. v2 must not load the campaign tools; it does the CRM part and tells
@@ -776,10 +776,10 @@
     router_override: {domains: [crm], kind: task}
     contacts: [{id: C-310, name: "Raj Mehta", email: "raj@acme.com", company: "Acme"}]
   expected_tool_calls: [crm_create_note]
-  expected_gates: {crm_create_note: approval}
+  expected_gates: {crm_create_note: run}
   forbidden_tool_calls: [send_approved, email_send_message]
   expected_reply_contains: ["separate message"]
-  expected_outcome: approval
+  expected_outcome: run
 
 # ==== BEGIN PHASE 8 GENERATED CASES ====
 # Generated in Phase 8; expected_gates and default outcomes come from the policy dry-run
@@ -1472,8 +1472,8 @@
     crm_bulk_update_contacts: {lifecycle_stage: customer}
   forbidden_args:
     crm_bulk_update_contacts: {lifecycle_stage: ALL}
-  expected_gates: {crm_bulk_update_contacts: approval}
-  expected_outcome: approval
+  expected_gates: {crm_bulk_update_contacts: run}
+  expected_outcome: run
 
 - id: t_crm_bulk_update_003
   query: Assign all leads to Meena
@@ -1717,8 +1717,8 @@
   expected_args:
     email_send_message:
       recipients: [dev@acme.com]
-  expected_gates: {email_send_message: approval}
-  expected_outcome: approval
+  expected_gates: {email_send_message: run}
+  expected_outcome: run
 
 # ---------------------------------------------------------------- Phase 8: calendar tools
 
@@ -2057,8 +2057,8 @@
   expected_tool_calls: [calendar_list_events, calendar_cancel_event]
   expected_args:
     calendar_cancel_event: {event_id: E-71}
-  expected_gates: {calendar_cancel_event: approval}
-  expected_outcome: approval
+  expected_gates: {calendar_cancel_event: run}
+  expected_outcome: run
 
 - id: t_cal_cancel_003
   query: Cancel tomorrow's pipeline review
@@ -28791,8 +28791,8 @@
   expected_tool_calls: [integration_find_action, integration_write_action]
   expected_args:
     integration_write_action: {action: YOUTUBE_ADD_VIDEO_TO_PLAYLIST}
-  expected_gates: {integration_find_action: run, integration_write_action: approval}
-  expected_outcome: approval
+  expected_gates: {integration_find_action: run, integration_write_action: run}
+  expected_outcome: run
 - id: t_platform_overview_001
   query: How many clients do we have?
   user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
@@ -28836,8 +28836,8 @@
   expected_tool_calls: [integration_find_action, integration_write_action]
   expected_args:
     integration_write_action: {action: ZOOM_CREATE_A_MEETING}
-  expected_gates: {integration_find_action: run, integration_write_action: approval}
-  expected_outcome: approval
+  expected_gates: {integration_find_action: run, integration_write_action: run}
+  expected_outcome: run
 - id: t_linkedin_post_001
   query: 'Post on my LinkedIn: We just launched FreedomBot for small businesses!'
   user: {name: Ada, roles: [ADMIN]}
@@ -28864,8 +28864,10 @@
   expected_reply_contains: ["Globex"]
   expected_outcome: answer
 - id: t_platform_create_client_001
-  query: Create a new client Siatech and make roger@siatech.example.com its admin
+  query: Create a new client Siatech and make roger@siatech.example.com its admin. They bought operations, sales and intake
   user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  gate_args:
+    platform_create_client: {bought: [general, operations, sales, intake]}
   fixtures:
     results:
       platform_create_client: {company_name: Siatech, workspace_id: siatech, bought: [general, operations, sales, intake, planning], admin_email: roger@siatech.example.com, admin_name: Client admin, temporary_password: Xq7-pL2vR9tKw3sZ, sign_in: on this site with that email and the temporary password}
@@ -28880,6 +28882,8 @@
 - id: t_platform_create_client_002
   query: Onboard Initech Labs as a new client with workspace id initech_labs, admin Dana Fox dana@initech.example.com, they bought sales and finance
   user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  gate_args:
+    platform_create_client: {bought: [general, sales, finance]}
   fixtures:
     results:
       platform_create_client: {company_name: Initech Labs, workspace_id: initech_labs, bought: [general, sales, finance], admin_email: dana@initech.example.com, admin_name: Dana Fox, temporary_password: Hf4-Qm8wZ2nBv6Ty, sign_in: on this site with that email and the temporary password}
@@ -28891,6 +28895,35 @@
   expected_outcome: run
 - id: t_platform_create_client_003_client_admin
   query: Create a new client company Siatech with admin roger@siatech.example.com
+  user: {name: Amelia, roles: [ADMIN]}
+  forbidden_tool_calls: [platform_create_client]
+  expected_hidden: [platform_create_client, platform_overview]
+  expected_outcome: not_permitted
+- id: t_platform_create_client_004_asks_for_domains
+  query: Create a new client Siatech with admin roger@siatech.example.com
+  user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  expected_domains: [platform]
+  expected_tool_calls: []
+  forbidden_tool_calls: [admin_create_user, crm_create_company]
+  expected_reply_contains: ["Finance", "Legal", "Brand", "Strategy"]
+  expected_outcome: clarify
+- id: t_platform_create_client_005_everything
+  query: Onboard Initech Labs, admin dana@initech.example.com, they bought everything
+  user: {name: Yogesh, roles: [ADMIN], platform_owner: true}
+  fixtures:
+    results:
+      platform_create_client: {company_name: Initech Labs, workspace_id: initech_labs, bought: [general, operations, sales, intake, planning, strategy, finance, brand, legal], admin_email: dana@initech.example.com, admin_name: Client admin, temporary_password: Jd3-Rk7vN5mPx2Wc, sign_in: on this site with that email and the temporary password}
+  gate_args:
+    platform_create_client: {bought: [general, operations, sales, intake, planning, strategy, finance, brand, legal]}
+  expected_domains: [platform]
+  expected_tool_calls: [platform_create_client]
+  expected_args:
+    platform_create_client: {company_name: Initech Labs, admin_email: dana@initech.example.com}
+  expected_gates: {platform_create_client: run}
+  expected_reply_contains: ["Jd3-Rk7vN5mPx2Wc"]
+  expected_outcome: run
+- id: t_platform_create_client_006_domains_missing_non_owner
+  query: Add a new client Globex with admin sam@globex.example.com and sales only
   user: {name: Amelia, roles: [ADMIN]}
   forbidden_tool_calls: [platform_create_client]
   expected_hidden: [platform_create_client, platform_overview]
@@ -28918,8 +28951,8 @@
   expected_tool_calls: [integration_find_action, integration_write_action]
   expected_args:
     integration_write_action: {action: APOLLO_CREATE_CONTACT}
-  expected_gates: {integration_find_action: run, integration_write_action: approval}
-  expected_outcome: approval
+  expected_gates: {integration_find_action: run, integration_write_action: run}
+  expected_outcome: run
 - id: t_apollo_sequence_001
   query: Add Asha Rao to my Apollo sequence "Fintech intro"
   user: {name: Ada, roles: [ADMIN]}
@@ -29431,8 +29464,8 @@
     results:
       crm_search_companies: []
   expected_tool_calls: [crm_create_company]
-  expected_gates: {crm_create_company: approval}
-  expected_outcome: approval
+  expected_gates: {crm_create_company: run}
+  expected_outcome: run
 
 - id: t_crm_create_company_004
   query: "Add Hooli as a new company in the CRM"
@@ -29478,8 +29511,8 @@
       crm_search_companies:
       - {id: co_5, name: Acme, domain: acme.com}
   expected_tool_calls: [crm_create_deal]
-  expected_gates: {crm_create_deal: approval}
-  expected_outcome: approval
+  expected_gates: {crm_create_deal: run}
+  expected_outcome: run
 
 - id: t_crm_create_deal_004
   query: "Create a deal for Globex worth 5000"
@@ -29547,8 +29580,8 @@
   expected_tool_calls: [crm_set_storage]
   expected_args:
     crm_set_storage: {destination: auto}
-  expected_gates: {crm_set_storage: approval}
-  expected_outcome: approval
+  expected_gates: {crm_set_storage: run}
+  expected_outcome: run
 
 - id: t_crm_set_storage_004
   query: "From now on save all my CRM records in FreedomBot"
@@ -29603,8 +29636,8 @@
     schedule_create: {frequency: daily}
   gate_args:
     schedule_create: {instruction: Summarise my inbox, frequency: daily, time: "08:00"}
-  expected_gates: {schedule_create: approval}
-  expected_outcome: approval
+  expected_gates: {schedule_create: run}
+  expected_outcome: run
 
 - id: t_schedule_create_004
   query: "Every day at 8 AM summarise my inbox"
@@ -29645,8 +29678,8 @@
     schedule_create: {frequency: interval, every_minutes: 120}
   gate_args:
     schedule_create: {instruction: Summarise my inbox, frequency: interval, every_minutes: 120}
-  expected_gates: {schedule_create: approval}
-  expected_outcome: approval
+  expected_gates: {schedule_create: run}
+  expected_outcome: run
 
 - id: t_schedule_list_001
   query: "What recurring tasks have I scheduled?"
@@ -29725,9 +29758,9 @@
     schedule_update: {schedule_id: sch_101}
   gate_args:
     schedule_update: {schedule_id: sch_101, weekdays: [mon, thu]}
-  expected_gates: {schedule_update: approval}
+  expected_gates: {schedule_update: run}
   forbidden_tool_calls: [schedule_cancel, schedule_create]
-  expected_outcome: approval
+  expected_outcome: run
 
 - id: t_schedule_cancel_001
   query: "Stop my daily inbox summary"
@@ -29766,5 +29799,5 @@
   expected_tool_calls: [schedule_list, schedule_cancel]
   expected_args:
     schedule_cancel: {schedule_id: sch_101}
-  expected_gates: {schedule_cancel: approval}
-  expected_outcome: approval
+  expected_gates: {schedule_cancel: run}
+  expected_outcome: run

@@ -96,6 +96,14 @@
   attachment_id. Leave access_area empty for everyone; set finance (or hr, legal, …) only when the
   user says that area only.
 
+## platform
+- Onboarding a new client needs three things from the user: company name, the first admin's email, and
+  which domains the client bought. If the domains are not stated, do not guess and do not create it: ask
+  which ones, and list every domain we support (general, operations, sales, intake, planning, strategy,
+  finance, brand, legal; General is always included). Create the client only after they answer.
+- "Everything" means all nine; "standard package" means general, operations, sales, intake, planning.
+- platform_create_client returns a temporary password once; show it so the owner can send it to the admin.
+
 ## admin_users
 - Get the user from admin_list_users first. "User/login/access/role" means BizOS users, not CRM contacts.
 - admin_update_user for roles and data access; admin_set_user_status to suspend or reactivate.

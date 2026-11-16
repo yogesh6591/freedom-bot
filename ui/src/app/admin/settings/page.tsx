@@ -13,7 +13,6 @@ import {
   IdCard,
   Scale,
   UserCheck,
-  Zap,
   type LucideIcon
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
@@ -90,7 +89,6 @@ interface ClientSettings {
   risk_policy: RiskPolicy
   approval_policy?: {
     allow_self_approval?: boolean
-    admins_skip_approval?: boolean
     approver_role?: string
     expires_after_hours?: number
   }
@@ -1641,7 +1639,7 @@ function Policies() {
 
         <PolicyGroup
           title="Approvals"
-          description="Who can get an action through without a second person."
+          description="Who can get an action through without a second person. Admins always run without waiting; refusals, Advise and Draft modes, data blocks and licensed decisions still apply."
         >
           <div className="grid gap-3 md:grid-cols-2">
             <PolicyToggle
@@ -1652,16 +1650,6 @@ function Policies() {
               disabled={saving}
               onChange={(on) =>
                 void save({ approval_policy: { allow_self_approval: on } })
-              }
-            />
-            <PolicyToggle
-              icon={Zap}
-              title="Admins skip approval"
-              description="Admin actions run without waiting. Refusals, Advise and Draft modes and data blocks still apply."
-              on={Boolean(settings.approval_policy?.admins_skip_approval)}
-              disabled={saving}
-              onChange={(on) =>
-                void save({ approval_policy: { admins_skip_approval: on } })
               }
             />
           </div>

@@ -254,3 +254,30 @@ def test_the_server_command_runs_the_same_setup(monkeypatch):
     finally:
         with control_connection() as conn:
             conn.execute(text("DELETE FROM clients WHERE slug = :s"), {"s": slug})
+
+
+# --------------------------------------------------------------------------- onboarding from chat asks what they bought
+
+
+def test_chat_onboarding_asks_which_domains_before_creating_anything():
+    from app.assistant.company_tools import _new_client_problem
+    from bizos.domains.catalog import DOMAIN_CATALOG
+
+    slug = f"tchat{uuid.uuid4().hex[:6]}"
+    asked = _new_client_problem({"company_name": "Chat Co", "admin_email": "a@chat.example.com", "workspace_id": slug})
+    assert asked and "Nothing was created" in asked and "ask them now" in asked
+    for entry in DOMAIN_CATALOG:  # every domain we support is listed
+        assert entry.name in asked and entry.title in asked
+    assert _new_client_problem({"company_name": "Chat Co", "admin_email": "a@chat.example.com", "workspace_id": slug,
+                                "bought": []}) == asked
+    assert _new_client_problem({"company_name": "Chat Co", "admin_email": "a@chat.example.com", "workspace_id": slug,
+                                "bought": ["sales", "finance"]}) is None
+    assert _new_client_problem({"company_name": "Chat Co", "admin_email": "a@chat.example.com", "workspace_id": slug,
+                                "bought": "sales, finance"}) is None
+
+
+def test_chat_onboarding_still_checks_the_name_and_email_first():
+    from app.assistant.company_tools import _new_client_problem
+
+    assert "company name" in _new_client_problem({"admin_email": "a@chat.example.com", "bought": ["sales"]})
+    assert "valid email" in _new_client_problem({"company_name": "Chat Co", "admin_email": "nope", "bought": ["sales"]})

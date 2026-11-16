@@ -1048,6 +1048,14 @@ def _new_client_problem(args: dict[str, Any]) -> Optional[str]:
         return "Give the new client's company name. Nothing was created."
     if not ops._EMAIL.match(email):
         return f"{email or 'The admin email'!r} is not a valid email address. Nothing was created."
+    if not _list(args.get("bought")):
+        from bizos.domains.catalog import DOMAIN_CATALOG
+
+        menu = "; ".join(f"{d.name} ({d.title}): {d.description.rstrip('.')}" for d in DOMAIN_CATALOG)
+        return ("The user has not said what this client bought, so ask them now and create nothing yet. Show "
+                f"every domain we support: {menu}. General is always included. They can name any of these, "
+                "say 'everything', or say 'the standard package' (general, operations, sales, intake, planning). "
+                "Call platform_create_client again with bought set to their answer. Nothing was created.")
     workspace = slugify(str(args.get("workspace_id") or "").strip() or name)
     if new_client._slug_taken(workspace):
         return (f"The workspace identifier {workspace!r} is already taken. Give another workspace_id, or check "

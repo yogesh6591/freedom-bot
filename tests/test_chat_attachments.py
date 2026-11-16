@@ -240,7 +240,7 @@ def test_an_attached_file_can_be_saved_to_memory_for_everyone_or_one_data_area(
 
     import app.assistant.company_tools  # noqa: F401 — register effects
 
-    operator = scope_factory(client_scratch, "operator", domain="files")
+    operator = scope_factory(client_scratch, "operator", domain="general")
     viewer = ctx_factory(client_scratch, "viewer")
     card = _upload(operator.ctx, client_scratch, "leave.txt", b"Staff get 24 days of paid leave each year.")
     with tenant_scope(operator.ctx):

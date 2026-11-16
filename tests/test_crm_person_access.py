@@ -96,9 +96,8 @@ def test_connected_app_hubspot_actions_follow_the_same_level(client_scratch):
     assert gmail.rule != "PERSON_APP_DRAFT"
 
 
-def test_the_admin_skip_approval_option_does_not_lift_a_persons_level(client_scratch):
-    skip = settings_in(client_scratch, ExecutionMode.WAIT_FOR_APPROVAL,
-                       approval_policy={**client_scratch.settings.to_dict()["approval_policy"], "admins_skip_approval": True})
+def test_admins_skipping_approval_does_not_lift_a_persons_level(client_scratch):
+    skip = settings_in(client_scratch, ExecutionMode.WAIT_FOR_APPROVAL)
     admin = person(client_scratch, role=Role.ADMIN)
     assert decide(admin, skip, "crm_create_note").rule == "ADMIN_SKIPS_APPROVAL"
     held = person(client_scratch, role=Role.ADMIN, level="approval")

@@ -245,7 +245,7 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "admin_email": _s("Email of the client's first admin, from the user's message"),
             "admin_name": _s("Optional: the admin's name"),
             "workspace_id": _s("Optional: workspace identifier (lowercase, used to sign in); made from the name if empty"),
-            "bought": {"type": "array", "description": "Optional: areas the client bought; the standard package if empty",
+            "bought": {"type": "array", "description": "The domains the client bought, exactly as the user said. If the user has not said, leave it empty: the call is refused with the list of domains to ask about. Never guess",
                        "items": {"type": "string", "enum": ["general", "operations", "sales", "intake", "planning",
                                                             "strategy", "finance", "brand", "legal"]}},
         },
