@@ -1044,6 +1044,13 @@ function ChatView({ home }: { home: boolean }) {
     event.preventDefault()
     const files = attachments.ready
     if (busy || attachments.uploading || (!input.trim() && !files.length)) return
+    if (attachments.failed) {
+      setError(
+        `${attachments.failed.name} was not attached: ${attachments.failed.error ?? 'upload failed'}. ` +
+          'Remove it (x) or attach it again before sending.'
+      )
+      return
+    }
     const videoExts = ['.mp4', '.webm', '.mov', '.m4v']
     const videoOnly =
       files.length > 0 &&

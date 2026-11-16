@@ -42,44 +42,56 @@ function problemWith(file: File): string | null {
 /** The files waiting to go with the next message. */
 export function useAttachments() {
   const [files, setFiles] = useState<PendingFile[]>([])
+  const filesRef = useRef<PendingFile[]>([])
   const counter = useRef(0)
 
-  const add = useCallback((list: FileList | File[]) => {
-    const picked = Array.from(list)
-    setFiles((current) => {
-      const room = MAX_FILES - current.length
-      const next = [...current]
+  const commit = useCallback((next: PendingFile[]) => {
+    filesRef.current = next
+    setFiles(next)
+  }, [])
+
+  const patch = useCallback(
+    (key: string, change: Partial<PendingFile>) =>
+      commit(filesRef.current.map((r) => (r.key === key ? { ...r, ...change } : r))),
+    [commit]
+  )
+
+  // The upload is started outside the state updater, so it runs once per file (an updater may run twice).
+  const add = useCallback(
+    (list: FileList | File[]) => {
+      const picked = Array.from(list)
+      const room = MAX_FILES - filesRef.current.length
+      const next = [...filesRef.current]
+      const uploads: Array<{ key: string; file: File }> = []
       for (const file of picked.slice(0, Math.max(0, room))) {
         const key = `f${++counter.current}`
         const problem = problemWith(file)
         next.push({ key, name: file.name, status: problem ? 'error' : 'uploading', error: problem ?? undefined })
-        if (problem) continue
+        if (!problem) uploads.push({ key, file })
+      }
+      if (picked.length > Math.max(0, room)) {
+        next.push({ key: `f${++counter.current}`, name: `${picked.length - Math.max(0, room)} more`, status: 'error',
+                    error: `Attach at most ${MAX_FILES} files to one message.` })
+      }
+      commit(next)
+      for (const { key, file } of uploads) {
         const form = new FormData()
         form.append('file', file)
         api
           .upload<ChatAttachment>('/api/chat/attachments', form)
-          .then((card) =>
-            setFiles((rows) => rows.map((r) => (r.key === key ? { ...r, status: 'ready', card } : r)))
-          )
+          .then((card) => patch(key, { status: 'ready', card, error: undefined }))
           .catch((err: unknown) =>
-            setFiles((rows) =>
-              rows.map((r) =>
-                r.key === key
-                  ? { ...r, status: 'error', error: err instanceof Error ? err.message : 'Upload failed' }
-                  : r
-              )
-            )
+            patch(key, { status: 'error', error: err instanceof Error ? err.message : 'Upload failed' })
           )
       }
-      if (picked.length > room) {
-        next.push({ key: `f${++counter.current}`, name: `${picked.length - Math.max(0, room)} more`, status: 'error',
-                    error: `Attach at most ${MAX_FILES} files to one message.` })
-      }
-      return next
-    })
-  }, [])
+    },
+    [commit, patch]
+  )
 
-  const remove = useCallback((key: string) => setFiles((rows) => rows.filter((r) => r.key !== key)), [])
+  const remove = useCallback(
+    (key: string) => commit(filesRef.current.filter((r) => r.key !== key)),
+    [commit]
+  )
   const ready = files.filter((f) => f.status === 'ready' && f.card).map((f) => f.card as ChatAttachment)
   const uploading = files.some((f) => f.status === 'uploading')
 
@@ -91,11 +103,13 @@ export function useAttachments() {
     remove,
     /** Clear after sending; returns what was sent so a failed send can put it back. */
     take: () => {
-      const sent = files.filter((f) => f.status === 'ready')
-      setFiles([])
+      const sent = filesRef.current.filter((f) => f.status === 'ready')
+      commit([])
       return sent
     },
-    restore: (rows: PendingFile[]) => setFiles((current) => [...rows, ...current])
+    restore: (rows: PendingFile[]) => commit([...rows, ...filesRef.current]),
+    /** The first file that could not be attached, if any (its message says why). */
+    failed: files.find((f) => f.status === 'error')
   }
 }
 
@@ -152,10 +166,12 @@ export function PendingFiles({ files, onRemove }: { files: PendingFile[]; onRemo
         <li
           key={f.key}
           title={f.error || f.name}
-          className={`flex max-w-[16rem] items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[12px] ${
+          className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[12px] ${
             f.status === 'error'
-              ? 'border-destructive/40 bg-destructive/10 text-destructive'
-              : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+              ? 'max-w-full border-destructive/40 bg-destructive/10 text-destructive'
+              : f.status === 'uploading'
+                ? 'max-w-[16rem] border-border bg-background-elevated text-primary'
+                : 'max-w-[16rem] border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
           }`}
         >
           {f.status === 'uploading' ? (
@@ -165,7 +181,7 @@ export function PendingFiles({ files, onRemove }: { files: PendingFile[]; onRemo
           )}
           <span className="min-w-0">
             <span className="block truncate font-medium">{f.name}</span>
-            <span className="block truncate text-[11px] opacity-75">
+            <span className={`block text-[11px] ${f.status === 'error' ? 'whitespace-normal break-words' : 'truncate opacity-75'}`}>
               {f.status === 'uploading' ? 'Reading…' : f.status === 'error' ? f.error : f.card ? shape(f.card) : ''}
             </span>
           </span>
