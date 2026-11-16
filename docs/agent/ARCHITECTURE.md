@@ -348,7 +348,7 @@ domains.
 | youtube | YouTube: search videos, our channel and videos, one video's details and comments, video transcripts (summaries, what the speaker says) | youtube_search_videos, youtube_my_channel, youtube_video, youtube_transcript, + integration_write_action, integration_destructive_action |
 | integrations | Anything else in the user's connected apps (Gmail, Calendar, Google Drive, Sheets, Docs, Slides, Tasks, Meet, Contacts, Forms, Photos, Chat, Maps, Analytics, Search Console, Ads, Business Profile, BigQuery, YouTube, HubSpot, Facebook, Instagram, LinkedIn, Zoom or Apollo) that no other domain covers: reply to or moderate comments, playlists, labels, analytics, Drive files, Sheets rows, Docs, Slides, Google Tasks, Meet links, Google Contacts, Forms, Photos, Google Chat messages, Maps places and directions, website analytics, search performance, ad campaigns, Business Profile reviews, BigQuery queries, HubSpot tickets and objects, Facebook, Instagram and LinkedIn posts, Zoom meetings, Apollo people and company search, enrichment and sequences; find an app action and run it | integration_find_action, integration_read_action, integration_write_action, integration_destructive_action |
 | research | The public web: research a company or person, news, job posts, read a web page | web_search, web_read, + crm_search_companies, crm_search_contacts |
-| files | Files the user attached in this chat (PDF, Word, CSV, Excel, text): summarise, answer questions about them, use their contents (e.g. the people or emails listed in them) | attachment_read |
+| files | Files the user attached in this chat (PDF, Word, CSV, Excel, text): summarise, answer questions about them, use their contents (e.g. the people or emails listed in them), or save a file into company memory (for everyone, or only for a data area such as finance) | attachment_read, memory_save_attachment |
 | admin_setup | Workspace config: overview, setup, settings, enable or disable domain packs | admin_workspace_overview, admin_get_setup, admin_apply_setup, admin_update_settings, admin_list_domains, admin_toggle_domain |
 | admin_launch | Go-live: launch checklist, mark items, sign-off, handoff readiness | admin_launch_checklist, admin_mark_launch_item, admin_launch_sign_off, admin_handoff_assessment |
 | admin_alerts | Workspace alerts: list, rescan, dismiss, alert baselines | admin_list_alerts, admin_scan_alerts, admin_dismiss_alert, admin_set_baselines |
@@ -375,6 +375,9 @@ the attachment ids are known values. A message sent with files is routed to file
 small talk. attachment_read returns a text window, the parts matching a query, or table rows, plus every
 address in the file under `emails`: an uploaded file counts as the user's own words for provenance, so
 "email the people in this list" can use them; sending still goes through the policy check and approval.
+While a conversation has files, ``memory_save_attachment`` is also loaded: "add this to memory" stores
+the file's text as a company memory document for everyone unless the user sets a data area
+(finance, hr, legal, …), in which case only people with that area can see it.
 
 **App actions** (bizos/connectors/composio_actions.py): any of the ~470 Composio actions of the four
 connectable apps. Each action gets a tier, the strictest of its name (DELETE, SEND, TRASH, REPLY...) and

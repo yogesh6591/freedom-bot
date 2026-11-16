@@ -2,7 +2,7 @@
 Grant or revoke the cross-client owner view (M15-20)
 ====================================================
 
-    python -m scripts.grant_platform_owner --email jeanne@cepoch.example.com --client cepoch
+    python -m scripts.grant_platform_owner --email jeanne@cepoch.com --client cepoch
     python -m scripts.grant_platform_owner --email someone@x.com --client cepoch --revoke
 
 Only for Cepoch staff. A client's own ADMIN must never be granted this: the

@@ -57,6 +57,7 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 | admin_list_alerts / admin_scan_alerts / admin_dismiss_alert / admin_set_baselines | View stored alerts vs run a fresh scan vs close one alert vs change future triggers |
 | admin_pricing / admin_consult_quote / admin_record_change_order | Rate card vs quote for one client's scope vs adding a pack to an existing engagement |
 | memory_add / memory_correct / memory_escalate_conflict | New entry vs fix a wrong one vs two sources disagree (always needs approval) |
+| attachment_read / memory_save_attachment / memory_add | Read an attached file vs save that file into company memory vs record a typed fact (no file) |
 | memory_get_fact / memory_history / memory_search | Look up one item by key vs every version of one item by item_id vs free-text search |
 | calendar_list_events / calendar_check_availability | What is scheduled vs whether a slot is free |
 | approvals_decide / approvals_cancel | Approver's decision vs submitter withdrawing their own request |

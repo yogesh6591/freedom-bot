@@ -640,7 +640,9 @@ def _align_memory_access_areas(ctx: TenantContext, seeds: list[tuple]) -> None:
 
 #: M15-20: Cepoch's internal workspace, where platform owners sign in.
 OWNER_WORKSPACE_SLUG = "cepoch"
-OWNER_EMAIL = "jeanne@cepoch.example.com"
+OWNER_EMAIL = "jeanne@cepoch.com"
+#: Older demo installs used this address; still promoted when present so re-bootstrap stays safe.
+_LEGACY_OWNER_EMAIL = "jeanne@cepoch.example.com"
 
 
 def ensure_internal_workspace() -> Client:
@@ -663,7 +665,8 @@ def ensure_owner_workspace() -> dict[str, Any]:
     """Create Cepoch's internal workspace and the demo platform owner (idempotent).
 
     The owner view spans every client, so it is reached from here — never from a
-    client's own workspace, whose ADMIN must not see other clients.
+    client's own workspace, whose ADMIN must not see other clients. Jeanne can
+    onboard other workspaces with platform_create_client / the New client form.
     """
     owner_ws = ensure_internal_workspace()
     try:
@@ -678,6 +681,13 @@ def ensure_owner_workspace() -> dict[str, Any]:
     except control.DuplicateUser:
         user = next(u for u in control.list_users(owner_ws.id) if u.email == OWNER_EMAIL)
     control.set_platform_owner(user.id, True)
+    # Keep the legacy demo owner flagged when that account still exists.
+    legacy = next(
+        (u for u in control.list_users(owner_ws.id) if u.email == _LEGACY_OWNER_EMAIL),
+        None,
+    )
+    if legacy is not None:
+        control.set_platform_owner(legacy.id, True)
     return {"slug": owner_ws.slug, "owner": OWNER_EMAIL}
 
 

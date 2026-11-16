@@ -1019,6 +1019,20 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         _ALL,
         tags=frozenset({"read", "files", "untrusted"}),
     ),
+    _spec(
+        "memory_save_attachment",
+        "Save an attached file to company memory",
+        "Save a file the user attached in this chat into company memory so others can search it. "
+        "With no access_area it is visible to everyone; with finance, hr, legal or another data area "
+        "only people who have that area can see it.",
+        CATEGORY_FILES,
+        _ALL,
+        write=True,
+        risk=RiskLevel.LOW,
+        permissions=matrix.WRITE_INTERNAL,
+        draft_safe=True,
+        tags=frozenset({"write", "files", "memory"}),
+    ),
     # ----------------------------------------------------------- strategy
     _spec(
         "strategy_list_priorities",

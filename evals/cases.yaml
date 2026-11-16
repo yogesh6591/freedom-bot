@@ -29162,6 +29162,44 @@
   expected_gates: {attachment_read: run, email_send_message: approval}
   expected_outcome: approval
 
+- id: t_memory_save_attachment_001
+  query: Add this attached file to company memory
+  user: {name: Meena, roles: [DRAFTER]}
+  fixtures:
+    attachments:
+    - {id: att_eval_policy, name: leave-policy.txt, text: 'Staff get 24 days of paid leave each year.'}
+    results:
+      memory_save_attachment: {document_id: doc_eval_1, title: leave-policy, filename: leave-policy.txt, parts: 1, access_area: null, characters: 44, attachment_id: att_eval_policy}
+  expected_tool_calls: [memory_save_attachment]
+  expected_args:
+    memory_save_attachment: {attachment_id: att_eval_policy}
+  expected_gates: {memory_save_attachment: run}
+  expected_outcome: run
+
+- id: t_memory_save_attachment_002
+  query: Save this file to memory for finance access only
+  user: {name: Dev, roles: [OPERATOR]}
+  fixtures:
+    attachments:
+    - {id: att_eval_bonus, name: bonus-pool.txt, text: 'The quarterly bonus pool is 4 percent of profit.'}
+    results:
+      memory_save_attachment: {document_id: doc_eval_2, title: bonus-pool, filename: bonus-pool.txt, parts: 1, access_area: finance, characters: 49, attachment_id: att_eval_bonus}
+  expected_tool_calls: [memory_save_attachment]
+  expected_args:
+    memory_save_attachment: {attachment_id: att_eval_bonus, access_area: finance}
+  expected_gates: {memory_save_attachment: run}
+  expected_outcome: run
+
+- id: t_memory_save_attachment_003
+  query: Add this attached brief to memory for everyone
+  user: {name: Kiran, roles: [VIEWER]}
+  fixtures:
+    attachments:
+    - {id: att_eval_brief_mem, name: brief.txt, text: 'Q4 plan. Focus on AI automation.'}
+  forbidden_tool_calls: [memory_save_attachment, memory_add]
+  expected_hidden: [memory_save_attachment, memory_add]
+  expected_outcome: not_permitted
+
 - id: t_set_qualification_001
   query: Approve Shubham's assessment
   user: {name: Anita, id: u_1, roles: [ADMIN]}

@@ -680,20 +680,51 @@ def _normalize_write_args(args: dict[str, Any]) -> dict[str, Any]:
 
 #: The restricted area a department domain's writes belong to.
 _DOMAIN_AREAS = {"operations": "ops", "finance": "finance", "legal": "legal"}
+#: Words that mean "visible to everyone in the workspace" when the user sets access_area.
+_EVERYONE_AREAS = frozenset({"", "everyone", "all", "company", "open", "none", "general"})
 
 
-def _write_area(scope: RunScope, args: dict[str, Any], title: str, content: str) -> Optional[str]:
+def _normalize_access_area(raw: Any) -> Optional[str]:
+    """``None`` = everyone; otherwise a DATA_AREAS name, or raise ValueError."""
+    from bizos.types import DATA_AREAS
+
+    area = str(raw or "").strip().casefold()
+    if area in _EVERYONE_AREAS:
+        return None
+    if area not in DATA_AREAS:
+        allowed = ", ".join(DATA_AREAS)
+        raise ValueError(
+            f"{area!r} is not a data access area. Use one of: {allowed}. "
+            "Leave access_area empty for everyone."
+        )
+    return area
+
+
+def _write_area(
+    scope: RunScope,
+    args: dict[str, Any],
+    title: str,
+    content: str,
+    *,
+    explicit: bool = False,
+) -> Optional[str]:
     """The access area a new memory item must carry.
 
-    Content derived from a restricted record (a checklist made from the ops
-    payroll SOP) stays in that record's area; otherwise a department domain's
-    write lands in that department. Without this, a restricted SOP rewritten
-    as a "team checklist" would become visible to everyone.
+    When the user (or tool) sets ``access_area`` explicitly, that wins: empty /
+    everyone → open to all; finance / hr / … → only people with that area.
+    Otherwise content derived from a restricted record stays in that record's
+    area; a department domain's write lands in that department.
     """
     ctx = scope.ctx
-    requested = str(args.get("access_area") or "").strip() or None
-    if requested and ctx.can_see_area(requested):
-        return requested
+    if explicit or "access_area" in args:
+        area = _normalize_access_area(args.get("access_area"))
+        if area is None:
+            return None
+        if not ctx.can_see_area(area):
+            raise ValueError(
+                f"You do not have {area} data access, so you cannot save memory only for that area."
+            )
+        return area
     text_ = f"{title}\n{content}"
     sources = [
         i for i in memory_store.search(text_[:400], authoritative_only=False, limit=10, ctx=ctx)
@@ -731,6 +762,10 @@ def _put(scope: RunScope, args: dict[str, Any], category: MemoryCategory) -> Con
     attributes = dict(args.get("attributes") or {})
     if args.get("topic"):
         attributes.setdefault("topic", str(args["topic"]))
+    try:
+        access_area = _write_area(scope, args, title, content, explicit="access_area" in args)
+    except ValueError as exc:
+        return ConnectorResult.failure(f"{exc} Nothing was saved.")
     item = memory_store.put(
         category=category,
         title=title,
@@ -739,7 +774,7 @@ def _put(scope: RunScope, args: dict[str, Any], category: MemoryCategory) -> Con
         domain=args.get("domain") or scope.domain,
         tags=list(args.get("tags") or []),
         attributes=attributes,
-        access_area=_write_area(scope, args, title, content),
+        access_area=access_area,
         source_type=source,  # type: ignore[arg-type]
         source_id=args.get("source_id"),
         confidence=float(args.get("confidence", 1.0)),
@@ -2899,6 +2934,85 @@ def attachment_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     else:
         summary = f"read {data['name']}{more}"
     return ConnectorResult(ok=True, data=data, summary=summary)
+
+
+@effect("memory_save_attachment")
+def memory_save_attachment(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """Save a chat attachment into company memory, optionally limited to one data area."""
+    from bizos import chat_attachments
+    from bizos.memory import documents
+    from bizos.types import DataClassification
+    from bizos.util.ids import new_id
+
+    attachment_id = str(args.get("attachment_id") or "").strip()
+    if not attachment_id:
+        return ConnectorResult.failure(
+            "attachment_id is required — use one from the Attached files list. Nothing was saved."
+        )
+    try:
+        area = _normalize_access_area(args.get("access_area"))
+    except ValueError as exc:
+        return ConnectorResult.failure(f"{exc} Nothing was saved.")
+    if area and not scope.ctx.can_see_area(area):
+        return ConnectorResult.failure(
+            f"You do not have {area} data access, so you cannot save this file only for that area. "
+            "Nothing was saved."
+        )
+    try:
+        file = chat_attachments.full_text(scope.ctx, attachment_id)
+    except chat_attachments.AttachmentNotFound:
+        return ConnectorResult.failure(
+            "No attached file with that attachment_id; use one from the Attached files list. Nothing was saved."
+        )
+    content = (file.get("content") or "").strip()
+    if not content:
+        return ConnectorResult.failure(
+            f"{file.get('name') or 'That file'} has no readable text to save. Nothing was saved."
+        )
+    title = str(args.get("title") or "").strip() or re.sub(
+        r"\.[a-z0-9]+$", "", str(file.get("name") or "Attached file"), flags=re.I
+    )
+    parts = documents.split(content)
+    doc_id = new_id("doc")
+    filename = str(file.get("name") or "attachment")
+    for n, part in enumerate(parts, 1):
+        memory_store.put(
+            category=MemoryCategory.DOCUMENT,
+            title=title if len(parts) == 1 else f"{title} (part {n} of {len(parts)})",
+            content=part,
+            memory_key=f"{doc_id}_p{n:03d}",
+            tags=["document", "chat_attachment"],
+            classification=DataClassification.CONFIDENTIAL if area else DataClassification.INTERNAL,
+            attributes={
+                "document_id": doc_id,
+                "document_title": title,
+                "filename": filename,
+                "part": n,
+                "parts": len(parts),
+                "attachment_id": attachment_id,
+                "topic": f"{doc_id}_p{n:03d}",
+            },
+            source_type=SourceType.DOCUMENT,
+            source_id=doc_id,
+            approval_status=ApprovalStatus.APPROVED,
+            access_area=area,
+            settings=scope.settings,
+            ctx=scope.ctx,
+        )
+    who = f"only for people with {area} access" if area else "for everyone in the workspace"
+    return ConnectorResult(
+        ok=True,
+        data={
+            "document_id": doc_id,
+            "title": title,
+            "filename": filename,
+            "parts": len(parts),
+            "access_area": area,
+            "characters": sum(len(p) for p in parts),
+            "attachment_id": attachment_id,
+        },
+        summary=f"saved '{title}' to company memory ({len(parts)} part(s), {who})",
+    )
 
 
 import app.outreach.effects  # noqa: F401

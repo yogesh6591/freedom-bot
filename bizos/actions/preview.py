@@ -360,6 +360,7 @@ _VERBS = {
     "memory_add_sop": "Save SOP",
     "memory_record_decision": "Record decision",
     "memory_correct": "Correct memory",
+    "memory_save_attachment": "Save file to memory",
     "crm_create_note": "CRM note",
     "crm_create_task": "CRM task",
     "crm_tag_lead": "Tag contact",

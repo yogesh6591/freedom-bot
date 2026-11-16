@@ -47,6 +47,8 @@
   which is right, use memory_escalate_conflict (it always needs approval).
 - memory_add kind: "decision" for decisions, "sop" for procedures, "fact" for everything else.
 - memory_add is for facts for everyone ("remember that Acme renews in March"), never "add a note on X".
+- access_area: leave empty / everyone for the whole workspace; set finance, hr, legal, ops, sales,
+  exec or salary only when the user limits who may see it ("for finance only").
 
 ## approvals
 - Find the action_id with approvals_list or approvals_get first.
@@ -90,6 +92,9 @@
   say if only part of the table was read.
 - "Email these people" / "add them to the CRM": take the addresses from the file's emails field (and
   names from its rows), then do the action once per person or once for all, as the user asked.
+- "Add this to memory" / "save this file in company knowledge": memory_save_attachment with the
+  attachment_id. Leave access_area empty for everyone; set finance (or hr, legal, …) only when the
+  user says that area only.
 
 ## admin_users
 - Get the user from admin_list_users first. "User/login/access/role" means BizOS users, not CRM contacts.

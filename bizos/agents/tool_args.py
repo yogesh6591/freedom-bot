@@ -160,6 +160,9 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "source_type": _s("MANUAL (default), DOCUMENT, AI_INFERENCE, …"),
             "confidence": _f("0-1 confidence"),
             "topic": _s("Policy topic, e.g. discount; differing values on one topic are a conflict"),
+            "access_area": _s(
+                "Who may see it: empty/everyone for the whole workspace; or finance, hr, legal, ops, sales, exec, salary"
+            ),
         },
         ["title", "content"],
     ),
@@ -169,6 +172,9 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "content": _s("Procedure text"),
             "key": _s("Stable lookup key"),
             "tags": _arr("Optional tags"),
+            "access_area": _s(
+                "Who may see it: empty/everyone for the whole workspace; or finance, hr, legal, ops, sales, exec, salary"
+            ),
         },
         ["title", "content"],
     ),
@@ -183,6 +189,9 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "reason": _s("Rationale"),
             "status": _s("active|superseded|…"),
             "key": _s("Stable lookup key"),
+            "access_area": _s(
+                "Who may see it: empty/everyone for the whole workspace; or finance, hr, legal, ops, sales, exec, salary"
+            ),
         },
         ["title", "decision"],
     ),
@@ -534,6 +543,17 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "attachment_id": _s("attachment_id from the Attached files list"),
             "query": _s("Optional words to find in a long file; returns only the matching parts or rows"),
             "start": _i("Optional character (text) or row (table) to continue from: next_start of the last read"),
+        },
+        ["attachment_id"],
+    ),
+    "memory_save_attachment": _obj(
+        {
+            "attachment_id": _s("attachment_id from the Attached files list"),
+            "title": _s("Optional title in company memory (defaults to the file name)"),
+            "access_area": _s(
+                "Who may see it: leave empty or everyone for the whole workspace; "
+                "or finance, hr, legal, ops, sales, exec, salary when the user limits access"
+            ),
         },
         ["attachment_id"],
     ),

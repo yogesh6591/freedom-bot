@@ -108,6 +108,7 @@ GENERAL = DomainPack(
         "web_search",
         "web_read",
         "attachment_read",
+        "memory_save_attachment",
         "memory_get_fact",
         "memory_history",
         "approvals_list",

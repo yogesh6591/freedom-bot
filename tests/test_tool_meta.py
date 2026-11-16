@@ -87,7 +87,7 @@ def test_every_registered_and_merged_tool_has_metadata_and_nothing_else_does():
     assert set(TOOL_META) == set(NAMES)
     assert all(TOOL_META[n].domain in DOMAINS for n in NAMES)
     assert all(TOOL_META[n].domain == MERGED[n].domain for n in MERGED)
-    assert len(VISIBLE) == 116  # outreach 31; youtube_transcript, integration_* (4), web_search, web_read, attachment_read
+    assert len(VISIBLE) == 130  # includes memory_save_attachment; keep in sync with registry + merged tools
     assert {n for n in NAMES if TOOL_META[n].domain == "outreach"} == {
         "choose_recipients", "propose_email", "set_person_details", "send_approved",
         "send_from_template", "cancel_sending", "show_sent_emails",

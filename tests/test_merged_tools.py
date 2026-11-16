@@ -83,6 +83,19 @@ def test_memory_add_needs_kind_title_and_content():
         _plan("memory_add", {"kind": "fact", "title": "t"})
 
 
+def test_memory_add_passes_access_area_including_everyone():
+    [(called, args)] = _plan(
+        "memory_add",
+        {"kind": "fact", "title": "Bonus", "content": "4 percent", "access_area": "finance"},
+    )
+    assert called == "memory_add_fact" and args["access_area"] == "finance"
+    [(called, args)] = _plan(
+        "memory_add",
+        {"kind": "fact", "title": "Leave", "content": "24 days", "access_area": ""},
+    )
+    assert called == "memory_add_fact" and "access_area" in args and args["access_area"] == ""
+
+
 def test_youtube_merges_call_the_extra_tool_only_when_asked():
     assert _plan("youtube_my_channel", {}) == [("youtube_my_channel", {})]
     assert _plan("youtube_my_channel", {"include_videos": True, "limit": 5}) == [

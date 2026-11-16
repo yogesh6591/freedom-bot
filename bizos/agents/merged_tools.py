@@ -129,7 +129,7 @@ APPROVALS_DECIDE = MergedTool(
 
 _KINDS = {"fact": "memory_add_fact", "sop": "memory_add_sop", "decision": "memory_record_decision"}
 _MEMORY_FIELDS = ("title", "content", "key", "tags", "source_type", "confidence", "topic",
-                  "decided_on", "approved_by", "context", "reason", "status")
+                  "access_area", "decided_on", "approved_by", "context", "reason", "status")
 
 
 def _plan_memory_add(scope_for, args):
@@ -139,6 +139,9 @@ def _plan_memory_add(scope_for, args):
     if not str(args.get("title") or "").strip() or not str(args.get("content") or "").strip():
         raise MergeArgumentError("title and content are required.")
     passed = {k: args[k] for k in _MEMORY_FIELDS if args.get(k) not in (None, "")}
+    # Keep an explicit access_area even when empty ("everyone"), so _write_area does not inherit.
+    if "access_area" in args:
+        passed["access_area"] = args.get("access_area")
     if kind == "decision":
         passed["decision"] = passed["content"]
     return [Call(_KINDS[kind], passed)]
@@ -156,6 +159,10 @@ MEMORY_ADD = MergedTool(
             "content": _s("The fact, the SOP steps, or what was decided"),
             "key": _s("Optional stable key, e.g. acme_renewal_month"),
             "tags": _arr("Optional tags"),
+            "access_area": _s(
+                "Who may see it: leave empty or 'everyone' for the whole workspace; "
+                "or finance, hr, legal, ops, sales, exec, salary for that data area only"
+            ),
             "decided_on": _s("Decisions: date decided"),
             "approved_by": _s("Decisions: who approved it"),
             "context": _s("Decisions: background"),

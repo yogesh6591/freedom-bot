@@ -366,12 +366,7 @@ def _words(value: str) -> list[str]:
     return [w for w in re.findall(r"[\w@.'-]+", value.casefold()) if len(w) > 2]
 
 
-def read(ctx: TenantContext, attachment_id: str, *, query: str = "", start: int = 0) -> dict[str, Any]:
-    """One file's content for the assistant: a window of its text or rows, or the parts matching ``query``.
-
-    Every address in the file is returned under ``emails`` (structured), so the user can say "email
-    these people" about a file they attached; sending still goes through the policy check and approval.
-    """
+def _row(ctx: TenantContext, attachment_id: str) -> Any:
     _ensure_table(ctx)
     with workspace_connection(ctx, readonly=True) as conn:
         row = conn.execute(
@@ -381,6 +376,30 @@ def read(ctx: TenantContext, attachment_id: str, *, query: str = "", start: int 
         ).first()
     if row is None:
         raise AttachmentNotFound(str(attachment_id))
+    return row
+
+
+def full_text(ctx: TenantContext, attachment_id: str) -> dict[str, Any]:
+    """The whole stored text of one of the caller's attachments (for saving into company memory)."""
+    row = _row(ctx, attachment_id)
+    meta = row.meta if isinstance(row.meta, dict) else json.loads(row.meta or "{}")
+    return {
+        "attachment_id": row.id,
+        "name": row.filename,
+        "kind": row.kind,
+        "content": row.content or "",
+        "characters": len(row.content or ""),
+        "emails": meta.get("emails") or [],
+    }
+
+
+def read(ctx: TenantContext, attachment_id: str, *, query: str = "", start: int = 0) -> dict[str, Any]:
+    """One file's content for the assistant: a window of its text or rows, or the parts matching ``query``.
+
+    Every address in the file is returned under ``emails`` (structured), so the user can say "email
+    these people" about a file they attached; sending still goes through the policy check and approval.
+    """
+    row = _row(ctx, attachment_id)
     meta = row.meta if isinstance(row.meta, dict) else json.loads(row.meta or "{}")
     out: dict[str, Any] = {"attachment_id": row.id, "name": row.filename, "kind": row.kind,
                            "emails": meta.get("emails") or [], "emails_total": meta.get("emails_total", 0)}

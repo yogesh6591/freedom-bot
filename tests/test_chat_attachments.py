@@ -230,3 +230,37 @@ def test_someone_elses_file_id_is_refused(fake_model, client_scratch, ctx_factor
     with bound(other), pytest.raises(HTTPException) as err:
         handle(ChatRequest(message="summarise it", attachment_ids=[card["id"]]), other, _settings(client_scratch))
     assert err.value.status_code == 404
+
+
+def test_an_attached_file_can_be_saved_to_memory_for_everyone_or_one_data_area(
+        client_scratch, ctx_factory, scope_factory):
+    """Add to memory → everyone; finance only → only people with finance access."""
+    from bizos.memory import store as memory
+    from bizos.tools.base import guarded_call
+
+    import app.assistant.company_tools  # noqa: F401 — register effects
+
+    operator = scope_factory(client_scratch, "operator", domain="files")
+    viewer = ctx_factory(client_scratch, "viewer")
+    card = _upload(operator.ctx, client_scratch, "leave.txt", b"Staff get 24 days of paid leave each year.")
+    with tenant_scope(operator.ctx):
+        everyone = guarded_call(
+            operator, "memory_save_attachment",
+            {"attachment_id": card["id"], "title": "Leave policy", "access_area": "everyone"},
+        )
+        assert everyone.ok and everyone.data["access_area"] is None, everyone.message
+        assert memory.search("paid leave", ctx=operator.ctx)
+        assert memory.search("paid leave", ctx=viewer)
+
+    finance_card = _upload(
+        operator.ctx, client_scratch, "bonus.txt",
+        b"The quarterly bonus pool is 4 percent of profit.",
+    )
+    with tenant_scope(operator.ctx):
+        finance = guarded_call(
+            operator, "memory_save_attachment",
+            {"attachment_id": finance_card["id"], "title": "Bonus pool", "access_area": "finance"},
+        )
+        assert finance.ok and finance.data["access_area"] == "finance", finance.message
+        assert memory.search("bonus pool", ctx=operator.ctx)
+        assert not memory.search("bonus pool", ctx=viewer)
