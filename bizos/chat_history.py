@@ -340,13 +340,26 @@ def get_session(ctx: TenantContext, session_id: str) -> dict[str, Any]:
             "role": r.role,
             "content": r.content,
             "domain": r.domain,
-            "meta": r.meta or {},
+            "meta": _meta(r.meta),
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in rows
         if hidden is None or r.id not in hidden
     ]
     return {"session_id": session_id, "messages": messages}
+
+
+def _meta(raw: Any) -> dict[str, Any]:
+    """JSONB row value as a dict (drivers sometimes return a JSON string)."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
 
 
 @contextmanager

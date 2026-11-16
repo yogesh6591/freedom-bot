@@ -48,6 +48,7 @@ import type {
   ChatContext,
   ChatResponse,
   ChatSessionDetail,
+  ChatSessionMessage,
   ChatSessionSummary,
   EmailView
 } from '@/lib/types'
@@ -115,31 +116,67 @@ export function ChatScreen({ home = false }: { home?: boolean }) {
   )
 }
 
+/** Files stored on a user message's meta (history), if any. */
+function messageAttachments(
+  meta: ChatSessionMessage['meta'] | string | null | undefined
+): ChatAttachment[] | undefined {
+  const parsed =
+    typeof meta === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(meta) as ChatSessionMessage['meta']
+          } catch {
+            return undefined
+          }
+        })()
+      : meta
+  const list = parsed?.attachments
+  return Array.isArray(list) && list.length ? list : undefined
+}
+
+function messageMeta(
+  meta: ChatSessionMessage['meta'] | string | null | undefined
+): ChatSessionMessage['meta'] {
+  if (meta && typeof meta === 'object') return meta
+  if (typeof meta === 'string' && meta.trim()) {
+    try {
+      const parsed = JSON.parse(meta) as ChatSessionMessage['meta']
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+  return {}
+}
+
 /** Rebuild chat turns from a saved conversation (M01-11). */
 function turnsFrom(detail: ChatSessionDetail): Turn[] {
-  return detail.messages.map((m) => ({
-    id: m.id,
-    role: m.role === 'user' ? 'user' : 'assistant',
-    content: m.content,
-    attachments: m.role === 'user' ? m.meta.attachments : undefined,
-    emailDraft: m.meta.json?.email_draft || undefined,
-    note: spokenNote(m.content, m.meta.json?.email_draft, m.meta.json?.reply_note),
-    trace: m.meta.json,
-    response:
-      m.role === 'assistant'
-        ? {
-            session_id: detail.session_id,
-            content: m.content,
-            mode: (m.meta.mode ?? 'WAIT_FOR_APPROVAL') as ChatResponse['mode'],
-            domain: m.domain ?? undefined,
-            tool_activity: m.meta.tool_activity ?? [],
-            actions: [],
-            awaiting_approval: (m.meta.awaiting_approval ?? []) as ActionRecord[],
-            drafts: (m.meta.drafts ?? []) as ActionRecord[],
-            trace: m.meta.json
-          }
-        : undefined
-  }))
+  return detail.messages.map((m) => {
+    const meta = messageMeta(m.meta)
+    return {
+      id: m.id,
+      role: m.role === 'user' ? 'user' : 'assistant',
+      content: m.content,
+      attachments: m.role === 'user' ? messageAttachments(meta) : undefined,
+      emailDraft: meta.json?.email_draft || undefined,
+      note: spokenNote(m.content, meta.json?.email_draft, meta.json?.reply_note),
+      trace: meta.json,
+      response:
+        m.role === 'assistant'
+          ? {
+              session_id: detail.session_id,
+              content: m.content,
+              mode: (meta.mode ?? 'WAIT_FOR_APPROVAL') as ChatResponse['mode'],
+              domain: m.domain ?? undefined,
+              tool_activity: meta.tool_activity ?? [],
+              actions: [],
+              awaiting_approval: (meta.awaiting_approval ?? []) as ActionRecord[],
+              drafts: (meta.drafts ?? []) as ActionRecord[],
+              trace: meta.json
+            }
+          : undefined
+    }
+  })
 }
 
 const CAMPAIGN_FIELDS: { key: keyof AssistantTrace; label: string }[] = [
@@ -627,10 +664,21 @@ function assistantTurnFrom(data: ChatResponse & { response?: string }): Turn {
 }
 
 function withMessageIds(turns: Turn[], detail: ChatSessionDetail): Turn[] {
-  return turns.map((turn, index) => ({
-    ...turn,
-    id: detail.messages[index]?.id ?? turn.id
-  }))
+  return turns.map((turn, index) => {
+    const msg = detail.messages[index]
+    const saved = msg ? messageAttachments(messageMeta(msg.meta)) : undefined
+    return {
+      ...turn,
+      id: msg?.id ?? turn.id,
+      // Keep chips on the user bubble: prefer what we already show, else what history stored.
+      attachments:
+        turn.role === 'user'
+          ? turn.attachments?.length
+            ? turn.attachments
+            : saved
+          : turn.attachments
+    }
+  })
 }
 
 /** Sidebar group for a conversation, like ChatGPT: Today, Yesterday, Previous 7 days, Older. */
@@ -954,7 +1002,29 @@ function ChatView({ home }: { home: boolean }) {
       const detail = await api.get<ChatSessionDetail>(
         `/api/chat/sessions/${encodeURIComponent(id)}`
       )
-      setTurns(withMessageIds(nextTurns, detail))
+      // When the saved transcript matches this turn count, rebuild from history so
+      // attached files on older user messages show up in the conversation.
+      if (detail.messages.length === nextTurns.length) {
+        const restored = turnsFrom(detail)
+        setTurns(
+          restored.map((turn, index) => ({
+            ...turn,
+            // Keep any live-only fields (e.g. optimistic attachments) if history missed them.
+            attachments:
+              turn.role === 'user'
+                ? turn.attachments?.length
+                  ? turn.attachments
+                  : nextTurns[index]?.attachments
+                : turn.attachments,
+            response: turn.response ?? nextTurns[index]?.response,
+            emailDraft: turn.emailDraft ?? nextTurns[index]?.emailDraft,
+            note: turn.note ?? nextTurns[index]?.note,
+            trace: turn.trace ?? nextTurns[index]?.trace
+          }))
+        )
+      } else {
+        setTurns(withMessageIds(nextTurns, detail))
+      }
     } catch {
       setTurns(nextTurns)
     }
@@ -1012,7 +1082,16 @@ function ChatView({ home }: { home: boolean }) {
       if (!data) throw new Error('The reply stopped before it finished. Please try again.')
       setSessionId(data.session_id)
       remember(data.session_id)
-      const nextTurns = [...turns, userTurn, assistantTurnFrom(data)]
+      const taggedUser: Turn = {
+        ...userTurn,
+        attachments:
+          userTurn.attachments?.length
+            ? userTurn.attachments
+            : data.attachments?.length
+              ? data.attachments
+              : undefined
+      }
+      const nextTurns = [...turns, taggedUser, assistantTurnFrom(data)]
       setTurns(nextTurns)
       await attachMessageIds(data.session_id, nextTurns)
       void refreshContext()
@@ -1955,7 +2034,8 @@ function ChatView({ home }: { home: boolean }) {
             </form>
             {chatHome && (
               <p className="mt-2 text-center text-[11px] text-muted">
-                FreedomBot can make mistakes. Check important details; changes to your data wait for approval.
+                FreedomBot can make mistakes. Check important details; changes to your data{' '}
+                <span className="text-emerald-600 dark:text-emerald-400">wait for approval</span>.
               </p>
             )}
           </div>

@@ -422,6 +422,8 @@ export interface ChatResponse {
   drafts: ActionRecord[]
   email_draft?: string
   trace?: AssistantTrace
+  /** Files sent with this user turn (also stored on the user message meta for history). */
+  attachments?: ChatAttachment[]
 }
 
 /** One of the caller's saved conversations (M01-11). */
@@ -437,7 +439,7 @@ export interface ChatSessionSummary {
 export interface ChatAttachment {
   id: string
   name: string
-  kind: 'pdf' | 'docx' | 'csv' | 'xlsx' | 'txt' | 'md'
+  kind: 'pdf' | 'docx' | 'csv' | 'xlsx' | 'txt' | 'md' | 'video' | string
   size_bytes: number
   pages?: number
   rows?: number

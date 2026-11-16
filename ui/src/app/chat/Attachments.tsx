@@ -155,7 +155,7 @@ export function PendingFiles({ files, onRemove }: { files: PendingFile[]; onRemo
           className={`flex max-w-[16rem] items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[12px] ${
             f.status === 'error'
               ? 'border-destructive/40 bg-destructive/10 text-destructive'
-              : 'border-border bg-background-elevated text-primary'
+              : 'border-emerald-500/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
           }`}
         >
           {f.status === 'uploading' ? (
@@ -183,20 +183,22 @@ export function PendingFiles({ files, onRemove }: { files: PendingFile[]; onRemo
   )
 }
 
-/** Chips on a sent message. */
+/** Chips on a sent message (conversation history). */
 export function FileChips({ files }: { files?: ChatAttachment[] }) {
   if (!files?.length) return null
   return (
-    <div className="flex max-w-[min(80%,28rem)] flex-wrap justify-end gap-1.5">
-      {files.map((card) => (
+    <div className="flex max-w-[min(80%,28rem)] flex-wrap justify-end gap-1.5" aria-label="Attached files">
+      {files.map((card, index) => (
         <span
-          key={card.id}
+          key={card.id || `${card.name}-${index}`}
           title={card.name}
-          className="flex max-w-[14rem] items-center gap-1.5 rounded-xl border border-border bg-background-elevated px-2.5 py-1.5 text-[12px] text-primary"
+          className="flex max-w-[16rem] items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-1.5 text-[12px] text-emerald-700 dark:text-emerald-300"
         >
           <FileIcon kind={card.kind} />
-          <span className="truncate font-medium">{card.name}</span>
-          <span className="shrink-0 text-[11px] text-muted">{shape(card)}</span>
+          <span className="truncate font-medium">{card.name || 'Attached file'}</span>
+          {card.kind ? (
+            <span className="shrink-0 text-[11px] opacity-75">{shape(card)}</span>
+          ) : null}
         </span>
       ))}
     </div>
