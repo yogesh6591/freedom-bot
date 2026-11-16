@@ -13,6 +13,7 @@ from acquisition.models.campaign import AssessmentStatus, CampaignProspect, Outr
 from acquisition.models.journey import STRUCTURED_FIELD_KEYS
 from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENT
 from acquisition.models.prospect import Prospect
+from acquisition.tenant import prospect_client_clause, stamp_prospect
 from acquisition.services.assessment_extraction import field_display, normalize_structured_state
 from acquisition.services.assessment_tokens import build_assessment_url, split_executive_name
 from acquisition.services import outreach_service as svc
@@ -41,7 +42,7 @@ def link_row(db: Session, prospect_id: uuid.UUID) -> Optional[CampaignProspect]:
 
 def people_records(db: Session, emails: list[str] | None = None) -> dict:
     """The ``records`` dict the card helpers read: one entry per person with name, company and link."""
-    q = select(Prospect)
+    q = select(Prospect).where(prospect_client_clause())
     if emails is not None:
         keys = [e.strip().lower() for e in emails if e and e.strip()]
         if not keys:
@@ -73,7 +74,9 @@ def find_prospects(db: Session, query: str, limit: int = 8) -> list[Prospect]:
     q = (query or "").strip().lower()
     if not q:
         return []
-    exact = list(db.scalars(select(Prospect).where(func.lower(Prospect.email) == q)))
+    exact = list(
+        db.scalars(select(Prospect).where(prospect_client_clause(), func.lower(Prospect.email) == q))
+    )
     if exact:
         return exact
     like = f"%{q}%"
@@ -81,11 +84,12 @@ def find_prospects(db: Session, query: str, limit: int = 8) -> list[Prospect]:
         db.scalars(
             select(Prospect)
             .where(
+                prospect_client_clause(),
                 or_(
                     func.lower(Prospect.executive_name).like(like),
                     func.lower(Prospect.company).like(like),
                     func.lower(Prospect.email).like(like),
-                )
+                ),
             )
             .order_by(Prospect.executive_name)
             .limit(limit)
@@ -187,7 +191,9 @@ def display_status(db: Session, prospect_id: uuid.UUID) -> str:
 
 def ensure_prospect(db: Session, email: str, name: str = "", company: str = "") -> Prospect:
     """The prospect row for an address; creates a minimal one when the user typed a new address."""
-    found = db.scalar(select(Prospect).where(func.lower(Prospect.email) == email.strip().lower()))
+    found = db.scalar(
+        select(Prospect).where(prospect_client_clause(), func.lower(Prospect.email) == email.strip().lower())
+    )
     if found is not None:
         stated = (name or "").strip()
         local = found.email.split("@", 1)[0].strip().casefold()
@@ -201,25 +207,32 @@ def ensure_prospect(db: Session, email: str, name: str = "", company: str = "") 
         email=email.strip(),
         discovery_source="assistant",
     )
+    stamp_prospect(row)
     db.add(row)
     db.flush()
     return row
 
 
-def replace_person_name(*, email: str, first_name: str, last_name: str, company: str) -> None:
+def replace_person_name(*, client_id: str, email: str, first_name: str, last_name: str, company: str) -> None:
     """Card 'save for every later email': change the stored name and company."""
     from acquisition.db.session import SessionLocal
+    from acquisition.tenant import tenant_scope
 
-    db = SessionLocal()
-    try:
-        row = db.scalar(select(Prospect).where(func.lower(Prospect.email) == email.strip().lower()))
-        if row is None:
-            return
-        full = " ".join(x for x in ((first_name or "").strip(), (last_name or "").strip()) if x)
-        if full:
-            row.executive_name = full
-        if company is not None and company.strip():
-            row.company = company.strip()
-        db.commit()
-    finally:
-        db.close()
+    with tenant_scope(client_id):
+        db = SessionLocal()
+        try:
+            row = db.scalar(
+                select(Prospect).where(
+                    prospect_client_clause(), func.lower(Prospect.email) == email.strip().lower()
+                )
+            )
+            if row is None:
+                return
+            full = " ".join(x for x in ((first_name or "").strip(), (last_name or "").strip()) if x)
+            if full:
+                row.executive_name = full
+            if company is not None and company.strip():
+                row.company = company.strip()
+            db.commit()
+        finally:
+            db.close()

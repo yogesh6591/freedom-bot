@@ -16,6 +16,7 @@ from acquisition.models.assessment import AssessmentProfile
 from acquisition.models.campaign import CampaignProspect, PurchaseOutcome
 from acquisition.models.journey import QualificationStatus
 from acquisition.models.prospect import Prospect
+from acquisition.tenant import prospect_client_clause
 from acquisition.services.jeanne_checkout_service import (
     JeanneCheckoutError,
     build_checkout_url,
@@ -102,7 +103,7 @@ def _payment_email(p: Prospect, link: CampaignProspect, signer_name: str) -> tup
 
 def payment_problem(db, email: str, body: str) -> str:
     """Why a payment email on the card cannot go out now ("" when it can). Checked again at send time."""
-    p = db.scalar(select(Prospect).where(Prospect.email == email))
+    p = db.scalar(select(Prospect).where(prospect_client_clause(), Prospect.email == email))
     link = records.link_row(db, p.id) if p is not None else None
     if link is None or not link.assessment_token:
         return "this person has no assessment link"

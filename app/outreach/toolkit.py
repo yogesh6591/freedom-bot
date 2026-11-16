@@ -41,6 +41,7 @@ class Call:
     state: dict  # the chat turn's state (pending yes/no, chosen recipients)
     latest: str  # the user's latest message
     user_id: Optional[str] = None
+    client_id: Optional[str] = None
 
     def confirmed(self, key: str, evidence: str, question: str) -> Optional[str]:
         """``None`` once the user has said yes to this exact action, else the text to return (see ``confirm``)."""
@@ -69,22 +70,34 @@ def tool(name: str, *args: str) -> Callable[[Callable[..., str]], Callable[..., 
 
 
 def run(name: str, *, db_factory: Callable[[], Any], state: dict, latest: str, user_id: Optional[str],
-        args: dict[str, Any]) -> str:
+        client_id: Optional[str], args: dict[str, Any]) -> str:
     """Run one registered tool and return the text for the model."""
+    from acquisition.tenant import tenant_scope
+
     entry = TOOLS[name]
     kwargs = {k: args[k] for k in entry.args if k in args and args[k] is not None}
-    db = db_factory()
-    try:
-        return entry.fn(Call(db=db, state=state, latest=latest or "", user_id=user_id), **kwargs)
-    except ToolError as exc:
-        db.rollback()
-        return f"error: {exc}"
-    except Exception as exc:  # noqa: BLE001 - a bug in one tool must not break the chat turn
-        db.rollback()
-        log.exception("chat tool %s failed", name)
-        return f"error: {name} failed ({type(exc).__name__}). Nothing was changed."
-    finally:
-        db.close()
+
+    def _execute() -> str:
+        db = db_factory()
+        try:
+            return entry.fn(
+                Call(db=db, state=state, latest=latest or "", user_id=user_id, client_id=client_id),
+                **kwargs,
+            )
+        except ToolError as exc:
+            db.rollback()
+            return f"error: {exc}"
+        except Exception as exc:  # noqa: BLE001 - a bug in one tool must not break the chat turn
+            db.rollback()
+            log.exception("chat tool %s failed", name)
+            return f"error: {name} failed ({type(exc).__name__}). Nothing was changed."
+        finally:
+            db.close()
+
+    if (client_id or "").strip():
+        with tenant_scope(client_id):
+            return _execute()
+    return _execute()
 
 
 #: the tool modules, one per area (see the module docstring)

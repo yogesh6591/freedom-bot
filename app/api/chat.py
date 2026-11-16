@@ -231,6 +231,7 @@ def update_email_card(
             if body.name_scope.strip().lower() == "forever":
                 for email, patch in people.items():
                     replace_person_name(
+                        client_id=ctx.client_id,
                         email=email,
                         first_name=str(patch.get("first_name") or ""),
                         last_name=str(patch.get("last_name") or ""),

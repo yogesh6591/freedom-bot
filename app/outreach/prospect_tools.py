@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from acquisition.models.prospect import Prospect
 from acquisition.services.prospect_identity import is_placeholder_email
+from acquisition.tenant import stamp_prospect
 from app.outreach import chicago, datasets, fields, lookup, records
 from app.outreach.confirm import action_key
 from app.outreach.fields import FieldError
@@ -134,6 +135,7 @@ def _new_prospect(item: dict, number: int, taken: set[str], db: Session) -> Pros
         raise FieldError(f"{name} <{email}> is already saved")
     taken.add(email)
     prospect = Prospect(company="", executive_name=proper_case(name), email=email, discovery_source="assistant")
+    stamp_prospect(prospect)
     fields.apply_changes(prospect, clean)
     return prospect
 

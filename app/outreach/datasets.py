@@ -27,6 +27,7 @@ from acquisition.models.assessment import AssessmentConversation, AssessmentProf
 from acquisition.models.campaign import Campaign, CampaignProspect
 from acquisition.models.outreach import SentEmail
 from acquisition.models.prospect import Prospect
+from acquisition.tenant import prospect_client_clause
 from app.outreach import chicago, matching
 from app.outreach.fields import FIELDS
 
@@ -279,7 +280,12 @@ def _like(text: str) -> str:
 # --------------------------------------------------------------------------------------------- filters
 def _fuzzy_person_ids(db: Session, text: str, columns: list[Any]) -> list[Any]:
     """Ids of the people whose ``columns`` closely match ``text`` (handles typos)."""
-    return [pid for pid, _ in matching.find_ids(db, text, Prospect.id, columns, limit=MAX_FUZZY_IDS)]
+    return [
+        pid
+        for pid, _ in matching.find_ids(
+            db, text, Prospect.id, columns, where=(prospect_client_clause(),), limit=MAX_FUZZY_IDS
+        )
+    ]
 
 
 #: A status column's value that means "nothing has happened yet". is_empty / not_empty on these columns use it.
@@ -424,7 +430,7 @@ def build(db: Session, spec: Spec) -> dict[str, Any]:
         raise QueryError(f"Unknown dataset '{spec.dataset}'. Datasets: {', '.join(DATASETS)}.")
 
     needs = _needs_for_base(ds)
-    where = list(ds.base_where())
+    where = [prospect_client_clause(), *ds.base_where()]
     if spec.ids:
         where.append(ds.person_id.in_(spec.ids))
     for f in spec.filters or []:
@@ -499,7 +505,7 @@ def matching_ids(db: Session, filters: list[dict], limit: int) -> tuple[list[Any
     """Ids of the people matching ``filters`` (at most ``limit``) and how many match in all."""
     ds = DATASETS["people"]
     needs: set[str] = set()
-    where = []
+    where = [prospect_client_clause()]
     for f in filters or []:
         cond, n = _condition(db, ds, f)
         where.append(cond)

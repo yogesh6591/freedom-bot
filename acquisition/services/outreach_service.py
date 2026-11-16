@@ -279,7 +279,9 @@ def _sent_today(db: Session, now: datetime) -> int:
     )
 
 
-def send_next(db: Session, send_fn: SendFn, *, now: Optional[datetime] = None) -> Optional[SentEmail]:
+def send_next(
+    db: Session, send_fn: SendFn, *, client_id: Optional[str] = None, now: Optional[datetime] = None
+) -> Optional[SentEmail]:
     """Send at most one queued email if pacing allows. Returns the row handled.
 
     Safe to call from several workers: the row is claimed with SKIP LOCKED.
@@ -297,13 +299,10 @@ def send_next(db: Session, send_fn: SendFn, *, now: Optional[datetime] = None) -
     )
     if not ok:
         return None
-    row = db.scalar(
-        select(SentEmail)
-        .where(SentEmail.status == STATUS_QUEUED)
-        .order_by(SentEmail.queued_at.asc())
-        .with_for_update(skip_locked=True)
-        .limit(1)
-    )
+    q = select(SentEmail).where(SentEmail.status == STATUS_QUEUED).order_by(SentEmail.queued_at.asc())
+    if client_id:
+        q = q.join(Prospect, Prospect.id == SentEmail.prospect_id).where(Prospect.client_id == client_id)
+    row = db.scalar(q.with_for_update(skip_locked=True).limit(1))
     if row is None:
         return None
     link = db.get(CampaignProspect, row.campaign_prospect_id) if row.campaign_prospect_id else None

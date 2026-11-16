@@ -51,6 +51,8 @@ class Prospect(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
+    #: BizOS workspace that owns this prospect (control-plane ``clients.id``).
+    client_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # --- Company (existing + extensions) ---
     company: Mapped[str] = mapped_column(String(255), nullable=False)
     website: Mapped[str | None] = mapped_column(String(512), nullable=True)

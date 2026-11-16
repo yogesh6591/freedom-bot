@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 
 from acquisition.models.outreach import STATUS_QUEUED, SentEmail
 from acquisition.models.prospect import Prospect
+from acquisition.tenant import prospect_client_clause
 from acquisition.services import outreach_service as svc
 from app.outreach import chicago, datasets, lookup
 from app.outreach.toolkit import Call, ToolError, tool
@@ -79,14 +80,26 @@ def _whole(value: object, default: int) -> int:
 def show_sent_emails(call: Call, who: str = "", limit: int = 10) -> str:
     """The email log: what is waiting, what went out today, and the latest emails (for one person or everyone)."""
     db = call.db
-    q = select(SentEmail, Prospect).join(Prospect, Prospect.id == SentEmail.prospect_id)
+    q = (
+        select(SentEmail, Prospect)
+        .join(Prospect, Prospect.id == SentEmail.prospect_id)
+        .where(prospect_client_clause())
+    )
     if (who or "").strip():
         ids = [p.id for p, _ in lookup.find(db, who, limit=20)]
         if not ids:
             raise ToolError(f"no saved prospect matches {who!r}.")
         q = q.where(SentEmail.prospect_id.in_(ids))
     rows = db.execute(q.order_by(SentEmail.queued_at.desc()).limit(max(1, min(_whole(limit, 10), 30)))).all()
-    waiting = db.scalar(select(func.count()).select_from(SentEmail).where(SentEmail.status == STATUS_QUEUED)) or 0
+    waiting = (
+        db.scalar(
+            select(func.count())
+            .select_from(SentEmail)
+            .join(Prospect, Prospect.id == SentEmail.prospect_id)
+            .where(prospect_client_clause(), SentEmail.status == STATUS_QUEUED)
+        )
+        or 0
+    )
     lines = [f"{waiting} email(s) waiting to go out; {svc.sent_today(db)} sent today."]
     for e, p in rows:
         problem = f" - {e.error}" if e.error and e.status != "sent" else ""

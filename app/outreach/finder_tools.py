@@ -19,6 +19,7 @@ from sqlalchemy import select
 
 from acquisition.config import get_settings
 from acquisition.models.prospect import Prospect
+from acquisition.tenant import prospect_client_clause, stamp_prospect
 from acquisition.services.prospect_identity import domain_from_website_or_email, unique_placeholder_email
 from acquisition.services.prospecting_rules_service import get_prospecting_rules
 from app.outreach import lookup
@@ -246,7 +247,12 @@ def _outside(facts: dict, place: str) -> bool:
 
 
 def _taken(call: Call, domain: str) -> bool:
-    return call.db.scalar(select(Prospect.id).where(Prospect.domain == domain).limit(1)) is not None
+    return (
+        call.db.scalar(
+            select(Prospect.id).where(prospect_client_clause(), Prospect.domain == domain).limit(1)
+        )
+        is not None
+    )
 
 
 def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: str, _unused: str, category: str,
@@ -259,6 +265,7 @@ def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: s
         discovery_query=str(row.get("_query") or "")[:600] or None,
         headcount_band=str(size) if size else None, fit_note=(_trim(str(row.get("summary") or ""), 500) or None),
     )
+    stamp_prospect(prospect)
     call.db.add(prospect)
     call.db.commit()
     return prospect

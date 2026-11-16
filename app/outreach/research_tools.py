@@ -22,6 +22,7 @@ from sqlalchemy import select
 
 from acquisition.config import get_settings
 from acquisition.models.prospect import AcquisitionStatus, Prospect, ProspectResearchSource
+from acquisition.tenant import prospect_client_clause, tenant_scope
 from app.outreach import prospect_tools as people_tools
 from app.outreach.toolkit import Call, ToolError, tool
 
@@ -245,17 +246,22 @@ def tick(ask: Optional[Callable[[str], tuple[dict, list[dict]]]] = None, db_fact
 
     db = (db_factory or SessionLocal)()
     try:
-        p = db.scalars(select(Prospect).where(Prospect.research_status == "queued")
-                       .order_by(Prospect.research_updated_at, Prospect.created_at)
-                       .with_for_update(skip_locked=True).limit(1)).first()
+        p = db.scalars(
+            select(Prospect)
+            .where(Prospect.research_status == "queued", Prospect.client_id.is_not(None))
+            .order_by(Prospect.research_updated_at, Prospect.created_at)
+            .with_for_update(skip_locked=True)
+            .limit(1)
+        ).first()
         if p is None:
             return False
         p.research_status, p.research_updated_at = "running", _now()
         db.commit()
         try:
-            data, sources = (ask or ask_web)(_prompt(p, get_prospecting_rules()))
-            apply_result(db, p, data, sources)
-            p.research_status = "done"
+            with tenant_scope(p.client_id or ""):
+                data, sources = (ask or ask_web)(_prompt(p, get_prospecting_rules()))
+                apply_result(db, p, data, sources)
+                p.research_status = "done"
         except Exception as exc:  # noqa: BLE001 - one person failing must not stop the others
             db.rollback()
             log.warning("research failed for %s: %s", p.email, exc)
@@ -298,12 +304,21 @@ def start() -> Optional[Callable[[], None]]:
 # ------------------------------------------------------------------------------------------------ progress
 def progress(db: Any) -> Optional[dict]:
     """How far the latest research batch is, or None when nothing was ever researched from the chat."""
-    batch = db.scalar(select(Prospect.research_batch).where(Prospect.research_batch.is_not(None))
-                      .order_by(Prospect.research_updated_at.desc()).limit(1))
+    batch = db.scalar(
+        select(Prospect.research_batch)
+        .where(prospect_client_clause(), Prospect.research_batch.is_not(None))
+        .order_by(Prospect.research_updated_at.desc())
+        .limit(1)
+    )
     if not batch:
         return None
-    rows = list(db.scalars(select(Prospect).where(Prospect.research_batch == batch)
-                           .order_by(Prospect.research_updated_at, Prospect.executive_name)))
+    rows = list(
+        db.scalars(
+            select(Prospect)
+            .where(prospect_client_clause(), Prospect.research_batch == batch)
+            .order_by(Prospect.research_updated_at, Prospect.executive_name)
+        )
+    )
     name = lambda p: f"{p.executive_name} ({p.company})" if (p.company or "").strip() else p.executive_name  # noqa: E731
     finished = []
     for p in rows:

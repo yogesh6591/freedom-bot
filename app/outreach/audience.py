@@ -19,6 +19,7 @@ from acquisition.models.campaign import AssessmentStatus, CampaignProspect, Jour
 from acquisition.models.journey import QualificationStatus
 from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENT, SentEmail
 from acquisition.models.prospect import Prospect
+from acquisition.tenant import prospect_client_clause
 from acquisition.services import outreach_service as svc
 from acquisition.services.prospect_identity import is_placeholder_email
 from app.outreach.records import structured_answers_and_missing
@@ -117,7 +118,9 @@ def select_people(db: Session, *, stage: Optional[list] = None, order: str = "",
     if emailed not in EMAILED:
         return {"people": [], "skipped": [], "error": "emailed must be yes, no or any"}
 
-    prospects = list(db.scalars(select(Prospect).order_by(Prospect.created_at, Prospect.executive_name)))
+    prospects = list(
+        db.scalars(select(Prospect).where(prospect_client_clause()).order_by(Prospect.created_at, Prospect.executive_name))
+    )
     place_q = (place or "").strip().lower()
     if place_q and not any(_place_text(p) for p in prospects):
         return {"people": [], "skipped": [], "error": "no_location_data: no saved person has a city, state or region yet, "
@@ -196,8 +199,13 @@ def held_among(db: Session, emails: list) -> set:
     keys = {str(e).strip().lower() for e in emails if e}
     if not keys:
         return set()
-    rows = db.scalars(select(Prospect.email).where(func.lower(Prospect.email).in_(keys),
-                                                   Prospect.research_status.in_(RESEARCH_HOLD)))
+    rows = db.scalars(
+        select(Prospect.email).where(
+            prospect_client_clause(),
+            func.lower(Prospect.email).in_(keys),
+            Prospect.research_status.in_(RESEARCH_HOLD),
+        )
+    )
     return {str(e).strip().lower() for e in rows}
 
 
@@ -208,7 +216,7 @@ def stages_for(db: Session, emails: list) -> dict:
         return {}
     links, profiles, mail = _loaded(db)
     out: dict[str, str] = {}
-    for p in db.scalars(select(Prospect).where(func.lower(Prospect.email).in_(keys))):
+    for p in db.scalars(select(Prospect).where(prospect_client_clause(), func.lower(Prospect.email).in_(keys))):
         link = links.get(p.id)
         profile = profiles.get(link.id) if link is not None else None
         out[str(p.email).strip().lower()] = person_stage(link, profile, (mail.get(p.id) or {"count": 0})["count"])

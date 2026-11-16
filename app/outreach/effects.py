@@ -51,21 +51,27 @@ def _run(scope: RunScope, tool: str, args: dict[str, Any]) -> ConnectorResult:
     session = scope.campaign_session
     if session is None:
         return ConnectorResult.failure("Outreach is not available in this conversation.")
-    if tool in toolkit.TOOLS:
-        text = toolkit.run(
-            tool, db_factory=session.db_factory, state=session.state, latest=session.latest,
-            user_id=getattr(session.ctx, "user_id", None), args=args,
-        )
-        if session.state.pop("_show_card", False):
-            session.card_shown = True  # a tool put an email on the card (the payment link)
+    client_id = getattr(session.ctx, "client_id", None) or ""
+    if not client_id:
+        return ConnectorResult.failure("This workspace could not be identified for prospect access.")
+    from acquisition.tenant import tenant_scope
+
+    with tenant_scope(client_id):
+        if tool in toolkit.TOOLS:
+            text = toolkit.run(
+                tool, db_factory=session.db_factory, state=session.state, latest=session.latest,
+                user_id=getattr(session.ctx, "user_id", None), client_id=client_id, args=args,
+            )
+            if session.state.pop("_show_card", False):
+                session.card_shown = True  # a tool put an email on the card (the payment link)
+            return _result(tool, text)
+        method, allowed = _EMAIL_METHODS[tool]
+        kwargs = {k: args[k] for k in allowed if k in args and args[k] is not None}
+        try:
+            text = getattr(session, method)(**kwargs)
+        except Exception as exc:  # noqa: BLE001 - a bug in one tool must not break the chat turn
+            return ConnectorResult.failure(f"{tool} failed: {exc}")
         return _result(tool, text)
-    method, allowed = _EMAIL_METHODS[tool]
-    kwargs = {k: args[k] for k in allowed if k in args and args[k] is not None}
-    try:
-        text = getattr(session, method)(**kwargs)
-    except Exception as exc:  # noqa: BLE001 - a bug in one tool must not break the chat turn
-        return ConnectorResult.failure(f"{tool} failed: {exc}")
-    return _result(tool, text)
 
 
 def _register(tool: str) -> None:

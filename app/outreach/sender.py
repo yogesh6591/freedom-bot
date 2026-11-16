@@ -108,7 +108,7 @@ def tick() -> bool:
         send = _send_fn(ctx)
         db = SessionLocal()
         try:
-            row = svc.send_next(db, send)
+            row = svc.send_next(db, send, client_id=ctx.client_id)
             db.commit()
             return row is not None
         except Exception:

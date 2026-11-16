@@ -273,6 +273,7 @@ class OutreachSession:
         from sqlalchemy import func, select
 
         from acquisition.models.prospect import Prospect
+        from acquisition.tenant import prospect_client_clause
         from acquisition.services import outreach_service as svc
         from app.outreach import records as rec
 
@@ -281,7 +282,7 @@ class OutreachSession:
         d["threaded"], d["emailed_before"] = {}, []
         for r in self.state["recipients"]:
             key = str(r["email"]).strip().casefold()
-            p = db.scalar(select(Prospect).where(func.lower(Prospect.email) == key))
+            p = db.scalar(select(Prospect).where(prospect_client_clause(), func.lower(Prospect.email) == key))
             if p is not None and svc.last_email_to(db, p.id):
                 d["emailed_before"].append(key)
                 if not d["new_thread"]:

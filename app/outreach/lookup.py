@@ -13,6 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from acquisition.models.prospect import Prospect
+from acquisition.tenant import prospect_client_clause
 from app.outreach import matching
 from app.outreach.toolkit import Call, ToolError
 
@@ -29,7 +30,12 @@ def label(p: Prospect) -> str:
 
 
 def by_email(db: Session, email: str) -> Optional[Prospect]:
-    return db.scalar(select(Prospect).where(func.lower(Prospect.email) == (email or "").strip().lower()))
+    return db.scalar(
+        select(Prospect).where(
+            prospect_client_clause(),
+            func.lower(Prospect.email) == (email or "").strip().lower(),
+        )
+    )
 
 
 def find(db: Session, text: str, limit: int = MAX_CHOICES) -> list[tuple[Prospect, float]]:
@@ -41,11 +47,22 @@ def find(db: Session, text: str, limit: int = MAX_CHOICES) -> list[tuple[Prospec
         exact = by_email(db, query)
         if exact is not None:
             return [(exact, 1.0)]
-    ranked = matching.find_ids(db, query, Prospect.id, [Prospect.executive_name, Prospect.email, Prospect.company],
-                               limit=limit)
+    ranked = matching.find_ids(
+        db,
+        query,
+        Prospect.id,
+        [Prospect.executive_name, Prospect.email, Prospect.company],
+        where=(prospect_client_clause(),),
+        limit=limit,
+    )
     if not ranked:
         return []
-    people = {p.id: p for p in db.scalars(select(Prospect).where(Prospect.id.in_([pid for pid, _ in ranked])))}
+    people = {
+        p.id: p
+        for p in db.scalars(
+            select(Prospect).where(prospect_client_clause(), Prospect.id.in_([pid for pid, _ in ranked]))
+        )
+    }
     return [(people[pid], score) for pid, score in ranked if pid in people]
 
 
