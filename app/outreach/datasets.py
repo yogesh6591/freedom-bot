@@ -536,6 +536,39 @@ def _fmt(col: Column, value: Any) -> str:
     return text if len(text) <= 80 else text[:79] + "…"
 
 
+def research_detail_block(db: Session, prospect_id: Any) -> str:
+    """Full research text for one person (notes, scores, sources) when research is done."""
+    from acquisition.models.prospect import Prospect, ProspectResearchSource
+
+    p = db.get(Prospect, prospect_id)
+    if p is None or (p.research_status or "").lower() != "done":
+        return ""
+    lines: list[str] = []
+    if p.fit_score is not None or p.timing_score is not None or p.reachability_score is not None:
+        def _s(v: Any) -> str:
+            return "-" if v is None else str(int(float(v) + 0.5))
+
+        lines.append(
+            f"Scores: fit {_s(p.fit_score)}, timing {_s(p.timing_score)}, reach {_s(p.reachability_score)}"
+        )
+    if (p.research_notes or "").strip():
+        lines.append("Research notes:\n" + p.research_notes.strip()[:8000])
+    urls = [
+        r.source_url
+        for r in db.scalars(
+            select(ProspectResearchSource)
+            .where(ProspectResearchSource.prospect_id == p.id)
+            .order_by(ProspectResearchSource.created_at)
+        )
+        if r.source_url
+    ]
+    if urls:
+        lines.append("Sources:\n" + "\n".join(f"- {u}" for u in urls[:10]))
+    else:
+        lines.append("Sources: none saved")
+    return "\n\n".join(lines)
+
+
 def render(db: Session, spec: Spec, result: dict[str, Any]) -> str:
     """The result as short text for the model to read back to the user."""
     ds = DATASETS[result["dataset"]]
@@ -584,5 +617,5 @@ def all_column_keys() -> list[str]:
 
 __all__ = [
     "DATASETS", "OPS", "QueryError", "Spec", "TZ", "all_column_keys", "build", "column_guide", "fmt_money",
-    "matching_ids", "render", "run",
+    "matching_ids", "render", "research_detail_block", "run",
 ]

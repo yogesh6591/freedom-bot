@@ -984,7 +984,8 @@ TOOL_META: dict[str, AgentMeta] = {
     # ------------------------------------------------------------------ outreach: records
     "query_records": M("outreach", d("""
         Count, list or group people, emails, bookings or payments with any mix of filters, sorting and dates.
-        Only matching rows come back. Names forgive typos. Times are Chicago time. Read-only.
+        Only matching rows come back. When exactly one person matches, completed research includes full notes,
+        scores and source URLs in the tool result. Names forgive typos. Times are Chicago time. Read-only.
         Use when: "how many prospects", "who haven't we emailed", "bookings tomorrow", "who paid",
         "everyone at Acme".
         Don't use: one person's full record -> show_prospect; assessment detail -> show_assessment; the send log

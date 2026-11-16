@@ -35,10 +35,28 @@ def query_records(call: Call, dataset: str = "people", filters: Optional[list] =
     )
     _maybe_focus_prospect(call, spec)
     try:
-        text = datasets.run(call.db, spec)
-        if spec.dataset == "people" and spec.limit == 1 and not spec.count_only and "0 row" not in text.lower():
-            hit = _focus_from_filters(spec.filters)
-            if hit:
+        result = datasets.build(call.db, spec)
+        text = datasets.render(call.db, spec, result)
+        if (
+            spec.dataset == "people"
+            and not spec.count_only
+            and result.get("mode") == "rows"
+            and result.get("total") == 1
+            and len(result.get("rows") or []) == 1
+        ):
+            row = result["rows"][0]
+            prospect_id = row.get("row_id")
+            if prospect_id is not None:
+                extra = datasets.research_detail_block(call.db, prospect_id)
+                if extra:
+                    text += "\n\n" + extra
+            stamped = False
+            for key in ("email", "executive_name"):
+                if row.get(key):
+                    call.state["focus_prospect"] = str(row[key])
+                    stamped = True
+                    break
+            if not stamped and (hit := _focus_from_filters(spec.filters)):
                 call.state["focus_prospect"] = hit
         return text
     except datasets.QueryError as exc:
