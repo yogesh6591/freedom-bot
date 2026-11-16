@@ -1046,8 +1046,8 @@ function ChatView({ home }: { home: boolean }) {
     if (busy || attachments.uploading || (!input.trim() && !files.length)) return
     if (attachments.failed) {
       setError(
-        `${attachments.failed.name} was not attached: ${attachments.failed.error ?? 'upload failed'}. ` +
-          'Remove it (x) or attach it again before sending.'
+        `${attachments.failed.error ?? `${attachments.failed.name} could not be uploaded.`} ` +
+          'Remove it (x) or attach another file before sending.'
       )
       return
     }

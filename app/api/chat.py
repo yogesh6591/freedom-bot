@@ -346,7 +346,14 @@ async def upload_attachment(
             from app.assistant.assistant import _guardrail_audit
 
             _guardrail_audit(ctx, run_scope(ctx, settings, domain="general"), "", f"ATTACHMENT_{refusal[0]}")
-            raise HTTPException(status_code=422, detail=f"{filename} was not attached. {refusal[1]}")
+            hint = ""
+            if refusal[0] == "CHILD_DATA_BLOCKED":
+                from bizos.policy.classifier import _minor_match
+
+                hit = _minor_match(extracted["text"])
+                if hit:
+                    hint = f' (The file contains "{hit}", which the child-data rule matched. Remove those lines and retry.)'
+            raise HTTPException(status_code=422, detail=f"{filename} was not attached. {refusal[1]}{hint}")
         return chat_attachments.save(ctx, filename=filename, kind=extracted["kind"], size_bytes=len(data),
                                      body=extracted["text"], meta=extracted["meta"])
 
