@@ -207,8 +207,9 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: the request is approved, closed, or returned. {gate}
     """), id_fields=("action_id",)),
     "admin_update_user": M("admin_users", d("""
-        Change one BizOS user's roles (add or remove) and restricted data access (grant or revoke).
-        Use when: "make Ravi an admin", "remove Lee's approver role".
+        Change one BizOS user's role and restricted data access. A department job_role (FINANCE, HR,
+        OPERATIONS, SALES, INTAKE, PLANNING, ADMIN) sets both.
+        Use when: "make Ravi an admin", "make Lee finance", "remove Lee's approver role".
         Don't use: suspending or reactivating -> admin_set_user_status; which roles may use a tool ->
         admin_set_tool_permission; a pack for everyone -> admin_toggle_domain.
         Needs: user from admin_list_users.
@@ -807,17 +808,18 @@ TOOL_META: dict[str, AgentMeta] = {
         the CRM.
     """)),
     "admin_create_user": M("admin_users", d("""
-        Create a BizOS login for a new person, with roles (VIEWER if none given) and data access. A
+        Create a BizOS login for a new person. Give a department job_role (FINANCE, HR, OPERATIONS, SALES,
+        INTAKE, PLANNING, ADMIN) so level and data access match; roles are only for odd cases. A
         temporary password is returned once.
-        Use when: "add priya@ourco.in as a drafter", "give Lee a login".
+        Use when: "add priya@ourco.in as finance", "give Lee a login".
         Don't use: a customer or lead -> crm_create_contact; changing an existing user's roles or access
         -> admin_update_user.
         Effect: the person can log in. {gate}
     """)),
     "admin_set_user_roles": M("admin_users", d("""
-        Set a BizOS user's roles (VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN). The list you pass
-        replaces their current roles.
-        Use when: "make Ravi an admin".
+        Set a BizOS user's department job_role (FINANCE, HR, OPERATIONS, SALES, INTAKE, PLANNING, ADMIN),
+        or, when none fits, the full roles list (VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN).
+        Use when: "make Ravi an admin", "make Lee finance".
         Don't use: data areas -> admin_set_user_access; suspending -> admin_set_user_status; which roles
         may use a tool -> admin_set_tool_permission.
         Needs: the user from admin_list_users.

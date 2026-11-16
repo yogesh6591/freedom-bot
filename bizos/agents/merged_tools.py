@@ -177,7 +177,7 @@ MEMORY_ADD = MergedTool(
 
 # --------------------------------------------------------------------------- admin_update_user
 
-_ROLE_FIELDS = ("roles_add", "roles_remove")
+_ROLE_FIELDS = ("roles_add", "roles_remove", "job_role")
 _ACCESS_FIELDS = ("access_grant", "access_revoke")
 
 
@@ -203,7 +203,20 @@ def _plan_update_user(scope_for, args):
         raise MergeArgumentError(exc.message) from exc
 
     calls: list[Call] = []
-    if wants_roles:
+    job_name = str(args.get("job_role") or "").strip().upper()
+    if job_name:
+        from bizos.rbac.job_roles import JOB_ROLES
+
+        if job_name not in JOB_ROLES:
+            raise MergeArgumentError(f"job_role must be one of {', '.join(JOB_ROLES)}.")
+        if _names(args.get("roles_add")) or _names(args.get("roles_remove")):
+            raise MergeArgumentError("Use job_role on its own, or roles_add/roles_remove; a job role sets the level itself.")
+        calls.append(Call(
+            "admin_set_user_roles",
+            {"user": user.id, "job_role": job_name},
+            undo=Call("admin_set_user_roles", {"user": user.id, "roles": sorted(str(r) for r in user.roles)}),
+        ))
+    elif wants_roles:
         current = sorted(str(r) for r in user.roles)
         wanted = (set(current) | {r.upper() for r in _names(args.get("roles_add"))}) - {
             r.upper() for r in _names(args.get("roles_remove"))
@@ -240,6 +253,7 @@ ADMIN_UPDATE_USER = MergedTool(
             "user": _s("The user's user_id from admin_list_users"),
             "roles_add": _arr("Roles to add: VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN"),
             "roles_remove": _arr("Roles to remove"),
+            "job_role": _s("A department role to give instead: INTAKE, PLANNING, OPERATIONS, SALES, FINANCE, HR or ADMIN"),
             "access_grant": _arr("Restricted data areas to grant, e.g. finance, hr, legal"),
             "access_revoke": _arr("Restricted data areas to revoke"),
         },

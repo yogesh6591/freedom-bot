@@ -1141,7 +1141,7 @@ function Users() {
     email: '',
     password: '',
     display_name: '',
-    job_role: 'EMPLOYEE'
+    job_role: ''
   })
   const [error, setError] = useState<string | null>(null)
 
@@ -1166,7 +1166,7 @@ function Users() {
         email: '',
         password: '',
         display_name: '',
-        job_role: 'EMPLOYEE'
+        job_role: ''
       })
       await load()
     } catch (err) {
@@ -1198,7 +1198,7 @@ function Users() {
       <AccessRequests onDecided={load} />
       <Panel
         title="Users"
-        description="The role sets what someone can do. CRM changes sets whether their CRM changes run directly, wait for approval or stay drafts. Tags set what they can see: apps like CRM and Gmail, and restricted data. You can pick several."
+        description="Pick a department role (Intake, Planning, Operations, Sales, Finance, HR) or Admin, the only role with full access. The role sets what someone can do. CRM changes sets whether their CRM changes run directly, wait for approval or stay drafts. Tags set what they can see: apps like CRM and Gmail, and restricted data. You can pick several."
       >
         {error && <ErrorNote>{error}</ErrorNote>}
         <DataTable
@@ -1213,7 +1213,7 @@ function Users() {
               render: (u) => (
                 <select
                   aria-label={`Role for ${u.display_name}`}
-                  value={u.job_role ?? ''}
+                  value={u.job_role && u.job_role !== 'EMPLOYEE' ? u.job_role : ''}
                   onChange={(event) =>
                     void update(`/api/users/${u.id}/job-role`, {
                       job_role: event.target.value
@@ -1221,7 +1221,7 @@ function Users() {
                   }
                   className="min-h-9 rounded-lg border border-border bg-background-secondary px-2.5 text-[13px] text-primary"
                 >
-                  {!u.job_role && (
+                  {(!u.job_role || u.job_role === 'EMPLOYEE') && (
                     <option value="" disabled>
                       Choose role
                     </option>
@@ -1256,6 +1256,10 @@ function Users() {
                 u.roles.includes('ADMIN') ? (
                   <span className="text-xs text-muted">
                     All areas and approvals
+                  </span>
+                ) : !u.job_role || u.job_role === 'EMPLOYEE' ? (
+                  <span className="text-xs text-muted">
+                    Choose a role first: a role gives the person its access.
                   </span>
                 ) : (
                   <div className="flex max-w-md flex-wrap gap-1.5">
@@ -1320,11 +1324,15 @@ function Users() {
           <Field label="Role">
             <select
               className={inputClass}
+              required
               value={form.job_role}
               onChange={(event) =>
                 setForm({ ...form, job_role: event.target.value })
               }
             >
+              <option value="" disabled>
+                Choose role
+              </option>
               {JOB_ROLES.map((role) => (
                 <option key={role.value} value={role.value}>
                   {role.label}

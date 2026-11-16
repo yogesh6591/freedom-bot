@@ -1571,6 +1571,7 @@ def _user_row(user) -> dict[str, Any]:
         "name": user.display_name,
         "email": user.email,
         "roles": sorted(str(r) for r in user.roles),
+        "job_role": user.job_role_label,
         "data_access": sorted(user.data_scopes),
         "status": user.status,
     }
@@ -1986,6 +1987,10 @@ def admin_consult_quote(scope: RunScope, args: dict[str, Any]) -> ConnectorResul
 # --------------------------------------------------------------------- users
 
 
+def job_role_given(args: dict[str, Any]) -> bool:
+    return bool(str(args.get("job_role") or "").strip())
+
+
 @effect("admin_create_user")
 def admin_create_user(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     password = _temporary_password()
@@ -1997,13 +2002,18 @@ def admin_create_user(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
             display_name=str(args.get("display_name") or args.get("name") or ""),
             roles=_list(args.get("roles")) or ["VIEWER"],
             data_scopes=_list(args.get("data_access") or args.get("data_scopes")),
+            job_role=str(args.get("job_role") or "").strip() or None,
         )
+        extra = _list(args.get("data_access") or args.get("data_scopes"))
+        if job_role_given(args) and extra:
+            user = ops.set_scopes(scope.ctx, user.id, sorted({*user.data_scopes, *(a.casefold() for a in extra)}))
     except ops.AdminError as exc:
         return _failure(exc)
+    title = f" ({user.job_role_label})" if user.job_role_label else ""
     return ConnectorResult(
         ok=True,
         data={**_user_row(user), "temporary_password": password},
-        summary=f"created {user.email} as {', '.join(sorted(str(r) for r in user.roles))}",
+        summary=f"created {user.email} as {', '.join(sorted(str(r) for r in user.roles))}{title}",
     )
 
 
@@ -2011,6 +2021,14 @@ def admin_create_user(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 def admin_set_user_roles(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     try:
         user = _find_user(scope, args.get("user"))
+        if str(args.get("job_role") or "").strip():
+            updated = ops.set_job_role(scope.ctx, user.id, str(args["job_role"]))
+            title = f" ({updated.job_role_label})" if updated.job_role_label else ""
+            return ConnectorResult(
+                ok=True,
+                data=_user_row(updated),
+                summary=f"{updated.email} now holds {', '.join(sorted(str(r) for r in updated.roles))}{title}",
+            )
         roles = ops.parse_roles(_list(args.get("roles")))
         if user.id == scope.ctx.user_id and Role.ADMIN not in roles:
             return ConnectorResult.failure(

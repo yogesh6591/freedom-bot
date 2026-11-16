@@ -34,6 +34,9 @@ JOB_ROLES: Mapping[str, JobRole] = MappingProxyType(
             JobRole("FINANCE", "Finance", Role.OPERATOR, ("finance",)),
             JobRole("OPERATIONS", "Operations", Role.OPERATOR, ("ops",)),
             JobRole("SALES", "Sales", Role.OPERATOR, ("sales",)),
+            # Departments with no restricted data area of their own: same level, no extra tag.
+            JobRole("INTAKE", "Intake", Role.OPERATOR),
+            JobRole("PLANNING", "Planning", Role.OPERATOR),
             JobRole("ADMIN", "Admin", Role.ADMIN),
             JobRole("EMPLOYEE", "Employee", Role.VIEWER),
         )
@@ -68,5 +71,7 @@ def resolve_job_role(stored: Optional[str], roles: Iterable[Role], tags: Iterabl
         return job.key
     if Role.OPERATOR in held:
         have = frozenset(tags)
-        return next((j.key for j in JOB_ROLES.values() if j.level is Role.OPERATOR and set(j.tags) <= have), None)
+        return next(
+            (j.key for j in JOB_ROLES.values() if j.level is Role.OPERATOR and j.tags and set(j.tags) <= have), None
+        )
     return "EMPLOYEE" if Role.VIEWER in held else None

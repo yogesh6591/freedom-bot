@@ -28,6 +28,8 @@ PASSWORD = "bizos-dev-password"
     ("FINANCE", Role.OPERATOR, ("finance",)),
     ("OPERATIONS", Role.OPERATOR, ("ops",)),
     ("SALES", Role.OPERATOR, ("sales",)),
+    ("INTAKE", Role.OPERATOR, ()),
+    ("PLANNING", Role.OPERATOR, ()),
     ("ADMIN", Role.ADMIN, ()),
     ("EMPLOYEE", Role.VIEWER, ()),
 ])
@@ -66,6 +68,9 @@ def test_changing_role_swaps_its_tags_and_keeps_the_rest():
     # The level moved after the title was stored (the assistant's admin tools can do that).
     ("FINANCE", {Role.VIEWER}, {"finance"}, "EMPLOYEE"),
     ("EMPLOYEE", {Role.ADMIN}, set(), "ADMIN"),
+    # A stored department title with no tag of its own is kept while the level matches, and never guessed.
+    ("INTAKE", {Role.OPERATOR}, set(), "INTAKE"),
+    ("PLANNING", {Role.OPERATOR}, {"ops"}, "PLANNING"),
 ])
 def test_the_title_shown_always_matches_the_level_held(stored, roles, tags, shown):
     assert resolve_job_role(stored, roles, tags) == shown

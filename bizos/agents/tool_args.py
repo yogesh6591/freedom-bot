@@ -733,13 +733,19 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         {
             "email": _s("Email address"),
             "display_name": _s("Name"),
-            "roles": _arr("VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN"),
-            "data_access": _arr("Restricted data areas, e.g. finance, hr"),
+            "job_role": _s("Department role: INTAKE | PLANNING | OPERATIONS | SALES | FINANCE | HR | ADMIN. Sets its level and data access together"),
+            "roles": _arr("Only when no job_role fits: VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN"),
+            "data_access": _arr("Extra restricted data areas, e.g. finance, hr"),
         },
         ["email"],
     ),
     "admin_set_user_roles": _obj(
-        {"user": _s("Email or name"), "roles": _arr("The full new set of roles")}, ["user", "roles"]
+        {
+            "user": _s("Email or name"),
+            "job_role": _s("Department role: INTAKE | PLANNING | OPERATIONS | SALES | FINANCE | HR | ADMIN"),
+            "roles": _arr("The full new set of roles, when no job_role fits"),
+        },
+        ["user"],
     ),
     "admin_set_user_access": _obj(
         {

@@ -1,12 +1,14 @@
 /** Job roles and data tags as admins see them. The server decides what each one grants. */
 
+/** One role per department, plus a single Admin with full access. There is no view-only role to pick. */
 export const JOB_ROLES = [
-  { value: 'HR', label: 'HR' },
-  { value: 'FINANCE', label: 'Finance' },
+  { value: 'INTAKE', label: 'Intake' },
+  { value: 'PLANNING', label: 'Planning' },
   { value: 'OPERATIONS', label: 'Operations' },
   { value: 'SALES', label: 'Sales' },
-  { value: 'ADMIN', label: 'Admin' },
-  { value: 'EMPLOYEE', label: 'Employee' }
+  { value: 'FINANCE', label: 'Finance' },
+  { value: 'HR', label: 'HR' },
+  { value: 'ADMIN', label: 'Admin' }
 ] as const
 
 export const DATA_TAGS = [

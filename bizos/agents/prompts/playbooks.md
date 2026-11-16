@@ -109,6 +109,14 @@
 
 ## admin_users
 - Get the user from admin_list_users first. "User/login/access/role" means BizOS users, not CRM contacts.
+- Creating a user with a department ("a finance user", "add Neha as HR"): job_role (FINANCE, HR, OPERATIONS, SALES,
+  INTAKE, PLANNING, ADMIN) on admin_create_user. It sets the level and the matching data access together, so never
+  create a VIEWER and add a data area.
+- "Also", "too", "as well", "give him X access", "add X": only add that data area with admin_update_user
+  access_grant (finance, ops, sales, hr, salary, legal, exec). Keep the role and every area he already has.
+  Never use job_role for these: it would replace his current data access.
+- Only "make him X", "change his role to X", "move him to X" uses job_role on admin_update_user.
+  Intake and Planning have no data area, so "also Intake" cannot be added; say so.
 - admin_update_user for roles and data access; admin_set_user_status to suspend or reactivate.
 - Before a change, state it plainly ("Ravi will become an admin", "Ravi will be suspended").
 - The workspace must keep at least one active admin, and nobody can remove their own admin role.

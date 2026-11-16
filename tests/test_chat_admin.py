@@ -198,3 +198,24 @@ def test_launch_alerts_and_pricing_reads(client_scratch, ctx_factory):
     assert overview.ok and overview.data["users"]["total"] >= 5
     assert _call(client_scratch, ctx_factory, "admin_pricing").ok
     assert _call(client_scratch, ctx_factory, "admin_tool_permissions", tool="email").data["tools"]
+
+
+def test_a_department_job_role_from_chat_sets_level_and_data_access_together(client_scratch, ctx_factory):
+    created = _call(
+        client_scratch, ctx_factory, "admin_create_user",
+        email=f"fin@{client_scratch.slug}.example.com", display_name="Fin User", job_role="FINANCE",
+    )
+    assert created.ok, created.message
+    assert created.data["roles"] == ["OPERATOR"] and created.data["data_access"] == ["finance"]
+    assert created.data["job_role"] == "Finance"
+
+    moved = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="HR")
+    assert moved.ok, moved.message
+    assert moved.data["roles"] == ["OPERATOR"] and moved.data["data_access"] == ["hr", "salary"]
+    assert moved.data["job_role"] == "HR"
+
+    intake = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="INTAKE")
+    assert intake.ok and intake.data["job_role"] == "Intake" and intake.data["data_access"] == []
+
+    bad = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="CEO")
+    assert not bad.ok and "Job role must be one of" in bad.message

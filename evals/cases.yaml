@@ -29848,3 +29848,95 @@
   expected_gates: {memory_search: run, integration_find_action: run, integration_read_action: run}
   expected_reply_contains: [Harbor]
   expected_outcome: answer
+- id: t_job_role_create_001
+  query: Create a finance user for neha@ourco.in
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_create_user]
+  expected_args:
+    admin_create_user: {email: neha@ourco.in, job_role: FINANCE}
+  forbidden_args:
+    admin_create_user: {roles: [VIEWER]}
+  expected_gates: {admin_create_user: run}
+  expected_outcome: run
+- id: t_job_role_create_002
+  query: Add karan@ourco.in as an HR user
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_create_user]
+  expected_args:
+    admin_create_user: {email: karan@ourco.in, job_role: HR}
+  expected_gates: {admin_create_user: run}
+  expected_outcome: run
+- id: t_job_role_create_003
+  query: Create a finance user for neha@ourco.in
+  user: {name: Dev, id: u_9, roles: [OPERATOR]}
+  expected_domains: []
+  expected_tool_calls: []
+  forbidden_tool_calls: [admin_create_user]
+  expected_hidden: [admin_create_user]
+  expected_outcome: not_permitted
+- id: t_job_role_update_001
+  query: Make Ravi Kumar the finance person
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [VIEWER], status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, job_role: FINANCE}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_job_role_update_002
+  query: Move Ravi Kumar to the operations role
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [finance], status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, job_role: OPERATIONS}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_job_role_update_003
+  query: Make Ravi Kumar the finance person
+  user: {name: Dev, id: u_9, roles: [OPERATOR]}
+  expected_domains: []
+  expected_tool_calls: []
+  forbidden_tool_calls: [admin_update_user]
+  expected_hidden: [admin_list_users, admin_update_user]
+  expected_outcome: not_permitted
+- id: t_access_also_001
+  query: Give Ravi Kumar operations access also
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [finance], status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, access_grant: [ops]}
+  forbidden_args:
+    admin_update_user: {job_role: OPERATIONS}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_access_also_002
+  query: Add sales and hr data access to Ravi Kumar as well
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [finance], status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, access_grant: [sales, hr]}
+  forbidden_args:
+    admin_update_user: {job_role: SALES}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_access_also_003
+  query: Give Ravi Kumar operations access too
+  user: {name: Dev, id: u_9, roles: [OPERATOR]}
+  expected_domains: []
+  expected_tool_calls: []
+  forbidden_tool_calls: [admin_update_user]
+  expected_hidden: [admin_list_users, admin_update_user]
+  expected_outcome: not_permitted
