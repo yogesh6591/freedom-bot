@@ -22,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Iterable, Optional
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from acquisition.config import get_settings
@@ -301,7 +301,9 @@ def send_next(
         return None
     q = select(SentEmail).where(SentEmail.status == STATUS_QUEUED).order_by(SentEmail.queued_at.asc())
     if client_id:
-        q = q.join(Prospect, Prospect.id == SentEmail.prospect_id).where(Prospect.client_id == client_id)
+        q = q.join(Prospect, Prospect.id == SentEmail.prospect_id).where(
+            or_(Prospect.client_id == client_id, Prospect.client_id.is_(None))
+        )
     row = db.scalar(q.with_for_update(skip_locked=True).limit(1))
     if row is None:
         return None
