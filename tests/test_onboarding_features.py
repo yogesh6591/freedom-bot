@@ -482,7 +482,8 @@ def test_only_the_eight_apps_can_be_connected_or_used(monkeypatch):
                                       "youtube", "hubspot", "facebook", "apollo", "googletasks", "googlemeet",
                                       "googleslides", "googlecontacts", "googleforms", "googlephotos", "google_chat",
                                       "google_maps", "google_analytics", "google_search_console", "googleads",
-                                      "google_business_profile", "googlebigquery", "zoom", "instagram", "linkedin"}
+                                      "google_business_profile", "googlebigquery", "zoom", "instagram", "linkedin",
+                                      "prospeo"}
     for slug in ("slack", "notion", "salesforce"):
         with pytest.raises(ValueError, match="FreedomBot connects"):
             composio._check_toolkit(slug)

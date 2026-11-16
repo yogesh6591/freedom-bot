@@ -168,6 +168,11 @@ TOOLKITS: dict[str, dict[str, str]] = {
         "name": "Apollo",
         "description": "Find people and companies, enrich leads, and manage contacts, deals and sequences in Apollo.",
     },
+    "prospeo": {
+        "category": "prospecting",
+        "name": "Prospeo",
+        "description": "Enrich people with verified work emails (used by Exa + Prospeo prospect finding).",
+    },
 }
 
 
