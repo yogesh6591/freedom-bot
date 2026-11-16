@@ -423,3 +423,15 @@ def test_retention_purge_is_the_only_deletion_allowed(client_a, ctx_factory):
     with workspace_connection(ctx) as conn:
         assert conn.execute(text("SELECT count(*) FROM audit_events WHERE id = 'aud_fb038_old'")).scalar() == 0
         assert conn.execute(text("SELECT count(*) FROM audit_events WHERE event_type = 'AUDIT_PURGED'")).scalar() >= 1
+
+
+def test_new_workspace_starts_with_every_order_dpa_category_allowed():
+    from bizos import template
+    from bizos.control.models import ORDER_DPA_CATEGORIES
+
+    settings = template.settings_from(template.load_template(), company_name="Fresh Co")
+    assert set(settings.order_dpa_allows) == set(ORDER_DPA_CATEGORIES)
+    assert settings.order_dpa_allows_category("child")
+    assert not settings.phi_permitted()  # PHI still needs a signed BAA with the model vendor
+    narrowed = template.settings_from({"order_dpa_allows": ["card"]}, company_name="Narrow Co")
+    assert narrowed.order_dpa_allows == ["card"]

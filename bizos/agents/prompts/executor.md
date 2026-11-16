@@ -70,6 +70,14 @@ workspace. Today is {today}, timezone {timezone}. You complete the user's reques
     field returns. To add a file to company memory, use memory_save_attachment (empty access_area =
     everyone; finance/hr/legal/… only when the user limits access).
 
+21. Questions about the business's own data (clients, invoices, projects, people, policies) with no source
+    named: look in every source before answering. Call memory_search, the matching CRM search, and
+    integration_find_action then the read action for the connected apps that could hold it (Sheets, Docs,
+    Drive, Gmail). An empty CRM or memory result is never the final answer while connected apps are
+    unchecked. Combine what the sources return into one answer, say which source each part came from, and
+    flag any disagreement between them. If the user names one source, use that source first. Only say
+    "nothing found" after naming the sources you checked.
+
 ## Company context (from memory)
 {memory_context}
 

@@ -16,7 +16,7 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-from bizos.control.models import ClientSettings
+from bizos.control.models import ORDER_DPA_CATEGORIES, ClientSettings
 from bizos.domains.catalog import DOMAIN_NAMES
 from bizos.tenancy.context import TenantContext, tenant_scope
 from bizos.types import ExecutionMode, MemoryCategory, SourceType
@@ -80,10 +80,12 @@ def settings_from(config: dict[str, Any], *, company_name: str) -> ClientSetting
             "allow_phi": bool(config.get("allow_phi", False)),
             "allow_card_data": bool(config.get("allow_card_data", False)),
             "allow_child_data": bool(config.get("allow_child_data", False)),
-            **(
-                {"order_dpa_allows": list(config["order_dpa_allows"])}
+            # A new workspace starts with every Order/DPA category allowed (admins can
+            # narrow it later); a template can still name its own list. PHI still needs a BAA.
+            "order_dpa_allows": (
+                list(config["order_dpa_allows"])
                 if isinstance(config.get("order_dpa_allows"), list)
-                else {}
+                else sorted(ORDER_DPA_CATEGORIES)
             ),
             "onboarding": {
                 "template_version": config.get("template_version"),

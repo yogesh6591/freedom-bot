@@ -93,6 +93,11 @@ Do not clarify when:
   tasks or sequences) → integrations. Saving what Apollo found into the CRM adds crm.
 - Contacts, companies, deals, notes and CRM tasks → crm, wherever they are kept (FreedomBot, HubSpot or
   Google Drive). "Save this contact in HubSpot / Drive" is crm too.
+- A question about the business's own information with no source named ("show our active clients", "which
+  invoices are overdue", "what projects are delayed", "who is our contact at Acme") may be answered from
+  the CRM, company memory, or a connected app (Sheets, Docs, Drive, Gmail). Route it to crm + memory +
+  integrations (add the domain of the topic, such as finance, when it fits). Never crm alone: the answer may
+  live only in a connected sheet or doc.
 - Where CRM records (contacts, companies, deals) are saved, checking it ("are my deals going to Google
   Drive?") or changing it ("set my CRM storage to automatic", "keep my CRM in FreedomBot") → crm only,
   never admin_setup, with no clarify: it is each person's own choice, not a workspace setting, even for

@@ -29801,3 +29801,50 @@
     schedule_cancel: {schedule_id: sch_101}
   expected_gates: {schedule_cancel: run}
   expected_outcome: run
+- id: t_all_sources_001
+  query: Show me all active clients of Brightwave Studio
+  user: {name: Ada, roles: [ADMIN]}
+  fixtures:
+    results:
+      crm_search_companies: []
+      memory_search: []
+      integration_find_action: {connected_apps: [googlesheets], actions: [{action_id: GOOGLESHEETS_GET_SPREADSHEET_INFO, title: Read sheet values, tier: read, run_with: integration_read_action, arguments: {spreadsheet_id: {type: string, required: true}, ranges: {type: array}}}]}
+      integration_read_action: {action: GOOGLESHEETS_GET_SPREADSHEET_INFO, result: {values: [[Company, Status], [Juniper Trail Coffee, Active], [Copperline Fitness, Active], [Harbor & Pine Interiors, Churned]]}}
+  expected_domains: [crm, memory, integrations]
+  expected_tool_calls: [crm_search_companies, memory_search, integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: GOOGLESHEETS_GET_SPREADSHEET_INFO}
+  expected_gates: {crm_search_companies: run, memory_search: run, integration_find_action: run, integration_read_action: run}
+  expected_reply_contains: [Juniper Trail Coffee, Copperline Fitness]
+  expected_outcome: answer
+- id: t_all_sources_002
+  query: Which invoices are overdue and what do we owe on late fees?
+  user: {name: Lee, roles: [APPROVER]}
+  fixtures:
+    results:
+      memory_search:
+      - {item_id: mem_20, key: late_fee, title: Late fee policy, content: '1.5% per month after 15 days', category: fact}
+      integration_find_action: {connected_apps: [googlesheets], actions: [{action_id: GOOGLESHEETS_GET_SPREADSHEET_INFO, title: Read sheet values, tier: read, run_with: integration_read_action, arguments: {spreadsheet_id: {type: string, required: true}}}]}
+      integration_read_action: {action: GOOGLESHEETS_GET_SPREADSHEET_INFO, result: {values: [[Invoice, Client, Amount, Status], [INV-104, Arroyo Pet Supply, 1200, Overdue]]}}
+  expected_domains: [finance, memory, integrations]
+  expected_tool_calls: [memory_search, integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: GOOGLESHEETS_GET_SPREADSHEET_INFO}
+  expected_gates: {memory_search: run, integration_find_action: run, integration_read_action: run}
+  expected_reply_contains: [Arroyo Pet Supply, 1.5%]
+  expected_outcome: answer
+- id: t_all_sources_003
+  query: What projects are at risk?
+  user: {name: Ravi, roles: [VIEWER]}
+  fixtures:
+    results:
+      memory_search: []
+      integration_find_action: {connected_apps: [googledrive], actions: [{action_id: GOOGLEDRIVE_FIND_FILE, title: Find file, tier: read, run_with: integration_read_action, arguments: {query: {type: string}}}]}
+      integration_read_action: {action: GOOGLEDRIVE_FIND_FILE, result: {files: [{id: '77', name: Q3 Meeting Notes, snippet: 'Website redesign for Harbor & Pine is at risk'}]}}
+  expected_domains: [crm, memory, integrations]
+  expected_tool_calls: [memory_search, integration_find_action, integration_read_action]
+  expected_args:
+    integration_read_action: {action: GOOGLEDRIVE_FIND_FILE}
+  expected_gates: {memory_search: run, integration_find_action: run, integration_read_action: run}
+  expected_reply_contains: [Harbor]
+  expected_outcome: answer
