@@ -991,12 +991,13 @@ TOOL_META: dict[str, AgentMeta] = {
         -> show_sent_emails; choosing recipients -> choose_recipients; CRM contacts -> crm_search_contacts.
     """)),
     "show_prospect": M("outreach", d("""
-        Show everything stored about one person: every field, emails sent, assessment, booking and payment
-        status. Names forgive typos. Read-only.
-        Use when: "show Shubham", "what do we have on Nina", "is her LinkedIn saved".
-        Don't use: counting or listing several people -> query_records; their answers and result ->
-        show_assessment; the emails sent -> show_sent_emails.
-        Needs: who (name or email); leave empty for the person already chosen.
+        Show everything stored about one person: every field, full research notes, fit/timing/reach scores,
+        source URLs, emails sent, assessment, booking and payment status. Names forgive typos. Read-only.
+        Use when: "show Shubham", full research output, signals, sources, or score breakdown for a saved prospect.
+        Don't use: counting or listing several people -> query_records (it has no notes or URLs); their answers
+        and result -> show_assessment; the emails sent -> show_sent_emails.
+        Needs: who (name or email); leave empty only for the person on the email card or the prospect focused
+        in this chat.
     """), id_fields=("who",)),
     "add_prospects": M("outreach", d("""
         Save one new person, or a pasted list, with name, email and any other details. Emails already saved

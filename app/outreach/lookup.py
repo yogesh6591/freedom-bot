@@ -95,4 +95,7 @@ def person(call: Call, who: str = "") -> Prospect:
     if len(chosen) > 1:
         names = "; ".join(str(r.get("name") or r["email"]) for r in chosen)
         raise ToolError(f"several people are chosen ({names}). Ask the user which one.")
+    focus = (call.state.get("focus_prospect") or "").strip()
+    if focus:
+        return one(call.db, focus)
     raise ToolError("nobody is named or chosen yet. Ask the user who.")

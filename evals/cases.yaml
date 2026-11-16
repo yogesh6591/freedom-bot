@@ -28655,6 +28655,29 @@
   expected_gates: {query_records: run}
   expected_outcome: answer
 
+- id: t_show_prospect_full_research_001
+  query: Show me the full research output for Bob Weis including sources
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [outreach]
+  expected_tool_calls: [show_prospect]
+  expected_gates: {show_prospect: run}
+  expected_outcome: answer
+
+- id: t_show_prospect_full_research_002
+  query: Give me the whole research report with score breakdown for nina@acme.example.com
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [outreach]
+  expected_tool_calls: [show_prospect]
+  expected_gates: {show_prospect: run}
+  expected_outcome: answer
+
+- id: t_show_prospect_full_research_003
+  query: What signals and links did we find on Raj Mehta?
+  user: {name: Meena, roles: [OPERATOR]}
+  expected_tool_calls: []
+  expected_hidden: [show_prospect]
+  expected_outcome: not_permitted
+
 - id: t_delete_prospect_001
   query: Delete the prospect nina@acme.example.com
   user: {name: Anita, id: u_1, roles: [ADMIN]}

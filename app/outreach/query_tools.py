@@ -32,10 +32,40 @@ def query_records(call: Call, dataset: str = "people", filters: Optional[list] =
         offset=_whole(offset, 0),
         count_only=bool(count_only),
     )
+    _maybe_focus_prospect(call, spec)
     try:
-        return datasets.run(call.db, spec)
+        text = datasets.run(call.db, spec)
+        if spec.dataset == "people" and spec.limit == 1 and not spec.count_only and "0 row" not in text.lower():
+            hit = _focus_from_filters(spec.filters)
+            if hit:
+                call.state["focus_prospect"] = hit
+        return text
     except datasets.QueryError as exc:
         raise ToolError(str(exc)) from exc
+
+
+def _focus_from_filters(filters: list[dict]) -> str:
+    for item in filters:
+        if not isinstance(item, dict):
+            continue
+        field = str(item.get("field") or "").strip().lower()
+        if field not in ("email", "executive_name", "name", "company"):
+            continue
+        op = str(item.get("op") or "").strip().lower()
+        if op not in ("eq", "is", "contains"):
+            continue
+        value = str(item.get("value") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _maybe_focus_prospect(call: Call, spec: datasets.Spec) -> None:
+    if spec.dataset != "people" or spec.count_only:
+        return
+    hit = _focus_from_filters(spec.filters)
+    if hit:
+        call.state["focus_prospect"] = hit
 
 
 def _whole(value: object, default: int) -> int:

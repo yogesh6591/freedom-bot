@@ -149,6 +149,9 @@ def _people_columns() -> dict[str, Column]:
         Column("research_status", func.coalesce(Prospect.research_status, "not_researched"), "enum", "research",
                ("not_researched", "queued", "running", "done", "failed")),
         Column("priority_score", Prospect.priority_score, "number", "priority"),
+        Column("fit_score", Prospect.fit_score, "number", "fit"),
+        Column("timing_score", Prospect.timing_score, "number", "timing"),
+        Column("reachability_score", Prospect.reachability_score, "number", "reach"),
         # emails
         Column("emails_sent", func.coalesce(MAIL.c.sent, 0), "number", "emails sent", needs=_MAIL),
         Column("emails_queued", func.coalesce(MAIL.c.queued, 0), "number", "emails waiting", needs=_MAIL),

@@ -60,11 +60,18 @@ def _show(label: str, value: Optional[str]) -> str:
     return f"{label}: {value if value else '-'}"
 
 
+def _score(value: Optional[float]) -> str:
+    if value is None:
+        return "-"
+    return str(int(float(value) + 0.5))
+
+
 # ------------------------------------------------------------------------------------------------ show
 @tool("show_prospect", "who")
 def show_prospect(call: Call, who: str = "") -> str:
     """Everything stored about one person, with their email, assessment, booking and payment status."""
     p = lookup.person(call, who)
+    call.state["focus_prospect"] = p.email or p.executive_name
     db = call.db
     link = records.link_row(db, p.id)
     mail = records.email_state(db, p.id)
@@ -80,14 +87,21 @@ def show_prospect(call: Call, who: str = "") -> str:
         + (f", last {chicago.fmt_time(mail['last_at'])}" if mail["last_at"] else ""),
     ]
     if p.research_status:
-        lines.append(f"Research: {p.research_status}" + (f", priority {int(float(p.priority_score) + 0.5)}" if p.priority_score is not None else ""))
+        lines.append(f"Research: {p.research_status}" + (f", priority {_score(p.priority_score)}" if p.priority_score is not None else ""))
+    if p.research_status == "done" and (p.fit_score is not None or p.timing_score is not None or p.reachability_score is not None):
+        lines.append(
+            f"Scores: fit {_score(p.fit_score)}, timing {_score(p.timing_score)}, reach {_score(p.reachability_score)}"
+        )
     if p.research_notes:
-        lines.append("Research notes: " + p.research_notes[:2500].replace("\n", " "))
+        lines.append("Research notes:\n" + (p.research_notes[:8000].strip()))
         from acquisition.models.prospect import ProspectResearchSource
 
         urls = [r.source_url for r in db.scalars(select(ProspectResearchSource)
                 .where(ProspectResearchSource.prospect_id == p.id).order_by(ProspectResearchSource.created_at)) if r.source_url]
-        lines.append("Sources: " + (" | ".join(urls[:8]) if urls else "none saved"))
+        if urls:
+            lines.append("Sources:\n" + "\n".join(f"- {u}" for u in urls[:10]))
+        else:
+            lines.append("Sources: none saved")
     if link is None or not link.assessment_token:
         lines.append("Assessment: no link yet (never emailed)")
         return "\n".join(lines)
