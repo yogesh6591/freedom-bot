@@ -1,9 +1,13 @@
-"""Find new prospects: Exa finds the companies and the owner's name, Prospeo finds the verified email.
+"""Find new prospects. Connected tools are used when there are any; web search covers what is not connected.
 
 One chat tool, ``find_new_prospects``. It is small on purpose (credits are limited):
 * at most ``MAX_FIND`` people per run
-* Exa looks for companies that match Jeanne's targeting rules (Administration page), then for the founder
-* Prospeo is asked for the email only for a named founder, and only a VERIFIED email is kept
+* Exa (when its key is set) looks for companies that match Jeanne's targeting rules, then for the founder;
+  without Exa, web search finds the companies and the founder
+* Prospeo (when connected) is asked for the email only for a named founder, and only a VERIFIED email is kept;
+  without Prospeo, only an email printed on a public page of the firm's own domain is kept, never a guessed one
+* a connected tool that fails during the run is dropped for the rest of that run and web search takes over
+* round 1 applies every rule; later rounds relax only the size range, never the excluded kinds or the place
 * people already saved (same email or same company website) are never searched again or paid for
 """
 
@@ -30,9 +34,11 @@ MAX_FIND = 5  # people per run
 COMPANY_POOL = 12  # companies asked from Exa per run (some will be skipped)
 MAX_LOOKUPS = 15  # Prospeo lookups per run, whatever the count
 MAX_ROUNDS = 3  # Exa searches per run: each round asks for more firms than the last
-MAX_NO_EMAIL = 0  # founders saved without an email per run: none, only verified emails are kept
+MAX_NO_EMAIL = 0  # founders saved without an email per run: none, an email is always needed
+WEB_POOL = 8  # firms asked from web search per round
 EXA_URL = "https://api.exa.ai/search"
 SOURCE = "Exa + Prospeo"
+_EMAIL = re.compile(r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}")
 STATES = {
     "AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas", "CA": "California", "CO": "Colorado",
     "CT": "Connecticut", "DE": "Delaware", "DC": "District of Columbia", "FL": "Florida", "GA": "Georgia",
@@ -74,12 +80,12 @@ def _state(value: str) -> str:
 
 
 def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
-              hi: Optional[int] = None) -> list[tuple[str, str]]:
+              hi: Optional[int] = None, relax: bool = False) -> list[tuple[str, str]]:
     """(category, search text) pairs: one search per category, best priority first (or one search for the kind of
     firm the user named, labelled with the closest saved category or "Other").
     Whatever the user named replaces that part of the saved rules; everything else comes from the rules."""
     place = f"based in {state}, United States" if state else rules.country
-    tail = f"{lo or rules.employees_min} to {hi or rules.employees_max} employees, {place}"
+    tail = place if relax else f"{lo or rules.employees_min} to {hi or rules.employees_max} employees, {place}"
     if focus.strip():
         low = focus.strip().casefold()
         name = next((c.name for c in rules.categories
@@ -92,8 +98,9 @@ def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
     return out or [("Other", f"founder-led consulting or advisory firm, {tail}")]
 
 
-def _queries(rules: Any, focus: str, state: str = "", lo: Optional[int] = None, hi: Optional[int] = None) -> list[str]:
-    return [q for _, q in _labelled(rules, focus, state, lo, hi)]
+def _queries(rules: Any, focus: str, state: str = "", lo: Optional[int] = None, hi: Optional[int] = None,
+             relax: bool = False) -> list[str]:
+    return [q for _, q in _labelled(rules, focus, state, lo, hi, relax)]
 
 
 def _small_model(prompt: str) -> str:
@@ -143,9 +150,9 @@ def _classify(rules: Any, focus: str, rows: list[dict]) -> dict[int, tuple[str, 
 
 
 def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
-               hi: Optional[int] = None, size: int = COMPANY_POOL) -> list[dict]:
+               hi: Optional[int] = None, size: int = COMPANY_POOL, relax: bool = False) -> list[dict]:
     """Companies from every category, taken in turns so each category gets a chance, minus the excluded kinds."""
-    pairs = _labelled(rules, focus, state, lo, hi)
+    pairs = _labelled(rules, focus, state, lo, hi, relax)
     per = max(3, -(-size // len(pairs)))
     lists = [[dict(r, _category=cat, _query=q) for r in _exa(key, {
                  "query": q, "category": "company", "userLocation": "US", "numResults": per,
@@ -231,6 +238,117 @@ def _verified_email(ctx: Any, name: str, domain: str) -> tuple[Optional[str], di
     return None, company
 
 
+def _web_ask(prompt: str) -> str:
+    """One web-search answer from GPT (the same research model and key the web research uses)."""
+    from openai import OpenAI
+
+    settings = get_settings()
+    key = (settings.openai_api_key or "").strip()
+    if not key:
+        raise ToolError("web search needs an OpenAI key, and none is set up.")
+    model = (settings.openai_web_model or settings.openai_model or "").strip() or "gpt-4.1"
+    client = OpenAI(api_key=key, timeout=240)
+    options = [{"tools": [{"type": "web_search", "search_context_size": "medium"}]}, {"tools": [{"type": "web_search"}]}]
+    for i, extra in enumerate(options):
+        try:
+            return getattr(client.responses.create(model=model, input=prompt, **extra), "output_text", "") or ""
+        except Exception as exc:  # noqa: BLE001 - only a refused option falls back to the simpler request
+            if i == len(options) - 1 or type(exc).__name__ not in ("BadRequestError", "UnprocessableEntityError"):
+                raise ToolError(f"the web search failed: {exc}") from exc
+    return ""
+
+
+def _json_in(text: str, opener: str) -> Any:
+    closer = "]" if opener == "[" else "}"
+    start, end = text.find(opener), text.rfind(closer)
+    if start < 0 or end <= start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except ValueError:
+        return None
+
+
+def _web_email(email: Any, domain: str) -> Optional[str]:
+    """The email when it looks real and sits on the firm's own domain; None otherwise (never a guessed address)."""
+    from acquisition.services.prospect_identity import is_placeholder_email
+
+    text = str(email or "").strip().lower()
+    if not _EMAIL.fullmatch(text) or is_placeholder_email(text):
+        return None
+    host = text.rsplit("@", 1)[1]
+    return text if host == domain or host.endswith("." + domain) else None
+
+
+def _web_firms(rules: Any, focus: str, state: str, lo: Optional[int], hi: Optional[int], skip: set[str],
+               relax: bool = False) -> list[dict]:
+    """Firms found by web search, shaped like Exa rows, each with its founder and any email printed on a public page."""
+    pairs = _labelled(rules, focus, state, lo, hi, relax)
+    names = [c.name for c in rules.categories]
+    prompt = (
+        f"Use web search to find up to {WEB_POOL} real, owner-led firms that match these searches, best priority first: "
+        + " | ".join(q for _, q in pairs) + f". Never include these kinds of business: {', '.join(rules.exclusions) or 'none'}. "
+        f"Never include these websites: {', '.join(sorted(d for d in skip if d)[:60]) or 'none'}. "
+        "For each firm find its current founder, owner or CEO (name and title), the founder's public LinkedIn URL if you "
+        "see one, and a business email address for that person ONLY if it is printed on a public page. Never guess an "
+        "address and never build one from a name pattern: use null when you did not see one, and give the page where you "
+        "saw it in email_page. Return ONLY a JSON array, one object per firm: "
+        '{"company": text, "website": text, "category": one of [' + ", ".join(f'"{n}"' for n in names) + ', "Other"], '
+        '"founder_name": text, "founder_title": text, "founder_linkedin": text or null, "email": text or null, '
+        '"email_page": text or null, "summary": "what the firm does, in one sentence"}.')
+    data = _json_in(_web_ask(prompt), "[")
+    banned = [x.casefold() for x in rules.exclusions]
+    out: list[dict] = []
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict):
+            continue
+        person = _person_name(str(item.get("founder_name") or ""))
+        url = str(item.get("website") or "").strip()
+        company = str(item.get("company") or "").strip()
+        if not (person and url and company):
+            continue
+        if not url.lower().startswith("http"):
+            url = "https://" + url
+        text = f"{company} {item.get('summary') or ''}".casefold()
+
+        def _ban_hit(word: str) -> bool:
+            if word in text:
+                return True
+            if " " in word:
+                head, tail = word.rsplit(" ", 1)
+                if tail.endswith("s") and f"{head} {tail[:-1]}" in text:
+                    return True
+                if not tail.endswith("s") and f"{head} {tail}s" in text:
+                    return True
+            else:
+                if word.endswith("s") and word[:-1] in text:
+                    return True
+                if not word.endswith("s") and f"{word}s" in text:
+                    return True
+            return False
+
+        if any(_ban_hit(word) for word in banned):
+            continue
+        email = item.get("email") if str(item.get("email_page") or "").strip() else None
+        out.append({"title": company, "url": url, "summary": str(item.get("summary") or ""),
+                    "_category": str(item.get("category") or "Other"), "_query": pairs[0][1], "_web": True,
+                    "_founder": (person, str(item.get("founder_title") or "").strip()[:300],
+                                 str(item.get("founder_linkedin") or "").strip()),
+                    "_email": email})
+    return out
+
+
+def _web_email_for(person: str, company: str, domain: str) -> Optional[str]:
+    """An email for this person printed on a public page of the firm's own domain, or None."""
+    data = _json_in(_web_ask(
+        f"Use web search to find a business email address for {person}, founder or owner of {company} ({domain}). "
+        "Give it ONLY if it is printed on a public page. Never guess an address and never build one from a name "
+        'pattern. Return ONLY a JSON object: {"email": text or null, "page": text or null}.'), "{")
+    if not isinstance(data, dict) or not str(data.get("page") or "").strip():
+        return None
+    return _web_email(data.get("email"), domain)
+
+
 def _num(value: Any) -> Optional[int]:
     try:
         return int(value) if value not in (None, "") and int(value) > 0 else None
@@ -256,14 +374,25 @@ def _taken(call: Call, domain: str) -> bool:
 
 
 def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: str, _unused: str, category: str,
-          label: Optional[str], row: dict, facts: dict, email: str, verified: bool = False) -> Prospect:
+          label: Optional[str], row: dict, facts: dict, email: str, verified: bool = False,
+          via_exa: bool = True, relaxed: bool = False) -> Prospect:
     size = facts.get("employee_range") or facts.get("employee_count")
+    if via_exa and verified:
+        source, found_by = SOURCE, "exa_prospeo"
+    elif via_exa:
+        source, found_by = "Exa + web search", "exa_web"
+    else:
+        source, found_by = "Web search", "web_search"
+    note = _trim(str(row.get("summary") or ""), 480)
+    if relaxed:
+        note = (note + " (found with the size range relaxed)").strip()
     prospect = Prospect(
         company=name, executive_name=proper_case(person), email=email, website=url, domain=domain,
-        linkedin_url=linkedin or None, source=SOURCE, discovery_source="exa_prospeo",
-        email_confidence="verified" if verified else "placeholder", icp_category=category, business_type=label,
+        linkedin_url=linkedin or None, source=source, discovery_source=found_by,
+        email_confidence="verified" if verified else ("web" if email and "pending-discovery" not in email else "placeholder"),
+        icp_category=category, business_type=label,
         discovery_query=str(row.get("_query") or "")[:600] or None,
-        headcount_band=str(size) if size else None, fit_note=(_trim(str(row.get("summary") or ""), 500) or None),
+        headcount_band=str(size) if size else None, fit_note=(note or None),
     )
     stamp_prospect(prospect)
     call.db.add(prospect)
@@ -274,12 +403,9 @@ def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: s
 @tool("find_new_prospects", "count", "focus", "state", "employees_min", "employees_max")
 def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state: str = "",
                        employees_min: Optional[int] = None, employees_max: Optional[int] = None) -> str:
-    """Find up to 5 new owner-led firms that match Jeanne's targeting rules and save them with a verified email."""
+    """Find up to 5 new owner-led firms that match Jeanne's targeting rules and save them with an email."""
     if not call.user_id:
-        raise ToolError("no signed-in user, so Prospeo cannot be used.")
-    key = get_settings().exa_api_key
-    if not key:
-        raise ToolError("the company search is not set up (EXA_API_KEY is missing).")
+        raise ToolError("no signed-in user, so the connected tools cannot be checked.")
     try:
         want = max(1, min(int(count or MAX_FIND), MAX_FIND))
     except (TypeError, ValueError):
@@ -289,25 +415,43 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
     ctx = control.build_context(control.get_user(call.user_id))
     from bizos.connectors import composio
 
-    if not composio._active_accounts(ctx).get("prospeo"):
-        raise ToolError("Prospeo is not connected for your account. Connect it on the Integrations page first.")
+    # Which tools are connected. Code decides this, never the model; whatever is not connected is covered by web search.
+    key = (get_settings().exa_api_key or "").strip()
+    exa_on = bool(key)
+    try:
+        prospeo_on = bool(composio._active_accounts(ctx).get("prospeo"))
+    except Exception:  # noqa: BLE001 - a status lookup that fails counts as not connected
+        prospeo_on = False
 
     rules = get_prospecting_rules()
     place = _state(state)
     lo, hi = _num(employees_min), _num(employees_max)
-    added: list[Prospect] = []
+    added: list[tuple[Prospect, str]] = []
     nomail: list[Prospect] = []
     skipped: list[str] = []
+    notes: list[str] = []
     lookups = 0
     tried: set[str] = set()
     for round_no in range(MAX_ROUNDS):
         if len(added) >= want or lookups >= MAX_LOOKUPS:
             break
-        # each round asks Exa for a wider list; firms already tried in an earlier round are dropped
-        companies = [r for r in _companies(key, rules, focus, place, lo, hi, COMPANY_POOL * (round_no + 1))
+        relax = round_no >= 1  # round 1 applies every rule; later rounds relax only the size range
+        rows: list[dict] = []
+        if exa_on:
+            try:
+                rows = _companies(key, rules, focus, place, lo, hi, COMPANY_POOL * (round_no + 1), relax)
+            except ToolError:
+                exa_on = False
+                notes.append("Exa did not answer, so web search was used for the rest of this run.")
+        if not exa_on:
+            rows = _web_firms(rules, focus, place, lo, hi, tried, relax)
+        # firms already tried in an earlier round are dropped
+        companies = [r for r in rows
                      if (domain_from_website_or_email(website=str(r.get('url') or '')) or '') not in tried]
         if not companies:
-            break
+            if exa_on:
+                break
+            continue
         tried.update(domain_from_website_or_email(website=str(r.get('url') or '')) or '' for r in companies)
         kinds = _classify(rules, focus, companies)  # one cheap call; the firms that do not match are never looked up
         for number, row in enumerate(companies):
@@ -325,38 +469,71 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             if not matches:
                 skipped.append(f"{name}: not what was asked ({label or 'another kind of firm'})")
                 continue
-            found = _founder(key, name)
+            found = row.get("_founder")
+            if found is None and exa_on:
+                try:
+                    found = _founder(key, name)
+                except ToolError:
+                    exa_on = False
+                    notes.append("Exa did not answer, so web search was used for the rest of this run.")
             if found is None:
                 skipped.append(f"{name}: no founder or owner found")
                 continue
             person, job, linkedin = found
-            lookups += 1
-            email, facts = _verified_email(ctx, person, domain)
+            email: Optional[str] = None
+            facts: dict = {}
+            verified = False
+            if prospeo_on:
+                lookups += 1
+                try:
+                    email, facts = _verified_email(ctx, person, domain)
+                    verified = bool(email)
+                except Exception:  # noqa: BLE001 - Prospeo failed (error, no credits): web search covers the rest
+                    prospeo_on = False
+                    notes.append("Prospeo did not answer, so emails were taken from public pages for the rest of this run.")
+            if not verified and not prospeo_on:
+                email = _web_email(row.get("_email"), domain)
+                if not email and not row.get("_web") and lookups < MAX_LOOKUPS:
+                    lookups += 1
+                    try:
+                        email = _web_email_for(person, name, domain)
+                    except ToolError:
+                        email = None
             if place and _outside(facts, place):
                 skipped.append(f"{name}: based outside {place}")
                 continue
             if not email:
                 if len(nomail) >= MAX_NO_EMAIL:
-                    skipped.append(f"{name}: no verified email for {person}")
+                    skipped.append(f"{name}: no email found for {person}")
                     continue
-                nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, unique_placeholder_email()))
+                nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts,
+                                    unique_placeholder_email(), via_exa=not row.get("_web"), relaxed=relax))
                 continue
             if lookup.by_email(call.db, email) is not None:
                 skipped.append(f"{person} <{email}>: already saved")
                 continue
-            added.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, True))
+            made = _save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, verified,
+                         via_exa=not row.get("_web"), relaxed=relax)
+            added.append((made, "verified by Prospeo" if verified else "found on a public page, not verified"))
     lines = [f"Added {len(added)} of {want} asked: " + "; ".join(
         f"{p.executive_name} <{p.email}> ({p.company}; category: {p.icp_category or '-'}; "
-        f"business type: {p.business_type or '-'}; found by: {p.discovery_query or '-'})" for p in added) + "." if added
+        f"business type: {p.business_type or '-'}; found by: {p.discovery_query or '-'}; "
+        f"source: {p.source}; email: {how})" for p, how in added) + "." if added
         else f"Added 0 of {want} asked."]
     if nomail:
-        lines.append("Also saved without an email (founder found, no verified email): " + "; ".join(
+        lines.append("Also saved without an email (founder found, no email): " + "; ".join(
             f"{p.executive_name} ({p.company}; category: {p.icp_category or '-'}; business type: {p.business_type or '-'})"
             for p in nomail) + ". Their Email shows No email yet. They can be researched but cannot be emailed.")
+    if notes:
+        lines.append(" ".join(dict.fromkeys(notes)))
+    if not exa_on and not key:
+        lines.append("Exa is not connected, so web search found the firms.")
+    if not prospeo_on:
+        lines.append("Prospeo is not connected or stopped, so emails come from public pages and are not verified.")
     if skipped:
         lines.append("Skipped: " + " | ".join(skipped[:8]) + ".")
     if len(added) < want:
         lines.append(f"Only {len(added)} of {want} could be found within the search limit ({lookups} email lookups); ask again to continue.")
-    lines.append(f"Prospeo lookups used: {lookups}. Nothing was emailed. Show the people added in the prospects table "
+    lines.append(f"Email lookups used: {lookups}. Nothing was emailed. Show the people added in the prospects table "
                  "with the Category column, as for any prospect answer.")
     return " ".join(lines)

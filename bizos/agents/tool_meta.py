@@ -1023,11 +1023,11 @@ TOOL_META: dict[str, AgentMeta] = {
         Don't use: starting research -> research_prospects; one person's full record -> show_prospect.
     """)),
     "find_new_prospects": M("outreach", d("""
-        Find new prospects from the web: up to 5 owner-led firms, each saved with the founder and a verified
-        email. Jeanne's saved targeting rules apply; pass only what the user named, which replaces that part.
+        Find up to 5 owner-led firms on the web; each is saved with the founder and an email (verified
+        when Prospeo is connected, otherwise from a public page). Targeting rules apply; user focus overrides them.
         Use when: "find 5 new prospects", "psychology practices in Illinois".
         Don't use: saving people the user typed -> add_prospects.
-        Needs: count (1 to 5); optional focus (kind of firm), state, employees_min, employees_max.
+        Needs: count 1–5; optional focus, state, employees_min, employees_max.
         Effect: new people are saved. {gate}
     """)),
     "update_prospects": M("outreach", d("""
