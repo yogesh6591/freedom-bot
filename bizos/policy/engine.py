@@ -30,7 +30,7 @@ from bizos.policy.models import (
     PolicyDecision,
     PolicyRequest,
 )
-from bizos.policy.app_modes import PERSON_RULES
+from bizos.policy.department_modes import DEPARTMENT_RULES
 from bizos.policy.modes import narrowest, resolve_mode
 from bizos.policy.rules import RULES
 from bizos.rbac.permissions import EffectivePermission, resolve as resolve_permission
@@ -44,7 +44,7 @@ ADMIN_CANNOT_SKIP = frozenset({
     "LICENSED_CONTENT",
     "TOOL_ALWAYS_REQUIRES_APPROVAL",
     "CLIENT_ALWAYS_REQUIRES_APPROVAL",
-    *PERSON_RULES,
+    *DEPARTMENT_RULES,
 })
 
 

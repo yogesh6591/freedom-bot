@@ -29,22 +29,13 @@ export interface SessionUser {
   job_role_label?: string | null
   can_approve?: boolean
   data_scopes?: string[]
-  /** Per-person app access an admin set: direct, approval or draft (CRM today). */
-  app_access?: Record<string, AppAccessLevel>
-  /** What a change in each app does today for this person, from the policy check. */
-  app_access_result?: Record<string, AppAccessResult>
+  /** Departments an admin gave this person, each with their role in it. */
+  department_modes?: Record<string, DepartmentMode>
   /** M15-20: may open the cross-client owner view. */
   is_platform_owner?: boolean
 }
 
-export type AppAccessLevel = 'direct' | 'approval' | 'draft'
-
-export interface AppAccessResult {
-  level: AppAccessLevel
-  effect: 'ALLOW' | 'REQUIRE_APPROVAL' | 'DRAFT_ONLY' | 'DENY' | string
-  rule: string
-  reason: string
-}
+export type DepartmentMode = 'advise' | 'draft' | 'approve' | 'auto'
 
 export interface SessionClient {
   id: string

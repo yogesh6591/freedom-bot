@@ -733,7 +733,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         {
             "email": _s("Email address"),
             "display_name": _s("Name"),
-            "job_role": _s("Department role: INTAKE | PLANNING | OPERATIONS | SALES | FINANCE | HR | ADMIN. Sets its level and data access together"),
+            "job_role": _s("Department: GENERAL | SALES | PLANNING | FINANCE | LEGAL | OPERATIONS | INTAKE | STRATEGY | BRAND | HR (Human Resources); or EMPLOYEE (view only) or ADMIN. Sets its level and data access together"),
+            "department_mode": _s("The person's role in that department: advise | draft | approve | auto. approve when the user did not say"),
             "roles": _arr("Only when no job_role fits: VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN"),
             "data_access": _arr("Extra restricted data areas, e.g. finance, hr"),
         },
@@ -742,7 +743,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     "admin_set_user_roles": _obj(
         {
             "user": _s("Email or name"),
-            "job_role": _s("Department role: INTAKE | PLANNING | OPERATIONS | SALES | FINANCE | HR | ADMIN"),
+            "job_role": _s("Department: GENERAL | SALES | PLANNING | FINANCE | LEGAL | OPERATIONS | INTAKE | STRATEGY | BRAND | HR; or EMPLOYEE (view only) or ADMIN"),
+            "department_mode": _s("The person's role in that department: advise | draft | approve | auto"),
             "roles": _arr("The full new set of roles, when no job_role fits"),
         },
         ["user"],
@@ -755,6 +757,14 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "remove": _arr("Areas to revoke"),
         },
         ["user"],
+    ),
+    "admin_set_user_department": _obj(
+        {
+            "user": _s("Email or name"),
+            "department": _s("general | sales | planning | finance | legal | operations | intake | strategy | brand | hr"),
+            "mode": _s("advise | draft | approve | auto, or remove to take the department away"),
+        },
+        ["user", "department", "mode"],
     ),
     "admin_set_user_status": _obj(
         {"user": _s("Email or name"), "status": _s("ACTIVE | SUSPENDED")}, ["user", "status"]

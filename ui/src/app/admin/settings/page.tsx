@@ -22,12 +22,21 @@ import { NewClientPanel } from '@/app/owner/NewClientPanel'
 import { useSession } from '@/components/SessionProvider'
 import {
   DATA_TAGS,
-  JOB_ROLES,
+  DEPARTMENTS,
+  DEPARTMENT_MODES,
+  LEVEL_CHOICES,
+  departmentLabel,
+  modeMeaning,
   tagLabel,
   type AccessRequest
 } from '@/lib/access'
 import { api } from '@/lib/api'
-import type { AppAccessLevel, DomainPack, Role, SessionUser } from '@/lib/types'
+import type {
+  DepartmentMode,
+  DomainPack,
+  Role,
+  SessionUser
+} from '@/lib/types'
 import {
   Badge,
   Btn,
@@ -1077,60 +1086,115 @@ function AccessRequests({ onDecided }: { onDecided: () => Promise<void> }) {
   )
 }
 
-const CRM_LEVELS: { value: AppAccessLevel; label: string }[] = [
-  { value: 'direct', label: 'Direct changes' },
-  { value: 'approval', label: 'Needs approval' },
-  { value: 'draft', label: 'Draft only' }
-]
+const selectClass =
+  'min-h-9 rounded-lg border border-border bg-background-secondary px-2.5 text-[13px] text-primary'
 
-const CRM_RESULT: Record<string, string> = {
-  ALLOW: 'Runs straight away',
-  REQUIRE_APPROVAL: 'Waits for approval',
-  DRAFT_ONLY: 'Saved as a draft',
-  DENY: 'Cannot change the CRM'
-}
-
-/** The level an admin picked, and what a CRM change by this person does today (from the policy check). */
-function CrmAccess({
+/** One person's departments, each with their role in it (Advise, Draft, Approve, Auto). Admins only. */
+function DepartmentAccess({
   user,
-  onChange
+  onSet,
+  onRemove
 }: {
   user: SessionUser
-  onChange: (level: AppAccessLevel) => void
+  onSet: (department: string, mode: DepartmentMode) => void
+  onRemove: (department: string) => void
 }) {
-  const level = user.app_access?.crm ?? 'direct'
-  const result = user.app_access_result?.crm
-  const differs =
-    result &&
-    !(
-      (level === 'direct' && result.effect === 'ALLOW') ||
-      (level === 'approval' && result.effect === 'REQUIRE_APPROVAL') ||
-      (level === 'draft' && result.effect === 'DRAFT_ONLY')
-    )
+  const isAdmin = user.roles.includes('ADMIN')
+  const isEmployee = !isAdmin && user.job_role === 'EMPLOYEE'
+  const held = isAdmin ? [] : Object.entries(user.department_modes ?? {})
+  const missing = DEPARTMENTS.filter(
+    (d) => isAdmin || !(user.department_modes ?? {})[d.value]
+  )
+  const levels = LEVEL_CHOICES.filter(
+    (l) => !(l.value === 'admin' ? isAdmin : isEmployee)
+  )
+  const level = isAdmin ? LEVEL_CHOICES[1] : isEmployee ? LEVEL_CHOICES[0] : null
   return (
-    <div className="max-w-[15rem] space-y-1">
+    <div className="flex min-w-[15rem] flex-col gap-2">
+      {level && (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-[13px] font-medium text-primary">{level.label}</span>
+          <span className="text-[11px] leading-4 text-muted">{level.meaning}</span>
+        </div>
+      )}
+      {!level && held.length === 0 && (
+        <span className="text-xs text-muted">
+          No department yet. Add one to give this person access.
+        </span>
+      )}
+      {held.map(([department, mode]) => (
+        <div key={department} className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-1.5">
+            <span className="w-20 text-[13px] text-primary">
+              {departmentLabel(department)}
+            </span>
+            <select
+              aria-label={`${departmentLabel(department)} role for ${user.display_name}`}
+              value={mode}
+              onChange={(event) =>
+                onSet(department, event.target.value as DepartmentMode)
+              }
+              className={selectClass}
+            >
+              {DEPARTMENT_MODES.map((m) => (
+                <option key={m.value} value={m.value} title={m.meaning}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              aria-label={`Remove ${departmentLabel(department)} from ${user.display_name}`}
+              title={
+                held.length === 1
+                  ? 'A person keeps at least one department. Add another first.'
+                  : `Remove ${departmentLabel(department)}`
+              }
+              disabled={held.length === 1}
+              onClick={() => onRemove(department)}
+              className="min-h-7 rounded-md px-1.5 text-sm text-muted hover:text-primary disabled:opacity-30"
+            >
+              ×
+            </button>
+          </div>
+          <span className="pl-[5.4rem] text-[11px] leading-4 text-muted">
+            {modeMeaning(mode)}
+          </span>
+        </div>
+      ))}
       <select
-        aria-label={`CRM changes for ${user.display_name}`}
-        value={level}
-        onChange={(event) => onChange(event.target.value as AppAccessLevel)}
-        className="min-h-9 rounded-lg border border-border bg-background-secondary px-2.5 text-[13px] text-primary"
+        aria-label={`Add a department for ${user.display_name}`}
+        value=""
+        onChange={(event) => {
+          const choice = event.target.value
+          if (!choice) return
+          const replaces =
+            LEVEL_CHOICES.some((l) => l.value === choice) || isAdmin
+          if (
+            replaces &&
+            !window.confirm(
+              `This replaces ${user.display_name}'s current access. Continue?`
+            )
+          )
+            return
+          onSet(choice, 'approve')
+        }}
+        className={`${selectClass} text-muted`}
       >
-        {CRM_LEVELS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
+        <option value="">
+          {level ? 'Change to a department' : '+ Add department'}
+        </option>
+        {missing.map((d) => (
+          <option key={d.value} value={d.value}>
+            {d.label}
+          </option>
+        ))}
+        {levels.map((l) => (
+          <option key={l.value} value={l.value}>
+            {l.label}: {l.meaning}
           </option>
         ))}
       </select>
-      {result && (
-        <p className="text-xs leading-5 text-muted">
-          <span className={differs ? 'font-medium text-warning' : 'font-medium text-secondary'}>
-            {CRM_RESULT[result.effect] ?? result.effect}
-          </span>
-          {differs && result.reason
-            ? `: ${result.reason.charAt(0).toUpperCase()}${result.reason.slice(1)}.`
-            : ''}
-        </p>
-      )}
     </div>
   )
 }
@@ -1141,7 +1205,8 @@ function Users() {
     email: '',
     password: '',
     display_name: '',
-    job_role: ''
+    department: '',
+    department_mode: '' as DepartmentMode | ''
   })
   const [error, setError] = useState<string | null>(null)
 
@@ -1161,12 +1226,20 @@ function Users() {
   async function create(event: React.FormEvent) {
     event.preventDefault()
     try {
-      await api.post('/api/users', form)
+      const level = LEVEL_CHOICES.some((l) => l.value === form.department)
+      await api.post('/api/users', {
+        email: form.email,
+        password: form.password,
+        display_name: form.display_name,
+        job_role: form.department.toUpperCase(),
+        department_mode: level ? undefined : form.department_mode
+      })
       setForm({
         email: '',
         password: '',
         display_name: '',
-        job_role: ''
+        department: '',
+        department_mode: ''
       })
       await load()
     } catch (err) {
@@ -1177,6 +1250,16 @@ function Users() {
   async function update(path: string, body: unknown) {
     try {
       await api.patch(path, body)
+      await load()
+    } catch (err) {
+      await load()
+      setError(err instanceof Error ? err.message : 'Could not change access')
+    }
+  }
+
+  async function removeDepartment(user: SessionUser, department: string) {
+    try {
+      await api.del(`/api/users/${user.id}/departments/${department}`)
       await load()
     } catch (err) {
       await load()
@@ -1198,7 +1281,7 @@ function Users() {
       <AccessRequests onDecided={load} />
       <Panel
         title="Users"
-        description="Pick a department role (Intake, Planning, Operations, Sales, Finance, HR) or Admin, the only role with full access. The role sets what someone can do. CRM changes sets whether their CRM changes run directly, wait for approval or stay drafts. Tags set what they can see: apps like CRM and Gmail, and restricted data. You can pick several."
+        description="A person starts with one department and you can add more. In each department they have a role: Advise just answers; Draft prepares it and they review; Approve waits for a human before sending email, CRM writes or spending money; Auto runs routine work by itself. Workspace rules still apply on top. Employee can only ask and look things up; Admin has every department with full access. Tags set what they can see: apps like CRM and Gmail, and restricted data."
       >
         {error && <ErrorNote>{error}</ErrorNote>}
         <DataTable
@@ -1208,44 +1291,23 @@ function Users() {
             { key: 'e', header: 'Email', render: (u) => displayEmail(u.email) },
             { key: 'n', header: 'Name', render: (u) => u.display_name },
             {
-              key: 'r',
-              header: 'Role',
+              key: 'd',
+              header: 'Departments and roles',
               render: (u) => (
-                <select
-                  aria-label={`Role for ${u.display_name}`}
-                  value={u.job_role && u.job_role !== 'EMPLOYEE' ? u.job_role : ''}
-                  onChange={(event) =>
-                    void update(`/api/users/${u.id}/job-role`, {
-                      job_role: event.target.value
-                    })
-                  }
-                  className="min-h-9 rounded-lg border border-border bg-background-secondary px-2.5 text-[13px] text-primary"
-                >
-                  {(!u.job_role || u.job_role === 'EMPLOYEE') && (
-                    <option value="" disabled>
-                      Choose role
-                    </option>
-                  )}
-                  {JOB_ROLES.map((role) => (
-                    <option key={role.value} value={role.value}>
-                      {role.label}
-                    </option>
-                  ))}
-                </select>
-              )
-            },
-            {
-              key: 'crm',
-              header: 'CRM changes',
-              render: (u) => (
-                <CrmAccess
+                <DepartmentAccess
                   user={u}
-                  onChange={(level) =>
-                    void update(`/api/users/${u.id}/app-access`, {
-                      area: 'crm',
-                      level
-                    })
+                  onSet={(department, mode) =>
+                    u.roles.includes('ADMIN')
+                      ? void update(`/api/users/${u.id}/job-role`, {
+                          job_role: department.toUpperCase(),
+                          department_mode: mode
+                        })
+                      : void update(`/api/users/${u.id}/departments`, {
+                          department,
+                          mode
+                        })
                   }
+                  onRemove={(department) => void removeDepartment(u, department)}
                 />
               )
             },
@@ -1257,9 +1319,10 @@ function Users() {
                   <span className="text-xs text-muted">
                     All areas and approvals
                   </span>
-                ) : !u.job_role || u.job_role === 'EMPLOYEE' ? (
+                ) : Object.keys(u.department_modes ?? {}).length === 0 &&
+                  !u.job_role ? (
                   <span className="text-xs text-muted">
-                    Choose a role first: a role gives the person its access.
+                    Add a department first: a department gives the person its access.
                   </span>
                 ) : (
                   <div className="flex max-w-md flex-wrap gap-1.5">
@@ -1288,7 +1351,7 @@ function Users() {
       </Panel>
 
       <Panel title="Add user">
-        <form onSubmit={create} className="grid gap-2 md:grid-cols-5">
+        <form onSubmit={create} className="grid gap-2 md:grid-cols-6">
           <Field label="Email">
             <input
               className={inputClass}
@@ -1321,25 +1384,61 @@ function Users() {
               }
             />
           </Field>
-          <Field label="Role">
+          <Field label="Department">
             <select
               className={inputClass}
               required
-              value={form.job_role}
+              value={form.department}
               onChange={(event) =>
-                setForm({ ...form, job_role: event.target.value })
+                setForm({ ...form, department: event.target.value })
               }
             >
               <option value="" disabled>
-                Choose role
+                Choose department
               </option>
-              {JOB_ROLES.map((role) => (
-                <option key={role.value} value={role.value}>
-                  {role.label}
+              {DEPARTMENTS.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+              {LEVEL_CHOICES.map((l) => (
+                <option key={l.value} value={l.value}>
+                  {l.label}: {l.meaning}
                 </option>
               ))}
             </select>
           </Field>
+          {!LEVEL_CHOICES.some((l) => l.value === form.department) && (
+            <Field
+              label="Role in this department"
+              hint={
+                form.department_mode
+                  ? modeMeaning(form.department_mode)
+                  : 'More departments can be added later.'
+              }
+            >
+              <select
+                className={inputClass}
+                required
+                value={form.department_mode}
+                onChange={(event) =>
+                  setForm({
+                    ...form,
+                    department_mode: event.target.value as DepartmentMode
+                  })
+                }
+              >
+                <option value="" disabled>
+                  Choose role
+                </option>
+                {DEPARTMENT_MODES.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}: {m.meaning}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <div className="flex items-end">
             <Btn type="submit" size="sm">
               Create

@@ -2,7 +2,10 @@
 Job Roles
 =========
 
-The business titles an admin picks for a person: HR, Finance, Operations, Sales, Admin, Employee.
+The business titles an admin picks for a person: one per department (General, Sales, Planning, Finance,
+Legal, Operations, Intake, Strategy, Brand, Human Resources), plus Employee (view only) and Admin. The
+role a person has inside each department (Advise, Draft, Approve, Auto) is kept in
+:mod:`bizos.policy.department_modes`.
 
 A job role is a label over the permission levels in :mod:`bizos.rbac.matrix`. It says which level a
 person holds and which data tags come with it. It adds no check of its own: the policy engine still
@@ -37,7 +40,12 @@ JOB_ROLES: Mapping[str, JobRole] = MappingProxyType(
             # Departments with no restricted data area of their own: same level, no extra tag.
             JobRole("INTAKE", "Intake", Role.OPERATOR),
             JobRole("PLANNING", "Planning", Role.OPERATOR),
+            JobRole("GENERAL", "General", Role.OPERATOR),
+            JobRole("STRATEGY", "Strategy", Role.OPERATOR),
+            JobRole("BRAND", "Brand", Role.OPERATOR),
+            JobRole("LEGAL", "Legal", Role.OPERATOR, ("legal",)),
             JobRole("ADMIN", "Admin", Role.ADMIN),
+            # View only: can ask and look things up, cannot change anything. No departments.
             JobRole("EMPLOYEE", "Employee", Role.VIEWER),
         )
     }

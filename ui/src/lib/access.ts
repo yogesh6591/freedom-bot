@@ -1,15 +1,55 @@
 /** Job roles and data tags as admins see them. The server decides what each one grants. */
 
-/** One role per department, plus a single Admin with full access. There is no view-only role to pick. */
-export const JOB_ROLES = [
-  { value: 'INTAKE', label: 'Intake' },
-  { value: 'PLANNING', label: 'Planning' },
-  { value: 'OPERATIONS', label: 'Operations' },
-  { value: 'SALES', label: 'Sales' },
-  { value: 'FINANCE', label: 'Finance' },
-  { value: 'HR', label: 'HR' },
-  { value: 'ADMIN', label: 'Admin' }
+import type { DepartmentMode } from './types'
+
+/** The departments an admin can give a person (the domain packs). Admin has every department. */
+export const DEPARTMENTS = [
+  { value: 'general', label: 'General' },
+  { value: 'sales', label: 'Sales' },
+  { value: 'planning', label: 'Planning' },
+  { value: 'finance', label: 'Finance' },
+  { value: 'legal', label: 'Legal' },
+  { value: 'operations', label: 'Operations' },
+  { value: 'intake', label: 'Intake' },
+  { value: 'strategy', label: 'Strategy' },
+  { value: 'brand', label: 'Brand' },
+  { value: 'hr', label: 'Human Resources' }
 ] as const
+
+/** Listed with the departments, but these are levels: no role inside them, and choosing one replaces
+ *  the person's departments. */
+export const LEVEL_CHOICES = [
+  {
+    value: 'employee',
+    label: 'Employee',
+    meaning: 'Asks and looks things up. Cannot change anything.'
+  },
+  { value: 'admin', label: 'Admin', meaning: 'Every department, full access.' }
+] as const
+
+/** A person's role inside one department. Only admins can change it. */
+export const DEPARTMENT_MODES: {
+  value: DepartmentMode
+  label: string
+  meaning: string
+}[] = [
+  { value: 'advise', label: 'Advise', meaning: 'Just answers. Nothing is drafted, sent or changed.' },
+  { value: 'draft', label: 'Draft', meaning: 'Prepares it, they review. Nothing is sent.' },
+  {
+    value: 'approve',
+    label: 'Approve',
+    meaning: 'Waits for a human before sending email, CRM writes or spending money.'
+  },
+  { value: 'auto', label: 'Auto', meaning: 'Routine work runs by itself.' }
+]
+
+export function departmentLabel(value: string): string {
+  return DEPARTMENTS.find((d) => d.value === value)?.label ?? value
+}
+
+export function modeMeaning(value: string): string {
+  return DEPARTMENT_MODES.find((m) => m.value === value)?.meaning ?? ''
+}
 
 export const DATA_TAGS = [
   { value: 'crm', label: 'CRM' },

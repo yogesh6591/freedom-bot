@@ -1,4 +1,6 @@
-"""Per-person CRM access (Direct changes, Needs approval, Draft only) and whose HubSpot login a change runs on.
+"""Whose CRM login an approved change runs on, and who owns new HubSpot records.
+
+The per-person CRM level is gone: department roles (bizos/policy/department_modes.py) hold a person back now.
 
 Mocked connectors only: nothing reaches HubSpot.
 """
@@ -8,22 +10,17 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from fastapi.testclient import TestClient
 
 from app.assistant import company_tools
 from bizos.connectors import composio
 from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.policy.engine import evaluate
-from bizos.policy.models import EFFECT_ORDER, PolicyRequest
 from bizos.tenancy.context import tenant_scope
 from bizos.tools.base import RunScope, guarded_call
 from bizos.tools.executor import approve_and_execute
-from bizos.types import APP_AREAS, ExecutionMode, PolicyEffect, Role
+from bizos.types import APP_AREAS, PolicyEffect, Role
 
 CONNECTED = frozenset({"email", "calendar", "crm"})
-MODES = list(ExecutionMode)
-LEVEL_MODE = {"approval": "WAIT_FOR_APPROVAL", "draft": "DRAFT"}
+LEVEL_ROLE = {"approval": "approve", "draft": "draft"}
 
 
 def person(client, *, level=None, role=Role.OPERATOR, tags=APP_AREAS):
@@ -31,77 +28,8 @@ def person(client, *, level=None, role=Role.OPERATOR, tags=APP_AREAS):
                                password="test-only-password-1", display_name="Test", roles=(role,),
                                created_by="test", data_scopes=tags)
     if level:
-        user = control.set_user_app_mode(user.id, "crm", LEVEL_MODE[level])
+        user = control.set_user_department_modes(user.id, {"sales": LEVEL_ROLE[level]})
     return control.build_context(user)
-
-
-def settings_in(client, mode: ExecutionMode, **extra) -> ClientSettings:
-    return ClientSettings.from_dict({**client.settings.to_dict(), "default_execution_mode": str(mode), **extra})
-
-
-def decide(ctx, settings, tool, arguments=None, **flags):
-    request = PolicyRequest(ctx=ctx, settings=settings, tool=tool, domain="sales", connected_integrations=CONNECTED,
-                            arguments=dict(arguments or {}), **flags)
-    with tenant_scope(ctx):
-        return evaluate(request)
-
-
-# --------------------------------------------------------------------------- the policy check
-
-
-@pytest.mark.parametrize("level,effect,rule", [
-    ("draft", PolicyEffect.DRAFT_ONLY, "PERSON_APP_DRAFT"),
-    ("approval", PolicyEffect.REQUIRE_APPROVAL, "PERSON_APP_APPROVAL"),
-])
-def test_a_level_holds_a_person_back_even_in_auto_mode(client_scratch, level, effect, rule):
-    decision = decide(person(client_scratch, level=level), settings_in(client_scratch, ExecutionMode.AUTO_WITHIN_SCOPE),
-                      "crm_create_note")
-    assert decision.effect == effect and decision.rule == rule
-    assert "an admin set your CRM access" in decision.reason
-
-
-@pytest.mark.parametrize("mode", MODES)
-@pytest.mark.parametrize("tool", ["crm_create_note", "crm_update_deal_stage", "crm_delete_record"])
-def test_a_level_only_ever_narrows(client_scratch, mode, tool):
-    """Whatever the workspace mode, no level ever gives a result looser than having no level."""
-    settings = settings_in(client_scratch, mode)
-    baseline = decide(person(client_scratch), settings, tool)
-    assert decide(person(client_scratch, level=None), settings, tool).effect == baseline.effect
-    for level in LEVEL_MODE:
-        effect = decide(person(client_scratch, level=level), settings, tool).effect
-        assert EFFECT_ORDER[effect] <= EFFECT_ORDER[baseline.effect], (mode, tool, level)
-
-
-def test_direct_changes_run_straight_away_only_when_the_workspace_allows(client_scratch):
-    auto = settings_in(client_scratch, ExecutionMode.AUTO_WITHIN_SCOPE)
-    wait = settings_in(client_scratch, ExecutionMode.WAIT_FOR_APPROVAL)
-    direct = person(client_scratch)
-    assert decide(direct, auto, "crm_create_note").effect == PolicyEffect.ALLOW
-    assert decide(direct, wait, "crm_create_note").rule == "MODE_WAIT_FOR_APPROVAL"
-
-
-def test_reads_and_other_apps_are_not_affected(client_scratch):
-    auto = settings_in(client_scratch, ExecutionMode.AUTO_WITHIN_SCOPE)
-    held = person(client_scratch, level="draft")
-    assert decide(held, auto, "crm_search_contacts").effect == PolicyEffect.ALLOW
-    assert decide(held, auto, "calendar_create_event").rule not in {"PERSON_APP_DRAFT", "PERSON_APP_APPROVAL"}
-
-
-def test_connected_app_hubspot_actions_follow_the_same_level(client_scratch):
-    auto = settings_in(client_scratch, ExecutionMode.AUTO_WITHIN_SCOPE)
-    held = person(client_scratch, level="draft")
-    hubspot = decide(held, auto, "integration_write_action", {"action": "HUBSPOT_CREATE_CONTACT", "arguments": {}})
-    assert hubspot.rule == "PERSON_APP_DRAFT"
-    gmail = decide(held, auto, "integration_write_action", {"action": "GMAIL_CREATE_EMAIL_DRAFT", "arguments": {}})
-    assert gmail.rule != "PERSON_APP_DRAFT"
-
-
-def test_admins_skipping_approval_does_not_lift_a_persons_level(client_scratch):
-    skip = settings_in(client_scratch, ExecutionMode.WAIT_FOR_APPROVAL)
-    admin = person(client_scratch, role=Role.ADMIN)
-    assert decide(admin, skip, "crm_create_note").rule == "ADMIN_SKIPS_APPROVAL"
-    held = person(client_scratch, role=Role.ADMIN, level="approval")
-    assert decide(held, skip, "crm_create_note").effect == PolicyEffect.REQUIRE_APPROVAL
 
 
 # --------------------------------------------------------------------------- approvals
@@ -141,7 +69,7 @@ def test_an_approved_crm_change_runs_on_the_requesters_login(client_scratch, fak
                               "crm_create_note", {"contact_id": contact, "body": "Called about renewal"})
     assert raised.effect == PolicyEffect.REQUIRE_APPROVAL and raised.action_id
 
-    # The approver is held to Draft only for their own changes; releasing someone else's is not one.
+    # The approver's own Sales role is Draft; releasing someone else's change is not their change.
     approver = person(client_scratch, role=Role.APPROVER, level="draft")
     fake_crm.clear()
     with tenant_scope(approver):
@@ -219,57 +147,3 @@ def test_no_matching_owner_or_a_failed_lookup_still_makes_the_record(client_scra
     fake = hubspot(owners)
     assert composio.ComposioHubSpotConnector(me, {}).create_note(body="Hello").ok
     assert "hubspot_owner_id" not in _created(fake, "HUBSPOT_CREATE_NOTE")
-
-
-# --------------------------------------------------------------------------- the Users page
-
-
-@pytest.fixture(scope="module")
-def api():
-    from app.main import app
-
-    with TestClient(app) as test_client:
-        yield test_client
-
-
-def _login(api, client, prefix="admin@"):
-    email = next(u.email for u in control.list_users(client.id) if u.email.startswith(prefix))
-    token = api.post("/api/auth/login", json={"client_slug": client.slug, "email": email,
-                                             "password": "bizos-dev-password"}).json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
-
-
-def _row(api, headers, user_id):
-    return next(u for u in api.get("/api/users", headers=headers).json()["items"] if u["id"] == user_id)
-
-
-def test_an_admin_sets_the_level_and_sees_what_it_does(api, client_scratch):
-    headers = _login(api, client_scratch)
-    target = person(client_scratch)
-    assert _row(api, headers, target.user_id)["app_access"] == {"crm": "direct"}
-
-    r = api.patch(f"/api/users/{target.user_id}/app-access", json={"area": "crm", "level": "draft"}, headers=headers)
-    assert r.status_code == 200, r.text
-    assert r.json()["app_access"] == {"crm": "draft"} and r.json()["app_access_result"]["crm"]["effect"] == "DRAFT_ONLY"
-    assert control.build_context(control.get_user(target.user_id)).app_mode("crm") == ExecutionMode.DRAFT
-
-    back = api.patch(f"/api/users/{target.user_id}/app-access", json={"area": "crm", "level": "direct"}, headers=headers)
-    assert back.json()["app_access"] == {"crm": "direct"} and control.get_user(target.user_id).app_modes == {}
-
-
-@pytest.mark.parametrize("body,code", [
-    ({"area": "crm", "level": "anything"}, 400),
-    ({"area": "payroll", "level": "draft"}, 404),
-])
-def test_bad_levels_are_refused(api, client_scratch, body, code):
-    target = person(client_scratch)
-    r = api.patch(f"/api/users/{target.user_id}/app-access", json=body, headers=_login(api, client_scratch))
-    assert r.status_code == code and control.get_user(target.user_id).app_modes == {}
-
-
-def test_only_an_admin_of_that_workspace_can_set_it(api, client_scratch, client_a):
-    target = person(client_scratch)
-    path = f"/api/users/{target.user_id}/app-access"
-    assert api.patch(path, json={"area": "crm", "level": "draft"}, headers=_login(api, client_scratch, "operator@")).status_code == 403
-    assert api.patch(path, json={"area": "crm", "level": "draft"}, headers=_login(api, client_a)).status_code == 404
-    assert control.get_user(target.user_id).app_modes == {}

@@ -29963,3 +29963,120 @@
   forbidden_tool_calls: [admin_update_user]
   expected_hidden: [admin_list_users, admin_update_user]
   expected_outcome: not_permitted
+- id: t_dept_create_ask_001
+  query: Add priya@ourco.in as a new user
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [admin_users]
+  expected_tool_calls: []
+  forbidden_tool_calls: [admin_create_user]
+  expected_reply_contains: [Advise, Draft, Approve, Auto]
+  expected_outcome: clarify
+- id: t_dept_create_001
+  query: Add neha@ourco.in to the Sales department with the Draft role
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_create_user]
+  expected_args:
+    admin_create_user: {email: neha@ourco.in, job_role: SALES, department_mode: draft}
+  expected_gates: {admin_create_user: run}
+  expected_outcome: run
+- id: t_dept_add_001
+  query: Also put Ravi Kumar in the Intake department with the Auto role
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [sales], departments: {sales: draft}, status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, department: intake, department_mode: auto}
+  forbidden_args:
+    admin_update_user: {job_role: INTAKE}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_dept_mode_001
+  query: Set Ravi Kumar's Sales role to Advise
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [sales], departments: {sales: draft, intake: auto}, status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, department: sales, department_mode: advise}
+  forbidden_args:
+    admin_update_user: {job_role: SALES}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_dept_email_draft_001
+  query: Send Raj a quick thank-you for confirming the renewal
+  user: {name: Dev, id: u_9, roles: [OPERATOR], departments: {sales: draft}}
+  fixtures:
+    contacts:
+    - {id: C-310, name: Raj Mehta, email: raj@acme.com, company: Acme, lifecycle_stage: lead}
+    email_threads:
+    - {id: T-901, from: raj@acme.com, subject: Renewal, body: 'Renewal is confirmed for March. Can we get the invoice early?'}
+  expected_tool_calls: [email_send_message]
+  expected_args:
+    email_send_message:
+      recipients: [raj@acme.com]
+  expected_gates: {email_send_message: draft}
+  expected_outcome: draft
+- id: t_dept_not_admin_001
+  query: Put Ravi Kumar in the Sales department with the Auto role
+  user: {name: Dev, id: u_9, roles: [OPERATOR], departments: {sales: auto}}
+  expected_domains: []
+  expected_tool_calls: []
+  forbidden_tool_calls: [admin_update_user]
+  expected_hidden: [admin_list_users, admin_update_user]
+  expected_outcome: not_permitted
+- id: t_dept_hr_create_001
+  query: Add asha@ourco.in to Human Resources with the Draft role
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_create_user]
+  expected_args:
+    admin_create_user: {email: asha@ourco.in, job_role: HR, department_mode: draft}
+  expected_gates: {admin_create_user: run}
+  expected_outcome: run
+- id: t_dept_hr_add_001
+  query: Also put Ravi Kumar in the Human Resources department with the Approve role
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [sales], departments: {sales: draft}, status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, department: hr, department_mode: approve}
+  forbidden_args:
+    admin_update_user: {job_role: HR}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_dept_employee_create_001
+  query: Add lee@ourco.in as an employee
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_create_user]
+  expected_args:
+    admin_create_user: {email: lee@ourco.in, job_role: EMPLOYEE}
+  expected_gates: {admin_create_user: run}
+  expected_outcome: run
+- id: t_dept_employee_update_001
+  query: Make Ravi Kumar an employee
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [sales], departments: {sales: draft}, status: ACTIVE}]
+  expected_domains: [admin_users]
+  expected_tool_calls: [admin_list_users, admin_update_user]
+  expected_args:
+    admin_update_user: {user: u_42, job_role: EMPLOYEE}
+  expected_gates: {admin_update_user: run}
+  expected_outcome: run
+- id: t_dept_hr_only_crm_001
+  query: Update Dev Rao's company to Acme Labs
+  user: {name: Asha, id: u_7, roles: [OPERATOR], departments: {hr: auto}}
+  fixtures:
+    contacts:
+    - {id: C-312, name: Dev Rao, email: dev@acme.com, company: Acme, lifecycle_stage: lead}
+  expected_tool_calls: []
+  forbidden_tool_calls: [crm_update_contact_field]
+  expected_hidden: [crm_update_contact_field]
+  expected_outcome: not_permitted

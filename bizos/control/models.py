@@ -323,8 +323,9 @@ class User:
     platform_owner: bool = False
     #: The job title an admin picked. Read it through ``effective_job_role``.
     job_role: Optional[str] = None
-    #: Per-person app access an admin set, ``{area: mode}``. Only ever narrows (bizos/policy/app_modes.py).
-    app_modes: dict[str, str] = field(default_factory=dict)
+    #: Departments an admin gave this person, ``{department: role}``. Only ever narrows
+    #: (bizos/policy/department_modes.py).
+    department_modes: dict[str, str] = field(default_factory=dict)
 
     @property
     def primary_role(self) -> Role:
@@ -345,13 +346,6 @@ class User:
         job = JOB_ROLES.get(self.effective_job_role or "")
         return job.label if job else None
 
-    @property
-    def app_access(self) -> dict[str, str]:
-        """The Users-page level for each app an admin can set one for (``direct`` when nothing is set)."""
-        from bizos.policy.app_modes import PERSON_APP_AREAS, level_of
-
-        return {area: level_of(self.app_modes.get(area)) for area in PERSON_APP_AREAS}
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
@@ -364,7 +358,7 @@ class User:
             "job_role_label": self.job_role_label,
             "can_approve": Role.APPROVER in self.roles or Role.ADMIN in self.roles,
             "data_scopes": sorted(self.data_scopes),
-            "app_access": self.app_access,
+            "department_modes": dict(sorted(self.department_modes.items())),
             "is_platform_owner": self.platform_owner,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,

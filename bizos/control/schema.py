@@ -118,9 +118,12 @@ CONTROL_DDL: tuple[str, ...] = (
     # The job title an admin picks (HR, Finance...). A label over the permission level
     # in user_roles; see bizos/rbac/job_roles.py. NULL until an admin picks one.
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_role TEXT",
-    # Per-person app access an admin set, as {area: mode}, e.g. {"crm": "DRAFT"}. Only ever
-    # narrows; see bizos/policy/app_modes.py. Empty means no extra limit.
+    # Retired per-person CRM level, {"crm": "DRAFT" | "WAIT_FOR_APPROVAL"}. Folded into department_modes
+    # (and cleared) by db._fold_crm_person_levels on migration; nothing reads it after that.
     "ALTER TABLE users ADD COLUMN IF NOT EXISTS app_modes JSONB NOT NULL DEFAULT '{}'::jsonb",
+    # Departments an admin gave a person, each with a role, as {department: role}, e.g.
+    # {"sales": "draft"}. Only ever narrows; see bizos/policy/department_modes.py. Empty means no extra limit.
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS department_modes JSONB NOT NULL DEFAULT '{}'::jsonb",
     # A person asking an admin for extra data tags. Granting goes through admin_ops.set_scopes.
     """
     CREATE TABLE IF NOT EXISTS access_requests (

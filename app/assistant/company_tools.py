@@ -1565,6 +1565,18 @@ def _list(value: Any) -> list[str]:
     return [str(v).strip() for v in value if str(v).strip()]
 
 
+def _departments_text(departments: dict[str, str]) -> dict[str, str]:
+    """``{"Sales": "Draft"}``: each department a person has, with their role in it."""
+    from bizos.policy.department_modes import DEPARTMENT_LABELS, MODE_LABELS
+
+    return {DEPARTMENT_LABELS.get(d, d): MODE_LABELS.get(m, m) for d, m in sorted(departments.items())}
+
+
+def _departments_summary(user) -> str:
+    held = _departments_text(user.department_modes)
+    return "; ".join(f"{d}: {m}" for d, m in held.items())
+
+
 def _user_row(user) -> dict[str, Any]:
     return {
         "user_id": user.id,
@@ -1572,6 +1584,7 @@ def _user_row(user) -> dict[str, Any]:
         "email": user.email,
         "roles": sorted(str(r) for r in user.roles),
         "job_role": user.job_role_label,
+        "departments": _departments_text(user.department_modes),
         "data_access": sorted(user.data_scopes),
         "status": user.status,
     }
@@ -2003,6 +2016,7 @@ def admin_create_user(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
             roles=_list(args.get("roles")) or ["VIEWER"],
             data_scopes=_list(args.get("data_access") or args.get("data_scopes")),
             job_role=str(args.get("job_role") or "").strip() or None,
+            department_mode=str(args.get("department_mode") or "").strip() or None,
         )
         extra = _list(args.get("data_access") or args.get("data_scopes"))
         if job_role_given(args) and extra:
@@ -2010,6 +2024,8 @@ def admin_create_user(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     except ops.AdminError as exc:
         return _failure(exc)
     title = f" ({user.job_role_label})" if user.job_role_label else ""
+    if user.department_modes:
+        title = f" ({_departments_summary(user)})"
     return ConnectorResult(
         ok=True,
         data={**_user_row(user), "temporary_password": password},
@@ -2022,8 +2038,12 @@ def admin_set_user_roles(scope: RunScope, args: dict[str, Any]) -> ConnectorResu
     try:
         user = _find_user(scope, args.get("user"))
         if str(args.get("job_role") or "").strip():
-            updated = ops.set_job_role(scope.ctx, user.id, str(args["job_role"]))
+            updated = ops.set_job_role(
+                scope.ctx, user.id, str(args["job_role"]), str(args.get("department_mode") or "").strip() or None
+            )
             title = f" ({updated.job_role_label})" if updated.job_role_label else ""
+            if updated.department_modes:
+                title = f" ({_departments_summary(updated)})"
             return ConnectorResult(
                 ok=True,
                 data=_user_row(updated),
@@ -2041,6 +2061,25 @@ def admin_set_user_roles(scope: RunScope, args: dict[str, Any]) -> ConnectorResu
         ok=True,
         data=_user_row(updated),
         summary=f"{updated.email} now holds {', '.join(sorted(str(r) for r in updated.roles))}",
+    )
+
+
+@effect("admin_set_user_department")
+def admin_set_user_department(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """Give a user a department with a role (advise, draft, approve, auto), change it, or remove it."""
+    mode = str(args.get("mode") or "").strip()
+    try:
+        user = _find_user(scope, args.get("user"))
+        if mode.casefold() == "remove":
+            updated = ops.remove_department(scope.ctx, user.id, str(args.get("department") or ""))
+        else:
+            updated = ops.set_department(scope.ctx, user.id, str(args.get("department") or ""), mode)
+    except ops.AdminError as exc:
+        return _failure(exc)
+    return ConnectorResult(
+        ok=True,
+        data=_user_row(updated),
+        summary=f"{updated.email} departments: {_departments_summary(updated) or 'none'}",
     )
 
 

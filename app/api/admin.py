@@ -51,6 +51,8 @@ class UserCreate(BaseModel):
     data_scopes: list[str] = Field(default_factory=list)
     #: When set, this decides the permission level and data tags instead of the two fields above.
     job_role: Optional[str] = None
+    #: The person's role in that department: advise, draft, approve or auto (Approve when left out).
+    department_mode: Optional[str] = None
 
 
 class RoleUpdate(BaseModel):
@@ -61,15 +63,16 @@ class ScopeUpdate(BaseModel):
     data_scopes: list[str] = Field(default_factory=list)
 
 
-class AppAccessUpdate(BaseModel):
-    #: The app, e.g. "crm".
-    area: str
-    #: direct | approval | draft
-    level: str
-
-
 class JobRoleUpdate(BaseModel):
     job_role: str
+    department_mode: Optional[str] = None
+
+
+class DepartmentUpdate(BaseModel):
+    #: general, sales, planning, finance, legal, operations, intake, strategy or brand
+    department: str
+    #: advise, draft, approve or auto
+    mode: str
 
 
 class CanApproveUpdate(BaseModel):
@@ -118,16 +121,9 @@ class PermissionOverride(BaseModel):
 # --------------------------------------------------------------------- users
 
 
-def _user_row(user, settings: ClientSettings) -> dict[str, Any]:
-    """A user plus what their CRM changes do today, worked out by the policy check."""
-    return {**user.to_dict(), "app_access_result": ops.app_access_preview(user, settings)}
-
-
 @router.get("/users")
-def list_users(
-    ctx: TenantContext = Depends(require_admin), settings: ClientSettings = Depends(client_settings)
-) -> dict[str, Any]:
-    return {"items": [_user_row(u, settings) for u in control.list_users(ctx.client_id)]}
+def list_users(ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
+    return {"items": [u.to_dict() for u in control.list_users(ctx.client_id)]}
 
 
 @router.post("/users", status_code=201)
@@ -141,6 +137,7 @@ def create_user(body: UserCreate, ctx: TenantContext = Depends(require_admin)) -
         roles=body.roles,
         data_scopes=body.data_scopes,
         job_role=body.job_role,
+        department_mode=body.department_mode,
     ).to_dict()
 
 
@@ -155,18 +152,31 @@ def set_roles(
 def set_job_role(
     user_id: str, body: JobRoleUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
-    return _run(ops.set_job_role, ctx, user_id, body.job_role).to_dict()
+    return _run(ops.set_job_role, ctx, user_id, body.job_role, body.department_mode).to_dict()
 
 
-@router.patch("/users/{user_id}/app-access")
-def set_app_access(
-    user_id: str,
-    body: AppAccessUpdate,
-    ctx: TenantContext = Depends(require_admin),
-    settings: ClientSettings = Depends(client_settings),
+@router.get("/departments")
+def list_departments(ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
+    """The departments an admin can give a person, and the four roles with what each means."""
+    from bizos.policy.department_modes import choices
+
+    return choices()
+
+
+@router.patch("/users/{user_id}/departments")
+def set_department(
+    user_id: str, body: DepartmentUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
-    """Direct changes, Needs approval or Draft only, for one person's changes in one app (CRM)."""
-    return _user_row(_run(ops.set_app_access, ctx, user_id, body.area, body.level), settings)
+    """Give a person a department with a role (Advise, Draft, Approve, Auto), or change that role."""
+    return _run(ops.set_department, ctx, user_id, body.department, body.mode).to_dict()
+
+
+@router.delete("/users/{user_id}/departments/{department}")
+def remove_department(
+    user_id: str, department: str, ctx: TenantContext = Depends(require_admin)
+) -> dict[str, Any]:
+    """Take one department away from a person. Their last department cannot be removed."""
+    return _run(ops.remove_department, ctx, user_id, department).to_dict()
 
 
 @router.patch("/users/{user_id}/can-approve")

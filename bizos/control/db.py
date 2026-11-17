@@ -81,3 +81,30 @@ def migrate_control_plane() -> None:
                     "x": pack.depth,
                 },
             )
+        _fold_crm_person_levels(conn)
+
+
+def _fold_crm_person_levels(conn: Connection) -> None:
+    """Move each person's old CRM level (Needs approval / Draft only) into their department roles, once.
+
+    Department roles are now the only per-person limit. The fold never makes anyone less strict
+    (bizos/policy/department_modes.fold_crm_level); the old value is then cleared, so this runs once.
+    """
+    import json
+
+    from bizos.policy.department_modes import fold_crm_level
+
+    rows = conn.execute(
+        text("SELECT id, job_role, department_modes, app_modes FROM users WHERE app_modes <> '{}'::jsonb")
+    ).fetchall()
+    for row in rows:
+        modes = row.app_modes if isinstance(row.app_modes, dict) else json.loads(row.app_modes or "{}")
+        departments = row.department_modes if isinstance(row.department_modes, dict) else json.loads(
+            row.department_modes or "{}"
+        )
+        folded = fold_crm_level(departments, modes.get("crm"), row.job_role)
+        conn.execute(
+            text("UPDATE users SET department_modes = CAST(:d AS JSONB), app_modes = '{}'::jsonb, "
+                 "updated_at = NOW() WHERE id = :i"),
+            {"d": json.dumps(folded), "i": row.id},
+        )

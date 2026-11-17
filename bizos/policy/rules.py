@@ -134,17 +134,19 @@ def rule_platform_owner(req: PolicyRequest, inp: EvaluationInputs) -> Optional[C
     return None
 
 
+#: How a restricted data area is named in a refusal.
+_AREA_LABELS = {"crm": "CRM", "email": "Gmail", "calendar": "Calendar"}
+
+
 def rule_data_area(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """FB-037: tools over a restricted data area need that area in the user's scopes."""
-    from bizos.policy.app_modes import AREA_LABELS
-
     area = inp.spec.data_area
     if not area or req.ctx.can_see_area(area):
         return None
     return Constraint(
         "DATA_AREA_RESTRICTED",
         DENY,
-        f"{AREA_LABELS.get(area, area)} information is restricted and this user has not been granted access to it",
+        f"{_AREA_LABELS.get(area, area)} information is restricted and this user has not been granted access to it",
     )
 
 
@@ -360,32 +362,48 @@ def rule_mode(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
     return None
 
 
-def rule_person_app_mode(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
-    """An admin held this person to Needs approval or Draft only for one app's changes.
+def rule_person_department(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """An admin gave this person departments, each with a role: Advise, Draft, Approve or Auto.
 
-    Only ever narrows (bizos/policy/app_modes.py). Not applied when an approver releases an
-    approved action: the requester's level was applied when the action was raised.
+    Only ever narrows (bizos/policy/department_modes.py). Admins have every department. Not applied
+    when an approver releases an approved action: the requester's role was applied when it was raised.
     """
-    from bizos.policy.app_modes import AREA_LABELS, app_area
+    from bizos.policy.department_modes import DEPARTMENT_LABELS, mode_for_tool, tool_departments
 
-    if not inp.spec.write or req.executing_approved_action or inp.spec.skips_mode_queue:
+    if (
+        not inp.spec.write
+        or req.executing_approved_action
+        or inp.spec.skips_mode_queue
+        or req.ctx.is_admin
+        or not req.ctx.department_modes
+    ):
         return None
-    area = app_area(inp.spec, req.arguments)
-    mode = req.ctx.app_mode(area) if area else None
-    label = AREA_LABELS.get(area or "", area or "")
+    held = dict(req.ctx.department_modes)
+    mode = mode_for_tool(held, inp.spec)
+    if mode is None:
+        return None
+    covering = sorted(d for d in held if d in tool_departments(inp.spec))
+    names = ", ".join(DEPARTMENT_LABELS.get(d, d) for d in covering)
+    if mode == ExecutionMode.ADVISE:
+        if not covering:
+            mine = ", ".join(DEPARTMENT_LABELS.get(d, d) for d in sorted(held))
+            reason = (f"this is outside the departments an admin gave you ({mine}), so I can answer "
+                      "but not create, change or send anything")
+        else:
+            reason = (f"an admin set your {names} role to Advise, so I can answer but not create, "
+                      "change or send anything")
+        return Constraint("PERSON_DEPT_ADVISE", DENY, reason)
     if mode == ExecutionMode.DRAFT:
         return Constraint(
-            "PERSON_APP_DRAFT",
+            "PERSON_DEPT_DRAFT",
             DRAFT_ONLY,
-            f"an admin set your {label} access to Draft only, so the change is prepared for review "
-            "rather than made",
+            f"an admin set your {names} role to Draft, so this is prepared for your review rather than done",
         )
     if mode == ExecutionMode.WAIT_FOR_APPROVAL:
         return Constraint(
-            "PERSON_APP_APPROVAL",
+            "PERSON_DEPT_APPROVAL",
             REQUIRE_APPROVAL,
-            f"an admin set your {label} access to Needs approval, so an approver must accept the change "
-            "before it runs",
+            f"an admin set your {names} role to Approve, so a human must approve this before it runs",
         )
     return None
 
@@ -521,7 +539,7 @@ RULES: tuple[Rule, ...] = (
     rule_critical_risk,
     rule_risk_floor,
     rule_mode,
-    rule_person_app_mode,
+    rule_person_department,
     rule_auto_risk_ceiling,
     rule_record_limit,
     rule_financial_limit,
