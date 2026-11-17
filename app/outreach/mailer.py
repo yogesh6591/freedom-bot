@@ -20,7 +20,7 @@ def sign_off() -> str:
 
 def queue_one(call: Call, prospect: Prospect, subject: str, body: str) -> str:
     """Queue the email and say how it will go out. ``body`` may use ``{{firstName}}``."""
-    ready, why = sender.readiness()
+    ready, why = sender.readiness(call.user_id)
     if not ready:
         raise ToolError(f"not queued - {why}.")
     try:

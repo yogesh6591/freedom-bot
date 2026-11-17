@@ -280,7 +280,8 @@ def _sent_today(db: Session, now: datetime) -> int:
 
 
 def send_next(
-    db: Session, send_fn: SendFn, *, client_id: Optional[str] = None, now: Optional[datetime] = None
+    db: Session, send_fn: SendFn, *, client_id: Optional[str] = None, requested_by: Optional[str] = None,
+    now: Optional[datetime] = None,
 ) -> Optional[SentEmail]:
     """Send at most one queued email if pacing allows. Returns the row handled.
 
@@ -300,7 +301,9 @@ def send_next(
     if not ok:
         return None
     q = select(SentEmail).where(SentEmail.status == STATUS_QUEUED).order_by(SentEmail.queued_at.asc())
-    if client_id:
+    if requested_by:  # only what this user asked for, sent through this user's own mailbox
+        q = q.where(SentEmail.requested_by == requested_by)
+    elif client_id:
         q = q.join(Prospect, Prospect.id == SentEmail.prospect_id).where(
             or_(Prospect.client_id == client_id, Prospect.client_id.is_(None))
         )
@@ -365,6 +368,14 @@ def cancel_all_queued(db: Session) -> int:
     for r in rows:
         r.status, r.error = STATUS_SKIPPED, "cancelled"
     return len(rows)
+
+
+def queued_requesters(db: Session) -> set[str]:
+    """The users who have an email waiting to go out."""
+    return {
+        str(r) for r in db.scalars(select(SentEmail.requested_by).where(SentEmail.status == STATUS_QUEUED).distinct())
+        if r
+    }
 
 
 def sent_today(db: Session, now: Optional[datetime] = None) -> int:

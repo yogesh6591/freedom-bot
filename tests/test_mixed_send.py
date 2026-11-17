@@ -13,7 +13,7 @@ from app.outreach.session import OutreachSession
 
 
 def test_mixed_pair_queues_follow_up_in_old_thread_and_first_email_for_new(monkeypatch):
-    monkeypatch.setattr("app.outreach.sender.readiness", lambda: (True, ""))
+    monkeypatch.setattr("app.outreach.sender.readiness", lambda *a, **k: (True, ""))
     monkeypatch.setattr("app.outreach.session.approval_problem", lambda latest, evidence: "")
 
     db = SessionLocal()

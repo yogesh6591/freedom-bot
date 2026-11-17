@@ -348,7 +348,7 @@ class OutreachSession:
         from app.outreach.records import ensure_prospect
         from acquisition.services import outreach_service as svc
 
-        ready, why = sender.readiness()
+        ready, why = sender.readiness(getattr(self.ctx, "user_id", None))
         if not ready:
             return f"error: not sent - {why}. Nothing was queued."
         db = self.db_factory()
@@ -465,7 +465,7 @@ class OutreachSession:
             filtered = bool(stage or order or count or inactive_days or text or place or emailed not in ("", "any"))
             if not (people or audience or filtered):
                 return "error: name the people, or say who with audience or the filters (stage, order, count, ...)"
-            ready, why = sender.readiness()
+            ready, why = sender.readiness(getattr(self.ctx, "user_id", None))
             if not ready:
                 return f"error: not sent - {why}. Nothing was queued."
 

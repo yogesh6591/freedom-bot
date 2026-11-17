@@ -1,8 +1,10 @@
-"""Background sender: delivers queued outreach emails through the ops chatbot's Gmail (Composio).
+"""Background sender: delivers queued outreach emails through the Gmail (Composio) of the user who asked for them.
 
-* Whose Gmail: the Gmail connected in Composio sends. Nobody picks it or looks up an id. (If several
-  users have a Gmail connected, an explicit sender saved in ``outreach_settings`` or OUTREACH_SENDER_USER_ID
-  wins; otherwise the first one found is used.)
+* Whose Gmail: each email goes out from the Gmail of the person who requested it, so one account never sends for
+  another. A user who has not connected Gmail cannot queue email (the chat says so first), and an email that is
+  queued for such a user stays queued and is never sent from someone else's mailbox. The admin Sending card, which
+  has no requesting user, still checks the old way (an explicit sender saved in ``outreach_settings`` or
+  OUTREACH_SENDER_USER_ID, otherwise the first connected Gmail).
 * The on/off switch comes from the Sending card on the Integrations page
   (table ``outreach_settings``). The OUTREACH_* env values are only a fallback.
 * One email at a time, spaced by OUTREACH_GAP_SECONDS, never more than OUTREACH_DAILY_CEILING a day
@@ -73,10 +75,26 @@ def _gmail_connector(ctx: Any):
     raise RuntimeError("the sender has no connected Gmail (Composio). Connect Gmail first")
 
 
-def readiness() -> tuple[bool, str]:
-    """(ok, reason). Checked before anything is queued, so the user hears it immediately."""
+def _connected_ids() -> set[str]:
+    from app.outreach import gmail_users
+
+    return {o["user_id"] for o in gmail_users.list_connected()}
+
+
+def readiness(user_id: Optional[str] = None) -> tuple[bool, str]:
+    """(ok, reason). Checked before anything is queued, so the user hears it immediately.
+
+    With ``user_id`` it is that user's own Gmail that must be connected. Without one (the admin Sending card) the
+    old check applies: the explicit sender, or the first connected Gmail."""
     try:
-        ctx = _sender_context()
+        if user_id:
+            if user_id not in _connected_ids():
+                raise RuntimeError("your Gmail is not connected. Connect Gmail on the Integrations page first")
+            from freedombot.control import store as control
+
+            ctx = control.build_context(control.get_user(user_id))
+        else:
+            ctx = _sender_context()
         with _bind(ctx):
             _gmail_connector(ctx)
     except Exception as exc:  # noqa: BLE001
@@ -97,18 +115,17 @@ def _send_fn(ctx: Any) -> svc.SendFn:
     return send
 
 
-def tick() -> bool:
-    """Send at most one queued email. True when one was handled (so the loop can continue promptly)."""
+def _send_for(user_id: str) -> bool:
+    """Send at most one email queued by ``user_id``, through that user's own Gmail."""
     from acquisition.db.session import SessionLocal
+    from freedombot.control import store as control
 
-    if not _effective().worker_enabled:
-        return False
-    ctx = _sender_context()
+    ctx = control.build_context(control.get_user(user_id))
     with _bind(ctx):
         send = _send_fn(ctx)
         db = SessionLocal()
         try:
-            row = svc.send_next(db, send, client_id=ctx.client_id)
+            row = svc.send_next(db, send, requested_by=user_id)
             db.commit()
             return row is not None
         except Exception:
@@ -116,6 +133,28 @@ def tick() -> bool:
             raise
         finally:
             db.close()
+
+
+def tick() -> bool:
+    """Send at most one queued email. True when one was handled (so the loop can continue promptly)."""
+    from acquisition.db.session import SessionLocal
+
+    if not _effective().worker_enabled:
+        return False
+    db = SessionLocal()
+    try:
+        waiting = svc.queued_requesters(db)
+    finally:
+        db.close()
+    if not waiting:
+        return False  # nothing queued: no need to ask Composio who is connected
+    for user_id in sorted(waiting & _connected_ids()):
+        try:
+            if _send_for(user_id):
+                return True
+        except Exception as exc:  # noqa: BLE001 - one user's failure must not block the others
+            log.warning("outreach: send for %s failed: %s", user_id, exc)
+    return False
 
 
 def start() -> Optional[Callable[[], None]]:

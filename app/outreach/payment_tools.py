@@ -129,7 +129,7 @@ def _queue_payment_email(call: Call, p: Prospect, subject: str, body: str) -> st
     why = payment_problem(call.db, p.email, body)
     if why:
         raise ToolError(f"not sent - {why}. Nothing was queued.")
-    ready, reason = sender.readiness()
+    ready, reason = sender.readiness(call.user_id)
     if not ready:
         raise ToolError(f"not sent - {reason}. Nothing was queued.")
     link = records.link_row(call.db, p.id)

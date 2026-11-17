@@ -80,7 +80,7 @@ def test_group_skips_not_suitable_named_can_email(monkeypatch):
         import app.outreach.sender as sender
         import app.outreach.session as session_mod
 
-        monkeypatch.setattr(sender, "readiness", lambda: (True, ""))
+        monkeypatch.setattr(sender, "readiness", lambda *a, **k: (True, ""))
         monkeypatch.setattr(session_mod, "approval_problem", lambda latest, evidence: "")
         enqueued: list = []
 
