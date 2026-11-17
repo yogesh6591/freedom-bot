@@ -188,15 +188,61 @@ _PHI_STRONG = re.compile(
 )
 
 
+#: Health details in plain words: conditions, procedures, treatment, care.
+_HEALTH_TERMS = re.compile(
+    r"\b(?:surger(?:y|ies)|surgical|operated on|post-?op|physio(?:therapy)?|physical therapy|"
+    r"chemo(?:therapy)?|radiotherapy|radiation therapy|rehab(?:ilitation)?|recover(?:ing|y) from|"
+    r"hospitali[sz]ed|in (?:the )?hospital|admitted to (?:the )?hospital|discharged from|medications?|"
+    r"prescribed|dosage|diagnosed|illness|diseases?|cancer|tumou?rs?|diabet(?:es|ic)|asthma|depression|"
+    r"anxiety disorder|bipolar|schizophreni\w*|adhd|autis\w*|pregnan(?:t|cy)|miscarriage|hiv|hepatitis|"
+    r"had a stroke|heart attack|mental health|psychiatri\w*|therapy sessions?|injur(?:y|ies|ed)|"
+    r"fractur(?:e|ed)|medical leave|health (?:condition|issue|problem|information|records?)|"
+    r"medical (?:condition|appointment|procedure)|doctor'?s appointment)\b",
+    re.I,
+)
+#: Someone the health details are about: a pronoun, a title, or a name doing something ("Nathan is ...").
+_PERSON_REF = re.compile(
+    r"(?i:\b(?:he|she|him|his|her|hers|patient|employee|client)\b)"
+    r"|\b(?:Mr|Mrs|Ms|Dr)\.?\s+[A-Z]"
+    r"|\b[A-Z][a-z]+(?:'s)?\s+(?:is|was|has|had|attends|takes|needs|underwent|got|will|recently)\b"
+)
+
+
+#: A particular person (not the generic "a patient"): a pronoun, a title, or a name doing something.
+_NAMED_PERSON = re.compile(
+    r"(?i:\b(?:he|she|him|his|her|hers)\b)"
+    r"|\b(?:Mr|Mrs|Ms|Dr)\.?\s+[A-Z]"
+    r"|\b[A-Z][a-z]+(?:'s)?\s+(?:is|was|has|had|attends|takes|needs|underwent|got|will|recently)\b"
+)
+
+
+def health_about_person(text: str) -> bool:
+    """Health details about a particular person, in plain words ("Nathan is recovering from knee surgery").
+
+    No clinical keyword or "store this" is needed: sharing these details is enough for them to count as PHI.
+    """
+    return bool(text and _HEALTH_TERMS.search(text) and _PERSON_REF.search(text))
+
+
+def phi_about_someone(text: str) -> bool:
+    """Health information that is about a particular person: plain-word health details tied to someone, or a
+    clinical term next to a person or a personal detail. A policy that only mentions "diagnosis" is not."""
+    if not text:
+        return False
+    if health_about_person(text):
+        return True
+    return bool(_PHI_STRONG.search(text) and (_NAMED_PERSON.search(text) or _PERSONAL_MARKER.search(text)))
+
+
 def identifiable_phi(text: str) -> bool:
     """FB-039: health information tied to a person, not just a clinical word.
 
-    Used before the model call (dental BAA vendor pattern): a strong clinical
-    term, or "patient" next to a personal-data marker.
+    Used before the model call (dental BAA vendor pattern): a strong clinical term, "patient" next to
+    a personal-data marker, or health details about a person in plain words.
     """
     if not text:
         return False
-    if _PHI_STRONG.search(text):
+    if _PHI_STRONG.search(text) or health_about_person(text):
         return True
     return bool(re.search(r"\bpatients?\b", text, re.I) and _PERSONAL_MARKER.search(text))
 
@@ -295,6 +341,9 @@ def classify_text(*texts: str) -> Classification:
     if minor:
         found.add("minor")
         matches.append(("minor", minor[:80]))
+    if "medical" not in found and health_about_person(blob):
+        found.add("medical")
+        matches.append(("medical", "health details about a person"))
     biometric = _biometric_match(blob)
     if biometric:
         found.add("biometrics")

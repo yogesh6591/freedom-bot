@@ -441,7 +441,7 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
     trace: dict[str, Any] = {"engine": "v2", "tool_log": tool_log, "explanation": ""}
 
     # ---- before the model, exactly as the current assistant: regulated data and restricted candidates
-    grounded = grounding.analyze(ctx, message, settings.enabled_domains)
+    grounded = grounding.analyze(ctx, message, settings.enabled_domains, settings)
     refusal = regulated_data_refusal(message, settings) or licensed_advice_refusal(message, settings)
     canned = (refusal[1] if refusal else None) or grounding.restricted_candidate_reply(grounded, message)
     if canned is not None:
@@ -450,8 +450,16 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
         trace["explanation"] = (
             "Answered by the platform before any model call (regulated or restricted data)."
         )
-        return _respond(ctx, scope, body, session_id, saved, text=canned, before=before, guard=None, trace=trace,
-                        attachments=files_now)
+        from app.api.chat import REGULATED_STATUSES, withheld_message
+
+        withheld = bool(refusal and refusal[0] in REGULATED_STATUSES)
+        # The message itself is never kept: the history and the next turns' context get a placeholder.
+        kept = body.model_copy(update={"message": withheld_message(refusal[0])}) if withheld else body
+        response = _respond(ctx, scope, kept, session_id, saved, text=canned, before=before, guard=None,
+                            trace=trace, attachments=files_now)
+        if withheld:
+            response["withheld"] = True
+        return response
 
     # ---- visibility, router and memory prefetch
     pinned = getattr(body, "domain", AUTO)
@@ -466,7 +474,7 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
         visible, on=outreach_allowed and template_mode_on(), card_waiting=card_waiting,
     )
     menu = domain_menu(visible)
-    history = _history(saved)
+    history = _history(saved, settings)
     # Short-term memory: the last turns' tool calls, so follow-ups ("another one", "cancel that") resolve.
     turns = list(_v2_state(saved).get("turns") or [])
     work = conversation.recent_work_text(turns)
@@ -755,6 +763,14 @@ def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, gua
     acknowledgement = compose(text, results, task=task) if guard else None
     content = acknowledgement.text if acknowledgement else text
     content = _with_temporary_passwords(content, results)
+    if guard is not None:
+        # Regulated data the Order/DPA does not allow never goes out in a reply the model wrote.
+        from app.api.chat import screen_reply
+        from app.assistant.assistant import _guardrail_audit
+
+        content, screened = screen_reply(content, scope.settings)
+        if screened:
+            _guardrail_audit(ctx, scope, session_id, screened)
     new_actions = [a.to_dict() for a in actions.list_actions(limit=200, ctx=ctx) if a.id not in before]
     activity = [{"tool": d.tool, "ok": any(r.status != "error" for r in d.results)}
                 for d in (guard.log if guard else []) if d.stage == "policy"]

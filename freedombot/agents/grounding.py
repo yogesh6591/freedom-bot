@@ -340,13 +340,20 @@ def hidden_areas(
     return hidden
 
 
-def analyze(ctx: TenantContext, message: str, enabled_domains: list[str]) -> Grounding:
-    """The grounding section for one turn's system prompt, plus what it flagged."""
+def analyze(ctx: TenantContext, message: str, enabled_domains: list[str], settings: Any = None) -> Grounding:
+    """The grounding section for one turn's system prompt, plus what it flagged.
+
+    With ``settings``, a memory item holding data the Order/DPA does not allow is left out.
+    """
     query = (message or "").strip()
     try:
         items = memory.search(query, authoritative_only=True, limit=_MAX_ITEMS * 2, ctx=ctx) if query else []
     except Exception:
         items = []
+    if settings is not None:
+        from freedombot.policy.regulated import find_blocked
+
+        items = [i for i in items if not find_blocked(_item_text(i), settings)]
     # Same bar as restricted matching: one stray shared word ("run", "attendance")
     # is not a record that answers the question.
     words = memory._search_words(query)

@@ -256,8 +256,9 @@ class Guard:
         if tool in merged_tools.MERGED:
             decision = self._run_merged(tool, args)
         else:
-            outcome = guarded_call(self.scope_for(tool), tool, args)
-            decision = GuardDecision(tool, _model_text(outcome), "policy", [from_outcome(outcome)])
+            scope = self.scope_for(tool)
+            outcome = guarded_call(scope, tool, args)
+            decision = GuardDecision(tool, _model_text(outcome, scope.settings), "policy", [from_outcome(outcome)])
             self._record(tool, outcome)
         decision.idempotency_key = key
         decision.args = dict(args)
@@ -285,7 +286,7 @@ class Guard:
         if all(o.ok for o in result.outcomes):
             self.succeeded.add(tool)
         return GuardDecision(
-            tool, "\n\n".join(_model_text(o) for o in result.outcomes), "policy",
+            tool, "\n\n".join(_model_text(o, self.scope_for(tool).settings) for o in result.outcomes), "policy",
             [from_outcome(o) for o in result.outcomes],
         )
 
@@ -335,11 +336,21 @@ def _explain(error) -> str:
     return f"{where + ': ' if where else ''}{error.message}"
 
 
-def _model_text(outcome: ToolOutcome) -> str:
-    """What the model reads, as the current assistant gives it: the guarded call's text plus data."""
+def _model_text(outcome: ToolOutcome, settings: Any = None) -> str:
+    """What the model reads, as the current assistant gives it: the guarded call's text plus data.
+
+    With ``settings``, data the Order/DPA does not allow is withheld or masked first
+    (freedombot/policy/regulated.py), so a tool cannot hand it to the model.
+    """
     if outcome.data is not None and outcome.ok:
-        return f"{outcome.agent_text()}\n\nResult: {outcome.data}"
-    return outcome.agent_text()
+        text = f"{outcome.agent_text()}\n\nResult: {outcome.data}"
+    else:
+        text = outcome.agent_text()
+    if settings is not None:
+        from freedombot.policy.regulated import screen_for_model
+
+        text = screen_for_model(text, settings)[0]
+    return text
 
 
 # --------------------------------------------------------------------------- Agno wiring

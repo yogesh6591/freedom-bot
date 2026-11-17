@@ -115,10 +115,17 @@ def upload(*, title: str, filename: str, data: bytes, access_area: Optional[str]
     """Store a document as memory parts. Returns the document summary."""
     title = (title or "").strip() or re.sub(r"\.[a-z]+$", "", filename or "Document", flags=re.I)
     text = extract_text(filename, data)
+    from freedombot.policy.regulated import STATUS, WHAT, find_blocked
+
     if find_ssn(text) and "ssn" not in (getattr(settings, "order_dpa_allows", None) or []):
         log(AuditEventType.GUARDRAIL_TRIGGERED, ctx=ctx, status="DOCUMENT_SSN_BLOCKED")
         raise DocumentError("This file has a Social Security number in it, so it was not uploaded. "
                             "Remove the number and upload it again.")
+    category = find_blocked(text, settings) if settings is not None else None
+    if category:
+        log(AuditEventType.GUARDRAIL_TRIGGERED, ctx=ctx, status=f"DOCUMENT_{STATUS[category]}")
+        raise DocumentError(f"This file has {WHAT[category]} in it, which this workspace's Order/DPA does not "
+                            "allow, so it was not uploaded. Remove it and upload the file again.")
     parts = split(text)
     doc_id = new_id("doc")
     area = (access_area or "").strip().casefold() or None

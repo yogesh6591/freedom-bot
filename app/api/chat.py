@@ -287,7 +287,8 @@ def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings,
             usage.save(
                 ctx,
                 collected,
-                query=body.message,
+                # A message the Order/DPA does not allow is never kept, here either.
+                query="[withheld: regulated data]" if (response or {}).get("withheld") else body.message,
                 session_id=(response or {}).get("session_id") or body.session_id,
                 source="scheduled" if ctx.attributes.get("scheduled_task") else "chat",
                 status="ok" if response is not None else "error",
@@ -343,6 +344,14 @@ async def upload_attachment(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     with bound(ctx):
         refusal = _regulated_data_refusal(extracted["text"], settings)
+        if refusal is None:
+            # A file has no "store this" in it: holding the data is enough.
+            from freedombot.policy.regulated import STATUS, WHAT, find_blocked
+
+            category = find_blocked(extracted["text"], settings)
+            if category:
+                refusal = (STATUS[category], f"It contains {WHAT[category]}, which this workspace's Order/DPA "
+                                             "does not allow. Remove it and attach the file again.")
         if refusal:
             from app.assistant.assistant import _guardrail_audit
 
@@ -554,7 +563,7 @@ def _legacy_chat(
             session_id=session_id,
         )
         before = {a.id for a in actions.list_actions(limit=200, ctx=ctx)}
-        grounded = grounding.analyze(ctx, body.message, settings.enabled_domains)
+        grounded = grounding.analyze(ctx, body.message, settings.enabled_domains, settings)
         match_ran = False
         keys = grounding.candidate_match_keys(grounded, body.message)
         if keys:
@@ -619,6 +628,14 @@ def _legacy_chat(
             content, grounded.hidden, answered_visible=bool(grounded.visible_keys)
         )
         content, conflict_fixed = grounding.enforce_conflicts(content, grounded.conflicts)
+        if refusal is None:
+            content, screened = screen_reply(content, settings)
+            if screened:
+                from freedombot.audit.events import log as _audit_log
+                from freedombot.types import AuditEventType as _Event
+
+                _audit_log(_Event.GUARDRAIL_TRIGGERED, ctx=ctx, session_id=session_id, status=screened,
+                           execution_mode=str(scope.mode))
         content, package_fixed = grounding.enforce_package(
             content,
             grounded.unpurchased,
@@ -707,7 +724,10 @@ def _legacy_chat(
             ],
             "drafts": [a for a in new_actions if a["status"] == str(ActionStatus.DRAFT)],
         }
-        _remember_turn(ctx, body.message, response)
+        withheld = bool(refusal and refusal[0] in REGULATED_STATUSES)
+        if withheld:
+            response["withheld"] = True
+        _remember_turn(ctx, withheld_message(refusal[0]) if withheld else body.message, response)
         return response
 
 
@@ -727,8 +747,16 @@ _PHI_PAYLOAD = re.compile(
     r"|\b\d{3}-\d{2}-\d{4}\b"
 )
 
-#: Payment-card digit run (same shape the classifier uses).
-_CARD_DIGITS = re.compile(r"\b(?:\d[ -]?){13,19}\b")
+# Card patterns, the statuses whose message is never kept, and the placeholder kept instead all live in
+# the shared regulated-data check (freedombot/policy/regulated.py).
+from freedombot.policy.regulated import (  # noqa: E402
+    CARD_DIGITS as _CARD_DIGITS,
+    CARD_PAYLOAD as _CARD_PAYLOAD,
+    PHI_REPLY_WITHHELD,
+    REGULATED_STATUSES,
+    screen_reply,
+    withheld_message,
+)
 
 CHILD_DATA_REFUSAL = (
     "I can't process personal details about a child here. This workspace isn't authorized "
@@ -835,7 +863,7 @@ def _regulated_data_refusal(
     The policy engine still denies tool calls carrying this data; this keeps it
     from reaching the model at all.
     """
-    from freedombot.policy.classifier import classify_text, find_ssn, identifiable_phi
+    from freedombot.policy.classifier import classify_text, find_ssn, health_about_person, identifiable_phi
 
     child = _child_data_refusal(message, settings)
     if child:
@@ -844,15 +872,16 @@ def _regulated_data_refusal(
     found = classify_text(message)
     handling = bool(_HANDLE_INTENT.search(message or ""))
     phi_payload = bool(_PHI_PAYLOAD.search(message or ""))
-    card_digits = bool(_CARD_DIGITS.search(message or ""))
+    card_digits = bool(_CARD_DIGITS.search(message or "") or _CARD_PAYLOAD.search(message or ""))
 
     # SSN: the number itself in any sentence; the word alone only when someone wants it handled.
     if (find_ssn(message) or (handling and found.contains_ssn)) and not settings.order_dpa_allows_category("ssn"):
         return "SSN_BLOCKED", SSN_REFUSAL
 
-    # PHI: handling intent, or a concrete identifier / labelled diagnosis in the message.
+    # PHI: handling intent, a concrete identifier / labelled diagnosis, or health details about a person
+    # in plain words. Sharing them is enough: they would otherwise reach the model and the chat history.
     if (
-        (handling or phi_payload)
+        (handling or phi_payload or health_about_person(message))
         and identifiable_phi(message)
         and not settings.phi_permitted()
     ):

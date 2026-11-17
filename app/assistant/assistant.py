@@ -93,9 +93,14 @@ def _pending_state(saved: dict) -> dict:
     return {}
 
 
-def _history(saved: dict) -> list[Message]:
+def _history(saved: dict, settings: Any = None) -> list[Message]:
+    """Earlier turns for the model. With ``settings``, data the Order/DPA does not allow is withheld,
+    so a detail shared before a rule was switched on is never sent to the model again."""
+    if settings is not None:
+        from freedombot.policy.regulated import screen_for_model
     return [
-        Message(role=m["role"], content=m["content"])
+        Message(role=m["role"], content=screen_for_model(m["content"], settings)[0] if settings is not None
+                else m["content"])
         for m in saved.get("messages") or []
         if m["role"] in ("user", "assistant") and m.get("content")
     ]
