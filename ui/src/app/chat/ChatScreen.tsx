@@ -28,6 +28,7 @@ import {
   Mail,
   PanelLeftClose,
   PanelLeftOpen,
+  Headset,
   Pencil,
   Plug,
   Plus,
@@ -38,7 +39,8 @@ import {
   X
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
-import { EscalateButton, FlagAnswer, SupportDeskLink } from './SupportActions'
+import { EscalateButton, FlagAnswer, SupportDeskButton, useSupportStaff } from './SupportActions'
+import { SupportDesk } from '@/components/support/SupportDesk'
 import { RequestAccessDialog } from '@/components/RequestAccess'
 import { api, ApiError } from '@/lib/api'
 import { useSession } from '@/components/SessionProvider'
@@ -730,6 +732,9 @@ function ChatView({ home }: { home: boolean }) {
   const [historyQuery, setHistoryQuery] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [integrationsOpen, setIntegrationsOpen] = useState(false)
+  // The settings window's tab: connected apps, or (Cepoch and Jeanne only) their support tickets.
+  const [panelTab, setPanelTab] = useState<'apps' | 'tickets'>('apps')
+  const supportStaff = useSupportStaff()
   const [accessOpen, setAccessOpen] = useState(false)
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
@@ -1452,6 +1457,7 @@ function ChatView({ home }: { home: boolean }) {
                         className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-primary hover:bg-background-elevated"
                         onClick={() => {
                           setSettingsOpen(false)
+                          setPanelTab('apps')
                           setIntegrationsOpen(true)
                         }}
                       >
@@ -1461,6 +1467,26 @@ function ChatView({ home }: { home: boolean }) {
                           <span className="block text-[11px] text-muted">Google apps, YouTube, HubSpot, Facebook, Instagram, LinkedIn, Zoom, Apollo</span>
                         </span>
                       </button>
+                      {supportStaff && (
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-primary hover:bg-background-elevated"
+                          onClick={() => {
+                            setSettingsOpen(false)
+                            setPanelTab('tickets')
+                            setIntegrationsOpen(true)
+                          }}
+                        >
+                          <Headset size={15} className="text-brand" aria-hidden />
+                          <span className="min-w-0">
+                            <span className="block font-medium">Support tickets</span>
+                            <span className="block text-[11px] text-muted">
+                              {supportStaff.teamLabel}: tickets from every client
+                            </span>
+                          </span>
+                        </button>
+                      )}
                       {!me?.user.roles.includes('ADMIN') && (
                         <button
                           type="button"
@@ -1595,7 +1621,15 @@ function ChatView({ home }: { home: boolean }) {
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
-            <SupportDeskLink />
+            {supportStaff && (
+              <SupportDeskButton
+                unread={supportStaff.unread}
+                onOpen={() => {
+                  setPanelTab('tickets')
+                  setIntegrationsOpen(true)
+                }}
+              />
+            )}
             <EscalateButton sessionId={sessionId || null} />
             {chatHome && (
               <>
@@ -2056,7 +2090,7 @@ function ChatView({ home }: { home: boolean }) {
       </section>
 
       <RequestAccessDialog open={accessOpen} onClose={() => setAccessOpen(false)} />
-      {chatHome && integrationsOpen && (
+      {integrationsOpen && (chatHome || panelTab === 'tickets') && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
             type="button"
@@ -2068,16 +2102,48 @@ function ChatView({ home }: { home: boolean }) {
             role="dialog"
             aria-modal="true"
             aria-label="Integrations"
-            className="relative flex max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-lift"
+            className={`relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-lift ${
+              panelTab === 'tickets' ? 'max-w-5xl' : 'max-w-3xl'
+            }`}
           >
             <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-4">
               <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/10 text-brand">
-                <Plug size={17} aria-hidden />
+                {panelTab === 'tickets' ? <Headset size={17} aria-hidden /> : <Plug size={17} aria-hidden />}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-semibold text-primary">Integrations</p>
-                <p className="text-[12px] text-muted">Your own accounts, connected through Composio</p>
+                <p className="text-[15px] font-semibold text-primary">
+                  {panelTab === 'tickets' ? 'Support tickets' : 'Integrations'}
+                </p>
+                <p className="text-[12px] text-muted">
+                  {panelTab === 'tickets'
+                    ? `${supportStaff?.teamLabel ?? 'Support'}: tickets from every client`
+                    : 'Your own accounts, connected through Composio'}
+                </p>
               </div>
+              {supportStaff && (
+                <div role="tablist" aria-label="Settings" className="flex rounded-lg border border-border p-0.5 text-[12px]">
+                  {(
+                    [
+                      ['apps', 'Integrations'],
+                      ['tickets', 'Support tickets']
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="tab"
+                      aria-selected={panelTab === value}
+                      disabled={value === 'apps' && !chatHome}
+                      onClick={() => setPanelTab(value)}
+                      className={`rounded-md px-2.5 py-1 font-semibold ${
+                        panelTab === value ? 'bg-brand text-white' : 'text-muted hover:text-primary'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button
                 type="button"
                 className="flex h-9 w-9 items-center justify-center rounded-lg text-muted hover:bg-background-elevated hover:text-primary"
@@ -2088,7 +2154,11 @@ function ChatView({ home }: { home: boolean }) {
               </button>
             </div>
             <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-5">
-              <IntegrationsView callbackPath="/chat" compact />
+              {panelTab === 'tickets' && supportStaff ? (
+                <SupportDesk team={supportStaff.team} teamLabel={supportStaff.teamLabel} embedded />
+              ) : (
+                <IntegrationsView callbackPath="/chat" compact />
+              )}
             </div>
           </div>
         </div>

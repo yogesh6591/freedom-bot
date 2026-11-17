@@ -510,7 +510,8 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: support receives the ticket. {gate}
     """)),
     "support_my_tickets": M("ops", d("""
-        List the support tickets this user raised themselves, with status and resolution.
+        List the support tickets this user raised, with status and resolution. For support staff it
+        lists their team's open queue instead.
         Use when: "what happened to the ticket I raised", "any update on my support request", "did support
         fix my issue".
         Don't use: raising a new one -> support_create_ticket; as support staff, tickets for you or your

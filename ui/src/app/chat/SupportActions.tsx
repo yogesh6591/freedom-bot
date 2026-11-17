@@ -6,7 +6,6 @@
  */
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import { Flag, Headset, LifeBuoy, X } from 'lucide-react'
 import { api } from '@/lib/api'
 
@@ -88,18 +87,24 @@ export function FlagAnswer({ sessionId, messageId }: { sessionId: string; messag
   )
 }
 
-/** For Cepoch and Jeanne only: a link to their Support desk, with how many notices are new. */
-export function SupportDeskLink() {
-  const [desk, setDesk] = useState<{ label: string; unread: number } | null>(null)
+export interface SupportStaff {
+  team: 'CEPOCH' | 'JEANNE'
+  teamLabel: string
+  unread: number
+}
+
+/** Whether the person is Cepoch or Jeanne support staff, and how many ticket notices are new. */
+export function useSupportStaff(): SupportStaff | null {
+  const [staff, setStaff] = useState<SupportStaff | null>(null)
 
   useEffect(() => {
     let alive = true
     api
-      .get<{ is_staff: boolean; team_label?: string }>('/api/support/me')
+      .get<{ is_staff: boolean; team: 'CEPOCH' | 'JEANNE' | null; team_label?: string }>('/api/support/me')
       .then(async (me) => {
-        if (!me.is_staff) return
+        if (!me.is_staff || !me.team) return
         const notes = await api.get<{ unread: number }>('/api/support/notifications')
-        if (alive) setDesk({ label: me.team_label || 'Support', unread: notes.unread })
+        if (alive) setStaff({ team: me.team, teamLabel: me.team_label || me.team, unread: notes.unread })
       })
       .catch(() => undefined)
     return () => {
@@ -107,19 +112,24 @@ export function SupportDeskLink() {
     }
   }, [])
 
-  if (!desk) return null
+  return staff
+}
+
+/** For Cepoch and Jeanne only: opens their tickets inside the chat, with how many notices are new. */
+export function SupportDeskButton({ unread, onOpen }: { unread: number; onOpen: () => void }) {
   return (
-    <Link
-      href="/support"
-      title={`Open the ${desk.label} support desk`}
+    <button
+      type="button"
+      onClick={onOpen}
+      title="Your support tickets"
       className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] font-semibold text-muted hover:text-primary"
     >
       <Headset size={14} aria-hidden />
-      <span className="hidden sm:inline">Support desk</span>
-      {desk.unread > 0 && (
-        <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{desk.unread}</span>
+      <span className="hidden sm:inline">Support tickets</span>
+      {unread > 0 && (
+        <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{unread}</span>
       )}
-    </Link>
+    </button>
   )
 }
 

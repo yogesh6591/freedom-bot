@@ -308,6 +308,10 @@ def test_cepoch_sees_a_flagged_client_answer_in_its_queue_from_chat(client_a, cl
     with tenant_scope(cepoch):
         queue = guarded_call(RunScope(ctx=cepoch, settings=client_scratch.settings), "support_queue", {})
     assert queue.ok and any(row["id"] == raised.data["id"] for row in queue.data)
+    # "My tickets" means the same queue for support staff, whichever tool the assistant picks.
+    with tenant_scope(cepoch):
+        mine = guarded_call(RunScope(ctx=cepoch, settings=client_scratch.settings), "support_my_tickets", {})
+    assert mine.ok and any(row["id"] == raised.data["id"] for row in mine.data)
 
     with tenant_scope(ctx):
         refused = guarded_call(RunScope(ctx=ctx, settings=client_a.settings), "support_queue", {})

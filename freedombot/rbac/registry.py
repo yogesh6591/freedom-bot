@@ -578,7 +578,6 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         "List the support tickets this user raised, with status and latest update.",
         CATEGORY_INTERNAL,
         _ALL,
-        not_for_support_staff=True,
         tags=frozenset({"read", "support"}),
     ),
     # --------------------------------------------------------------- CRM

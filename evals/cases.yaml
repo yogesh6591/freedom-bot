@@ -30131,10 +30131,10 @@
     results:
       support_queue:
       - {id: sup_301, subject: Flagged AI answer, client: Acme Corp, status: OPEN, priority: NORMAL, category: TECHNICAL, source: AI_FLAG}
+      support_my_tickets:
+      - {id: sup_301, subject: Flagged AI answer, client: Acme Corp, status: OPEN, priority: NORMAL, category: TECHNICAL, source: AI_FLAG}
   expected_domains: [ops]
-  expected_tool_calls: [support_queue]
-  forbidden_tool_calls: [support_my_tickets]
-  expected_gates: {support_queue: run}
+  expected_tool_calls: [support_queue|support_my_tickets]
   expected_reply_contains: [Acme]
   expected_outcome: answer
 - id: t_queue_jeanne_001
@@ -30159,4 +30159,20 @@
   expected_tool_calls: [support_my_tickets]
   forbidden_tool_calls: [support_queue]
   expected_hidden: [support_queue]
+  expected_outcome: answer
+- id: t_queue_cepoch_002
+  query: show me tickets for me
+  user: {name: Yogesh, id: u_y, roles: [ADMIN], support_team: CEPOCH}
+  history:
+  - {role: user, content: show me tickets for me}
+  - {role: assistant, content: "You haven't raised any support tickets."}
+  fixtures:
+    results:
+      support_queue:
+      - {id: sup_301, subject: Flagged AI answer, client: Acme Corp, status: OPEN, priority: NORMAL, category: TECHNICAL, source: AI_FLAG}
+      support_my_tickets:
+      - {id: sup_301, subject: Flagged AI answer, client: Acme Corp, status: OPEN, priority: NORMAL, category: TECHNICAL, source: AI_FLAG}
+  expected_domains: [ops]
+  expected_tool_calls: [support_queue|support_my_tickets]
+  expected_reply_contains: [Acme]
   expected_outcome: answer

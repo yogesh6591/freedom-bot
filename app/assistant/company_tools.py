@@ -949,6 +949,10 @@ def support_create_ticket(scope: RunScope, args: dict[str, Any]) -> ConnectorRes
 
 @effect("support_my_tickets")
 def support_my_tickets(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """The tickets this user raised. For Cepoch and Jeanne, "my tickets" is their team's queue, so they
+    get that, whichever of the two tools the assistant picked."""
+    if scope.ctx.attributes.get("support_team") in support.TEAMS:
+        return support_queue(scope, {"show": "open"})
     mine = [
         t for t in support.list_tickets(client_id=scope.ctx.client_id)
         if t.get("created_by") == scope.ctx.user_id
