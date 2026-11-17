@@ -6,7 +6,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Flag, Headset, LifeBuoy, X } from 'lucide-react'
+import { Flag, LifeBuoy, X } from 'lucide-react'
 import { api } from '@/lib/api'
 
 interface Raised {
@@ -113,24 +113,6 @@ export function useSupportStaff(): SupportStaff | null {
   }, [])
 
   return staff
-}
-
-/** For Cepoch and Jeanne only: opens their tickets inside the chat, with how many notices are new. */
-export function SupportDeskButton({ unread, onOpen }: { unread: number; onOpen: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      title="Your support tickets"
-      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] font-semibold text-muted hover:text-primary"
-    >
-      <Headset size={14} aria-hidden />
-      <span className="hidden sm:inline">Support tickets</span>
-      {unread > 0 && (
-        <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{unread}</span>
-      )}
-    </button>
-  )
 }
 
 /** "Escalate issue": describe the problem; the current conversation goes with it. */

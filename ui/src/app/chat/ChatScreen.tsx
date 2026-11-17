@@ -39,7 +39,7 @@ import {
   X
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
-import { EscalateButton, FlagAnswer, SupportDeskButton, useSupportStaff } from './SupportActions'
+import { EscalateButton, FlagAnswer, useSupportStaff } from './SupportActions'
 import { SupportDesk } from '@/components/support/SupportDesk'
 import { RequestAccessDialog } from '@/components/RequestAccess'
 import { api, ApiError } from '@/lib/api'
@@ -1480,7 +1480,14 @@ function ChatView({ home }: { home: boolean }) {
                         >
                           <Headset size={15} className="text-brand" aria-hidden />
                           <span className="min-w-0">
-                            <span className="block font-medium">Support tickets</span>
+                            <span className="flex items-center gap-1.5 font-medium">
+                              Support tickets
+                              {supportStaff.unread > 0 && (
+                                <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
+                                  {supportStaff.unread}
+                                </span>
+                              )}
+                            </span>
                             <span className="block text-[11px] text-muted">
                               {supportStaff.teamLabel}: tickets from every client
                             </span>
@@ -1621,16 +1628,8 @@ function ChatView({ home }: { home: boolean }) {
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
-            {supportStaff && (
-              <SupportDeskButton
-                unread={supportStaff.unread}
-                onOpen={() => {
-                  setPanelTab('tickets')
-                  setIntegrationsOpen(true)
-                }}
-              />
-            )}
-            <EscalateButton sessionId={sessionId || null} />
+            {/* Cepoch, Jeanne and platform owners work tickets from Settings > Support tickets; clients escalate here. */}
+            {!supportStaff && !me?.user.is_platform_owner && <EscalateButton sessionId={sessionId || null} />}
             {chatHome && (
               <>
                 <ThemeToggle className="!h-9 !min-h-9 !w-9 !min-w-9 !rounded-full" />
