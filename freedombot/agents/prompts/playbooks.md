@@ -110,25 +110,27 @@
 ## admin_users
 - Get the user from admin_list_users first. "User/login/access/role" means FreedomBot users, not CRM contacts.
 - Each person has one role for all their work:
-  Advise: just answers. Draft: prepares it, they review. Approve: waits for a human (sending email, CRM
-  writes, spending money). Auto: routine work runs by itself.
-- Their data access says where they work, several allowed: departments general, sales, planning, finance,
-  legal, ops (Operations), intake, strategy, brand, hr; and apps crm, email (Gmail), calendar. They can only
-  change things in departments they have. Admin (job_role ADMIN) has every department with full access.
+  Advise: just answers; can look at CRM and Gmail but cannot change them. Draft: CRM and Gmail changes are
+  only drafted, for an approver. Approve: makes CRM and Gmail changes directly and approves other people's
+  drafts. Auto: makes CRM and Gmail changes directly; routine work runs by itself.
+- Every role can use CRM, Gmail and Calendar. Data access is only the departments they work in, several
+  allowed: general, sales, planning, finance, legal, ops (Operations), intake, strategy, brand, hr. They can
+  only change things in departments they have. "Gmail access" or "CRM access" is not a data access change:
+  say every role already has it. Admin (job_role ADMIN) has every department with full access.
   Employee (job_role EMPLOYEE) is view only.
 - Creating a user: admin_create_user with role (advise, draft, approve, auto) and job_role for their department
   (GENERAL, SALES, PLANNING, FINANCE, LEGAL, OPERATIONS, INTAKE, STRATEGY, BRAND, HR, or EMPLOYEE or ADMIN). It
   sets the level and data access together, so never create a VIEWER and add a data area.
 - If no department is named ("add priya@ourco.in"), do not create yet. Ask one question, "Which department
   should she work in, and which role?", and list the departments and the four roles with the meaning of each.
-- If the department is named but not the role, do not ask: create it now with role approve, then tell them
+- If the department is named but not the role, do not ask: create it now with role draft, then tell them
   the four roles so they can change it. Example: "Create a finance user for neha@ourco.in" ->
-  admin_create_user {email: neha@ourco.in, job_role: FINANCE, role: approve} straight away.
+  admin_create_user {email: neha@ourco.in, job_role: FINANCE, role: draft} straight away.
   No admin_list_users is needed to create someone new.
 - "Add lee@ourco.in as an employee" -> admin_create_user {email, job_role: EMPLOYEE}, no role to ask.
 - "Set Ravi's role to Draft", "make Ravi Auto": admin_update_user role. It changes nothing else.
-- "Give him X access", "X access too", "also put him in Sales": admin_update_user access_grant with the data
-  access names above (operations is "ops", Gmail is "email"). Keep the role and everything he already has.
+- "Give him X access", "X access too", "also put him in Sales": admin_update_user access_grant with the
+  department names above (operations is "ops"). Keep the role and everything he already has.
   Never use job_role for these.
 - Only "make him X", "move him to X", "the X person" uses job_role on admin_update_user; it swaps his
   department for X and keeps his role. "Make him an admin" is job_role ADMIN.

@@ -117,10 +117,11 @@ def test_picking_a_job_role_sets_the_level_and_tags(app_client, client):
     control.set_user_scopes(viewer.id, [])
     body = app_client.patch(f"/api/users/{viewer.id}/job-role", json={"job_role": "HR"}, headers=admin).json()
     assert body["job_role"] == "HR" and body["job_role_label"] == "HR"
-    assert body["roles"] == ["OPERATOR"] and body["data_scopes"] == ["hr", "salary"]
+    # A department role comes with a role (Draft by default), and every role brings the apps.
+    assert body["roles"] == ["OPERATOR"] and body["data_scopes"] == ["calendar", "crm", "email", "hr", "salary"]
 
     body = app_client.patch(f"/api/users/{viewer.id}/job-role", json={"job_role": "EMPLOYEE"}, headers=admin).json()
-    assert body["roles"] == ["VIEWER"] and body["data_scopes"] == []
+    assert body["roles"] == ["VIEWER"] and body["data_scopes"] == ["calendar", "crm", "email"]
 
 
 def test_only_an_admin_can_set_a_job_role(app_client, client):
@@ -148,15 +149,17 @@ def test_an_admin_cannot_demote_themselves_through_a_job_role(app_client, client
     assert Role.ADMIN in control.get_user(admin_user.id).roles
 
 
-def test_can_approve_survives_a_job_role_change(app_client, client):
+def test_approving_follows_the_role(app_client, client):
+    """Only the Approve role approves other people's drafts; the role, not a separate switch, decides."""
     admin = _auth(app_client, client, "admin")
     viewer = _user(client, "viewer")
-    body = app_client.patch(f"/api/users/{viewer.id}/can-approve", json={"can_approve": True}, headers=admin).json()
-    assert body["can_approve"] is True
-    body = app_client.patch(f"/api/users/{viewer.id}/job-role", json={"job_role": "SALES"}, headers=admin).json()
+    body = app_client.patch(f"/api/users/{viewer.id}/job-role", json={"job_role": "SALES", "access_mode": "approve"},
+                            headers=admin).json()
     assert body["roles"] == ["APPROVER", "OPERATOR"] and body["can_approve"] is True
-    body = app_client.patch(f"/api/users/{viewer.id}/can-approve", json={"can_approve": False}, headers=admin).json()
+    body = app_client.patch(f"/api/users/{viewer.id}/access-mode", json={"mode": "draft"}, headers=admin).json()
     assert body["roles"] == ["OPERATOR"] and body["can_approve"] is False
+    body = app_client.patch(f"/api/users/{viewer.id}/access-mode", json={"mode": "approve"}, headers=admin).json()
+    assert body["roles"] == ["APPROVER", "OPERATOR"] and body["access_mode"] == "approve"
 
 
 def test_a_new_user_gets_the_level_of_their_job_role(app_client, client):
@@ -167,7 +170,7 @@ def test_a_new_user_gets_the_level_of_their_job_role(app_client, client):
     )
     assert response.status_code == 201
     body = response.json()
-    assert body["roles"] == ["OPERATOR"] and body["data_scopes"] == ["finance"] and body["job_role"] == "FINANCE"
+    assert body["roles"] == ["OPERATOR"] and body["data_scopes"] == ["calendar", "crm", "email", "finance"] and body["job_role"] == "FINANCE"
 
 
 def test_a_request_grants_nothing_until_an_admin_decides(app_client, client):

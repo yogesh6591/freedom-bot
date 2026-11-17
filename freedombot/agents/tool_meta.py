@@ -207,7 +207,7 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: the request is approved, closed, or returned. {gate}
     """), id_fields=("action_id",)),
     "admin_update_user": M("admin_users", d("""
-        Change a FreedomBot user's role (advise, draft, approve, auto) or data access (departments, apps).
+        Change a FreedomBot user's role (advise, draft, approve, auto) or data access (departments).
         access_grant adds and keeps the rest; job_role moves them to one department.
         Use when: "set Ravi's role to Draft", "give Ravi finance access too", "move Lee to finance".
         Don't use: suspending -> admin_set_user_status; a tool's roles -> admin_set_tool_permission; a
@@ -808,7 +808,7 @@ TOOL_META: dict[str, AgentMeta] = {
         the CRM.
     """)),
     "admin_create_user": M("admin_users", d("""
-        Create a FreedomBot login for a new person: role (advise, draft, approve, auto; approve if not said,
+        Create a FreedomBot login for a new person: role (advise, draft, approve, auto; draft if not said,
         do not ask) and job_role, their department (or ADMIN), plus any extra data_access. A temporary
         password is returned once.
         Use when: "add priya@ourco.in to finance as Draft", "give Lee a login".
@@ -826,16 +826,17 @@ TOOL_META: dict[str, AgentMeta] = {
         admin. {gate}
     """), id_fields=("user",)),
     "admin_set_user_mode": M("admin_users", d("""
-        Set a FreedomBot user's one role, which applies to all their work: advise (just answers), draft
-        (prepares, they review), approve (waits for a human) or auto (routine work runs by itself).
+        Set a FreedomBot user's one role for all their work: advise (looks, changes nothing), draft (CRM
+        and Gmail changes only drafted), approve (changes directly, approves drafts) or auto (changes
+        directly).
         Use when: "set Ravi's role to Draft", "make Lee Auto".
-        Don't use: departments or apps -> admin_set_user_access; admin -> admin_set_user_roles.
+        Don't use: departments -> admin_set_user_access; admin -> admin_set_user_roles.
         Needs: the user from admin_list_users.
-        Effect: changes whether their emails and CRM writes run, wait or stay drafts. {gate}
+        Effect: changes whether their CRM and Gmail changes run or stay drafts. {gate}
     """), id_fields=("user",)),
     "admin_set_user_access": M("admin_users", d("""
-        Grant or revoke a FreedomBot user's data access: departments (general, sales, planning, finance, legal,
-        ops, intake, strategy, brand, hr) and apps (crm, email, calendar).
+        Grant or revoke a FreedomBot user's data access, the departments they work in: general, sales,
+        planning, finance, legal, ops, intake, strategy, brand, hr. Apps come with every role.
         Use when: "give Ravi finance access".
         Don't use: roles -> admin_set_user_roles; a pack for everyone -> admin_toggle_domain;
         suspending -> admin_set_user_status.

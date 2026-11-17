@@ -2075,13 +2075,15 @@ def admin_set_user_access(scope: RunScope, args: dict[str, Any]) -> ConnectorRes
     """Grant or revoke restricted data areas; ``data_access`` replaces, add/remove edit."""
     try:
         user = _find_user(scope, args.get("user"))
-        if args.get("data_access") is not None:
-            wanted = set(_list(args.get("data_access")))
-        else:
-            wanted = set(user.data_scopes)
-        wanted |= set(_list(args.get("add")))
-        wanted -= set(_list(args.get("remove")))
-        updated = ops.set_scopes(scope.ctx, user.id, sorted(s.casefold() for s in wanted))
+        from freedombot.policy.person_role import companions, tag_name
+
+        def names(key: str) -> set[str]:
+            return {tag_name(v) for v in _list(args.get(key))}
+
+        wanted = names("data_access") if args.get("data_access") is not None else set(user.data_scopes)
+        wanted |= companions(names("add"))
+        wanted -= companions(names("remove"))
+        updated = ops.set_scopes(scope.ctx, user.id, sorted(wanted))
     except ops.AdminError as exc:
         return _failure(exc)
     return ConnectorResult(

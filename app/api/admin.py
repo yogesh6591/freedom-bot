@@ -75,6 +75,8 @@ class AccessModeUpdate(BaseModel):
 
 class AdminUpdate(BaseModel):
     admin: bool
+    #: When turning Admin off: the role they get (advise, draft, approve, auto). Their old role if left out.
+    mode: Optional[str] = None
 
 
 class CanApproveUpdate(BaseModel):
@@ -176,7 +178,7 @@ def set_access_mode(
 @router.patch("/users/{user_id}/admin")
 def set_admin(user_id: str, body: AdminUpdate, ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
     """Make a person an admin, or turn it off. Nobody can remove their own admin, nor the last one."""
-    return _run(ops.set_admin, ctx, user_id, body.admin).to_dict()
+    return _run(ops.set_admin, ctx, user_id, body.admin, body.mode).to_dict()
 
 
 @router.patch("/users/{user_id}/can-approve")

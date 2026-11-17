@@ -30012,14 +30012,14 @@
   expected_gates: {admin_update_user: run}
   expected_outcome: run
 - id: t_role_access_add_001
-  query: Also give Ravi Kumar Intake and Gmail access
+  query: Also give Ravi Kumar Intake and Legal access
   user: {name: Anita, id: u_1, roles: [ADMIN]}
   fixtures:
     users: [{id: u_42, name: Ravi Kumar, email: ravi@ourco.in, roles: [OPERATOR], data_access: [sales], role: draft, status: ACTIVE}]
   expected_domains: [admin_users]
   expected_tool_calls: [admin_list_users, admin_update_user]
   expected_args:
-    admin_update_user: {user: u_42, access_grant: [intake, email]}
+    admin_update_user: {user: u_42, access_grant: [intake, legal]}
   forbidden_args:
     admin_update_user: {job_role: INTAKE}
   expected_gates: {admin_update_user: run}

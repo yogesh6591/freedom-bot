@@ -24,7 +24,7 @@ from freedombot.control import store as control
 from freedombot.control.models import ClientSettings
 from freedombot.rbac.job_roles import JOB_ROLES, JobRole, roles_for, tags_after_change
 from freedombot.tenancy.context import TenantContext, tenant_scope
-from freedombot.types import DATA_AREAS, AuditEventType, Role, ToolPermission
+from freedombot.types import APP_AREAS, DATA_AREAS, AuditEventType, Role, ToolPermission
 from freedombot.util.timeutil import is_timezone, utcnow
 
 
@@ -136,15 +136,16 @@ def create_user(
     job = _job_role(job_role) if job_role else None
     admin = (job is not None and job.level is Role.ADMIN) or "ADMIN" in {str(r).upper() for r in roles}
     # Everyone but an admin gets one role (Advise, Draft, Approve, Auto); Approve when none is named.
-    mode = None if admin else (_mode(access_mode) if (access_mode or job) else None)
+    # Employee (view only) and Admin have no role.
+    no_role = admin or (job is not None and job.level is not Role.OPERATOR)
+    mode = None if no_role else (_mode(access_mode) if (access_mode or job) else None)
     if job:
         roles, data_scopes = (str(job.level),), sorted({*job.tags, *data_scopes})
-    elif mode and not admin:
-        approver = "APPROVER" in {str(r).upper() for r in roles}
-        roles = ("OPERATOR", "APPROVER") if approver else ("OPERATOR",)
+    if mode:
+        roles = _levels_for(mode)
     from freedombot.policy.person_role import companions
 
-    data_scopes = sorted(companions(data_scopes))
+    data_scopes = sorted(companions(data_scopes) | (set(APP_AREAS) if mode else set()))
     role_names = list(roles)
     try:
         user = control.create_user(
@@ -235,42 +236,58 @@ def set_job_role(ctx: TenantContext, user_id: str, job_role: str, access_mode: O
     updated = control.set_user_job_role(user_id, job.key)
     if job.level is Role.OPERATOR:
         mode = _mode(access_mode) if access_mode else (user.access_mode or _mode(None))
-        if mode != updated.access_mode:
-            updated = control.set_user_access_mode(user_id, mode)
+        updated = _apply_role(ctx, user_id, mode)
     _log(ctx, AuditEventType.CONFIG_CHANGED, "JOB_ROLE_CHANGED",
          request={"user_id": user_id, "job_role": job.key, "role": updated.access_mode})
     return updated
 
 
+def _levels_for(mode: str) -> tuple[str, ...]:
+    """The permission levels a role needs: Operator, plus Approver for the Approve role."""
+    from freedombot.policy.person_role import APPROVING_MODE
+
+    return ("OPERATOR", "APPROVER") if mode == APPROVING_MODE else ("OPERATOR",)
+
+
+def _apply_role(ctx: TenantContext, user_id: str, mode: str):
+    """Store a person's role with what comes with it: the levels it needs and the apps (CRM, Gmail, Calendar)."""
+    user = user_in_client(ctx, user_id)
+    wanted = {Role(r) for r in _levels_for(mode)}
+    if set(user.roles) != wanted:
+        set_roles(ctx, user_id, sorted(str(r) for r in wanted))
+    if not set(APP_AREAS) <= set(user.data_scopes):
+        set_scopes(ctx, user_id, sorted({*user.data_scopes, *APP_AREAS}))
+    return control.set_user_access_mode(user_id, mode)
+
+
 def set_access_mode(ctx: TenantContext, user_id: str, mode: str):
     """Set a person's one role: Advise, Draft, Approve or Auto. It applies to all their work.
 
-    A person below the Operator level is raised to it, keeping the right to approve if they had it: the
-    role, not the level, now decides what their changes do.
+    The role decides the level too: Approve can approve other people's drafts, the others cannot. Every
+    role can use CRM, Gmail and Calendar.
     """
     user = user_in_client(ctx, user_id)
     chosen = _mode(mode)
     if Role.ADMIN in user.roles:
         raise AdminError("Admins have full access in every department. Turn off Admin first to give them a role.")
-    if Role.OPERATOR not in user.roles:
-        set_roles(ctx, user_id, ["OPERATOR", *(["APPROVER"] if Role.APPROVER in user.roles else [])])
-    updated = control.set_user_access_mode(user_id, chosen)
+    updated = _apply_role(ctx, user_id, chosen)
     _log(ctx, AuditEventType.CONFIG_CHANGED, "PERSON_ROLE_CHANGED", request={"user_id": user_id, "role": chosen})
     return updated
 
 
-def set_admin(ctx: TenantContext, user_id: str, admin: bool):
-    """Make a person an admin (every department, full access), or turn it off (they keep their role)."""
+def set_admin(ctx: TenantContext, user_id: str, admin: bool, mode: Optional[str] = None):
+    """Make a person an admin (every department, full access), or turn it off and give them ``mode``
+    (else the role they had, else Approve)."""
     user = user_in_client(ctx, user_id)
     if admin:
         return set_job_role(ctx, user_id, "ADMIN")
     if Role.ADMIN not in user.roles:
-        return user
-    # set_roles carries the "not your own Admin" and "keep one active admin" rules.
-    set_roles(ctx, user_id, ["OPERATOR"])
-    control.set_user_job_role(user_id, None)
-    updated = control.set_user_access_mode(user_id, user.access_mode or _mode(None))
-    _log(ctx, AuditEventType.CONFIG_CHANGED, "ADMIN_REMOVED", request={"user_id": user_id})
+        return set_access_mode(ctx, user_id, mode) if mode else user
+    chosen = _mode(mode) if mode else (user.access_mode or _mode(None))
+    # set_roles (inside _apply_role) carries the "not your own Admin" and "keep one active admin" rules.
+    updated = _apply_role(ctx, user_id, chosen)
+    updated = control.set_user_job_role(user_id, None)
+    _log(ctx, AuditEventType.CONFIG_CHANGED, "ADMIN_REMOVED", request={"user_id": user_id, "role": chosen})
     return updated
 
 

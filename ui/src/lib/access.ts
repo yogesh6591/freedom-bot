@@ -43,10 +43,14 @@ export function modeMeaning(value: string): string {
   return DEPARTMENT_MODES.find((m) => m.value === value)?.meaning ?? ''
 }
 
-/** Everything a person can be given or ask for: departments, then apps. */
-export const DATA_TAGS = [...DEPARTMENTS, ...APP_TAGS]
+/** Everything a person can be given or ask for: departments. Apps come with every role. */
+export const DATA_TAGS = [...DEPARTMENTS]
 
-const OTHER_LABELS: Record<string, string> = { salary: 'Salary', exec: 'Exec' }
+const OTHER_LABELS: Record<string, string> = {
+  ...Object.fromEntries(APP_TAGS.map((t) => [t.value, t.label])),
+  salary: 'Salary',
+  exec: 'Exec'
+}
 
 export function tagLabel(value: string): string {
   return DATA_TAGS.find((tag) => tag.value === value)?.label ?? OTHER_LABELS[value] ?? value

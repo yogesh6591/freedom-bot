@@ -266,9 +266,9 @@ ADMIN_UPDATE_USER = MergedTool(
             "job_role": _s("For 'make him X', 'move him to X', 'X person': GENERAL, SALES, PLANNING, FINANCE, "
                            "LEGAL, OPERATIONS, INTAKE, STRATEGY, BRAND, HR (swaps his department), EMPLOYEE "
                            "(view only) or ADMIN"),
-            "access_grant": _arr("For 'also', 'too', 'X access': data access to add, keeping the rest. Departments "
-                                 "general, sales, planning, finance, legal, ops, intake, strategy, brand, hr; apps "
-                                 "crm, email, calendar"),
+            "access_grant": _arr("For 'also', 'too', 'X access': departments to add, keeping the rest: general, "
+                                 "sales, planning, finance, legal, ops (write ops, not operations), intake, strategy, "
+                                 "brand, hr. CRM, Gmail and Calendar come with every role"),
             "access_revoke": _arr("Data access to remove"),
         },
         ["user"],

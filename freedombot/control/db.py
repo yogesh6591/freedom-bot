@@ -82,6 +82,7 @@ def migrate_control_plane() -> None:
                 },
             )
         _fold_legacy_person_access(conn)
+        _align_person_roles(conn)
 
 
 def _fold_legacy_person_access(conn: Connection) -> None:
@@ -110,3 +111,27 @@ def _fold_legacy_person_access(conn: Connection) -> None:
                  "department_modes = '{}'::jsonb, app_modes = '{}'::jsonb, updated_at = NOW() WHERE id = :i"),
             {"m": mode, "t": tags, "i": row.id},
         )
+
+
+def _align_person_roles(conn: Connection) -> None:
+    """Keep what comes with each person's role in step with it (freedombot/policy/person_role.py).
+
+    Every role can use the apps (CRM, Gmail, Calendar); only the Approve role approves. Admins are left
+    alone. Idempotent, so it runs on every boot.
+    """
+    not_admin = "NOT EXISTS (SELECT 1 FROM user_roles a WHERE a.user_id = u.id AND a.role = 'ADMIN')"
+    conn.execute(text(
+        "UPDATE users u SET data_scopes = ARRAY(SELECT DISTINCT unnest(u.data_scopes || "
+        "ARRAY['crm','email','calendar']::text[]) ORDER BY 1), updated_at = NOW() "
+        f"WHERE u.access_mode IS NOT NULL AND {not_admin} "
+        "AND NOT (u.data_scopes @> ARRAY['crm','email','calendar']::text[])"
+    ))
+    conn.execute(text(
+        "INSERT INTO user_roles (user_id, role, granted_by) SELECT u.id, 'APPROVER', 'role' FROM users u "
+        f"WHERE u.access_mode = 'approve' AND {not_admin} AND NOT EXISTS "
+        "(SELECT 1 FROM user_roles r WHERE r.user_id = u.id AND r.role = 'APPROVER')"
+    ))
+    conn.execute(text(
+        "DELETE FROM user_roles r USING users u WHERE r.user_id = u.id AND r.role = 'APPROVER' "
+        f"AND u.access_mode IN ('advise', 'draft', 'auto') AND {not_admin}"
+    ))

@@ -400,9 +400,6 @@ def rule_person_role(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Cons
     if mode == ExecutionMode.DRAFT:
         return Constraint("PERSON_ROLE_DRAFT", DRAFT_ONLY,
                           f"your role is {name}, so this is prepared for your review rather than done")
-    if mode == ExecutionMode.WAIT_FOR_APPROVAL:
-        return Constraint("PERSON_ROLE_APPROVAL", REQUIRE_APPROVAL,
-                          f"your role is {name}, so a human must approve this before it runs")
     return None
 
 def rule_auto_risk_ceiling(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:

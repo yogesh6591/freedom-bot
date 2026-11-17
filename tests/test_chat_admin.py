@@ -83,7 +83,8 @@ def test_users_create_access_status_and_password(client_scratch, ctx_factory):
     assert control.authenticate(created.data["email"], password, client_slug=client_scratch.slug)
 
     access = _call(client_scratch, ctx_factory, "admin_set_user_access", user="New Hire", add=["hr"], remove=["finance"])
-    assert access.ok and access.data["data_access"] == ["hr"], access.message
+    # HR is a department; it brings salary data with it.
+    assert access.ok and access.data["data_access"] == ["hr", "salary"], access.message
 
     suspended = _call(client_scratch, ctx_factory, "admin_set_user_status", user="newhire", status="disable")
     assert suspended.ok and suspended.data["status"] == "SUSPENDED"
@@ -206,16 +207,17 @@ def test_a_department_job_role_from_chat_sets_level_and_data_access_together(cli
         email=f"fin@{client_scratch.slug}.example.com", display_name="Fin User", job_role="FINANCE",
     )
     assert created.ok, created.message
-    assert created.data["roles"] == ["OPERATOR"] and created.data["data_access"] == ["finance"]
+    # Draft by default, and every role brings the apps.
+    assert created.data["roles"] == ["OPERATOR"] and created.data["data_access"] == ["calendar", "crm", "email", "finance"]
     assert created.data["job_role"] == "Finance"
 
     moved = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="HR")
     assert moved.ok, moved.message
-    assert moved.data["roles"] == ["OPERATOR"] and moved.data["data_access"] == ["hr", "salary"]
+    assert moved.data["roles"] == ["OPERATOR"] and moved.data["data_access"] == ["calendar", "crm", "email", "hr", "salary"]
     assert moved.data["job_role"] == "HR"
 
     intake = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="INTAKE")
-    assert intake.ok and intake.data["job_role"] == "Intake" and intake.data["data_access"] == ["intake"]
+    assert intake.ok and intake.data["job_role"] == "Intake" and intake.data["data_access"] == ["calendar", "crm", "email", "intake"]
 
     bad = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="CEO")
     assert not bad.ok and "Job role must be one of" in bad.message

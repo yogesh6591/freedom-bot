@@ -733,8 +733,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         {
             "email": _s("Email address"),
             "display_name": _s("Name"),
-            "role": _s("The person's one role: advise | draft | approve | auto. approve when the user did not say"),
-            "data_access": _arr("Departments and apps they can use: general, sales, planning, finance, legal, ops, intake, strategy, brand, hr, crm, email, calendar"),
+            "role": _s("The person's one role: advise | draft | approve | auto. draft when the user did not say"),
+            "data_access": _arr("Extra departments they work in: general, sales, planning, finance, legal, ops, intake, strategy, brand, hr. CRM, Gmail and Calendar come with every role"),
             "job_role": _s("Their department: GENERAL | SALES | PLANNING | FINANCE | LEGAL | OPERATIONS | INTAKE | STRATEGY | BRAND | HR; or EMPLOYEE (view only) or ADMIN"),
             "roles": _arr("Only for odd cases: VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN"),
         },

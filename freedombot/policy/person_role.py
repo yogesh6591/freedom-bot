@@ -4,18 +4,19 @@ Per-Person Role and Department Access
 
 Each person has **one role**, set by an admin, that applies to everything they do:
 
-* **Advise**: just answers. Nothing is drafted, sent or changed.
-* **Draft**: prepares emails, CRM changes and other actions for the person to review.
-* **Approve**: sending email, CRM writes and spending money wait for a human to approve.
-* **Auto**: routine work runs by itself.
+* **Advise**: just answers. Can look at CRM and Gmail; cannot change, draft or send anything.
+* **Draft**: CRM and Gmail changes are only drafted, for an approver to approve.
+* **Approve**: makes CRM and Gmail changes directly and approves other people's drafts.
+* **Auto**: makes CRM and Gmail changes directly; routine work runs by itself.
 
-Their **data access** tags say which departments they work in (General, Sales, Planning, Finance,
-Legal, Operations, Intake, Strategy, Brand, HR) and which apps they can use (CRM, Gmail, Calendar).
-A person can hold several. A write that belongs only to departments they do not have is refused.
+Every role can use the apps (CRM, Gmail, Calendar); :data:`APP_AREAS` come with the role. Their
+**data access** tags say which departments they work in (General, Sales, Planning, Finance, Legal,
+Operations, Intake, Strategy, Brand, HR); several allowed. A write that belongs only to departments
+they do not have is refused. Approving is the Approve role's right (the APPROVER level).
 
 It only ever narrows. The workspace mode, pack ceilings, per-tool modes, the person's level and every
-guardrail still apply on top, so **Auto** adds no limit of its own but never makes anything run sooner
-than the workspace allows. Admins have every department with full access. A person with no role
+guardrail still apply on top, so **Approve** and **Auto** add no limit of their own but never make
+anything run sooner than the workspace allows. Admins have every department with full access. A person with no role
 recorded (accounts made before roles existed) gets no extra limit from here.
 """
 
@@ -37,13 +38,17 @@ MODES: dict[str, ExecutionMode] = {
 }
 MODE_LABELS: dict[str, str] = {"advise": "Advise", "draft": "Draft", "approve": "Approve", "auto": "Auto"}
 MODE_MEANINGS: dict[str, str] = {
-    "advise": "Just answers. Nothing is drafted, sent or changed.",
-    "draft": "Prepares emails, CRM changes and other actions for the person to review. Nothing is sent.",
-    "approve": "Sending email, CRM writes and spending money wait for a human to approve.",
-    "auto": "Routine work runs by itself. Risky actions still wait for approval.",
+    "advise": "Just answers. Can look at CRM and Gmail but cannot change anything.",
+    "draft": "CRM and Gmail changes are only drafted, for an approver to approve.",
+    "approve": "Makes CRM and Gmail changes directly and approves other people's drafts.",
+    "auto": "Makes CRM and Gmail changes directly. Routine work runs by itself.",
 }
-#: The role a person gets when none is named.
-DEFAULT_MODE = "approve"
+#: The mode each role holds a person's own writes to. Approve and Auto add no limit of their own.
+RESTRICTS: dict[str, ExecutionMode] = {"advise": ExecutionMode.ADVISE, "draft": ExecutionMode.DRAFT}
+#: The role whose holders may approve other people's drafts and requests.
+APPROVING_MODE = "approve"
+#: The role a person gets when none is named: the cautious one that still lets them work.
+DEFAULT_MODE = "draft"
 
 #: Department -> the data access tag that gives it. HR also brings salary data.
 DEPARTMENTS: tuple[str, ...] = (*DOMAIN_NAMES, "hr")
@@ -54,7 +59,7 @@ _TAG_DEPARTMENT: dict[str, str] = {tag: d for d, tag in DEPARTMENT_TAG.items()}
 TAG_COMPANIONS: dict[str, tuple[str, ...]] = {"hr": ("salary",)}
 
 #: Rule codes this module produces. An admin's "skip approval" option never lifts them.
-ROLE_RULES = frozenset({"PERSON_ROLE_ADVISE", "PERSON_ROLE_DRAFT", "PERSON_ROLE_APPROVAL", "PERSON_DEPARTMENT"})
+ROLE_RULES = frozenset({"PERSON_ROLE_ADVISE", "PERSON_ROLE_DRAFT", "PERSON_DEPARTMENT"})
 
 _MODE_ALIASES = {
     "advice": "advise",
@@ -82,6 +87,16 @@ def stored_mode(raw: Any) -> Optional[str]:
     """A stored role, or ``None`` when nothing valid is stored."""
     value = str(raw or "").strip()
     return value if value in MODES else None
+
+
+_TAG_ALIASES = {"operations": "ops", "operation": "ops", "human resources": "hr", "human_resources": "hr",
+                "gmail": "email"}
+
+
+def tag_name(value: str) -> str:
+    """The data access tag for what a person typed: "Operations" is ops, "Human Resources" is hr."""
+    name = str(value or "").strip().casefold()
+    return _TAG_ALIASES.get(name, name)
 
 
 def departments_of(tags: Iterable[str]) -> frozenset[str]:
@@ -161,7 +176,8 @@ def describe(tags: Iterable[str]) -> str:
 
 
 def mode_of(value: Optional[str]) -> Optional[ExecutionMode]:
-    return MODES.get(value or "")
+    """The mode a role holds a person's own writes to, or ``None`` for no limit of its own."""
+    return RESTRICTS.get(value or "")
 
 
 def label(value: Optional[str]) -> Optional[str]:
