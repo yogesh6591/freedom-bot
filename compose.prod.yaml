@@ -81,6 +81,8 @@ services:
       CORS_ORIGINS: https://freedombot-core.cloud.cepoch.com
       AGENTOS_URL: https://freedombot-core-api.cloud.cepoch.com
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      # Website self-serve signup (app/api/signup.py); empty switches it off.
+      SELF_SERVE_SIGNUP_KEY: ${SELF_SERVE_SIGNUP_KEY:-}
       OPENAI_WEB_MODEL: ${OPENAI_WEB_MODEL:-}
       INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-}
       CALCOM_API_KEY: ${CALCOM_API_KEY:-}

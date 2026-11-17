@@ -1,0 +1,428 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fg: #0b1020;
+  --fg-muted: #4e5b7a;
+  --fg-soft: #243049;
+  --bg: #f4f6fb;
+  --bg-2: #ffffff;
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-2: #eef1f8;
+  --surface-3: #e4e9f4;
+  --line: rgba(15, 23, 42, 0.12);
+  --line-strong: rgba(15, 23, 42, 0.2);
+  --brand: #4f5ef0;
+  --brand-soft: #5b6cff;
+  --accent: #0f766e;
+  --accent-soft: #0d9488;
+  --glow-a: rgba(79, 94, 240, 0.16);
+  --glow-b: rgba(14, 165, 233, 0.12);
+  --page-atmosphere:
+    radial-gradient(900px 480px at 78% -8%, rgba(79, 94, 240, 0.12), transparent 58%),
+    radial-gradient(700px 420px at 12% 110%, rgba(13, 148, 136, 0.08), transparent 55%),
+    linear-gradient(180deg, #f7f8fc 0%, #eef2f8 100%);
+  --header-bg: rgba(244, 246, 251, 0.82);
+  --header-bg-solid: rgba(244, 246, 251, 0.94);
+  --panel-shadow: 0 1px 0 rgba(15, 23, 42, 0.04), 0 18px 40px -28px rgba(15, 23, 42, 0.28);
+  --float-card: rgba(255, 255, 255, 0.82);
+  --mesh-line: rgba(100, 116, 139, 0.14);
+  --selection: rgba(79, 94, 240, 0.22);
+}
+
+.dark {
+  color-scheme: dark;
+  --fg: #f4f6fb;
+  --fg-muted: #9aa6c4;
+  --fg-soft: #c9d1e6;
+  --bg: #06070d;
+  --bg-2: #0b0e17;
+  --surface: rgba(18, 24, 38, 0.72);
+  --surface-2: #121826;
+  --surface-3: #1a2236;
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --brand: #6d7cff;
+  --brand-soft: #8b97ff;
+  --accent: #3dd6c6;
+  --accent-soft: #7eefe4;
+  --glow-a: rgba(109, 124, 255, 0.18);
+  --glow-b: rgba(61, 214, 198, 0.08);
+  --page-atmosphere:
+    radial-gradient(900px 480px at 78% -8%, rgba(109, 124, 255, 0.18), transparent 58%),
+    radial-gradient(700px 420px at 12% 110%, rgba(61, 214, 198, 0.08), transparent 55%),
+    linear-gradient(180deg, #06070d 0%, #0b0e17 100%);
+  --header-bg: rgba(6, 7, 13, 0.4);
+  --header-bg-solid: rgba(6, 7, 13, 0.85);
+  --panel-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 24px 60px -28px rgba(0, 0, 0, 0.65);
+  --float-card: rgba(8, 12, 22, 0.55);
+  --mesh-line: rgba(148, 163, 184, 0.07);
+  --selection: rgba(109, 124, 255, 0.35);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html.theme-transition,
+html.theme-transition * {
+  transition:
+    background-color 560ms var(--ease),
+    border-color 560ms var(--ease),
+    color 560ms var(--ease),
+    fill 560ms var(--ease),
+    stroke 560ms var(--ease) !important;
+}
+
+body {
+  @apply min-h-screen antialiased;
+  color: var(--fg);
+  background-color: var(--bg);
+  background-image: var(--page-atmosphere);
+  background-attachment: fixed;
+}
+
+::selection {
+  background: var(--selection);
+  color: var(--fg);
+}
+
+@layer components {
+  .container-page {
+    @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+  }
+
+  .section {
+    @apply py-20 sm:py-28;
+  }
+
+  .eyebrow {
+    @apply text-[0.72rem] font-semibold uppercase tracking-[0.18em];
+    color: var(--brand-soft);
+  }
+
+  .display {
+    @apply font-display text-4xl font-semibold tracking-[-0.04em] sm:text-5xl lg:text-6xl;
+    color: var(--fg);
+  }
+
+  .lead {
+    @apply max-w-2xl text-lg leading-8;
+    color: var(--fg-muted);
+  }
+
+  .panel {
+    @apply rounded-2xl border backdrop-blur-md;
+    border-color: var(--line);
+    background: var(--surface);
+    box-shadow: var(--panel-shadow);
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition duration-200;
+  }
+
+  .btn-primary {
+    @apply btn text-white hover:-translate-y-0.5;
+    background: var(--brand);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 35%, transparent),
+      0 18px 50px -24px color-mix(in srgb, var(--brand) 55%, transparent);
+  }
+  .btn-primary:hover {
+    background: var(--brand-soft);
+  }
+
+  .btn-secondary {
+    @apply btn hover:-translate-y-0.5;
+    border: 1px solid var(--line-strong);
+    background: color-mix(in srgb, var(--fg) 4%, transparent);
+    color: var(--fg);
+  }
+  .btn-secondary:hover {
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+
+  .btn-ghost {
+    @apply btn;
+    color: var(--fg-muted);
+  }
+  .btn-ghost:hover {
+    background: color-mix(in srgb, var(--fg) 6%, transparent);
+    color: var(--fg);
+  }
+
+  .btn-shine {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-shine::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      110deg,
+      transparent 20%,
+      rgba(255, 255, 255, 0.22) 45%,
+      transparent 70%
+    );
+    transform: translateX(-120%);
+    animation: shine-sweep 4.5s var(--ease) infinite;
+  }
+
+  .field {
+    @apply w-full rounded-xl px-4 py-3 text-sm outline-none transition;
+    border: 1px solid var(--line);
+    background: var(--bg-2);
+    color: var(--fg);
+  }
+  .field::placeholder {
+    color: var(--fg-muted);
+    opacity: 0.7;
+  }
+  .field:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 25%, transparent);
+  }
+
+  .label {
+    @apply mb-2 block text-sm font-medium;
+    color: var(--fg-soft);
+  }
+
+  .link {
+    color: var(--brand-soft);
+    @apply underline-offset-4 transition;
+  }
+  .link:hover {
+    color: var(--fg);
+    text-decoration: underline;
+  }
+
+  .site-header {
+    border-bottom: 1px solid transparent;
+    background: var(--header-bg);
+    backdrop-filter: blur(16px);
+  }
+  .site-header.is-scrolled {
+    border-bottom-color: var(--line);
+    background: var(--header-bg-solid);
+    box-shadow: 0 10px 40px -24px rgba(0, 0, 0, 0.35);
+  }
+
+  .text-fg {
+    color: var(--fg);
+  }
+  .text-fg-muted {
+    color: var(--fg-muted);
+  }
+  .text-fg-soft {
+    color: var(--fg-soft);
+  }
+  .border-line {
+    border-color: var(--line);
+  }
+  .bg-surface-2 {
+    background: var(--surface-2);
+  }
+  .bg-surface-3 {
+    background: var(--surface-3);
+  }
+  .headline-gradient {
+    background-image: linear-gradient(
+      90deg,
+      var(--fg) 0%,
+      var(--brand-soft) 48%,
+      var(--accent-soft) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .marquee-fade-l {
+    background: linear-gradient(to right, var(--bg), transparent);
+  }
+  .marquee-fade-r {
+    background: linear-gradient(to left, var(--bg), transparent);
+  }
+  .chip {
+    border: 1px solid var(--line);
+    background: color-mix(in srgb, var(--fg) 3%, transparent);
+    color: var(--fg-muted);
+  }
+}
+
+/* Matched to FreedomBot sign-in left panel. */
+.fb-auth-hero-glow {
+  background:
+    radial-gradient(640px 420px at 18% 12%, var(--glow-b), transparent 58%),
+    radial-gradient(520px 360px at 88% 78%, var(--glow-a), transparent 60%);
+  filter: blur(18px);
+}
+.fb-auth-hero-glow-b {
+  background: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.16), transparent 70%);
+  filter: blur(30px);
+  animation: fb-auth-drift 12s ease-in-out infinite alternate;
+}
+.fb-auth-mesh {
+  background-image:
+    linear-gradient(var(--mesh-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--mesh-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 35% 20%, #000 25%, transparent 78%);
+}
+.fb-auth-ring {
+  animation: fb-auth-spin 48s linear infinite;
+}
+.fb-auth-ring-b {
+  animation: fb-auth-spin 36s linear infinite reverse;
+}
+.fb-auth-pulse {
+  animation: fb-auth-pulse 2.8s ease-out infinite;
+}
+.fb-auth-float {
+  animation: fb-auth-float 5.6s ease-in-out infinite;
+  background: var(--float-card) !important;
+  border-color: var(--line) !important;
+}
+
+@keyframes fb-auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes fb-auth-pulse {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+@keyframes fb-auth-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-7px);
+  }
+}
+@keyframes fb-auth-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(4%, -3%, 0);
+  }
+}
+
+.hero-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.tilt-card {
+  transition: transform 350ms var(--ease), border-color 350ms var(--ease);
+}
+
+.tilt-card:hover {
+  transform: translateY(-4px);
+  border-color: color-mix(in srgb, var(--brand) 45%, transparent);
+}
+
+.marquee-track {
+  animation: marquee 38s linear infinite;
+}
+
+.cta-banner {
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--brand) 14%, transparent),
+      var(--surface) 42%,
+      color-mix(in srgb, var(--accent) 8%, transparent)
+    ),
+    var(--surface);
+  border-color: var(--line);
+}
+
+.cta-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.cta-orb-a {
+  width: 18rem;
+  height: 18rem;
+  right: -4rem;
+  top: -5rem;
+  background: color-mix(in srgb, var(--brand) 35%, transparent);
+  animation: float-soft 7s ease-in-out infinite;
+}
+
+.cta-orb-b {
+  width: 14rem;
+  height: 14rem;
+  left: 20%;
+  bottom: -6rem;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: float-soft 9s ease-in-out infinite reverse;
+}
+
+@keyframes shine-sweep {
+  0%,
+  55% {
+    transform: translateX(-120%);
+  }
+  75%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track,
+  .btn-shine::after,
+  .cta-orb-a,
+  .cta-orb-b,
+  .fb-auth-hero-glow-b,
+  .fb-auth-ring,
+  .fb-auth-ring-b,
+  .fb-auth-pulse,
+  .fb-auth-float,
+  html.theme-transition,
+  html.theme-transition * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

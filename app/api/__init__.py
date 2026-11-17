@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from app.api import access, admin, approvals, audit, auth, chat, integrations, memory, owner, support
+from app.api import access, admin, approvals, audit, auth, chat, integrations, memory, owner, signup, support
 
 
 def platform_router() -> APIRouter:
@@ -19,6 +19,7 @@ def platform_router() -> APIRouter:
         access,
         support,
         owner,
+        signup,
     ):
         router.include_router(module.router)
     return router
