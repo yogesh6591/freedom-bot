@@ -27,8 +27,8 @@ os.environ.setdefault("RUNTIME_ENV", "dev")
 # Tests wipe and rebuild acquisition data, so they ALWAYS use a throwaway database,
 # whatever DATABASE_URL says in .env or the shell. The real acquisition database is never touched.
 _DB = dict(
-    u=os.environ.get("DB_USER", "freedombot"),
-    p=os.environ.get("DB_PASS", "freedombot"),
+    u=os.environ.get("DB_USER", "bizos"),
+    p=os.environ.get("DB_PASS", "bizos"),
     h=os.environ.get("DB_HOST", "localhost"),
     port=os.environ.get("DB_PORT", "5432"),
 )
