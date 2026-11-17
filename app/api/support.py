@@ -77,11 +77,33 @@ def _client_names() -> dict[str, dict[str, str]]:
     return {c.id: {"name": c.company_name, "slug": c.slug} for c in control.list_clients()}
 
 
-def _staff_ticket(ticket: dict[str, Any], names: Optional[dict[str, dict[str, str]]] = None) -> dict[str, Any]:
+def _raised_by(ticket: dict[str, Any], people: dict[str, dict[str, str]]) -> dict[str, str]:
+    """Who raised the ticket: from its context, else the account behind ``created_by`` (older tickets)."""
+    user = (ticket.get("context") or {}).get("user") or {}
+    if user.get("email"):
+        return {"name": user.get("name") or "", "email": user["email"]}
+    created_by = str(ticket.get("created_by") or "")
+    if created_by not in people:
+        from freedombot.control import store as control
+
+        try:
+            account = control.get_user(created_by)
+            people[created_by] = {"name": account.display_name or "", "email": account.email}
+        except Exception:  # noqa: BLE001 - seeded or system tickets have no account
+            people[created_by] = {"name": created_by or "system", "email": ""}
+    return people[created_by]
+
+
+def _staff_ticket(
+    ticket: dict[str, Any],
+    names: Optional[dict[str, dict[str, str]]] = None,
+    people: Optional[dict[str, dict[str, str]]] = None,
+) -> dict[str, Any]:
     names = names if names is not None else _client_names()
     out = {k: v for k, v in ticket.items() if k != "dedupe_key"}
     out["client"] = names.get(ticket["client_id"], {"name": ticket["client_id"], "slug": ""})
     out["team_label"] = support.TEAM_LABELS.get(ticket["assignee"], ticket["assignee"])
+    out["raised_by"] = _raised_by(ticket, people if people is not None else {})
     return out
 
 
@@ -129,8 +151,8 @@ def list_support_tickets(
         items = support.list_tickets(triage=True, status=status)
     else:
         items = support.list_tickets(assignee=team, status=status)
-    names = _client_names()
-    return {"items": [_staff_ticket(t, names) for t in items], "can_manage": True, "team": team,
+    names, people = _client_names(), {}
+    return {"items": [_staff_ticket(t, names, people) for t in items], "can_manage": True, "team": team,
             "team_label": support.TEAM_LABELS[team]}
 
 

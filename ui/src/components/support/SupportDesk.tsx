@@ -61,6 +61,7 @@ export interface Ticket {
   created_at?: string | null
   updated_at?: string | null
   client?: { name: string; slug: string }
+  raised_by?: { name: string; email: string }
   context?: TicketContext
   history?: HistoryEntry[]
 }
@@ -287,6 +288,15 @@ export function SupportDesk({
                   {ticket.subject}
                 </span>
               </div>
+              {ticket.raised_by && (
+                <p className="mt-1.5 text-xs text-secondary">
+                  Raised by{' '}
+                  <span className="font-medium text-primary">
+                    {ticket.raised_by.name || ticket.raised_by.email}
+                  </span>
+                  {ticket.raised_by.email && ticket.raised_by.name ? ` · ${ticket.raised_by.email}` : ''}
+                </p>
+              )}
               <p className="mt-1 text-xs text-muted">
                 {ticket.client?.name} · {ticket.category === 'BUSINESS' ? 'Business' : 'Technical'} ·{' '}
                 {ticket.team_label} · {SOURCE_LABEL[ticket.source || ''] ?? ticket.source} ·{' '}
@@ -366,8 +376,8 @@ function TicketDetail({
         <p>Status: {STATUS_LABEL[ticket.status] ?? ticket.status}</p>
         <p>Source: {SOURCE_LABEL[ticket.source || ''] ?? ticket.source}</p>
         <p>
-          Raised by: {ctx.user?.name || ctx.user?.email || '—'}
-          {ctx.user?.email ? ` (${ctx.user.email})` : ''}
+          Raised by: {ticket.raised_by?.name || ticket.raised_by?.email || '—'}
+          {ticket.raised_by?.email && ticket.raised_by?.name ? ` (${ticket.raised_by.email})` : ''}
         </p>
         <p>Workspace: {ctx.workspace?.name || ticket.client?.name} ({ctx.workspace?.slug || ticket.client?.slug})</p>
         <p>Opened: {timestamp(ticket.created_at)}</p>

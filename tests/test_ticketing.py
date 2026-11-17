@@ -198,6 +198,10 @@ def test_the_two_desks_reassign_one_ticket_and_keep_its_history(app_client, clie
     assert events[:4] == ["created", "note", "reassigned", "reassigned"]
     assert back["context"] == ticket["context"]
 
+    # Each card says who raised it, by name and email.
+    card = next(t for t in app_client.get("/api/support/tickets", headers=cepoch).json()["items"] if t["id"] == ticket["id"])
+    assert set(card["raised_by"]) == {"name", "email"}
+
     # Both can see the complete history.
     assert any(t["id"] == ticket["id"] for t in app_client.get("/api/support/tickets?view=all", headers=jeanne).json()["items"])
 
