@@ -320,3 +320,21 @@ def test_cepoch_sees_a_flagged_client_answer_in_its_queue_from_chat(client_a, cl
     with tenant_scope(ctx):
         refused = guarded_call(RunScope(ctx=ctx, settings=client_a.settings), "support_queue", {})
     assert not refused.ok and refused.effect == PolicyEffect.DENY
+
+
+def test_paying_in_advance_goes_to_jeanne(client_a):
+    ticket = support.create_ticket(client_id=client_a.id, subject=_subject("I want to pay in advance"),
+                                   created_by="pytest")
+    assert ticket["assignee"] == "JEANNE" and ticket["triage"] is False
+
+
+def test_when_the_words_do_not_decide_the_model_does(client_a, monkeypatch):
+    from freedombot import support_routing
+
+    monkeypatch.setattr(support_routing, "model_category", lambda text: BUSINESS)
+    ticket = support.create_ticket(client_id=client_a.id, subject=_subject("Can someone call me about our account"),
+                                   created_by="pytest")
+    assert ticket["assignee"] == "JEANNE" and ticket["triage"] is False
+    monkeypatch.setattr(support_routing, "model_category", lambda text: None)
+    unclear = support.create_ticket(client_id=client_a.id, subject=_subject("hello"), created_by="pytest")
+    assert unclear["assignee"] == "CEPOCH" and unclear["triage"] is True

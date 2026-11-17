@@ -11,9 +11,10 @@ same every time.
   operational requests, client management.
 
 A flagged AI response is always technical. When the assistant raised the ticket it may pass its own
-reading of the issue (``hint``); a clear signal in the text still wins over it. When neither side is
-clear the ticket goes to Cepoch's triage queue instead of guessing, so Jeanne never gets a technical
-problem by mistake.
+reading of the issue (``hint``); a clear signal in the text still wins over it. When the words do not
+decide, a model reads the ticket and says technical or business (:func:`model_category`). Only when that
+is unclear too, or no model is available, does the ticket go to Cepoch's triage queue, so Jeanne never
+gets a technical problem by mistake.
 
 The routing reason is kept for support staff only. Nothing here is ever shown to the person who
 raised the ticket (:func:`freedombot.support.requester_view`).
@@ -43,6 +44,8 @@ _TECHNICAL_TERMS = (
     "slow", "freez", "blank page", "upload", "import", "export", "setup", "set up", "configure",
 )
 _BUSINESS_TERMS = (
+    "pay", "paying", "paid", "pay in advance", "advance payment", "prepay", "prepayment", "bill", "bills",
+    "deposit", "receipt", "credit note", "purchase order", "seats", "licence", "license", "trial",
     "billing", "invoice", "subscription", "plan", "pricing", "price", "upgrade", "downgrade", "renewal",
     "renew", "contract", "refund", "payment", "discount", "quote", "change order", "purchase", "buy",
     "business approval", "onboarding call", "kickoff", "training session", "account manager",
@@ -82,7 +85,46 @@ def parse_category(value: Optional[str]) -> Optional[str]:
     return name if name in CATEGORIES else None
 
 
-def classify(subject: str, body: str = "", *, source: str = SOURCE_MANUAL, hint: Optional[str] = None) -> Routing:
+_MODEL_PROMPT = (
+    "You sort support tickets for FreedomBot, a business AI assistant product. Answer with one word.\n"
+    "technical: something in the product is broken or wrong: errors, bugs, a wrong or bad AI answer, login, "
+    "passwords, access, integrations (Gmail, HubSpot, calendar), syncing, uploads, slowness, technical setup.\n"
+    "business: anything about money or the relationship: paying, billing, invoices, subscription, plan, "
+    "pricing, contracts, renewals, refunds, business onboarding, meetings, training, operational or account "
+    "requests, client management.\n"
+    "unclear: only when the ticket gives no way to tell.\n"
+    "Reply with exactly one of: technical, business, unclear."
+)
+
+
+def _ask_model(text: str) -> Optional[str]:
+    """One short model call. ``None`` when no model is configured or the call fails."""
+    from freedombot import settings as app_settings
+
+    if not app_settings.llm_available():
+        return None
+    try:
+        from agno.agent import Agent
+
+        from freedombot.agents.router_agent import router_model
+
+        agent = Agent(name="freedombot-ticket-router", model=router_model(), instructions=_MODEL_PROMPT,
+                      add_history_to_context=False, enable_agentic_memory=False, telemetry=False,
+                      store_events=False)
+        reply = str(getattr(agent.run(input=text[:4000]), "content", "") or "").strip().casefold()
+    except Exception:  # noqa: BLE001 - routing falls back to triage, it never fails the ticket
+        return None
+    word = reply.split()[0].strip(".:") if reply else ""
+    return {"technical": TECHNICAL, "business": BUSINESS}.get(word)
+
+
+#: Replaceable for tests, which never call a real model.
+model_category = _ask_model
+
+
+def classify(
+    subject: str, body: str = "", *, source: str = SOURCE_MANUAL, hint: Optional[str] = None, use_model: bool = True
+) -> Routing:
     """The team for a ticket, and whether it needs triage."""
     if source == SOURCE_AI_FLAG:
         return Routing(TECHNICAL, False, "a flagged AI response is a technical issue")
@@ -97,4 +139,8 @@ def classify(subject: str, body: str = "", *, source: str = SOURCE_MANUAL, hint:
         return Routing(suggested, False, f"assistant classified it as {suggested.lower()}")
     if suggested and technical and business:
         return Routing(suggested, False, f"mixed terms; assistant classified it as {suggested.lower()}")
+    if use_model:
+        read = model_category(f"{subject}\n{body}".strip())
+        if read in CATEGORIES:
+            return Routing(read, False, f"model classified it as {read.lower()}")
     return Routing(TECHNICAL, True, "not clear enough to route; sent to Cepoch triage")

@@ -203,3 +203,11 @@ def settings_with():
         return ClientSettings.from_dict(payload)
 
     return make
+
+
+@pytest.fixture(autouse=True)
+def _no_model_for_ticket_routing(monkeypatch):
+    """Ticket routing asks a model when the words do not decide; tests never call a real model."""
+    from freedombot import support_routing
+
+    monkeypatch.setattr(support_routing, "model_category", lambda text: None)
