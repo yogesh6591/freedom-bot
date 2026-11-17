@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from bizos.agents import grounding
-from bizos.domains.catalog import DEFAULT_ENABLED_DOMAINS, DOMAIN_NAMES
+from freedombot.agents import grounding
+from freedombot.domains.catalog import DEFAULT_ENABLED_DOMAINS, DOMAIN_NAMES
 
 BASE = list(DEFAULT_ENABLED_DOMAINS)
 

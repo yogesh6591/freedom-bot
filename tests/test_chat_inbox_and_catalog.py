@@ -8,10 +8,10 @@ from __future__ import annotations
 import pytest
 
 from app.api import approvals as approvals_api
-from bizos.connectors import composio, composio_actions as acts, composio_catalog as catalog
-from bizos.connectors.base import ConnectorError
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import guarded_call
+from freedombot.connectors import composio, composio_actions as acts, composio_catalog as catalog
+from freedombot.connectors.base import ConnectorError
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import guarded_call
 
 
 def _propose(scope, title: str) -> str:

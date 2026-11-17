@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.insights import handoff_assessment
-from bizos.launch import checklist_summary, mark_item, sign_off
-from bizos.onboarding import get_profile
-from bizos.tenancy.context import tenant_scope
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.insights import handoff_assessment
+from freedombot.launch import checklist_summary, mark_item, sign_off
+from freedombot.onboarding import get_profile
+from freedombot.tenancy.context import tenant_scope
 
 
 def test_handoff_from_checkout_records_source(client_a, ctx_factory):

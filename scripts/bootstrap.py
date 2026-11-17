@@ -15,14 +15,14 @@ import argparse
 import json
 import sys
 
-from bizos.util.dotenv import load_dotenv
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 
-from bizos.bootstrap import DEV_PASSWORD, bootstrap  # noqa: E402
-from bizos.control import store as control  # noqa: E402
-from bizos.control.db import control_connection, migrate_control_plane  # noqa: E402
-from bizos.tenancy import provisioning  # noqa: E402
+from freedombot.bootstrap import DEV_PASSWORD, bootstrap  # noqa: E402
+from freedombot.control import store as control  # noqa: E402
+from freedombot.control.db import control_connection, migrate_control_plane  # noqa: E402
+from freedombot.tenancy import provisioning  # noqa: E402
 
 
 def reset_demo() -> None:

@@ -35,7 +35,7 @@ class CalcomService:
             return CalcomSummary(configured=False, account="")
         account = ""
         try:
-            from bizos.control import store as control
+            from freedombot.control import store as control
 
             user = control.get_user(user_id)
             account = str(getattr(user, "display_name", "") or getattr(user, "email", "") or "")

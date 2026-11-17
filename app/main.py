@@ -32,11 +32,11 @@ from fastapi.responses import JSONResponse
 from agno.db.postgres import PostgresDb
 
 from app.api import platform_router
-from bizos import settings
-from bizos.control.db import dispose_control_engine, migrate_control_plane
-from bizos.tenancy.registry import registry
-from bizos.tools.registry_check import assert_registry_sound, verify_registry
-from bizos.util.dotenv import load_dotenv
+from freedombot import settings
+from freedombot.control.db import dispose_control_engine, migrate_control_plane
+from freedombot.tenancy.registry import registry
+from freedombot.tools.registry_check import assert_registry_sound, verify_registry
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 
@@ -44,24 +44,24 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     """Startup: migrate the control plane and verify the tool registry."""
-    log_info("bizos: starting")
+    log_info("freedombot: starting")
     try:
         migrate_control_plane()
-        log_info("bizos: control plane ready")
+        log_info("freedombot: control plane ready")
     except Exception as exc:
         # The API must still start so the failure is visible at /health rather
         # than as a container that will not boot.
-        log_error(f"bizos: control plane migration failed: {exc}")
+        log_error(f"freedombot: control plane migration failed: {exc}")
 
     try:
         assert_registry_sound()
         report = verify_registry()
         log_info(
-            f"bizos: tool registry sound "
+            f"freedombot: tool registry sound "
             f"({len(report['declared_not_implemented'])} declared-not-implemented)"
         )
     except AssertionError as exc:
-        log_error(f"bizos: {exc}")
+        log_error(f"freedombot: {exc}")
 
     if not settings.llm_available():
         log_warning(
@@ -70,34 +70,34 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
         )
     stop_sync = None
     try:
-        from bizos.sync import scheduler as sync_scheduler
+        from freedombot.sync import scheduler as sync_scheduler
 
         stop_sync = sync_scheduler.start()
     except Exception as exc:  # noqa: BLE001 - the API must start even if the sync loop cannot
-        log_warning(f"bizos: integration sync not started: {exc}")
+        log_warning(f"freedombot: integration sync not started: {exc}")
     stop_outreach = None
     try:
         from app.outreach import sender as outreach_sender
 
         stop_outreach = outreach_sender.start()
     except Exception as exc:  # noqa: BLE001 - the API must start even if the email sender cannot
-        log_warning(f"bizos: outreach sender not started: {exc}")
+        log_warning(f"freedombot: outreach sender not started: {exc}")
     stop_research = None
     try:
         from app.outreach import research_tools
 
         stop_research = research_tools.start()
     except Exception as exc:  # noqa: BLE001 - the API must start even if the research worker cannot
-        log_warning(f"bizos: prospect research not started: {exc}")
+        log_warning(f"freedombot: prospect research not started: {exc}")
     stop_schedules = None
     if settings.scheduled_tasks_enabled():
         try:
             from app.assistant.scheduled_runner import run_in_chat
-            from bizos import automation
+            from freedombot import automation
 
             stop_schedules = automation.start(run_in_chat)
         except Exception as exc:  # noqa: BLE001 - the API must start even if the schedule loop cannot
-            log_warning(f"bizos: scheduled tasks not started: {exc}")
+            log_warning(f"freedombot: scheduled tasks not started: {exc}")
     else:
         log_info("scheduled tasks: off (SCHEDULED_TASKS_ENABLED)")
     try:
@@ -113,7 +113,7 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
             stop_sync()
         registry.dispose_all()
         dispose_control_engine()
-        log_info("bizos: stopped")
+        log_info("freedombot: stopped")
 
 
 # The platform's own app. AgentOS mounts onto this one.
@@ -135,7 +135,7 @@ base_app.add_middleware(
     # must be explicit — never "*", which browsers reject with credentials anyway.
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Bizos-Client", "X-Bizos-User"],
+    allow_headers=["Authorization", "Content-Type", "X-FreedomBot-Client", "X-FreedomBot-User"],
 )
 
 base_app.include_router(platform_router())
@@ -146,7 +146,7 @@ base_app.include_router(platform_router())
 @base_app.get("/api/health", tags=["health"])
 def health() -> dict[str, Any]:
     """Liveness plus the facts an operator needs to diagnose a bad deploy."""
-    from bizos.control.db import control_engine
+    from freedombot.control.db import control_engine
     from sqlalchemy import text
 
     control_ok = True
@@ -183,17 +183,17 @@ def version() -> dict[str, str]:
 # database under agno's own `agno` schema — never mixed with customer content.
 #
 # Tenant agent sessions, runs and conversational memory do NOT go here: each
-# request builds its agent against `bizos.tenancy.agnodb.workspace_db(ctx)`, so
+# request builds its agent against `freedombot.tenancy.agnodb.workspace_db(ctx)`, so
 # they land inside the client's own isolated workspace. Agno's OS-level routers
 # therefore show platform bookkeeping; per-tenant history is served by /api/*.
-os_db = PostgresDb(id="bizos-os", db_url=settings.control_db_url(), db_schema="agno")
+os_db = PostgresDb(id="freedombot-os", db_url=settings.control_db_url(), db_schema="agno")
 
-# Agents are constructed per request (see bizos.agents.agent), so none are
+# Agents are constructed per request (see freedombot.agents.agent), so none are
 # registered here — a long-lived agent object would belong to whichever tenant
 # built it last.
 agent_os = AgentOS(
     db=os_db,
-    id="bizos",
+    id="freedombot",
     name="Business AI Agent Platform",
     description="Multi-tenant business agent platform",
     version="1.0.0",
@@ -208,7 +208,7 @@ agent_os = AgentOS(
     authorization_config=AuthorizationConfig(user_isolation=True),
     internal_service_token=settings.internal_service_token(),
     # Auto-provisioning is off: workspaces are created deliberately by
-    # bizos.tenancy.provisioning, never as a side effect of a request.
+    # freedombot.tenancy.provisioning, never as a side effect of a request.
     auto_provision_dbs=False,
 )
 

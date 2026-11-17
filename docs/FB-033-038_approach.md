@@ -10,11 +10,11 @@ database (or schema), its own deployment, and a `client_id` wall inside its data
 
 | Piece | Where |
 | --- | --- |
-| Template bot (persona, default mode, base package, starter SOPs, retention) | `bizos/templates/freedombot.json`, `bizos/template.py` |
+| Template bot (persona, default mode, base package, starter SOPs, retention) | `freedombot/templates/freedombot.json`, `freedombot/template.py` |
 | Provisioning script (clone → customize → DB → seed → admin → deployment files) | `scripts/provision_client.py` |
-| Separate database per client | `bizos/tenancy/provisioning.py` (`DEDICATED_DB` default) |
-| `client_id` on every record, pinned by CHECK constraint | `client_wall_ddl()` in `bizos/tenancy/schema.py`; verified by `unwalled_tables()` |
-| Separate deployment, refuses other clients | `CLIENT_SLUG` env → `bizos/settings.py::pinned_client_slug`, enforced in login and `app/api/deps.py` |
+| Separate database per client | `freedombot/tenancy/provisioning.py` (`DEDICATED_DB` default) |
+| `client_id` on every record, pinned by CHECK constraint | `client_wall_ddl()` in `freedombot/tenancy/schema.py`; verified by `unwalled_tables()` |
+| Separate deployment, refuses other clients | `CLIENT_SLUG` env → `freedombot/settings.py::pinned_client_slug`, enforced in login and `app/api/deps.py` |
 
 Agno only separates data per *user*. The client walls are ours: separate
 database + pinned deployment + the `client_id` CHECK inside every table.
@@ -32,7 +32,7 @@ cd deploy/clients/globex && docker compose up -d --build
 
 **From a screen.** A platform owner can also add a client on **Platform owner →
 New client** (`POST /api/owner/clients`, platform owners only). It runs the same
-setup as the script (`bizos/tenancy/new_client.py::set_up_workspace`) and creates
+setup as the script (`freedombot/tenancy/new_client.py::set_up_workspace`) and creates
 the first admin, who signs in on this deployment. It writes no deployment files,
 refuses a workspace identifier that is already taken, and removes everything it
 made if a step fails. Use the script when the client needs its own deployment.
@@ -40,11 +40,11 @@ made if a step fails. Use the script when the client needs its own deployment.
 ## FB-034 — One company chat, persona rules
 
 - **One chat.** No Bronze/Silver/Gold or domain menu. `POST /api/chat` defaults
-  to `domain: "auto"`: each turn is routed (`bizos/agents/persona.py::route`) to
+  to `domain: "auto"`: each turn is routed (`freedombot/agents/persona.py::route`) to
   the enabled domain it is about, in the same session, so context carries from
   strategy to ops to finance. The UI shows "Handled as: …" under each reply.
 - **Persona.** The system prompt says the assistant is FreedomBot and never
-  Jeanne (`bizos/agents/instructions.py`). `enforce_persona()` also rewrites any
+  Jeanne (`freedombot/agents/instructions.py`). `enforce_persona()` also rewrites any
   reply that claims to be or signs as Jeanne, and logs `PERSONA_ENFORCED`.
 - **Decision: Agno, not LangGraph.** The spec row asks for a LangGraph
   react-agent. We are deliberately staying on Agno 3.x: tool calls go through
@@ -58,7 +58,7 @@ made if a step fails. Use the script when the client needs its own deployment.
 - `purchased_domains` in client settings is the paid package. The template's
   base package is general, operations, sales, intake, planning.
 - Strategy, finance, brand and legal are built (instructions, tools, knowledge
-  per domain in `bizos/domains/packs.py`) but are add-ons.
+  per domain in `freedombot/domains/packs.py`) but are add-ons.
 - Enabling an unpaid domain returns **409**. The admin records a change order
   (`POST /api/domains/{domain}/change-order` or "Record change order" in
   Admin → Domains); it is stored on the client and audited as `CHANGE_ORDER`.
@@ -79,9 +79,9 @@ made if a step fails. Use the script when the client needs its own deployment.
 ## FB-037 — Restricted data and "see" vs "run"
 
 - Data areas: `exec`, `hr`, `salary`, `finance`, `legal`
-  (`bizos/types.py::DATA_AREAS`). Users hold `data_scopes`; admins see all.
+  (`freedombot/types.py::DATA_AREAS`). Users hold `data_scopes`; admins see all.
 - Memory items carry `access_area`. Filtering happens **in the SQL query**
-  (`_area_filter` in `bizos/memory/store.py`), so restricted rows never come
+  (`_area_filter` in `freedombot/memory/store.py`), so restricted rows never come
   back from search, list, get or history — not even as a count.
 - Tools can declare `data_area` (finance adjustment, legal tools); the policy
   rule `DATA_AREA_RESTRICTED` denies them to users without that scope.

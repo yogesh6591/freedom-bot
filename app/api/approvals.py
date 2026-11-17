@@ -16,11 +16,11 @@ from app.api.deps import (
     require_role,
     run_scope,
 )
-from bizos.actions import store as actions
-from bizos.control.models import ClientSettings
-from bizos.tenancy.context import TenantContext
-from bizos.tools.executor import NotExecutable, can_execute, execute_approved_action
-from bizos.types import ActionStatus, PolicyEffect, Role
+from freedombot.actions import store as actions
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy.context import TenantContext
+from freedombot.tools.executor import NotExecutable, can_execute, execute_approved_action
+from freedombot.types import ActionStatus, PolicyEffect, Role
 
 router = APIRouter(prefix="/api/approvals", tags=["approvals"])
 
@@ -43,7 +43,7 @@ class PayloadEdit(BaseModel):
 
 
 def _users(ctx: TenantContext) -> dict[str, Any]:
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     try:
         return {u.id: u for u in control.list_users(ctx.client_id)}
@@ -53,8 +53,8 @@ def _users(ctx: TenantContext) -> dict[str, Any]:
 
 def _named(items: list[Any], ctx: TenantContext) -> list[dict[str, Any]]:
     """Action dicts with requester name + readable content for the approval cards."""
-    from bizos import automation
-    from bizos.actions.preview import content_for, schedule_ids
+    from freedombot import automation
+    from freedombot.actions.preview import content_for, schedule_ids
 
     users = _users(ctx)
     try:
@@ -154,8 +154,8 @@ def list_schedules(
     Read through the same guard as the chat's schedule_list (admins see everyone's). ``waiting`` are
     requests to set up a schedule that still need approval, so they show before they exist.
     """
-    from bizos.actions.preview import content_for, schedule_id
-    from bizos.tools.base import guarded_call
+    from freedombot.actions.preview import content_for, schedule_id
+    from freedombot.tools.base import guarded_call
 
     with bound(ctx):
         outcome = guarded_call(run_scope(ctx, settings), "schedule_list",
@@ -202,7 +202,7 @@ class ScheduleChange(BaseModel):
 
 def _schedule_outcome(ctx: TenantContext, settings: ClientSettings, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Change or stop a schedule through the same guard and policy check as the chat's schedule tools."""
-    from bizos.tools.base import guarded_call
+    from freedombot.tools.base import guarded_call
 
     with bound(ctx):
         outcome = guarded_call(run_scope(ctx, settings), tool, arguments)

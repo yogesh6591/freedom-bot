@@ -17,26 +17,26 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from bizos.util.dotenv import load_dotenv
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 
 from app.api.deps import bound, run_scope  # noqa: E402
 from app.assistant.assistant import _packs_for  # noqa: E402
 from app.assistant.v2 import _executor_prompt  # noqa: E402
-from bizos.agents import grounding  # noqa: E402
-from bizos.agents.persona import AUTO  # noqa: E402
-from bizos.agents.routing import (  # noqa: E402
+from freedombot.agents import grounding  # noqa: E402
+from freedombot.agents.persona import AUTO  # noqa: E402
+from freedombot.agents.routing import (  # noqa: E402
     Route,
     ToolLoader,
     render_playbooks,
     visible_tools,
 )
-from bizos.agents.tool_meta import TOOL_META  # noqa: E402
-from bizos.control import store as control  # noqa: E402
-from bizos import settings as app_settings  # noqa: E402
-from bizos.types import Role  # noqa: E402
-from bizos.util.timeutil import workspace_zone  # noqa: E402
+from freedombot.agents.tool_meta import TOOL_META  # noqa: E402
+from freedombot.control import store as control  # noqa: E402
+from freedombot import settings as app_settings  # noqa: E402
+from freedombot.types import Role  # noqa: E402
+from freedombot.util.timeutil import workspace_zone  # noqa: E402
 
 OUT = ROOT / "prompt_full.txt"
 MESSAGE = "hello"

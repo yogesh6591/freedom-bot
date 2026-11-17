@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from bizos.agents import conversation
-from bizos.agents.guard import READ_REPEAT_LIMIT
-from bizos.agents.tool_result import ToolResult
+from freedombot.agents import conversation
+from freedombot.agents.guard import READ_REPEAT_LIMIT
+from freedombot.agents.tool_result import ToolResult
 from tests.test_guard import _guard, stubs  # noqa: F401 - stubs is a fixture
 
 

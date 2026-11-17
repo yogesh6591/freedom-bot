@@ -15,18 +15,18 @@ import json
 
 import pytest
 
-from bizos import chat_history
-from bizos.actions import store as actions
-from bizos.agents.claims import CORRECTION, DRAFT_ONLY_CORRECTION, enforce_claims
-from bizos.agents.persona import route
-from bizos.audit.events import search as audit_search
-from bizos.domains.catalog import DOMAIN_NAMES
-from bizos.memory import store as memory
-from bizos.policy.classifier import classify_arguments, classify_text
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import guarded_call
-from bizos.types import ActionStatus
-from bizos.util.redaction import redact, scrub_identifiers
+from freedombot import chat_history
+from freedombot.actions import store as actions
+from freedombot.agents.claims import CORRECTION, DRAFT_ONLY_CORRECTION, enforce_claims
+from freedombot.agents.persona import route
+from freedombot.audit.events import search as audit_search
+from freedombot.domains.catalog import DOMAIN_NAMES
+from freedombot.memory import store as memory
+from freedombot.policy.classifier import classify_arguments, classify_text
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import guarded_call
+from freedombot.types import ActionStatus
+from freedombot.util.redaction import redact, scrub_identifiers
 
 
 # ---------------------------------------------------------------- M05-08
@@ -72,7 +72,7 @@ def test_finance_action_hidden_from_users_without_finance(
 
 
 def test_approver_without_area_cannot_decide(client_a, scope_factory, settings_with, ctx_factory):
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     action_id = _finance_action(client_a, scope_factory, settings_with)
     approver = next(
@@ -179,8 +179,8 @@ def test_policy_denies_writes_with_child_data(client_a, scope_factory, settings_
 
 
 def test_child_data_allowed_only_when_enabled(client_a, scope_factory, settings_with):
-    from bizos.policy.engine import evaluate
-    from bizos.policy.models import PolicyRequest
+    from freedombot.policy.engine import evaluate
+    from freedombot.policy.models import PolicyRequest
 
     base = scope_factory(client_a, "operator", domain="sales")
     for allowed in (False, True):
@@ -199,7 +199,7 @@ def test_child_data_allowed_only_when_enabled(client_a, scope_factory, settings_
 
 def test_chat_refuses_child_data_before_the_model():
     from app.api.chat import CHILD_DATA_REFUSAL, _child_data_refusal
-    from bizos.control.models import ClientSettings
+    from freedombot.control.models import ClientSettings
 
     message = "Add this child to our CRM: Timmy Test, age 9, school Lincoln Elementary, parent phone 555-0100."
     assert _child_data_refusal(message, ClientSettings()) == CHILD_DATA_REFUSAL

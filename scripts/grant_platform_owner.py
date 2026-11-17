@@ -14,12 +14,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bizos.util.dotenv import load_dotenv
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 
-from bizos.control import store as control  # noqa: E402
-from bizos.control.db import migrate_control_plane  # noqa: E402
+from freedombot.control import store as control  # noqa: E402
+from freedombot.control.db import migrate_control_plane  # noqa: E402
 
 
 def main() -> int:

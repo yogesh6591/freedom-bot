@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from bizos.control.models import ApprovalPolicy, ClientSettings
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.types import ExecutionMode, PolicyEffect
+from freedombot.control.models import ApprovalPolicy, ClientSettings
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.types import ExecutionMode, PolicyEffect
 
 
 def _settings(client, *, mode=ExecutionMode.WAIT_FOR_APPROVAL, always=()):

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from bizos import chat_history, insights
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.insights import (
+from freedombot import chat_history, insights
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.insights import (
     dismiss_alert,
     handoff_assessment,
     list_alerts,
@@ -16,11 +16,11 @@ from bizos.insights import (
     profile_from_assessment,
     save_baselines,
 )
-from bizos.memory import store as memory
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import workspace_connection
-from bizos.types import ApprovalStatus, MemoryCategory
-from bizos.util.ids import new_id
+from freedombot.memory import store as memory
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import workspace_connection
+from freedombot.types import ApprovalStatus, MemoryCategory
+from freedombot.util.ids import new_id
 
 
 def test_profile_from_assessment_maps_fields():

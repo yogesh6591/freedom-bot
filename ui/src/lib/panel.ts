@@ -11,7 +11,7 @@
  * by role, and both doors use the same account and data.
  */
 
-const KEY = 'bizos:admin-panel'
+const KEY = 'freedombot:admin-panel'
 
 /** Home pages: the chat-only screen. Everything else (except the sign-in pages) is the admin panel. */
 export function isHomePath(path: string): boolean {

@@ -75,8 +75,8 @@ def create_payment_offer(call: Call, who: str = "", amount: object = None) -> st
 
 def _signer_name(call: Call) -> str:
     """The signed-in user's display name, or the local part of their email."""
-    from bizos.control import store as control
-    from bizos.control.store import UserNotFound
+    from freedombot.control import store as control
+    from freedombot.control.store import UserNotFound
 
     if not call.user_id:
         return ""

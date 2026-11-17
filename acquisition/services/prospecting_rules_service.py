@@ -254,8 +254,8 @@ def _audit(ctx: Any, before: dict[str, Any], after: dict[str, Any], action: str)
     if ctx is None:
         return
     try:
-        from bizos.audit import events as audit
-        from bizos.types import AuditEventType
+        from freedombot.audit import events as audit
+        from freedombot.types import AuditEventType
 
         audit.log(
             AuditEventType.CONFIG_CHANGED,

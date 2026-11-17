@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from bizos.onboarding import OnboardingProfile, apply_profile, get_profile
-from bizos.policy.classifier import classify_arguments, classify_text
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import guarded_call
-from bizos.types import ExecutionMode, PolicyEffect
+from freedombot.onboarding import OnboardingProfile, apply_profile, get_profile
+from freedombot.policy.classifier import classify_arguments, classify_text
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import guarded_call
+from freedombot.types import ExecutionMode, PolicyEffect
 
 
 def test_classifier_flags_licensed_and_phi():
@@ -116,8 +116,8 @@ def test_finance_propose_adjustment_always_needs_approval(client_a, scope_factor
 
 
 def test_phase1_domains_are_full():
-    from bizos.domains.catalog import DOMAIN_CATALOG
-    from bizos.domains.packs import assert_catalog_complete, get_pack
+    from freedombot.domains.catalog import DOMAIN_CATALOG
+    from freedombot.domains.packs import assert_catalog_complete, get_pack
 
     assert_catalog_complete()
     for entry in DOMAIN_CATALOG:
@@ -128,8 +128,8 @@ def test_phase1_domains_are_full():
 
 
 def test_n8n_trigger_queues_for_approval_then_local_delivery(client_a, scope_factory, ctx_factory):
-    from bizos.tools.executor import execute_approved_action
-    from bizos.actions import store as actions
+    from freedombot.tools.executor import execute_approved_action
+    from freedombot.actions import store as actions
 
     scope = scope_factory(client_a, "operator", domain="operations")
     with tenant_scope(scope.ctx):
@@ -153,8 +153,8 @@ def test_n8n_trigger_queues_for_approval_then_local_delivery(client_a, scope_fac
 
 
 def test_onboarding_apply_writes_memory_and_settings(client_a, ctx_factory, settings_with):
-    from bizos.control import store as control
-    from bizos.control.models import ClientSettings
+    from freedombot.control import store as control
+    from freedombot.control.models import ClientSettings
 
     ctx = ctx_factory(client_a, "admin")
     original = control.get_client(client_a.id).settings.to_dict()

@@ -4,15 +4,15 @@ Department people + Dhanu demo scenarios (buckets, payroll SOP, HR match, invoic
 
 from __future__ import annotations
 
-from bizos.bootstrap import DEV_PASSWORD, DEV_USERS
-from bizos.control import store as control
-from bizos.memory import store as memory
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.rbac.registry import get_spec
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.types import APP_AREAS, ExecutionMode, MemoryCategory, PolicyEffect, Role
+from freedombot.bootstrap import DEV_PASSWORD, DEV_USERS
+from freedombot.control import store as control
+from freedombot.memory import store as memory
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.rbac.registry import get_spec
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.types import APP_AREAS, ExecutionMode, MemoryCategory, PolicyEffect, Role
 
 
 def test_department_people_seeded_with_distinct_scopes(client_a):
@@ -138,7 +138,7 @@ def test_invoice_list_and_block_without_finance(client_a, ctx_factory):
 def _all_domains(client):
     import copy
 
-    from bizos.domains.catalog import DOMAIN_NAMES
+    from freedombot.domains.catalog import DOMAIN_NAMES
 
     settings = copy.deepcopy(client.settings)
     settings.enabled_domains = list(DOMAIN_NAMES)
@@ -164,7 +164,7 @@ def test_finance_draft_invoice_requires_approval(client_a, ctx_factory):
 
 
 def test_grounding_names_restricted_area_without_leaking(client_a, ctx_factory):
-    from bizos.agents import grounding
+    from freedombot.agents import grounding
 
     finance = ctx_factory(client_a, "finance")
     ops = ctx_factory(client_a, "ops")
@@ -223,7 +223,7 @@ def test_hr_match_by_candidate_name(client_a, ctx_factory):
 
 
 def test_draft_invoice_refused_when_nothing_to_bill(client_a, ctx_factory):
-    from bizos.actions import store as actions
+    from freedombot.actions import store as actions
 
     finance = ctx_factory(client_a, "finance")
     with tenant_scope(finance):
@@ -243,7 +243,7 @@ def test_search_single_word_query(client_a, ctx_factory):
 
 
 def test_restriction_names_the_right_area(client_a, ctx_factory):
-    from bizos.agents.grounding import hidden_areas
+    from freedombot.agents.grounding import hidden_areas
 
     ops = ctx_factory(client_a, "ops")
     lead = ctx_factory(client_a, "lead")
@@ -257,7 +257,7 @@ def test_restriction_names_the_right_area(client_a, ctx_factory):
 
 
 def test_enforce_restrictions_adds_area_and_strips_speculation():
-    from bizos.agents.grounding import enforce_restrictions
+    from freedombot.agents.grounding import enforce_restrictions
 
     fixed, changed = enforce_restrictions("There is no record of that.", {"hr": ["resume"]})
     assert changed and "HR area" in fixed
@@ -284,13 +284,13 @@ def test_memory_written_from_restricted_sop_stays_restricted(client_a, ctx_facto
 
 
 def test_ops_bucket_in_data_areas():
-    from bizos.types import DATA_AREAS
+    from freedombot.types import DATA_AREAS
 
     assert "ops" in DATA_AREAS
 
 
 def test_one_record_mixes_open_project_work_and_finance_only_invoice(client_a, ctx_factory):
-    from bizos.agents import grounding
+    from freedombot.agents import grounding
 
     employee = ctx_factory(client_a, "employee")
     ops = ctx_factory(client_a, "ops")

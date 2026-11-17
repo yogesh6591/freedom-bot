@@ -11,7 +11,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from bizos.agents.composer import StreamGate
+from freedombot.agents.composer import StreamGate
 
 CLAIM = "Here are the details for Raj. I've sent the email to Raj. Anything else?"
 

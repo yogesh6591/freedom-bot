@@ -52,20 +52,20 @@ def resolve_sender() -> dict:
 def _sender_context() -> Any:
     """TenantContext of the user whose Gmail sends outreach."""
     user_id = resolve_sender()["user_id"]
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     return control.build_context(control.get_user(user_id))
 
 
 def _bind(ctx: Any):
-    from bizos.tenancy.context import tenant_scope
+    from freedombot.tenancy.context import tenant_scope
 
     return tenant_scope(ctx)
 
 
 def _gmail_connector(ctx: Any):
-    from bizos.connectors.composio import ComposioGmailConnector
-    from bizos.connectors.registry import get_connector
+    from freedombot.connectors.composio import ComposioGmailConnector
+    from freedombot.connectors.registry import get_connector
 
     connector = get_connector("email", ctx=ctx, owner_user_id=ctx.user_id)
     if isinstance(connector, ComposioGmailConnector) or get_settings().outreach_allow_workspace_mailbox:

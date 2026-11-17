@@ -5,9 +5,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from bizos import secrets as secret_store
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import workspace_connection
+from freedombot import secrets as secret_store
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import workspace_connection
 
 TOKEN = "1//0-a-real-looking-refresh-token-value"
 

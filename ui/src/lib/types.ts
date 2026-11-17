@@ -130,7 +130,7 @@ export interface ActionContent {
   schedule?: ScheduleInfo | null
 }
 
-/** One recurring scheduled task and how it stands now (bizos/automation.py). */
+/** One recurring scheduled task and how it stands now (freedombot/automation.py). */
 export interface ScheduleInfo {
   /** Null while the request to set it up has not been approved. */
   id: string | null

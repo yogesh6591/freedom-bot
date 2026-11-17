@@ -16,15 +16,15 @@ import sys
 import time
 from collections import Counter
 
-from bizos.util import dotenv
+from freedombot.util import dotenv
 
 for _fn in ("load", "load_dotenv", "load_env"):
     if hasattr(dotenv, _fn):
         getattr(dotenv, _fn)()
         break
 
-from bizos.connectors import composio_actions as acts  # noqa: E402
-from bizos.connectors import composio_catalog as catalog  # noqa: E402
+from freedombot.connectors import composio_actions as acts  # noqa: E402
+from freedombot.connectors import composio_catalog as catalog  # noqa: E402
 
 R = {"LIST", "GET", "SEARCH", "FIND", "FETCH", "QUERY", "RETRIEVE", "READ"}
 C = {"CREATE", "ADD", "INSERT", "NEW", "UPSERT", "POST"}

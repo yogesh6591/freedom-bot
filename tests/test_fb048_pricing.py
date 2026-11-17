@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.pricing import DEFAULT_RULES, get_rules, save_rules
-from bizos.tenancy.context import tenant_scope
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.pricing import DEFAULT_RULES, get_rules, save_rules
+from freedombot.tenancy.context import tenant_scope
 
 
 def test_default_resale_rules_forbid_public_and_per_seat(client_a):

@@ -7,9 +7,9 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import bound, current_context, require_role
-from bizos.audit import events as audit
-from bizos.tenancy.context import TenantContext
-from bizos.types import AuditEventType, Role
+from freedombot.audit import events as audit
+from freedombot.tenancy.context import TenantContext
+from freedombot.types import AuditEventType, Role
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
 
@@ -76,7 +76,7 @@ def _summary(row: dict[str, Any]) -> str:
 
 def _enrich(rows: list[dict[str, Any]], ctx: TenantContext) -> list[dict[str, Any]]:
     """Attach display name + summary so the UI can show who did what."""
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     try:
         users = {u.id: u for u in control.list_users(ctx.client_id)}
@@ -143,7 +143,7 @@ def event_types() -> dict[str, list[str]]:
 @router.get("/retention")
 def retention(ctx: TenantContext = Depends(_reader)) -> dict[str, Any]:
     """The audit retention rule in force for this workspace."""
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     days = control.get_client(ctx.client_id).settings.retention_policy.audit_days
     return {
@@ -156,7 +156,7 @@ def retention(ctx: TenantContext = Depends(_reader)) -> dict[str, Any]:
 @router.post("/purge")
 def purge(ctx: TenantContext = Depends(require_role(Role.ADMIN))) -> dict[str, Any]:
     """Apply the retention rule now: delete only rows older than the window."""
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     days = control.get_client(ctx.client_id).settings.retention_policy.audit_days
     with bound(ctx):
@@ -171,8 +171,8 @@ def token_usage(
     ctx: TenantContext = Depends(require_role(Role.ADMIN)),
 ) -> dict[str, Any]:
     """Tokens and estimated cost per chat query in this workspace. Admins only."""
-    from bizos import usage
-    from bizos.control import store as control
+    from freedombot import usage
+    from freedombot.control import store as control
 
     with bound(ctx):
         data = usage.report(ctx, days=days, user_id=user_id or None, limit=limit)

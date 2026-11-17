@@ -7,14 +7,14 @@ import re
 import pytest
 
 from app.assistant.assistant import _packs_for
-from bizos.agents.merged_tools import MERGED, WRAPPED
-from bizos.agents.tool_args import schema_for_tool
-from bizos.agents.tool_meta import DOMAINS, GATE_TEXT, TOOL_META, render
-from bizos.control import store as control
-from bizos.rbac.registry import TOOL_SPECS, get_spec
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope
-from bizos.tools.dry_run import DENY, dry_run_for_user
+from freedombot.agents.merged_tools import MERGED, WRAPPED
+from freedombot.agents.tool_args import schema_for_tool
+from freedombot.agents.tool_meta import DOMAINS, GATE_TEXT, TOOL_META, render
+from freedombot.control import store as control
+from freedombot.rbac.registry import TOOL_SPECS, get_spec
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope
+from freedombot.tools.dry_run import DENY, dry_run_for_user
 
 REGISTERED = [s.name for s in TOOL_SPECS]
 NAMES = sorted(set(REGISTERED) | set(MERGED))
@@ -183,7 +183,7 @@ def test_the_current_assistant_does_not_read_v2_metadata():
     import inspect
 
     from app.assistant import assistant
-    from bizos.agents import surface
+    from freedombot.agents import surface
 
     for module in (assistant, surface):
         assert "tool_meta" not in inspect.getsource(module)

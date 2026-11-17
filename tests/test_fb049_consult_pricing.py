@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
 import pytest
 
-from bizos.pricing import (
+from freedombot.pricing import (
     DEFAULT_RULES,
     FACE_ADDON_USD,
     PricingNotConfigured,
@@ -15,7 +15,7 @@ from bizos.pricing import (
     save_consult_quote,
     save_rules,
 )
-from bizos.tenancy.context import tenant_scope
+from freedombot.tenancy.context import tenant_scope
 
 
 def _face_priced(client) -> ClientSettings:

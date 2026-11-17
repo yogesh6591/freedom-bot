@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from typing import Any, Callable, Optional
 
-from bizos.connectors.base import ConnectorResult
+from freedombot.connectors.base import ConnectorResult
 
 #: Integrations every eval workspace has connected (evals/cases.yaml header).
 CONNECTED = frozenset({"crm", "email", "calendar", "youtube", "n8n"})
@@ -179,8 +179,8 @@ class World:
 
     def find_user(self, real: Callable) -> Callable:
         """``_find_user`` over the fixture users first (merged admin tools plan against it), then the workspace."""
-        from bizos.control.models import User
-        from bizos.types import Role
+        from freedombot.control.models import User
+        from freedombot.types import Role
 
         def find(scope: Any, ref: Any):
             wanted = str(ref or "").strip().casefold()

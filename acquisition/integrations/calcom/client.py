@@ -57,9 +57,9 @@ class CalcomClient:
         return self._ctx is not None or owner.owner_user_id() is not None
 
     def _run(self, action: str, arguments: dict[str, Any] | None = None) -> Any:
-        from bizos.connectors import composio
-        from bizos.connectors.base import ConnectorError, ConnectorNotConfigured
-        from bizos.tenancy.context import tenant_scope
+        from freedombot.connectors import composio
+        from freedombot.connectors.base import ConnectorError, ConnectorNotConfigured
+        from freedombot.tenancy.context import tenant_scope
 
         ctx = self._context()
         if ctx is None:

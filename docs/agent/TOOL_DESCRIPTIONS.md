@@ -30,7 +30,7 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 - No argument may default to "every record". A bulk scope must be passed explicitly
   (`crm_bulk_update_contacts.lifecycle_stage` is required; `"ALL"` means every contact).
 - If id_fields holds a list, the guard checks every item.
-- Registry metadata per tool (`bizos/agents/tool_meta.py`): routing domain, description, id_fields,
+- Registry metadata per tool (`freedombot/agents/tool_meta.py`): routing domain, description, id_fields,
   requires_prior (hard: the guard enforces it) and suggested_prior (soft: playbook guidance only).
   Permissions and risk stay in the existing `ToolSpec` fields and are not restated here.
 - "Needs:" lines name structured sources only (a CRM record, the user list, email headers, an id a
@@ -49,7 +49,7 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 | crm_search_contacts / crm_search_companies / crm_search_deals | People vs organisations vs deals (deals filter by stage and owner, not free text) |
 | crm_search_contacts / show_contacts | Look up records to act on vs display the campaign selection table |
 | crm_create_task / support_create_ticket | Sales follow-up in the CRM vs asking Cepoch support for help with the product |
-| admin_list_users / crm_search_contacts | BizOS login accounts vs customers and leads |
+| admin_list_users / crm_search_contacts | FreedomBot login accounts vs customers and leads |
 | admin_update_user / admin_set_user_status | Roles and data access vs suspend or reactivate the account |
 | admin_update_user / admin_set_tool_permission | One person's roles and access vs which roles may use one tool, workspace-wide |
 | admin_set_tool_permission / admin_set_tool_mode | Who may use a tool (five levels per role) vs tightening how a tool runs (mode can only be stricter) |
@@ -82,12 +82,12 @@ Effect: <side effects, who is affected, reversibility, gate>.   (writes only)
 """)),
 
 "admin_list_users": AgentMeta(domain="admin_users", description=d("""
-    List BizOS users (people who log in) with roles, data access and status.
+    List FreedomBot users (people who log in) with roles, data access and status.
     Filter by name, email, role or status.
     Use when: "who has access", "list admins", "is Priya a user",
     and to get a user_id before any user change.
     Don't use: customers or leads -> crm_search_contacts.
-    Users log in to BizOS; contacts live in the CRM.
+    Users log in to FreedomBot; contacts live in the CRM.
 """)),
 
 "crm_bulk_update_contacts": AgentMeta(domain="crm", description=d("""

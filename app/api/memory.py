@@ -9,11 +9,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, require_admin, require_approver, require_drafter
-from bizos.control.models import ClientSettings
-from bizos.memory import documents
-from bizos.memory import store as memory
-from bizos.tenancy.context import TenantContext
-from bizos.types import ApprovalStatus, AuditEventType, MemoryCategory, Role, SourceType
+from freedombot.control.models import ClientSettings
+from freedombot.memory import documents
+from freedombot.memory import store as memory
+from freedombot.tenancy.context import TenantContext
+from freedombot.types import ApprovalStatus, AuditEventType, MemoryCategory, Role, SourceType
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/api/memory", tags=["memory"])
 def _refuse_regulated_data(text: str, settings: ClientSettings, ctx: TenantContext) -> None:
     """A value typed into a memory form gets the same check as "Remember that ..." typed in chat."""
     from app.api.chat import _regulated_data_refusal
-    from bizos.audit.events import log
+    from freedombot.audit.events import log
 
     refusal = _regulated_data_refusal(f"Remember that {text}", settings)
     if refusal:

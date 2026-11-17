@@ -5,7 +5,7 @@ import pytest
 
 from acquisition.integrations.calcom import owner
 from acquisition.integrations.calcom.client import CalcomClient, CalcomError
-from bizos.connectors.base import ConnectorError
+from freedombot.connectors.base import ConnectorError
 
 
 class Ctx:  # stands in for a TenantContext
@@ -28,7 +28,7 @@ class Fake:
 
 def run(replies):
     fake = Fake(replies)
-    cm = patch("bizos.connectors.composio.execute", fake)
+    cm = patch("freedombot.connectors.composio.execute", fake)
     return fake, cm
 
 

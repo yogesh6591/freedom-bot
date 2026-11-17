@@ -1,5 +1,5 @@
 task_id,source_document,section,area,task,status,notes
-MP-001,Master Product Operating Spec,2.1 / 7.1,Core platform,Per-client isolated FreedomBot instance (data/memory/config separation),completed,Tenancy with dedicated DB/schema in bizos/tenancy
+MP-001,Master Product Operating Spec,2.1 / 7.1,Core platform,Per-client isolated FreedomBot instance (data/memory/config separation),completed,Tenancy with dedicated DB/schema in freedombot/tenancy
 MP-002,Master Product Operating Spec,5.1 / 10.1,Core platform,Single coherent text/chat-first client experience (not bot zoo),completed,One chat UI with domain packs; ui/src/app/chat
 MP-003,Master Product Operating Spec,5.2,Domains,Founder / Executive Clarity & Strategy domain,partial,strategy pack is placeholder (advise-only); no full founder domain
 MP-004,Master Product Operating Spec,5.2 / 6,Domains,Operations & Workflow Automation domain,completed,operations pack + CRM/ops tools

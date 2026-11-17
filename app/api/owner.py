@@ -14,15 +14,15 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 
 from app.api.deps import SESSION_COOKIE, require_platform_owner
-from bizos import admin_ops
-from bizos import settings as app_settings
-from bizos.audit import events as audit
-from bizos.control import store as control
-from bizos.control.tokens import TokenError, verify_token
-from bizos.tenancy import new_client
-from bizos.tenancy.context import TenantContext, tenant_scope
-from bizos.types import AuditEventType
-import bizos.owner as owner
+from freedombot import admin_ops
+from freedombot import settings as app_settings
+from freedombot.audit import events as audit
+from freedombot.control import store as control
+from freedombot.control.tokens import TokenError, verify_token
+from freedombot.tenancy import new_client
+from freedombot.tenancy.context import TenantContext, tenant_scope
+from freedombot.types import AuditEventType
+import freedombot.owner as owner
 
 router = APIRouter(prefix="/api/owner", tags=["owner"])
 
@@ -187,7 +187,7 @@ def sale_event_handoff(
     ``SALE_WEBHOOK_SECRET``. The assessment JSON from the sale system prefills
     First-client setup — no manual paste.
     """
-    from bizos.insights import assessment_fingerprint, handoff_assessment
+    from freedombot.insights import assessment_fingerprint, handoff_assessment
 
     secret = app_settings.sale_webhook_secret()
     header_secret = (x_freedombot_sale_secret or "").strip()

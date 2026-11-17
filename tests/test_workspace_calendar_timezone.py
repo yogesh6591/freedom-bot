@@ -12,10 +12,10 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import text
 
-from bizos.connectors.calendar import WorkspaceCalendarConnector
-from bizos.control import store as control
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import readonly_connection
+from freedombot.connectors.calendar import WorkspaceCalendarConnector
+from freedombot.control import store as control
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import readonly_connection
 
 
 @pytest.fixture

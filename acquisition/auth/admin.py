@@ -128,12 +128,12 @@ def session_role(request: Request) -> str | None:
 def _adopt_core_session(request: Request) -> bool:
     """FreedomBot workspace login is the only login. A signed admin session cookie
     opens acquisition with no second sign-in."""
-    token = (request.cookies.get("bizos_session") or "").strip()
+    token = (request.cookies.get("freedombot_session") or "").strip()
     if not token:
         return False
     try:
-        from bizos.control.tokens import TokenError, roles_from_claims, verify_token
-        from bizos.types import Role
+        from freedombot.control.tokens import TokenError, roles_from_claims, verify_token
+        from freedombot.types import Role
 
         payload = verify_token(token)
         roles = roles_from_claims(payload)

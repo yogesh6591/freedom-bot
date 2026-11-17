@@ -17,7 +17,7 @@ OUTCOMES = {"run", "approval", "draft", "blocked", "clarify", "not_permitted", "
 
 
 def test_case_ids_are_unique_and_fields_are_known():
-    from bizos.agents.routing import DOMAINS, MODEL_TOOLS
+    from freedombot.agents.routing import DOMAINS, MODEL_TOOLS
 
     ids = [c["id"] for c in CASES]
     assert len(ids) == len(set(ids)), sorted({i for i in ids if ids.count(i) > 1})

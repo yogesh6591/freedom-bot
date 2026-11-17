@@ -14,11 +14,11 @@ import pytest
 from app.api.chat import ChatRequest
 import app.outreach.effects  # noqa: F401 — register outreach tool effects for v2 acquisition turns
 from app.api.deps import bound
-from bizos.connectors.base import ConnectorResult
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.tools import base as tools_base
-from bizos.types import ExecutionMode
+from freedombot.connectors.base import ConnectorResult
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.tools import base as tools_base
+from freedombot.types import ExecutionMode
 from tests.test_unified_assistant import SCRIPT, _reset, fake_model  # noqa: F401
 
 ALL_PACKS = ["general", "operations", "sales", "intake", "planning", "strategy", "finance", "brand", "legal"]
@@ -242,10 +242,10 @@ def test_load_tools_of_the_removed_campaign_domain_loads_nothing(fake_model, cli
 def test_v2_prompts_use_the_workspace_timezone_not_utc(client_scratch, ctx_factory, monkeypatch):
     from datetime import datetime as real_datetime, timezone as tz
 
-    import bizos.util.timeutil as timeutil
+    import freedombot.util.timeutil as timeutil
     from app.assistant.v2 import _executor_prompt
-    from bizos.agents.routing import render_playbooks, render_router_prompt
-    from bizos.util.timeutil import local_now, workspace_zone
+    from freedombot.agents.routing import render_playbooks, render_router_prompt
+    from freedombot.util.timeutil import local_now, workspace_zone
 
     class Frozen(real_datetime):
         @classmethod
@@ -267,7 +267,7 @@ def test_v2_prompts_use_the_workspace_timezone_not_utc(client_scratch, ctx_facto
 
 
 def test_assistant_defaults_to_luna_medium(monkeypatch):
-    from bizos import settings as s
+    from freedombot import settings as s
 
     for key in ("ASSISTANT_MODEL", "MODEL_ID", "ASSISTANT_REASONING_EFFORT", "MODEL_REASONING_EFFORT"):
         monkeypatch.delenv(key, raising=False)
@@ -277,7 +277,7 @@ def test_assistant_defaults_to_luna_medium(monkeypatch):
 
 def test_the_executor_model_can_differ_from_the_router_model(monkeypatch):
     from app.assistant.v2 import executor_model
-    from bizos.agents.router_agent import router_model
+    from freedombot.agents.router_agent import router_model
 
     monkeypatch.delenv("ASSISTANT_MODEL", raising=False)
     monkeypatch.setenv("ASSISTANT_REASONING_EFFORT", "none")
@@ -292,7 +292,7 @@ def test_the_executor_model_can_differ_from_the_router_model(monkeypatch):
 def test_assistant_uses_luna_and_medium_from_env(monkeypatch):
     from agno.models.openai.responses import OpenAIResponses
     from app.assistant.v2 import executor_model
-    from bizos.agents.router_agent import router_model
+    from freedombot.agents.router_agent import router_model
 
     monkeypatch.setenv("ASSISTANT_MODEL", "openai:gpt-6-luna")
     monkeypatch.setenv("ASSISTANT_REASONING_EFFORT", "medium")

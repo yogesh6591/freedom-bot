@@ -8,11 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, require_admin, run_scope
-from bizos.control.models import ClientSettings
-from bizos.tenancy.context import TenantContext
-from bizos.tools.base import guarded_call
-from bizos.types import PolicyEffect, Role
-import bizos.support as support
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy.context import TenantContext
+from freedombot.tools.base import guarded_call
+from freedombot.types import PolicyEffect, Role
+import freedombot.support as support
 
 router = APIRouter(prefix="/api/support", tags=["support"])
 

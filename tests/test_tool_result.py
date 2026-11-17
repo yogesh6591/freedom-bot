@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from bizos.agents.tool_result import from_outcome
-from bizos.policy.models import PolicyDecision
-from bizos.tools.base import ToolOutcome
-from bizos.types import DataClassification, ExecutionMode, PolicyEffect, RiskLevel
+from freedombot.agents.tool_result import from_outcome
+from freedombot.policy.models import PolicyDecision
+from freedombot.tools.base import ToolOutcome
+from freedombot.types import DataClassification, ExecutionMode, PolicyEffect, RiskLevel
 
 
 def _outcome(effect, ok=True, message="line one\nline two", data=None, action_id=None):

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from bizos.types import PolicyEffect
+from freedombot.types import PolicyEffect
 
 
 @pytest.fixture(scope="module")
@@ -114,7 +114,7 @@ def test_same_subject_again_is_merged(app_client, client_a):
 
 def test_the_page_goes_through_the_policy_check(app_client, client_a, monkeypatch):
     import app.api.support as support_api
-    from bizos import support
+    from freedombot import support
 
     calls = []
 

@@ -1,7 +1,7 @@
 """Tenant scope for the shared acquisition database.
 
 Prospects (and queries that read them) are isolated by ``client_id`` from the signed-in
-BizOS workspace. Set the scope with :func:`tenant_scope` for the duration of an outreach
+FreedomBot workspace. Set the scope with :func:`tenant_scope` for the duration of an outreach
 tool call or admin request.
 """
 

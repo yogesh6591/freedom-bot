@@ -42,12 +42,12 @@ from typing import Any, Optional
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from bizos.util.dotenv import load_dotenv  # noqa: E402
+from freedombot.util.dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
 os.environ.setdefault("RUNTIME_ENV", "dev")
 os.environ["DATABASE_URL"] = "postgresql+psycopg://{u}:{p}@{h}:{port}/acquisition_test".format(
-    u=os.environ.get("DB_USER", "bizos"), p=os.environ.get("DB_PASS", "bizos"),
+    u=os.environ.get("DB_USER", "freedombot"), p=os.environ.get("DB_PASS", "freedombot"),
     h=os.environ.get("DB_HOST", "localhost"), port=os.environ.get("DB_PORT", "5432"),
 )
 os.environ.pop("AGENT_PIPELINE_V2", None)
@@ -128,13 +128,13 @@ def is_campaign_case(case: dict) -> bool:
 
 
 def make_workspace():
-    from bizos.bootstrap import admin_context, ensure_dev_users
-    from bizos.connectors.registry import seed_default_integrations
-    from bizos.control import store as control
-    from bizos.control.models import ClientSettings
-    from bizos.tenancy import provisioning
-    from bizos.tools.registry_check import load_all_tools
-    from bizos.types import DeploymentType
+    from freedombot.bootstrap import admin_context, ensure_dev_users
+    from freedombot.connectors.registry import seed_default_integrations
+    from freedombot.control import store as control
+    from freedombot.control.models import ClientSettings
+    from freedombot.tenancy import provisioning
+    from freedombot.tools.registry_check import load_all_tools
+    from freedombot.types import DeploymentType
 
     load_all_tools()
     suffix = uuid.uuid4().hex[:8]
@@ -149,8 +149,8 @@ def make_workspace():
 
 def release_pools(client) -> None:
     """Close the connection pools cached for this workspace (deprovisioning alone leaves agno's open)."""
-    from bizos.tenancy import agnodb, provisioning
-    from bizos.tenancy.registry import workspace_location
+    from freedombot.tenancy import agnodb, provisioning
+    from freedombot.tenancy.registry import workspace_location
 
     key = workspace_location(provisioning._provisioning_context(client))
     with agnodb._lock:
@@ -162,8 +162,8 @@ def release_pools(client) -> None:
 def drop_workspace(client) -> None:
     from sqlalchemy import text
 
-    from bizos.control.db import control_connection
-    from bizos.tenancy import provisioning
+    from freedombot.control.db import control_connection
+    from freedombot.tenancy import provisioning
 
     try:
         release_pools(client)
@@ -175,7 +175,7 @@ def drop_workspace(client) -> None:
 
 def cleanup_workspaces() -> int:
     """Remove eval workspaces a killed run left behind (slug ``teval…``)."""
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     left = [c for c in control.list_clients() if c.slug.startswith("teval")]
     for client in left:
@@ -187,8 +187,8 @@ def drop_orphan_schemas() -> int:
     """Eval schemas whose client row is already gone (a run killed between the two steps)."""
     from sqlalchemy import text
 
-    from bizos import settings as app_settings
-    from bizos.tenancy.registry import registry, validate_identifier
+    from freedombot import settings as app_settings
+    from freedombot.tenancy.registry import registry, validate_identifier
 
     engine = registry.engine(app_settings.shared_workspace_database(), "public")
     with engine.begin() as conn:
@@ -200,9 +200,9 @@ def drop_orphan_schemas() -> int:
 
 
 def settings_for(client, case: dict):
-    from bizos.control import store as control
-    from bizos.control.models import ClientSettings
-    from bizos.domains.packs import PACKS
+    from freedombot.control import store as control
+    from freedombot.control.models import ClientSettings
+    from freedombot.domains.packs import PACKS
 
     packs = [p.name for p in PACKS]
     # Always from the shipped defaults, so nothing one case sets carries over to the next.
@@ -223,8 +223,8 @@ def settings_for(client, case: dict):
 
 
 def context_for(client, case: dict):
-    from bizos.control import store as control
-    from bizos.types import Role
+    from freedombot.control import store as control
+    from freedombot.types import Role
 
     user = case["user"]
     roles = [str(r).upper() for r in user["roles"]]
@@ -238,13 +238,13 @@ def context_for(client, case: dict):
         ctx, roles=frozenset(Role(r) for r in roles), display_name=user.get("name") or ctx.display_name,
         attributes=attributes,
         data_scopes=frozenset(user["data_scopes"] if "data_scopes" in user else ALL_AREAS),
-        # The user's one role, advise|draft|approve|auto (bizos/policy/person_role.py); departments are data_scopes.
+        # The user's one role, advise|draft|approve|auto (freedombot/policy/person_role.py); departments are data_scopes.
         access_mode=user.get("role"),
     )
 
 
 def app_model_id() -> str:
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     return app_settings.model_id()
 
@@ -257,7 +257,7 @@ _MERGED_ARG = {"approvals_approve": ("decision", "approve"), "approvals_reject":
 
 def model_name(tool: str, args: dict) -> tuple[str, dict]:
     """An old tool call (current assistant) under the v2 tool name it is scored as."""
-    from bizos.agents.merged_tools import MERGED
+    from freedombot.agents.merged_tools import MERGED
 
     for name, merged in MERGED.items():
         if tool in merged.wraps:
@@ -270,7 +270,7 @@ def leftovers(ctx) -> dict[str, int]:
     """What the workspace already holds when a case starts. Each case has its own workspace, so all zero."""
     from sqlalchemy import text
 
-    from bizos.tenancy.registry import readonly_connection
+    from freedombot.tenancy.registry import readonly_connection
 
     counts = {}
     with readonly_connection(ctx) as conn:
@@ -294,8 +294,8 @@ def campaign_turn(state: dict) -> tuple[str, str]:
 
 def patch_world(mp, world, fixtures: dict) -> None:
     """Every effect answers from the world; prechecks and risk inputs that read systems use it too."""
-    import bizos.util.timeutil as timeutil
-    from bizos.tools import base as tools_base
+    import freedombot.util.timeutil as timeutil
+    from freedombot.tools import base as tools_base
     from evals.world import CONNECTED
 
     for name in list(tools_base.EFFECTS):
@@ -307,12 +307,12 @@ def patch_world(mp, world, fixtures: dict) -> None:
     mp.setattr(company, "finance_list_pending_billables", lambda scope, args: world.billables_for(args))
     mp.setattr(company, "_find_user", world.find_user(company._find_user))
     # Schedule prechecks look the schedule up; evals answer from fixtures.results.schedule_list.
-    from bizos import automation
+    from freedombot import automation
 
     mp.setattr(automation, "get", world.schedule_lookup(automation.get))
     mp.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     # App-action prechecks look actions up in Composio; evals classify by name and never reach it.
-    from bizos.connectors import composio_actions
+    from freedombot.connectors import composio_actions
 
     mp.setattr(composio_actions, "describe", lambda slug: {"tier": composio_actions.classify_by_name(slug)})
     mp.setattr(composio_actions, "connected_toolkits", lambda ctx: [])
@@ -332,8 +332,8 @@ def attach_files(ctx, items: list[dict]) -> list[str]:
     attachment_read itself answers from ``fixtures.results`` like every other tool."""
     from sqlalchemy import text as sql
 
-    from bizos import chat_attachments
-    from bizos.tenancy.registry import workspace_connection
+    from freedombot import chat_attachments
+    from freedombot.tenancy.registry import workspace_connection
 
     ids = []
     for item in items:
@@ -354,16 +354,16 @@ def run_case(client, case: dict, pipeline: str) -> dict:
     import app.assistant.v2 as v2
     from app.api.chat import ChatRequest
     from app.api.deps import bound
-    from bizos import chat_history
-    from bizos.agents import guard as guard_mod
-    from bizos.agents import routing
-    from bizos.agents import surface
-    from bizos.agents.persona import AUTO
-    from bizos.agents.router_agent import RouteResult
-    from bizos.agents.tool_result import from_outcome
-    from bizos.tools import base as tools_base
-    from bizos.tools.base import RunScope
-    from bizos.util.ids import new_id
+    from freedombot import chat_history
+    from freedombot.agents import guard as guard_mod
+    from freedombot.agents import routing
+    from freedombot.agents import surface
+    from freedombot.agents.persona import AUTO
+    from freedombot.agents.router_agent import RouteResult
+    from freedombot.agents.tool_result import from_outcome
+    from freedombot.tools import base as tools_base
+    from freedombot.tools.base import RunScope
+    from freedombot.util.ids import new_id
     from evals.world import World
 
     fixtures = case.get("fixtures") or {}
@@ -557,7 +557,7 @@ def database_problem() -> Optional[str]:
     from sqlalchemy import create_engine, text
     from sqlalchemy.pool import NullPool
 
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     engine = create_engine(app_settings.control_db_url(), poolclass=NullPool, connect_args={"connect_timeout": 5})
     try:
@@ -583,7 +583,7 @@ def preflight() -> Optional[str]:
     """Why a run must not start (a non-local or non-dev database, or one that does not answer), else None."""
     from sqlalchemy.engine import make_url
 
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     if os.environ.get("RUNTIME_ENV", "") != "dev":
         return f"RUNTIME_ENV is {os.environ.get('RUNTIME_ENV')!r}; evals only run against a dev environment."
@@ -923,8 +923,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.report:
         return build_report(REPORTS / args.report)
 
-    from bizos import settings as app_settings
-    from bizos.control.db import migrate_control_plane
+    from freedombot import settings as app_settings
+    from freedombot.control.db import migrate_control_plane
 
     problem = preflight()
     if problem:

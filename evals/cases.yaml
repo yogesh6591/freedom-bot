@@ -1,6 +1,6 @@
 # Format reference + starter cases. Phase 8 grows this to 400+.
 #
-# user.roles: real BizOS roles only: VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN.
+# user.roles: real FreedomBot roles only: VIEWER | DRAFTER | APPROVER | OPERATOR | ADMIN.
 #   Persona names used in older drafts: sales -> DRAFTER, member -> VIEWER.
 # workspace: settings preset the runner builds ClientSettings from (default: "default").
 #   default          shipped ClientSettings(): WAIT_FOR_APPROVAL, approval floor HIGH,
@@ -12,7 +12,7 @@
 #   "tool x3" means the tool is called that many times.
 #   "a|b" means either tool satisfies the step (e.g. crm_search_contacts|crm_get_contact when search
 #   already returns the email).
-# expected_gates: what the policy check (bizos/policy/engine.py:evaluate) returns for that call:
+# expected_gates: what the policy check (freedombot/policy/engine.py:evaluate) returns for that call:
 #   run | approval | draft | deny. Never hand-edit these to make a case pass; they are checked
 #   against the policy dry-run.
 # expected_outcome: one value, or a list when the turn produces several:

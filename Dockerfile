@@ -15,7 +15,7 @@ RUN apt-get update \
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bizos ./bizos
+COPY freedombot ./freedombot
 COPY app ./app
 COPY acquisition ./acquisition
 COPY acquisition_alembic ./acquisition_alembic
@@ -23,8 +23,8 @@ COPY acquisition_alembic.ini ./acquisition_alembic.ini
 COPY scripts ./scripts
 
 # Run as a non-root user: the process needs no privileges on the container.
-RUN useradd --create-home --uid 10001 bizos && mkdir -p /app/.composio-cache && chown -R bizos:bizos /app
-USER bizos
+RUN useradd --create-home --uid 10001 freedombot && mkdir -p /app/.composio-cache && chown -R freedombot:freedombot /app
+USER freedombot
 
 EXPOSE 8000
 

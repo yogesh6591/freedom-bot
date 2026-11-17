@@ -1,6 +1,6 @@
 """A workspace can never be left without an active admin, on any path.
 
-The rule lives in shared code (bizos.control.store + bizos.admin_ops), so the REST
+The rule lives in shared code (freedombot.control.store + freedombot.admin_ops), so the REST
 API, the unified assistant and the legacy engine are all covered:
 - no demotion or suspension may leave a client with zero active admins;
 - nobody can remove their own Admin role or suspend themselves.
@@ -14,11 +14,11 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from bizos import admin_ops as ops
-from bizos.control import store as control
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.types import DeploymentType, ExecutionMode, Role
+from freedombot import admin_ops as ops
+from freedombot.control import store as control
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.types import DeploymentType, ExecutionMode, Role
 from tests.conftest import _destroy, _make_client
 
 PASSWORD = "bizos-dev-password"

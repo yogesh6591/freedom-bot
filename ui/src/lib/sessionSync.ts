@@ -7,9 +7,9 @@
  * that finds itself out of date reloads into the current session with a notice.
  */
 
-const CHANNEL = 'bizos-session'
-const STORAGE_KEY = 'bizos:session-changed'
-const NOTICE_KEY = 'bizos:notice'
+const CHANNEL = 'freedombot-session'
+const STORAGE_KEY = 'freedombot:session-changed'
+const NOTICE_KEY = 'freedombot:notice'
 
 /** Identifies this tab so it ignores its own announcements. */
 const TAB_ID =

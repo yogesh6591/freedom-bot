@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
 
 from app.api.deps import bound
-from bizos.control import store as control
-from bizos.memory import documents
-from bizos.memory import store as memory
+from freedombot.control import store as control
+from freedombot.memory import documents
+from freedombot.memory import store as memory
 
 
 def test_a_restricted_document_is_found_only_by_users_with_that_access(client_scratch, ctx_factory):

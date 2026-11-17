@@ -13,14 +13,14 @@ from app.api.chat import (
     PHI_REFUSAL,
     _regulated_data_refusal,
 )
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.onboarding import OnboardingProfile, apply_profile, get_profile
-from bizos.policy.classifier import classify_text
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.tenancy.context import tenant_scope
-from bizos.types import ExecutionMode, PolicyEffect
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.onboarding import OnboardingProfile, apply_profile, get_profile
+from freedombot.policy.classifier import classify_text
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.tenancy.context import tenant_scope
+from freedombot.types import ExecutionMode, PolicyEffect
 
 
 @pytest.fixture(scope="module")

@@ -11,8 +11,8 @@ from psycopg import sql
 def main() -> None:
     host = os.environ.get("DB_HOST", "localhost")
     port = os.environ.get("DB_PORT", "5432")
-    user = os.environ.get("DB_USER", "bizos")
-    password = os.environ.get("DB_PASS", "bizos")
+    user = os.environ.get("DB_USER", "freedombot")
+    password = os.environ.get("DB_PASS", "freedombot")
     control = os.environ.get("CONTROL_DB_NAME", "bizos_control")
     name = os.environ.get("ACQUISITION_DB_NAME", "acquisition")
     with psycopg.connect(

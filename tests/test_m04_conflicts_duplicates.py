@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from bizos.agents import grounding
-from bizos.memory import store as memory
-from bizos.tenancy.context import tenant_scope
-from bizos.types import ApprovalStatus, MemoryCategory
+from freedombot.agents import grounding
+from freedombot.memory import store as memory
+from freedombot.tenancy.context import tenant_scope
+from freedombot.types import ApprovalStatus, MemoryCategory
 
 
 def test_topic_fingerprint_collapses_hq_synonyms():

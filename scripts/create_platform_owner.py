@@ -24,15 +24,15 @@ import getpass
 import os
 import sys
 
-from bizos.util.dotenv import load_dotenv
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 
-from bizos import admin_ops  # noqa: E402
-from bizos.bootstrap import OWNER_WORKSPACE_SLUG, ensure_internal_workspace  # noqa: E402
-from bizos.control import store as control  # noqa: E402
-from bizos.control.db import migrate_control_plane  # noqa: E402
-from bizos.types import Role  # noqa: E402
+from freedombot import admin_ops  # noqa: E402
+from freedombot.bootstrap import OWNER_WORKSPACE_SLUG, ensure_internal_workspace  # noqa: E402
+from freedombot.control import store as control  # noqa: E402
+from freedombot.control.db import migrate_control_plane  # noqa: E402
+from freedombot.types import Role  # noqa: E402
 
 
 def _password() -> str:

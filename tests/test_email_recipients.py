@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from bizos.actions import store as actions
-from bizos.agents.tool_args import schema_for_tool
-from bizos.connectors.base import ConnectorResult
-from bizos.tenancy.context import tenant_scope
-from bizos.tools import base as tools_base
-from bizos.tools.base import RunScope, guarded_call
+from freedombot.actions import store as actions
+from freedombot.agents.tool_args import schema_for_tool
+from freedombot.connectors.base import ConnectorResult
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools import base as tools_base
+from freedombot.tools.base import RunScope, guarded_call
 
 
 @pytest.fixture
@@ -54,7 +54,7 @@ def test_real_addresses_go_through_the_policy_check_as_before(client_scratch, ct
 
 
 def test_the_schema_tells_the_model_and_the_v2_guard_explains():
-    from bizos.agents.guard import Guard
+    from freedombot.agents.guard import Guard
 
     for tool in ("email_send_message", "email_create_draft"):
         items = schema_for_tool(tool)["properties"]["recipients"]["items"]

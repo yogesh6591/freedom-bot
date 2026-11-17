@@ -73,7 +73,7 @@ def test_transcribe_rejects_empty(app_client, client_a):
 
 
 def test_transcribe_calls_local_whisper(app_client, client_a, monkeypatch):
-    monkeypatch.setattr("bizos.settings.whisper_url", lambda: "http://whisper:8080")
+    monkeypatch.setattr("freedombot.settings.whisper_url", lambda: "http://whisper:8080")
     token = _login(app_client, client_a)
     upstream = httpx.Response(200, json={"text": "  show me Ethan Parker  "})
 
@@ -106,7 +106,7 @@ def test_transcribe_busy_returns_429(app_client, client_a):
 
 
 def test_transcribe_timeout_maps_to_504(app_client, client_a, monkeypatch):
-    monkeypatch.setattr("bizos.settings.whisper_url", lambda: "http://whisper:8080")
+    monkeypatch.setattr("freedombot.settings.whisper_url", lambda: "http://whisper:8080")
     token = _login(app_client, client_a)
 
     with patch(

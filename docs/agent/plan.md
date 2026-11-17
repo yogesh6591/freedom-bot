@@ -15,7 +15,7 @@ Done. See docs/agent/DISCOVERY.md.
 ## Phase 1: Spec alignment (docs only, no code changes)
 Tasks
 - Rename claude.md to CLAUDE.md and commit it.
-- Replace bizos/agent/prompts with bizos/agents/prompts everywhere in the docs.
+- Replace freedombot/agent/prompts with freedombot/agents/prompts everywhere in the docs.
 - Update ARCHITECTURE.md:
   - 5.6 Guard: new pre-checks (schema validation, ID provenance, prerequisites), then the existing
     policy check, unchanged.
@@ -93,7 +93,7 @@ shows each call is gated exactly like the old tool it maps to.
 STOP.
 
 ## Phase 5: Router and tool loading
-- Route model; router prompt loaded from bizos/agents/prompts/router.md.
+- Route model; router prompt loaded from freedombot/agents/prompts/router.md.
 - Domain menu filtered by enabled packs, pack mode limits and the user's role.
 - Bundles, ALWAYS_ON (memory_search, load_tools), and load_tools (intersected with visible tools, logged).
 - memory_search prefetch in parallel with routing.

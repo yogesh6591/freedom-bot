@@ -222,8 +222,8 @@ def _founder(key: str, company: str) -> Optional[tuple[str, str, str]]:
 
 def _verified_email(ctx: Any, name: str, domain: str) -> tuple[Optional[str], dict]:
     """(email, Prospeo company facts). The email is only returned when Prospeo has verified it."""
-    from bizos.connectors import composio
-    from bizos.connectors.base import ConnectorError
+    from freedombot.connectors import composio
+    from freedombot.connectors.base import ConnectorError
 
     first, _, last = name.partition(" ")
     try:
@@ -425,10 +425,10 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         want = max(1, min(int(count or MAX_FIND), MAX_FIND))
     except (TypeError, ValueError):
         want = MAX_FIND
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     ctx = control.build_context(control.get_user(call.user_id))
-    from bizos.connectors import composio
+    from freedombot.connectors import composio
 
     # Which tools are connected. Code decides this, never the model; whatever is not connected is covered by web search.
     key = (get_settings().exa_api_key or "").strip()

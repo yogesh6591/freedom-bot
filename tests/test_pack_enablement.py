@@ -11,13 +11,13 @@ import dataclasses
 
 import pytest
 
-from bizos.agents.grounding import blocked_capabilities
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.tenancy.context import tenant_scope
-from bizos.types import PolicyEffect
+from freedombot.agents.grounding import blocked_capabilities
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.tenancy.context import tenant_scope
+from freedombot.types import PolicyEffect
 
 PACK_ONLY = {
     "finance_lookup_policy": "finance",

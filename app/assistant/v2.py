@@ -6,7 +6,7 @@ One chat turn:
   -> one executor Agent (fresh per request, tool_call_limit 60) whose every tool call goes through the guard
   -> reply composed from tool results.
 
-The rules live in plain modules under bizos/agents (routing, guard, merged_tools, composer, tool_meta);
+The rules live in plain modules under freedombot/agents (routing, guard, merged_tools, composer, tool_meta);
 this file only wires them together with Agno and the chat API. With the flag off nothing here runs.
 
 Outreach and acquisition (prospects, emails, assessments, bookings, payments, journey page) are part of the
@@ -32,32 +32,32 @@ from agno.tools import tool
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
-from bizos import chat_attachments, chat_history
-from bizos import settings as app_settings
-from bizos.actions import store as actions
-from bizos.agents import conversation, grounding
-from bizos.agents import instructions as agent_instructions
-from bizos.agents.composer import StreamGate, compose
-from bizos.agents.guard import Guard, KnownValues
-from bizos.agents.merged_tools import MERGED, schema_for
-from bizos.agents.persona import AUTO
-from bizos.agents.router_agent import route_and_prefetch, route_query
-from bizos.agents.routing import (
+from freedombot import chat_attachments, chat_history
+from freedombot import settings as app_settings
+from freedombot.actions import store as actions
+from freedombot.agents import conversation, grounding
+from freedombot.agents import instructions as agent_instructions
+from freedombot.agents.composer import StreamGate, compose
+from freedombot.agents.guard import Guard, KnownValues
+from freedombot.agents.merged_tools import MERGED, schema_for
+from freedombot.agents.persona import AUTO
+from freedombot.agents.router_agent import route_and_prefetch, route_query
+from freedombot.agents.routing import (
     LOAD_TOOLS, PROMPTS, ToolLoader, allowed_old_tools, clean_route, domain_menu, render_playbooks,
     render_router_prompt, visible_tools,
 )
-from bizos.agents.surface import _with_why
-from bizos.agents.tool_args import normalize_tool_arguments
-from bizos.agents.tool_meta import GATE_TEXT, TOOL_META, render
-from bizos.rbac.registry import get_spec
-from bizos.tools.base import RunScope
-from bizos.util.redaction import redact
-from bizos.util.timeutil import local_now, workspace_zone
-from bizos.tools.dry_run import bound_scope, policy_gate
-from bizos.types import ActionStatus
-from bizos.util.ids import new_id
+from freedombot.agents.surface import _with_why
+from freedombot.agents.tool_args import normalize_tool_arguments
+from freedombot.agents.tool_meta import GATE_TEXT, TOOL_META, render
+from freedombot.rbac.registry import get_spec
+from freedombot.tools.base import RunScope
+from freedombot.util.redaction import redact
+from freedombot.util.timeutil import local_now, workspace_zone
+from freedombot.tools.dry_run import bound_scope, policy_gate
+from freedombot.types import ActionStatus
+from freedombot.util.ids import new_id
 
-from bizos import usage  # noqa: E402
+from freedombot import usage  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -580,7 +580,7 @@ def handle(body: Any, ctx: Any, settings: Any, emit: Optional[Callable[[dict], N
         )
         agent = Agent(
             name=agent_instructions.assistant_name(settings),
-            id="bizos-assistant-v2",
+            id="freedombot-assistant-v2",
             model=model,
             user_id=ctx.user_id,
             session_id=session_id,
@@ -663,7 +663,7 @@ def _files_text(files: list[dict], files_now: list[dict], *, router: bool = Fals
 
 def _connected_apps_text(ctx: Any) -> str:
     """Which apps this user connected, so the executor reaches them (e.g. Outlook, Slack) without guessing."""
-    from bizos.connectors import composio, composio_actions
+    from freedombot.connectors import composio, composio_actions
 
     try:
         slugs = composio_actions.connected_toolkits(ctx)
@@ -742,8 +742,8 @@ def _respond(ctx, scope, body, session_id, saved, *, text: str, before: set, gua
     results = [r for d in (guard.log if guard else []) if d.stage in ("policy", "duplicate") for r in d.results]
     # show_assessment: one more model pass over the report + the user's message; keep only what they asked.
     if guard is not None:
-        from bizos.agents.assessment_reply import assessment_reports, shape_assessment_reply
-        from bizos.rbac.registry import get_spec as _spec
+        from freedombot.agents.assessment_reply import assessment_reports, shape_assessment_reply
+        from freedombot.rbac.registry import get_spec as _spec
 
         reports = assessment_reports(results)
         wrote = any(

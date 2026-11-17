@@ -31,7 +31,7 @@ export function setExpectedSession(value: { clientId: string; userId: string } |
 /** Server detail for a 409 when the cookie no longer matches this tab. */
 export const WORKSPACE_CHANGED = 'workspace_changed'
 /** Window event fired when a request hits that 409. */
-export const WORKSPACE_CHANGED_EVENT = 'bizos:workspace-changed'
+export const WORKSPACE_CHANGED_EVENT = 'freedombot:workspace-changed'
 
 export interface RequestOptions {
   /** Skip the expected-workspace check (session lookup, logout). */
@@ -53,7 +53,7 @@ function headersFor(options: RequestInit, opts: RequestOptions): HeadersInit {
       ? { 'Content-Type': 'application/json' }
       : {}),
     ...(expected && !opts.anyWorkspace
-      ? { 'X-Bizos-Client': expected.clientId, 'X-Bizos-User': expected.userId }
+      ? { 'X-FreedomBot-Client': expected.clientId, 'X-FreedomBot-User': expected.userId }
       : {}),
     ...(options.headers ?? {})
   }

@@ -11,15 +11,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
-from bizos.control.models import ClientSettings
-from bizos.memory import store as memory
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.tenancy import provisioning
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import workspace_connection
-from bizos.tools.base import guarded_call
-from bizos.types import (
+from freedombot.control.models import ClientSettings
+from freedombot.memory import store as memory
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.tenancy import provisioning
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import workspace_connection
+from freedombot.tools.base import guarded_call
+from freedombot.types import (
     ApprovalStatus,
     ExecutionMode,
     MemoryCategory,
@@ -103,7 +103,7 @@ def test_pinned_deployment_refuses_other_clients(app_client, client_a, client_b,
 
 
 def test_template_clone_gives_base_package_and_tool_modes():
-    from bizos import template
+    from freedombot import template
 
     config = template.merge(template.load_template(), {"purchased_domains": ["general", "sales"]})
     settings = template.settings_from(config, company_name="Clone Co")
@@ -120,9 +120,9 @@ def test_template_clone_gives_base_package_and_tool_modes():
 
 def test_provision_client_script_builds_a_walled_deployment(tmp_path):
     from scripts.provision_client import provision
-    from bizos.control import store as control
-    from bizos.control.db import control_connection
-    from bizos.util.ids import new_id
+    from freedombot.control import store as control
+    from freedombot.control.db import control_connection
+    from freedombot.util.ids import new_id
 
     slug = f"prov{new_id('x')[-6:]}".lower()
     args = argparse.Namespace(
@@ -151,8 +151,8 @@ def test_provision_client_script_builds_a_walled_deployment(tmp_path):
 
 
 def test_persona_never_presents_as_jeanne(client_a, scope_factory):
-    from bizos.agents import instructions
-    from bizos.agents.persona import enforce_persona
+    from freedombot.agents import instructions
+    from freedombot.agents.persona import enforce_persona
 
     scope = scope_factory(client_a, "operator")
     prompt = instructions.render(
@@ -168,7 +168,7 @@ def test_persona_never_presents_as_jeanne(client_a, scope_factory):
 
 
 def test_one_chat_routes_between_domains():
-    from bizos.agents.persona import route
+    from freedombot.agents.persona import route
 
     enabled = ["general", "strategy", "operations", "finance"]
     assert route("What are this quarter's strategic priorities?", enabled) == "strategy"
@@ -184,7 +184,7 @@ def test_one_chat_routes_between_domains():
 
 
 def test_unpaid_domain_needs_a_change_order(app_client, client_a):
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     original = control.get_client(client_a.id).settings.to_dict()
     admin = _login(app_client, client_a, "admin")
@@ -325,7 +325,7 @@ def test_data_area_tools_follow_user_scopes(client_a, scope_factory, settings_wi
 
 
 def test_view_and_run_are_separate_on_every_tool():
-    from bizos.rbac.registry import TOOL_SPECS
+    from freedombot.rbac.registry import TOOL_SPECS
 
     for spec in TOOL_SPECS:
         data = spec.to_dict()
@@ -335,7 +335,7 @@ def test_view_and_run_are_separate_on_every_tool():
 
 
 def test_admin_can_grant_data_scopes(app_client, client_a):
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     admin = _login(app_client, client_a, "admin")
     users = app_client.get("/api/users", headers=_auth(admin)).json()["items"]
@@ -382,7 +382,7 @@ def test_per_tool_mode_narrows_but_never_widens(client_a, scope_factory, setting
 
 
 def test_audit_rows_record_who_what_tool_and_mode(client_a, scope_factory):
-    from bizos.audit import events as audit
+    from freedombot.audit import events as audit
 
     scope = scope_factory(client_a, "operator", domain="sales")
     with tenant_scope(scope.ctx):
@@ -396,7 +396,7 @@ def test_audit_rows_record_who_what_tool_and_mode(client_a, scope_factory):
 
 
 def test_retention_purge_is_the_only_deletion_allowed(client_a, ctx_factory):
-    from bizos.audit import events as audit
+    from freedombot.audit import events as audit
 
     ctx = ctx_factory(client_a, "admin")
     old = datetime.now(timezone.utc) - timedelta(days=400)
@@ -426,8 +426,8 @@ def test_retention_purge_is_the_only_deletion_allowed(client_a, ctx_factory):
 
 
 def test_new_workspace_starts_with_every_order_dpa_category_allowed():
-    from bizos import template
-    from bizos.control.models import ORDER_DPA_CATEGORIES
+    from freedombot import template
+    from freedombot.control.models import ORDER_DPA_CATEGORIES
 
     settings = template.settings_from(template.load_template(), company_name="Fresh Co")
     assert set(settings.order_dpa_allows) == set(ORDER_DPA_CATEGORIES)

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from bizos.actions import store as actions
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import guarded_call
-from bizos.types import ActionStatus, ExecutionMode, PolicyEffect
+from freedombot.actions import store as actions
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import guarded_call
+from freedombot.types import ActionStatus, ExecutionMode, PolicyEffect
 
 
 def _propose(scope, title: str) -> str:
@@ -144,7 +144,7 @@ def test_advise_mode_forbids_decisions_from_chat(client_a, scope_factory):
 
 
 def test_submit_reply_is_not_stripped_as_a_false_claim():
-    from bizos.agents.claims import enforce_claims
+    from freedombot.agents.claims import enforce_claims
 
     reply = "Done — the draft has been submitted for approval."
     text, changed = enforce_claims(

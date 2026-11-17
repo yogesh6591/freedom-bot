@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from bizos.control import store as control
-from bizos.owner import derive_risk, derive_status, owner_portfolio, save_portfolio
-from bizos.support import (
+from freedombot.control import store as control
+from freedombot.owner import derive_risk, derive_status, owner_portfolio, save_portfolio
+from freedombot.support import (
     ASSIGNEE_CEPOCH,
     ASSIGNEE_JEANNE,
     ESCALATE_CEO,
@@ -19,9 +19,9 @@ from bizos.support import (
 def test_chat_tool_raises_a_cepoch_ticket_without_approval(client_a, scope_factory):
     from dataclasses import replace
 
-    from bizos.tenancy.context import tenant_scope
-    from bizos.tools.base import guarded_call
-    from bizos.types import PolicyEffect
+    from freedombot.tenancy.context import tenant_scope
+    from freedombot.tools.base import guarded_call
+    from freedombot.types import PolicyEffect
 
     # Employees (VIEWER) raise tickets too, and WAIT_FOR_APPROVAL does not queue them.
     scope = replace(scope_factory(client_a, "viewer", domain="general"), session_id="ses_fb046_chat")
@@ -42,8 +42,8 @@ def test_chat_tool_raises_a_cepoch_ticket_without_approval(client_a, scope_facto
 
 
 def test_chat_ticket_with_same_subject_merges_and_others_are_not_listed(client_a, scope_factory):
-    from bizos.tenancy.context import tenant_scope
-    from bizos.tools.base import guarded_call
+    from freedombot.tenancy.context import tenant_scope
+    from freedombot.tools.base import guarded_call
 
     viewer = scope_factory(client_a, "viewer", domain="general")
     operator = scope_factory(client_a, "operator", domain="general")
@@ -117,7 +117,7 @@ def test_resolve_returns_to_cepoch(client_a):
 def _with_onboarding(client, **onboarding):
     from dataclasses import replace
 
-    from bizos.control.models import ClientSettings
+    from freedombot.control.models import ClientSettings
 
     payload = client.settings.to_dict()
     payload["onboarding"] = onboarding
@@ -137,7 +137,7 @@ def _ticket(subject, *, severity="NORMAL", assignee=ASSIGNEE_CEPOCH, reason=None
 
 
 def test_owner_status_follows_handoff_launch_and_critical_tickets(client_a):
-    from bizos.util.timeutil import utcnow
+    from freedombot.util.timeutil import utcnow
 
     now = utcnow().isoformat()
     assert derive_status(_with_onboarding(client_a), [])["value"] == "not_started"
@@ -158,7 +158,7 @@ def test_owner_status_follows_handoff_launch_and_critical_tickets(client_a):
 def test_owner_risk_comes_from_escalations_tickets_and_stalled_setup(client_a):
     from datetime import timedelta
 
-    from bizos.util.timeutil import utcnow
+    from freedombot.util.timeutil import utcnow
 
     now = utcnow()
     fresh = _with_onboarding(client_a, handoff_at=now.isoformat())
@@ -183,7 +183,7 @@ def test_owner_risk_comes_from_escalations_tickets_and_stalled_setup(client_a):
 def test_owner_risk_flags_a_live_client_nobody_uses(client_a):
     from datetime import timedelta
 
-    from bizos.util.timeutil import utcnow
+    from freedombot.util.timeutil import utcnow
 
     live = _with_onboarding(client_a, launch={"signed_off_at": utcnow().isoformat()})
     far_future = utcnow() + timedelta(days=60)

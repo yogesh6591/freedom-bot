@@ -5,13 +5,13 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from bizos.actions import store as actions
-from bizos.audit import events as audit
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import workspace_connection
-from bizos.tools.base import guarded_call
-from bizos.tools.executor import execute_approved_action
-from bizos.types import ActionStatus, AuditEventType, ExecutionMode
+from freedombot.actions import store as actions
+from freedombot.audit import events as audit
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import workspace_connection
+from freedombot.tools.base import guarded_call
+from freedombot.tools.executor import execute_approved_action
+from freedombot.types import ActionStatus, AuditEventType, ExecutionMode
 
 
 def _propose(scope, **overrides):
@@ -96,7 +96,7 @@ def test_rejected_actions_cannot_be_executed(client_a, scope_factory, ctx_factor
     with tenant_scope(approver_ctx):
         actions.reject(action_id, settings=client_a.settings, comment="no", ctx=approver_ctx)
     with tenant_scope(proposer.ctx):
-        from bizos.tools.executor import NotExecutable
+        from freedombot.tools.executor import NotExecutable
 
         with pytest.raises(NotExecutable):
             execute_approved_action(proposer, action_id)

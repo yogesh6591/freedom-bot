@@ -27,7 +27,7 @@ from datetime import datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from bizos.util.dotenv import load_dotenv
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 
@@ -228,7 +228,7 @@ EVENTS = [
     ("Monthly finance close review", 6, 11, 0, 60, [], "Chicago HQ, room 2"),
 ]
 
-DEV_ROLES = None  # filled from bizos.bootstrap.DEV_USERS at run time
+DEV_ROLES = None  # filled from freedombot.bootstrap.DEV_USERS at run time
 
 
 # --------------------------------------------------------------------------------------------- seed
@@ -240,8 +240,8 @@ def _tz(settings: Any) -> ZoneInfo:
 
 
 def _reset_users(client: Any) -> int:
-    from bizos.bootstrap import DEV_USERS
-    from bizos.control import store as control
+    from freedombot.bootstrap import DEV_USERS
+    from freedombot.control import store as control
 
     domain = "acme.example.com"
     fixed = 0
@@ -260,7 +260,7 @@ def _reset_users(client: Any) -> int:
 
 
 def _seed_crm(conn: Any, today: Any) -> dict[str, int]:
-    from bizos.util.ids import new_id
+    from freedombot.util.ids import new_id
 
     added = {"companies": 0, "contacts": 0, "deals": 0, "notes": 0, "tasks": 0}
     company_id: dict[str, str] = {
@@ -359,7 +359,7 @@ def _seed_crm(conn: Any, today: Any) -> dict[str, int]:
 
 
 def _seed_invoices(conn: Any, now: datetime) -> int:
-    from bizos.util.ids import new_id
+    from freedombot.util.ids import new_id
 
     added = 0
     for number, customer, email, status, total, balance, issued_ago, terms in INVOICES:
@@ -393,7 +393,7 @@ def _seed_invoices(conn: Any, now: datetime) -> int:
 
 
 def _seed_mailbox_and_calendar(conn: Any, now: datetime, tz: ZoneInfo) -> tuple[int, int]:
-    from bizos.util.ids import new_id
+    from freedombot.util.ids import new_id
 
     conn.execute(text("DELETE FROM email_messages WHERE id LIKE 'msg_tp_%'"))
     conn.execute(text("DELETE FROM calendar_events WHERE id LIKE 'evt_tp_%'"))
@@ -430,8 +430,8 @@ def _seed_mailbox_and_calendar(conn: Any, now: datetime, tz: ZoneInfo) -> tuple[
 
 
 def _seed_memory(ctx: Any, settings: Any) -> int:
-    from bizos.memory import store as memory
-    from bizos.types import ApprovalStatus, MemoryCategory, SourceType
+    from freedombot.memory import store as memory
+    from freedombot.types import ApprovalStatus, MemoryCategory, SourceType
 
     added = 0
 
@@ -462,11 +462,11 @@ def _seed_memory(ctx: Any, settings: Any) -> int:
 
 
 def main() -> int:
-    from bizos.bootstrap import admin_context
-    from bizos.control import store as control
-    from bizos.tenancy.context import tenant_scope
-    from bizos.tenancy.registry import workspace_connection
-    from bizos.util.timeutil import utcnow
+    from freedombot.bootstrap import admin_context
+    from freedombot.control import store as control
+    from freedombot.tenancy.context import tenant_scope
+    from freedombot.tenancy.registry import workspace_connection
+    from freedombot.util.timeutil import utcnow
     from scripts.reset_dhanu_demo import main as reset_demo
 
     reset_demo()

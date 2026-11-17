@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from bizos.control import store as control
+from freedombot.control import store as control
 
 
 @pytest.fixture(scope="module")
@@ -103,11 +103,11 @@ def test_session_cookie_authenticates(app_client, client_a):
         json={"email": f"viewer@{client_a.slug}.example.com", "password": "bizos-dev-password",
               "client_slug": client_a.slug},
     )
-    cookie = response.cookies.get("bizos_session")
+    cookie = response.cookies.get("freedombot_session")
     assert cookie
     set_cookie = response.headers["set-cookie"]
     assert "HttpOnly" in set_cookie and "SameSite=lax" in set_cookie
-    assert app_client.get("/api/auth/me", cookies={"bizos_session": cookie}).status_code == 200
+    assert app_client.get("/api/auth/me", cookies={"freedombot_session": cookie}).status_code == 200
 
 
 def test_role_gates_on_routes(app_client, client_a):
@@ -158,9 +158,9 @@ def test_admin_cannot_modify_another_clients_user(app_client, client_a, client_b
 
 def test_approval_flow_over_http(app_client, client_a):
     """Propose via a tool, approve as an approver, execute."""
-    from bizos.tenancy.context import tenant_scope
-    from bizos.tools.base import guarded_call, RunScope
-    from bizos.types import ExecutionMode
+    from freedombot.tenancy.context import tenant_scope
+    from freedombot.tools.base import guarded_call, RunScope
+    from freedombot.types import ExecutionMode
 
     operator = _login(app_client, client_a, "operator")
     approver = _login(app_client, client_a, "approver")
@@ -210,9 +210,9 @@ def test_approval_flow_over_http(app_client, client_a):
 
 def test_approver_can_execute_a_protected_write_after_approval(app_client, client_a):
     """Approvers may execute after approving when the tool grants EXECUTE_AFTER_APPROVAL."""
-    from bizos.tenancy.context import tenant_scope
-    from bizos.tools.base import guarded_call, RunScope
-    from bizos.types import ExecutionMode
+    from freedombot.tenancy.context import tenant_scope
+    from freedombot.tools.base import guarded_call, RunScope
+    from freedombot.types import ExecutionMode
 
     approver = _login(app_client, client_a, "approver")
 
@@ -246,9 +246,9 @@ def test_approver_can_execute_a_protected_write_after_approval(app_client, clien
 
 
 def test_viewer_cannot_execute_or_approve(app_client, client_a):
-    from bizos.tenancy.context import tenant_scope
-    from bizos.tools.base import guarded_call, RunScope
-    from bizos.types import ExecutionMode
+    from freedombot.tenancy.context import tenant_scope
+    from freedombot.tools.base import guarded_call, RunScope
+    from freedombot.types import ExecutionMode
 
     viewer = _login(app_client, client_a, "viewer")
 
@@ -354,7 +354,7 @@ def test_chat_reports_the_mode_and_surface(app_client, client_a):
 
 
 def test_chat_without_a_model_is_reported_clearly(app_client, client_a):
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     if app_settings.llm_available():
         pytest.skip("a model is configured; the 503 path does not apply")

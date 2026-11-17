@@ -1,4 +1,4 @@
-# BizOS assistant: agent architecture
+# FreedomBot assistant: agent architecture
 
 Status: aligned with the code at Phase 1 (see docs/agent/plan.md and docs/agent/DISCOVERY.md).
 Where this document and the code disagree, the code wins and this document is wrong.
@@ -61,12 +61,12 @@ flowchart TD
 
 ### 5.1 Pre-model refusals and grounding (code, unchanged)
 Regulated data (PHI, cards, children) and restricted HR candidates get the platform's fixed reply
-before any model call. `bizos/agents/grounding.py` may run `hr_match_candidate` deterministically.
+before any model call. `freedombot/agents/grounding.py` may run `hr_match_candidate` deterministically.
 v2 calls the same functions the current `reply()` calls, in the same order, before routing.
 
 ### 5.2 Visibility filter (code)
 A tool is visible only if **all** of these hold. This is the existing logic in
-`bizos/agents/surface.py` (`visible_specs_by_pack`), and v2 does not change it:
+`freedombot/agents/surface.py` (`visible_specs_by_pack`), and v2 does not change it:
 - its pack is enabled for the workspace (`enabled_domains`);
 - the pack's mode ceiling, combined with the workspace and requested modes, does not DENY it;
 - the user's roles, data areas and connected integrations do not DENY it in the policy check.
@@ -76,13 +76,13 @@ policy check sees that pack's domain and mode ceiling. Campaign tools are visibl
 
 v2 rule: a tool whose policy dry-run is "deny" for the current user regardless of arguments is hidden
 from the model and from `load_tools`. This applies to every tool. As on the live surface, a tool must
-also be listed by an enabled pack (campaign tools excepted). Code: `bizos/agents/routing.py`
-(`visible_tools`, `domain_menu`, `tools_for_route`, `ToolLoader`), using `bizos/tools/dry_run.py:is_visible`.
+also be listed by an enabled pack (campaign tools excepted). Code: `freedombot/agents/routing.py`
+(`visible_tools`, `domain_menu`, `tools_for_route`, `ToolLoader`), using `freedombot/tools/dry_run.py:is_visible`.
 A test asserts v2 visibility equals the current assistant's surface for every role.
 The router's domain menu shows a routing domain only if at least one of its tools is visible.
 
 ### 5.3 Router (fast model, structured output)
-Prompt: bizos/agents/prompts/router.md
+Prompt: freedombot/agents/prompts/router.md
 ```python
 class Route(BaseModel):
     domains: list[Domain] = Field(default_factory=list, max_length=4)
@@ -91,7 +91,7 @@ class Route(BaseModel):
     clarify: str | None = None
 ```
 - Model: `ROUTER_MODEL_ID` (`provider:model`), falling back to `MODEL_ID`. Wiring in
-  `bizos/agents/router_agent.py`. A router failure (an error, or no structured route) routes nowhere and
+  `freedombot/agents/router_agent.py`. A router failure (an error, or no structured route) routes nowhere and
   the executor uses `load_tools`. Every fallback is logged as `v2_router_fallback` with its reason and is
   returned in `RouteResult.fallback_reason`.
 - Domains the user was not offered are dropped in code (`clean_route`), whatever the model returns.
@@ -133,8 +133,8 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
   binding holds. Other assistants (acquisition, campaign handoff) send only `done`.
 
 ### 5.6 Executor (strong model)
-- Prompt: bizos/agents/prompts/executor.md plus the playbook sections for the routed domains
-  (bizos/agents/prompts/playbooks.md), rendered by `routing.render_playbooks`: any bullet that names a
+- Prompt: freedombot/agents/prompts/executor.md plus the playbook sections for the routed domains
+  (freedombot/agents/prompts/playbooks.md), rendered by `routing.render_playbooks`: any bullet that names a
   tool the user cannot see is dropped, so a playbook never points at a pack-gated or role-gated tool.
   Keep each playbook bullet about one tool so general rules survive.
 - `{default_meeting_minutes}`: the workspace's default meeting length if its settings define one,
@@ -148,13 +148,13 @@ Top memory_search results (SOPs, facts) are injected into the executor prompt.
 - A new Agent instance is created per request with exactly the loaded tools.
 
 ### 5.7 Guard (code)
-The existing policy check (`bizos/tools/base.py:guarded_call` → `bizos/policy/engine.py:evaluate`)
+The existing policy check (`freedombot/tools/base.py:guarded_call` → `freedombot/policy/engine.py:evaluate`)
 is the **only** permission and gating system. v2 adds pre-checks in front of it. A pre-check can
 only stop a call or ask the model to fix it. It can never let through something the policy check
 would stop.
 
 Order:
-1. **Schema validation.** Pydantic model per tool, built from `bizos/agents/tool_args.py`. On failure
+1. **Schema validation.** Pydantic model per tool, built from `freedombot/agents/tool_args.py`. On failure
    the validation message goes back to the model.
 2. **ID provenance.** Every value in the tool's `id_fields` (including recipient and attendee
    addresses) must be a *known* value. Lists are checked item by item. Otherwise: "look it up first".
@@ -204,7 +204,7 @@ Approval decisions and cancellations name the request by `action_id` (from `appr
 `approvals_get`). v2 does not accept title words (`match`) for them, because a phrase can pick the wrong
 request (DISCOVERY.md §9.6). `approvals_get` still accepts `match`, since it only reads.
 
-Code: `bizos/agents/guard.py`. `Guard.pre_check` runs schema (JSON Schema, using the model-facing schema
+Code: `freedombot/agents/guard.py`. `Guard.pre_check` runs schema (JSON Schema, using the model-facing schema
 narrowed per user for merged tools), provenance and hard prerequisites. `Guard.execute` runs the policy
 step through `guarded_call` or the merged-tool mapping, and records known values and successes.
 `make_guard_hook` is the Agno `tool_hooks` adapter. Tests: one per branch, plus a strictness parity test
@@ -215,10 +215,10 @@ or stricter than the current path.
 
 ### 5.8 Gates come from the policy check
 There is no separate tier table. To find a tool's gate for a user, ask the policy dry-run
-(`bizos/tools/dry_run.py`). It calls `bizos.tools.base.assess`, the same checks `guarded_call` runs
+(`freedombot/tools/dry_run.py`). It calls `freedombot.tools.base.assess`, the same checks `guarded_call` runs
 before acting, with nothing recorded. It never re-implements the rules. A parity test compares it with
 `guarded_call` for every tool × role × mode. The description metadata lives in
-`bizos/agents/tool_meta.py`: a write's "Effect:" line ends with `{gate}`, filled from the dry-run for
+`freedombot/agents/tool_meta.py`: a write's "Effect:" line ends with `{gate}`, filled from the dry-run for
 the current user. Tool descriptions' "Effect:" lines
 and eval expectations are generated or checked against the dry-run.
 
@@ -266,7 +266,7 @@ v1 uses the existing approval and draft cards (`awaiting_approval`, `drafts` in 
 There are no confirm cards in v1 (see "Later").
 
 ### 5.10 Reply composer (code)
-Every tool returns (directly or through the adapter `bizos/agents/tool_result.py:from_outcome`, which
+Every tool returns (directly or through the adapter `freedombot/agents/tool_result.py:from_outcome`, which
 wraps `ToolOutcome`):
 ```python
 class ToolResult(BaseModel):
@@ -289,7 +289,7 @@ The acknowledgement is rendered from the run's tool results:
 ```
 The model's final text is only a one-line lead-in, or the answer to a question.
 If no write tool succeeded, the reply never says "done". On task turns, the composer
-(`bizos/agents/composer.py`) removes any lead-in sentence that claims a write: the platform's claim
+(`freedombot/agents/composer.py`) removes any lead-in sentence that claims a write: the platform's claim
 patterns from `claims.py`, plus done-words, sentences starting with a write verb ("Saved the note."), and
 a thing plus a write verb ("Invoice drafted!"). Approval is only mentioned when a write is actually waiting
 for approval. Answers to questions are left alone, because they may truthfully say a record "was created"
@@ -300,7 +300,7 @@ The chat response keeps the current contract (`content`, `actions`, `awaiting_ap
 ## 6. Tool consolidation (89 → 82 model-visible tools, plus load_tools)
 Five merged tools replace 12 old tools (approvals 3, memory 3, admin users 2, YouTube 2 + 2):
 89 − 12 + 5 = 82. Because `youtube_my_channel` keeps its name as the merged tool, 11 old names leave
-the model's view (`merged_tools.WRAPPED`) and 4 new names arrive. Old functions stay. A merged tool is a thin wrapper (`bizos/agents/merged_tools.py`):
+the model's view (`merged_tools.WRAPPED`) and 4 new names arrive. Old functions stay. A merged tool is a thin wrapper (`freedombot/agents/merged_tools.py`):
 - each call is gated as the **specific old tool its arguments map to**: it calls `guarded_call` under
   that old tool's name, so per-tool overrides keep applying and the audit log keeps the old name
   (mappings in plan.md Phase 4). `admin_update_user` changing both roles and access must pass both;
@@ -352,7 +352,7 @@ domains.
 | admin_setup | Workspace config: overview, setup, settings, enable or disable domain packs | admin_workspace_overview, admin_get_setup, admin_apply_setup, admin_update_settings, admin_list_domains, admin_toggle_domain |
 | admin_launch | Go-live: launch checklist, mark items, sign-off, handoff readiness | admin_launch_checklist, admin_mark_launch_item, admin_launch_sign_off, admin_handoff_assessment |
 | admin_alerts | Workspace alerts: list, rescan, dismiss, alert baselines | admin_list_alerts, admin_scan_alerts, admin_dismiss_alert, admin_set_baselines |
-| admin_users | BizOS login accounts: list, create, roles and data access, suspend or reactivate, password reset | admin_list_users, admin_create_user, admin_update_user, admin_set_user_status, admin_reset_password |
+| admin_users | FreedomBot login accounts: list, create, roles and data access, suspend or reactivate, password reset | admin_list_users, admin_create_user, admin_update_user, admin_set_user_status, admin_reset_password |
 | admin_permissions | Tool rules: which roles can use a tool, and tightening how it runs | admin_tool_permissions, admin_set_tool_permission, admin_set_tool_mode |
 | admin_commercial | Pricing, resale rules, consulting quotes, change orders | admin_pricing, admin_set_resale_rules, admin_consult_quote, admin_record_change_order |
 | platform | Platform owners only: the clients of this FreedomBot platform (every client workspace): how many, who they are, status, risk, go-live stage, what they bought, their members; onboarding a new client company with its own workspace and first admin | platform_overview, platform_create_client |
@@ -364,7 +364,7 @@ Always loaded, whatever the route: memory_search, synced_search, integration_fin
 integration_read_action, web_search, web_read and load_tools. crm, email and calendar bundles also load
 integration_write_action and integration_destructive_action.
 
-**Attached files** (bizos/chat_attachments.py): the chat's paperclip uploads a PDF, Word (.docx), CSV,
+**Attached files** (freedombot/chat_attachments.py): the chat's paperclip uploads a PDF, Word (.docx), CSV,
 Excel (.xlsx) or text file (10 MB) to `POST /api/chat/attachments`. Its text is extracted once and
 checked with the same regulated-data refusal as a typed message (PHI, card, child, biometric data), so a
 file the Order/DPA does not allow is refused before it is stored or reaches a model; stored text has
@@ -379,7 +379,7 @@ While a conversation has files, ``memory_save_attachment`` is also loaded: "add 
 the file's text as a company memory document for everyone unless the user sets a data area
 (finance, hr, legal, …), in which case only people with that area can see it.
 
-**App actions** (bizos/connectors/composio_actions.py): any of the ~470 Composio actions of the four
+**App actions** (freedombot/connectors/composio_actions.py): any of the ~470 Composio actions of the four
 connectable apps. Each action gets a tier, the strictest of its name (DELETE, SEND, TRASH, REPLY...) and
 Composio's hints; a read needs both a read verb and the read-only hint. One tool per tier, so destructive
 actions never share a tool. The precheck refuses an action whose tier does not match the tool (before
@@ -388,7 +388,7 @@ any approval is queued), and any app the caller may not use through the matching
 calendar_create_event; HubSpot: crm_search_contacts / crm_update_contact_field; YouTube reads:
 youtube_my_videos), so a generic action is never looser than the dedicated tool.
 
-**Any Composio platform** (bizos/connectors/composio_catalog.py): Integrations lists every Composio
+**Any Composio platform** (freedombot/connectors/composio_catalog.py): Integrations lists every Composio
 platform (about 1,700), searchable. One-click connect where Composio manages sign-in or this Composio
 project has an auth config; others show "admin setup needed". App actions work on any connected
 platform; platforms without a dedicated tool use only the generic tools' own permissions. Each user can

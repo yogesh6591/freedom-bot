@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from bizos.control import store as control
-from bizos.control.db import control_connection, migrate_control_plane
-from bizos.control.models import ClientSettings
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.util.timeutil import DEFAULT_TIMEZONE, is_timezone, local_now, workspace_zone
+from freedombot.control import store as control
+from freedombot.control.db import control_connection, migrate_control_plane
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.util.timeutil import DEFAULT_TIMEZONE, is_timezone, local_now, workspace_zone
 
 
 def _admin_call(client, ctx_factory, **args):
@@ -92,9 +92,9 @@ def test_only_admins_can_change_it(client_scratch, ctx_factory):
 def test_the_current_prompt_gives_now_in_the_workspace_timezone(client_scratch, ctx_factory, monkeypatch):
     from datetime import datetime as real_datetime, timezone as tz
 
-    import bizos.util.timeutil as timeutil
-    from bizos.agents.instructions import render
-    from bizos.types import ExecutionMode
+    import freedombot.util.timeutil as timeutil
+    from freedombot.agents.instructions import render
+    from freedombot.types import ExecutionMode
 
     class Frozen(real_datetime):
         @classmethod

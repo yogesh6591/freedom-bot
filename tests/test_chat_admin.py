@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from bizos.agents.surface import visible_specs
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.domains.packs import ADMIN_TOOLS, get_pack
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.types import ExecutionMode, PolicyEffect
+from freedombot.agents.surface import visible_specs
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.domains.packs import ADMIN_TOOLS, get_pack
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.types import ExecutionMode, PolicyEffect
 
 
 def _scope(client, ctx_factory, who: str, mode: ExecutionMode | None = None) -> RunScope:
@@ -129,9 +129,9 @@ def test_policies_packs_and_change_orders(client_scratch, ctx_factory):
 
 
 def test_tool_permissions_and_tool_modes(client_scratch, ctx_factory):
-    from bizos.rbac import permissions as perms
-    from bizos.rbac.registry import get_spec
-    from bizos.types import Role, ToolPermission
+    from freedombot.rbac import permissions as perms
+    from freedombot.rbac.registry import get_spec
+    from freedombot.types import Role, ToolPermission
 
     admin_ctx = ctx_factory(client_scratch, "admin")
     spec = get_spec("crm_create_task")

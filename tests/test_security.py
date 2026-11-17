@@ -7,16 +7,16 @@ import os
 import pytest
 from sqlalchemy import text
 
-from bizos.control import passwords, store as control
-from bizos.control.tokens import CLAIM_CLIENT, CLAIM_ROLES, TokenError, issue_token, verify_token
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import (
+from freedombot.control import passwords, store as control
+from freedombot.control.tokens import CLAIM_CLIENT, CLAIM_ROLES, TokenError, issue_token, verify_token
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import (
     InvalidWorkspaceIdentifier,
     validate_identifier,
     workspace_connection,
 )
-from bizos.types import Role
-from bizos.util.redaction import redact
+from freedombot.types import Role
+from freedombot.util.redaction import redact
 
 
 # --------------------------------------------------------------- credentials
@@ -175,7 +175,7 @@ def test_redaction_covers_every_secret_shape():
 
 def test_integration_config_never_stores_a_credential(client_a, ctx_factory):
     """§14: a caller passing a token in `config` has it stripped, not persisted."""
-    from bizos.connectors.registry import set_integration
+    from freedombot.connectors.registry import set_integration
 
     ctx = ctx_factory(client_a, "admin")
     with tenant_scope(ctx):
@@ -208,7 +208,7 @@ def test_workspace_identifiers_are_validated():
 
 def test_crm_field_names_are_allowlisted(client_a, ctx_factory):
     """A field name reaches an UPDATE clause, so only known columns are accepted."""
-    from bizos.connectors.registry import get_connector
+    from freedombot.connectors.registry import get_connector
 
     ctx = ctx_factory(client_a, "admin")
     with tenant_scope(ctx):
@@ -234,7 +234,7 @@ def test_workspace_connection_rejects_confinement_escapes(client_a, ctx_factory)
 
 
 def test_a_jwt_secret_shorter_than_the_hash_is_refused(monkeypatch):
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     monkeypatch.setenv("JWT_SECRET", "too-short")
     with pytest.raises(RuntimeError):
@@ -242,7 +242,7 @@ def test_a_jwt_secret_shorter_than_the_hash_is_refused(monkeypatch):
 
 
 def test_production_refuses_a_default_signing_key(monkeypatch):
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     monkeypatch.delenv("JWT_SECRET", raising=False)
     monkeypatch.setenv("RUNTIME_ENV", "prd")

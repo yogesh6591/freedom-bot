@@ -15,14 +15,14 @@ from fastapi.testclient import TestClient
 
 from app.api.chat import SSN_REFUSAL, _licensed_advice_note, _licensed_advice_refusal, _regulated_data_refusal
 from app.assistant.v2 import _executor_prompt
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.policy.classifier import classify_text, find_ssn, licensed_advice_topic
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.types import DeploymentType, ExecutionMode, PolicyEffect
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.policy.classifier import classify_text, find_ssn, licensed_advice_topic
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.types import DeploymentType, ExecutionMode, PolicyEffect
 from tests.conftest import _destroy, _make_client
 
 PASSWORD = "bizos-dev-password"

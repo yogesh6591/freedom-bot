@@ -2,7 +2,7 @@
 
 ## Summary
 
-A rebuilt way for the BizOS assistant to pick and run tools, built next to the current assistant:
+A rebuilt way for the FreedomBot assistant to pick and run tools, built next to the current assistant:
 
 - **Router:** picks the relevant tool domains for the message.
 - **Guard:** checks schema, provenance (IDs and addresses come only from tool results or the user's

@@ -10,21 +10,21 @@ from uuid import uuid4
 
 import pytest
 
-from bizos.bootstrap import ensure_dev_users
-from bizos.connectors import composio, composio_actions as acts
-from bizos.control import store as control
-from bizos.domains.packs import enabled_packs
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.rbac.job_roles import JOB_ROLES, tags_after_change
-from bizos.rbac.registry import TOOL_SPECS
-from bizos.sync import store as sync_store
-from bizos.sync.runner import sync_user
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.tools.dry_run import is_visible
-from bizos.tools.executor import approve_and_execute
-from bizos.types import APP_AREAS, DATA_AREAS, ActionStatus, PolicyEffect, Role
+from freedombot.bootstrap import ensure_dev_users
+from freedombot.connectors import composio, composio_actions as acts
+from freedombot.control import store as control
+from freedombot.domains.packs import enabled_packs
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.rbac.job_roles import JOB_ROLES, tags_after_change
+from freedombot.rbac.registry import TOOL_SPECS
+from freedombot.sync import store as sync_store
+from freedombot.sync.runner import sync_user
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.tools.dry_run import is_visible
+from freedombot.tools.executor import approve_and_execute
+from freedombot.types import APP_AREAS, DATA_AREAS, ActionStatus, PolicyEffect, Role
 
 CONNECTED = frozenset({"email", "calendar", "crm", "youtube"})
 RESTRICTED = "DATA_AREA_RESTRICTED"
@@ -71,7 +71,7 @@ def decide(client, ctx, tool):
 
 @pytest.fixture
 def fake_apps(monkeypatch):
-    from bizos.tools import base as tools_base
+    from freedombot.tools import base as tools_base
 
     monkeypatch.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     ran = []
@@ -186,7 +186,7 @@ def test_changing_role_keeps_app_tags():
 
 
 def test_an_approver_needs_the_tag_to_see_and_decide_the_action(client_scratch, fake_apps):
-    from bizos.actions import store as actions
+    from freedombot.actions import store as actions
 
     requester = person(client_scratch, ("crm",))
     with tenant_scope(requester):

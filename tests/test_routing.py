@@ -10,19 +10,19 @@ from pathlib import Path
 import pytest
 
 from app.assistant.assistant import _packs_for
-from bizos.agents.merged_tools import MERGED, WRAPPED
-from bizos.agents.router_agent import FALLBACK_EVENT, FALLBACK_ROUTE, RouteResult, route_and_prefetch, route_query
-from bizos.agents.routing import (
+from freedombot.agents.merged_tools import MERGED, WRAPPED
+from freedombot.agents.router_agent import FALLBACK_EVENT, FALLBACK_ROUTE, RouteResult, route_and_prefetch, route_query
+from freedombot.agents.routing import (
     ALWAYS_ON, BUNDLE_EXTRAS, DOMAIN_DESCRIPTIONS, LOAD_TOOLS, MODEL_TOOLS, Route, ToolLoader, bundle,
     clean_route, domain_menu, home_tools, render_router_prompt, tools_for_route, visible_tools,
 )
-from bizos.agents.surface import build_unified_tools
-from bizos.agents.tool_meta import DOMAINS, TOOL_META
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.tenancy.context import tenant_scope
-from bizos.tools import base as tools_base
-from bizos.tools.base import RunScope
+from freedombot.agents.surface import build_unified_tools
+from freedombot.agents.tool_meta import DOMAINS, TOOL_META
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools import base as tools_base
+from freedombot.tools.base import RunScope
 from tests.test_unified_assistant import SCRIPT, _reset, fake_model  # noqa: F401
 
 ROLES = ["viewer", "drafter", "approver", "operator", "admin"]
@@ -192,7 +192,7 @@ def test_route_query_returns_the_models_structured_route(fake_model):
 
 def test_a_router_failure_routes_nowhere_and_logs_why(fake_model, caplog):
     SCRIPT[:] = [{"status": 500, "message": "boom"}] * 3
-    with caplog.at_level("WARNING", logger="bizos.agents.router_agent"):
+    with caplog.at_level("WARNING", logger="freedombot.agents.router_agent"):
         result = route_query("route this", "hello")
     assert result.route == FALLBACK_ROUTE and result.fallback_reason
     logged = [r for r in caplog.records if getattr(r, "event", None) == FALLBACK_EVENT]
@@ -201,7 +201,7 @@ def test_a_router_failure_routes_nowhere_and_logs_why(fake_model, caplog):
 
 def test_an_unstructured_reply_is_a_logged_fallback(fake_model, caplog):
     SCRIPT[:] = [{"content": "I think this is about CRM"}]
-    with caplog.at_level("WARNING", logger="bizos.agents.router_agent"):
+    with caplog.at_level("WARNING", logger="freedombot.agents.router_agent"):
         result = route_query("route this", "hello")
     assert result.route == FALLBACK_ROUTE and result.fallback_reason
     assert [r for r in caplog.records if getattr(r, "event", None) == FALLBACK_EVENT]
@@ -215,7 +215,7 @@ def test_memory_prefetch_runs_in_parallel_with_routing(client_scratch, ctx_facto
         started.set()
         return real(scope, tool, arguments)
 
-    monkeypatch.setattr("bizos.agents.router_agent.guarded_call", spy)
+    monkeypatch.setattr("freedombot.agents.router_agent.guarded_call", spy)
 
     def slow_route():
         # Only finishes if memory_search started while routing was still running.
@@ -233,7 +233,7 @@ def test_memory_prefetch_runs_in_parallel_with_routing(client_scratch, ctx_facto
 
 
 def test_playbooks_drop_lines_that_name_a_tool_the_user_cannot_see():
-    from bizos.agents.routing import render_playbooks
+    from freedombot.agents.routing import render_playbooks
 
     everything = frozenset(MODEL_TOOLS)
     no_brand = everything - {"brand_get_voice"}
@@ -243,7 +243,7 @@ def test_playbooks_drop_lines_that_name_a_tool_the_user_cannot_see():
 
 
 def test_playbooks_keep_general_rules_and_only_routed_domains(client_scratch, ctx_factory):
-    from bizos.agents.routing import KNOWN_TOOLS, render_playbooks
+    from freedombot.agents.routing import KNOWN_TOOLS, render_playbooks
 
     visible, _, _ = _visible(client_scratch, ctx_factory(client_scratch, "drafter"))
     text = render_playbooks(["calendar", "approvals"], visible, timezone="Asia/Kolkata", default_meeting_minutes=45)
@@ -259,7 +259,7 @@ def test_the_test_session_keeps_existing_loggers_enabled():
     """The in-process Alembic migration in conftest must not disable loggers created before it."""
     import logging
 
-    assert not logging.getLogger("bizos.agents.router_agent").disabled
+    assert not logging.getLogger("freedombot.agents.router_agent").disabled
 
 
 def test_any_admin_domain_loads_the_whole_admin_family(client_scratch, ctx_factory):

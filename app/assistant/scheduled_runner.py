@@ -1,4 +1,4 @@
-"""Runs one due scheduled task as a chat turn of the person who set it up (bizos/automation.py).
+"""Runs one due scheduled task as a chat turn of the person who set it up (freedombot/automation.py).
 
 The instruction goes through the same chat pipeline as a typed message: router, guard, policy check,
 approvals and audit. The reply is saved in the task's own conversation, so the person can open it in
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from bizos.tenancy.context import TenantContext
+from freedombot.tenancy.context import TenantContext
 
 
 def run_in_chat(ctx: TenantContext, settings: Any, task: dict[str, Any]) -> str:

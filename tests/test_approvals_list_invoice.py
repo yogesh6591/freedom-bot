@@ -6,12 +6,12 @@ used to import a module that no longer exists, so the whole list failed whenever
 
 from __future__ import annotations
 
-from bizos.actions import store as actions
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.types import ActionStatus
+from freedombot.actions import store as actions
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.types import ActionStatus
 
 
 def test_approvals_list_shows_a_pending_invoice(client_scratch, ctx_factory):

@@ -65,7 +65,7 @@ interface SyncStatus {
   sources: SyncSource[]
 }
 
-/** Built-in apps whose latest activity also syncs in the background (bizos/sync). */
+/** Built-in apps whose latest activity also syncs in the background (freedombot/sync). */
 const SYNC_SOURCE: Record<string, string> = {
   gmail: 'gmail',
   googlecalendar: 'calendar',

@@ -33,8 +33,8 @@ from acquisition.services.prospecting_rules_service import (
     get_prospecting_rules,
     parse_and_validate,
 )
-from bizos.audit import events as audit
-from bizos.tenancy.registry import workspace_connection
+from freedombot.audit import events as audit
+from freedombot.tenancy.registry import workspace_connection
 
 
 @pytest.fixture(autouse=True)

@@ -11,17 +11,17 @@ import pytest
 
 from app.assistant.assistant import _packs_for
 from app.assistant.company_tools import _bulk_scope
-from bizos import admin_ops as ops
-from bizos.agents.merged_tools import MERGED, MergeArgumentError, run, schema_for
-from bizos.agents.tool_args import schema_for_tool
-from bizos.connectors.base import ConnectorResult
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.tenancy.context import tenant_scope
-from bizos.tools import base as tools_base
-from bizos.tools.base import RunScope, guarded_call
-from bizos.tools.dry_run import bound_scope, is_visible
-from bizos.types import ExecutionMode, PolicyEffect
+from freedombot import admin_ops as ops
+from freedombot.agents.merged_tools import MERGED, MergeArgumentError, run, schema_for
+from freedombot.agents.tool_args import schema_for_tool
+from freedombot.connectors.base import ConnectorResult
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools import base as tools_base
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.tools.dry_run import bound_scope, is_visible
+from freedombot.types import ExecutionMode, PolicyEffect
 
 
 def _settings(client, mode: ExecutionMode = ExecutionMode.WAIT_FOR_APPROVAL) -> ClientSettings:
@@ -159,7 +159,7 @@ def test_an_override_on_one_old_tool_narrows_only_that_choice(client_scratch, ct
     ops.set_tool_permission(admin, tool="approvals_reject", role="APPROVER", permission="DENIED")
     try:
         with tenant_scope(approver):
-            from bizos.rbac import permissions as perms
+            from freedombot.rbac import permissions as perms
 
             perms.load_overrides(approver, refresh=True)
             enum = schema_for("approvals_decide", _allowed(client_scratch, approver))["properties"]["decision"]["enum"]
@@ -265,7 +265,7 @@ def test_permission_and_mode_tools_offer_only_real_values():
 
 
 def test_parts_gated_differently_are_refused_with_separate_requests_advice(client_scratch, ctx_factory, monkeypatch):
-    from bizos.agents import merged_tools
+    from freedombot.agents import merged_tools
 
     real = merged_tools.assess
 

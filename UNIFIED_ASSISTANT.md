@@ -12,7 +12,7 @@ keeps short replies ("send", "yes") in that area.
 
 Rules that do not change:
 
-* The model decides, code enforces. RBAC (`bizos/rbac/registry.py`), the policy engine, approvals and audit run
+* The model decides, code enforces. RBAC (`freedombot/rbac/registry.py`), the policy engine, approvals and audit run
   inside every tool. Outreach tools are admin-only.
 * Every tool call carries a `why`; every reply is `{message, explanation}`. Admins see both with the Developer switch.
 * A change that touches more than one person, or cannot be undone, asks for one yes (`app/outreach/confirm.py`): the

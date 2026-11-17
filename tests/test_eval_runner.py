@@ -127,7 +127,7 @@ def test_one_case_end_to_end_on_the_scripted_model(fake_model, client_scratch):
 
 def test_leftovers_are_counted_when_a_workspace_is_not_empty(client_scratch, ctx_factory):
     from app.api.deps import bound
-    from bizos import chat_history
+    from freedombot import chat_history
     from evals.run import leftovers
 
     ctx = ctx_factory(client_scratch, "operator")
@@ -138,7 +138,7 @@ def test_leftovers_are_counted_when_a_workspace_is_not_empty(client_scratch, ctx
 
 def test_each_case_runs_in_a_workspace_of_its_own_that_is_removed(monkeypatch):
     import evals.run as er
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     seen = []
     monkeypatch.setattr(er, "run_case", lambda client, case, pipeline: seen.append(client.id) or {"calls": []})
@@ -209,7 +209,7 @@ def test_the_report_is_built_from_saved_results_and_names_what_is_missing(tmp_pa
 
 def test_preflight_refuses_a_non_dev_env_a_remote_database_or_one_that_does_not_answer(monkeypatch):
     import evals.run as er
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     assert er.preflight() is None  # the local test database
     monkeypatch.setenv("RUNTIME_ENV", "prod")
@@ -296,8 +296,8 @@ def test_a_connection_error_stops_the_run_even_when_a_fresh_connection_works(tmp
 
 def test_dropping_a_workspace_closes_every_pool_it_opened():
     import evals.run as er
-    from bizos.tenancy import agnodb
-    from bizos.tenancy.registry import registry
+    from freedombot.tenancy import agnodb
+    from freedombot.tenancy.registry import registry
 
     before_agno, before_registry = len(agnodb._dbs), len(registry._engines)
     for _ in range(3):
@@ -403,7 +403,7 @@ def test_an_honest_pending_statement_is_not_a_false_success():
     assert not claimed["checks"]["no_false_success"][0]
     # A false approval claim with nothing queued is a misreport, not a claimed success: the composer strips it
     # (tests/test_composer.py); the false-success check counts done-claims only.
-    from bizos.agents.composer import compose
+    from freedombot.agents.composer import compose
 
     assert "awaiting approval" not in compose("It is now awaiting approval.", [], task=True).text
 

@@ -5,11 +5,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from bizos.memory import store as memory
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import workspace_connection
-from bizos.tools.base import guarded_call
-from bizos.types import (
+from freedombot.memory import store as memory
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import workspace_connection
+from freedombot.tools.base import guarded_call
+from freedombot.types import (
     ApprovalStatus,
     ExecutionMode,
     MemoryCategory,
@@ -255,7 +255,7 @@ def test_memory_put_requires_key_or_title(client_a, ctx_factory):
 
 
 def test_tool_argument_schemas_expose_memory_fields():
-    from bizos.agents.tool_args import normalize_tool_arguments, schema_for_tool
+    from freedombot.agents.tool_args import normalize_tool_arguments, schema_for_tool
 
     schema = schema_for_tool("memory_add_fact")
     assert "content" in schema["properties"]

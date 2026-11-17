@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from bizos.connectors.base import ConnectorError
-from bizos.connectors.composio import ComposioHubSpotConnector
+from freedombot.connectors.base import ConnectorError
+from freedombot.connectors.composio import ComposioHubSpotConnector
 
 STAGES = ["appointmentscheduled"] * 22 + ["qualifiedtobuy"] * 31 + ["presentationscheduled"] * 31 + \
     ["contractsent"] * 56

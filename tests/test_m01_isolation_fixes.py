@@ -15,13 +15,13 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from bizos import chat_history
-from bizos.control import store as control
-from bizos.insights import list_alerts, list_baselines
-from bizos.memory import store as memory
-from bizos.pricing import PricingNotConfigured, calculate_consult_quote, get_rules
-from bizos.tenancy.context import tenant_scope
-from bizos.types import MemoryCategory
+from freedombot import chat_history
+from freedombot.control import store as control
+from freedombot.insights import list_alerts, list_baselines
+from freedombot.memory import store as memory
+from freedombot.pricing import PricingNotConfigured, calculate_consult_quote, get_rules
+from freedombot.tenancy.context import tenant_scope
+from freedombot.types import MemoryCategory
 
 
 @pytest.fixture(scope="module")
@@ -58,7 +58,7 @@ def test_stale_tab_is_refused_for_another_client(app_client, client_a, client_b)
     # Tab still showing client A, but the cookie/token now belongs to client B.
     response = app_client.get(
         "/api/memory",
-        headers=_auth(b, **{"X-Bizos-Client": a["client"]["id"], "X-Bizos-User": a["user"]["id"]}),
+        headers=_auth(b, **{"X-FreedomBot-Client": a["client"]["id"], "X-FreedomBot-User": a["user"]["id"]}),
     )
     assert response.status_code == 409
     assert response.json()["detail"] == "workspace_changed"
@@ -69,14 +69,14 @@ def test_stale_tab_is_refused_for_another_user_same_client(app_client, client_a)
     viewer = _login(app_client, client_a, "viewer")
     response = app_client.get(
         "/api/memory",
-        headers=_auth(viewer, **{"X-Bizos-Client": op["client"]["id"], "X-Bizos-User": op["user"]["id"]}),
+        headers=_auth(viewer, **{"X-FreedomBot-Client": op["client"]["id"], "X-FreedomBot-User": op["user"]["id"]}),
     )
     assert response.status_code == 409
 
 
 def test_matching_tab_and_session_lookup_still_work(app_client, client_a):
     op = _login(app_client, client_a, "operator")
-    headers = _auth(op, **{"X-Bizos-Client": op["client"]["id"], "X-Bizos-User": op["user"]["id"]})
+    headers = _auth(op, **{"X-FreedomBot-Client": op["client"]["id"], "X-FreedomBot-User": op["user"]["id"]})
     assert app_client.get("/api/memory", headers=headers).status_code == 200
     # /me without the headers is how a tab discovers the current session.
     assert app_client.get("/api/auth/me", headers=_auth(op)).status_code == 200
@@ -151,7 +151,7 @@ def test_chat_history_routes(app_client, client_a, ctx_factory):
 
 
 def test_chat_history_table_is_walled(client_a, ctx_factory):
-    from bizos.tenancy.provisioning import unwalled_tables
+    from freedombot.tenancy.provisioning import unwalled_tables
 
     chat_history.ensure_table(ctx_factory(client_a, "operator"))
     assert "chat_messages" not in unwalled_tables(ctx_factory(client_a, "admin"))

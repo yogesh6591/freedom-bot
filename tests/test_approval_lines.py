@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from bizos.actions.models import Action
-from bizos.actions.preview import _LINE_CHARS, content_for
-from bizos.types import ActionStatus, DataClassification, ExecutionMode, RiskLevel
+from freedombot.actions.models import Action
+from freedombot.actions.preview import _LINE_CHARS, content_for
+from freedombot.types import ActionStatus, DataClassification, ExecutionMode, RiskLevel
 
 
 def _line(tool: str, **payload) -> str:

@@ -1,4 +1,4 @@
-"""Prospects are isolated by BizOS client_id inside acquisition tenant scope."""
+"""Prospects are isolated by FreedomBot client_id inside acquisition tenant scope."""
 
 from __future__ import annotations
 

@@ -5,7 +5,7 @@ Chat Routes
 §26 ``/api/chat``.
 
 The agent is constructed per request and bound to exactly one tenant (see
-:mod:`bizos.agents.agent` for why). The response carries the structured signals
+:mod:`freedombot.agents.agent` for why). The response carries the structured signals
 the UI needs — citations, tool activity, whether something is awaiting approval —
 without dumping raw traces at ordinary users (§17).
 """
@@ -28,19 +28,19 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, run_scope
-from bizos.actions import store as actions
-from bizos import chat_attachments, chat_history
-from bizos.agents import grounding
-from bizos.agents.agent import ModelNotConfigured, build_agent
-from bizos.agents.claims import enforce_claims
-from bizos.agents.instructions import assistant_name
-from bizos.agents.persona import AUTO, enforce_persona, route
-from bizos.rbac.registry import TOOL_SPECS
-from bizos.control.models import ClientSettings
-from bizos.policy.modes import describe as describe_mode
-from bizos.tenancy.context import TenantContext
-from bizos.types import ActionStatus
-from bizos.util.ids import new_id
+from freedombot.actions import store as actions
+from freedombot import chat_attachments, chat_history
+from freedombot.agents import grounding
+from freedombot.agents.agent import ModelNotConfigured, build_agent
+from freedombot.agents.claims import enforce_claims
+from freedombot.agents.instructions import assistant_name
+from freedombot.agents.persona import AUTO, enforce_persona, route
+from freedombot.rbac.registry import TOOL_SPECS
+from freedombot.control.models import ClientSettings
+from freedombot.policy.modes import describe as describe_mode
+from freedombot.tenancy.context import TenantContext
+from freedombot.types import ActionStatus
+from freedombot.util.ids import new_id
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 log = logging.getLogger(__name__)
@@ -84,8 +84,8 @@ def chat_context(
     Lists every process the caller may *see* in their enabled domains, each
     flagged with whether they may *run* it (FB-037).
     """
-    from bizos.agents.surface import visible_specs
-    from bizos.domains.packs import enabled_packs, get_pack
+    from freedombot.agents.surface import visible_specs
+    from freedombot.domains.packs import enabled_packs, get_pack
 
     with bound(ctx):
         scope = run_scope(ctx, settings, domain="general" if domain == AUTO else domain)
@@ -134,7 +134,7 @@ def _sending_accounts(ctx: TenantContext) -> list[str]:
 
 def _open_alerts(settings: ClientSettings, ctx: TenantContext) -> list[dict[str, Any]]:
     try:
-        from bizos.insights import open_alerts, refresh_if_stale
+        from freedombot.insights import open_alerts, refresh_if_stale
 
         settings = refresh_if_stale(client_id=ctx.client_id, settings=settings, ctx=ctx)
         return open_alerts(settings, ctx)
@@ -272,7 +272,7 @@ def _dispatch(body: ChatRequest, ctx: TenantContext, settings: ClientSettings,
     ``emit`` streams progress from the v2 pipeline.
     """
     from app.assistant import v2
-    from bizos import usage
+    from freedombot import usage
 
     if _engine() == "legacy":
         return _legacy_chat(body, ctx, settings)
@@ -310,7 +310,7 @@ async def _attach_video(file: UploadFile, filename: str, ctx: TenantContext) -> 
     from starlette.concurrency import run_in_threadpool
 
     from acquisition.services.demo_video_storage import DemoVideoUploadError, save_uploaded_demo_video
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     if not control.build_context(control.get_user(ctx.user_id)).is_admin:
         raise HTTPException(status_code=403, detail="Only an admin can attach a video.")
@@ -349,7 +349,7 @@ async def upload_attachment(
             _guardrail_audit(ctx, run_scope(ctx, settings, domain="general"), "", f"ATTACHMENT_{refusal[0]}")
             hint = ""
             if refusal[0] == "CHILD_DATA_BLOCKED":
-                from bizos.policy.classifier import _minor_match
+                from freedombot.policy.classifier import _minor_match
 
                 hit = _minor_match(extracted["text"])
                 if hit:
@@ -419,7 +419,7 @@ async def transcribe_audio(
     """
     import httpx
 
-    from bizos import settings as bizos_settings
+    from freedombot import settings as freedombot_settings
 
     filename = (file.filename or "recording.webm").strip() or "recording.webm"
     lower = filename.lower()
@@ -439,7 +439,7 @@ async def transcribe_audio(
             detail="Another transcription is already running. Try again in a moment.",
         )
 
-    url = f"{bizos_settings.whisper_url()}/inference"
+    url = f"{freedombot_settings.whisper_url()}/inference"
     try:
         try:
             async with httpx.AsyncClient(timeout=_TRANSCRIBE_TIMEOUT_SEC) as client:
@@ -558,7 +558,7 @@ def _legacy_chat(
         match_ran = False
         keys = grounding.candidate_match_keys(grounded, body.message)
         if keys:
-            from bizos.tools.base import guarded_call
+            from freedombot.tools.base import guarded_call
 
             outcome = guarded_call(
                 scope, "hr_match_candidate", {"resume_key": keys[0], "opening_key": keys[1]}
@@ -578,8 +578,8 @@ def _legacy_chat(
             grounded, body.message
         )
         if refusal:
-            from bizos.audit.events import log
-            from bizos.types import AuditEventType
+            from freedombot.audit.events import log
+            from freedombot.types import AuditEventType
 
             log(
                 AuditEventType.GUARDRAIL_TRIGGERED,
@@ -631,8 +631,8 @@ def _legacy_chat(
             content, message=body.message, activity=activity, new_actions=new_actions
         )
         if claim_fixed:
-            from bizos.audit.events import log
-            from bizos.types import AuditEventType
+            from freedombot.audit.events import log
+            from freedombot.types import AuditEventType
 
             log(
                 AuditEventType.GUARDRAIL_TRIGGERED,
@@ -649,8 +649,8 @@ def _legacy_chat(
                 "\n\nThis comparison is assistive only — the hiring decision stays with a human."
             )
         if restriction_fixed:
-            from bizos.audit.events import log
-            from bizos.types import AuditEventType
+            from freedombot.audit.events import log
+            from freedombot.types import AuditEventType
 
             log(
                 AuditEventType.GUARDRAIL_TRIGGERED,
@@ -660,8 +660,8 @@ def _legacy_chat(
                 execution_mode=str(scope.mode),
             )
         if conflict_fixed:
-            from bizos.audit.events import log
-            from bizos.types import AuditEventType
+            from freedombot.audit.events import log
+            from freedombot.types import AuditEventType
 
             log(
                 AuditEventType.GUARDRAIL_TRIGGERED,
@@ -671,8 +671,8 @@ def _legacy_chat(
                 execution_mode=str(scope.mode),
             )
         if package_fixed:
-            from bizos.audit.events import log
-            from bizos.types import AuditEventType
+            from freedombot.audit.events import log
+            from freedombot.types import AuditEventType
 
             log(
                 AuditEventType.GUARDRAIL_TRIGGERED,
@@ -683,8 +683,8 @@ def _legacy_chat(
                 execution_mode=str(scope.mode),
             )
         if persona_fixed:
-            from bizos.audit.events import log
-            from bizos.types import AuditEventType
+            from freedombot.audit.events import log
+            from freedombot.types import AuditEventType
 
             log(
                 AuditEventType.GUARDRAIL_TRIGGERED,
@@ -747,7 +747,7 @@ def _child_data_refusal(message: str, settings: ClientSettings) -> Optional[str]
     """
     if settings.order_dpa_allows_category("child") or getattr(settings, "allow_child_data", False):
         return None
-    from bizos.policy.classifier import classify_text
+    from freedombot.policy.classifier import classify_text
 
     if classify_text(message).contains_child_data:
         return CHILD_DATA_REFUSAL
@@ -804,7 +804,7 @@ def _licensed_advice_refusal(message: str, settings: ClientSettings) -> Optional
     Only for what the user asks in chat. A file or memory value may discuss these subjects freely.
     A message that also asks for other things is not refused whole: see :func:`_licensed_advice_note`.
     """
-    from bizos.policy.classifier import advice_is_one_part, licensed_advice_topic
+    from freedombot.policy.classifier import advice_is_one_part, licensed_advice_topic
 
     if settings.order_dpa_allows_category("licensed_advice"):
         return None
@@ -816,7 +816,7 @@ def _licensed_advice_refusal(message: str, settings: ClientSettings) -> Optional
 
 def _licensed_advice_note(message: str, settings: ClientSettings) -> str:
     """When advice is one part of a bigger request: what to leave out, so the other parts still get answered."""
-    from bizos.policy.classifier import licensed_advice_topic
+    from freedombot.policy.classifier import licensed_advice_topic
 
     topic = None if settings.order_dpa_allows_category("licensed_advice") else licensed_advice_topic(message)
     if topic is None:
@@ -835,7 +835,7 @@ def _regulated_data_refusal(
     The policy engine still denies tool calls carrying this data; this keeps it
     from reaching the model at all.
     """
-    from bizos.policy.classifier import classify_text, find_ssn, identifiable_phi
+    from freedombot.policy.classifier import classify_text, find_ssn, identifiable_phi
 
     child = _child_data_refusal(message, settings)
     if child:

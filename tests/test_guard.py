@@ -10,20 +10,20 @@ from types import SimpleNamespace
 import pytest
 
 from app.assistant.assistant import _packs_for
-from bizos.agents.guard import Guard, KnownValues, idempotency_key, make_guard_hook
-from bizos.agents.merged_tools import MERGED, schema_for
-from bizos.agents.routing import MODEL_TOOLS, allowed_old_tools, visible_tools
-from bizos.agents.surface import build_unified_tools
-from bizos.agents.tool_meta import TOOL_META
-from bizos.connectors.base import ConnectorResult
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.policy.models import EFFECT_ORDER
-from bizos.tenancy.context import tenant_scope
-from bizos.tools import base as tools_base
-from bizos.tools.base import RunScope, guarded_call
-from bizos.tools.dry_run import bound_scope
-from bizos.types import ExecutionMode, PolicyEffect
+from freedombot.agents.guard import Guard, KnownValues, idempotency_key, make_guard_hook
+from freedombot.agents.merged_tools import MERGED, schema_for
+from freedombot.agents.routing import MODEL_TOOLS, allowed_old_tools, visible_tools
+from freedombot.agents.surface import build_unified_tools
+from freedombot.agents.tool_meta import TOOL_META
+from freedombot.connectors.base import ConnectorResult
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.policy.models import EFFECT_ORDER
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools import base as tools_base
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.tools.dry_run import bound_scope
+from freedombot.types import ExecutionMode, PolicyEffect
 from tests.test_unified_assistant import SCRIPT, _reset, fake_model  # noqa: F401
 
 RAJ = {"id": "C-310", "first_name": "Raj", "email": "raj@acme.com",
@@ -250,7 +250,7 @@ def test_agno_tool_hook_runs_the_guard_before_the_tool(fake_model, client_scratc
         return {"tool_calls": [{"name": "crm_create_note", "arguments": args}]}
 
     SCRIPT[:] = [call({"contact_id": "C-999", "body": "hi"}), {"content": "ok"}]
-    agent = Agent(model=__import__("bizos.agents.router_agent", fromlist=["router_model"]).router_model(),
+    agent = Agent(model=__import__("freedombot.agents.router_agent", fromlist=["router_model"]).router_model(),
                   tools=[crm_create_note], tool_hooks=[make_guard_hook(guard)], telemetry=False,
                   store_events=False)
     with tenant_scope(drafter):

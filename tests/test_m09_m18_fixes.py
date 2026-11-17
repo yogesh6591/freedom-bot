@@ -18,17 +18,17 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from bizos import chat_history, insights, support
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.domains.catalog import DOMAIN_NAMES
-from bizos.memory import store as memory
-from bizos.onboarding import review_assessment
-from bizos.pricing import DEFAULT_RULES, calculate_consult_quote, save_rules
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import workspace_connection
-from bizos.tools.base import guarded_call
-from bizos.types import MemoryCategory
+from freedombot import chat_history, insights, support
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.domains.catalog import DOMAIN_NAMES
+from freedombot.memory import store as memory
+from freedombot.onboarding import review_assessment
+from freedombot.pricing import DEFAULT_RULES, calculate_consult_quote, save_rules
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import workspace_connection
+from freedombot.tools.base import guarded_call
+from freedombot.types import MemoryCategory
 
 
 @pytest.fixture(scope="module")
@@ -77,7 +77,7 @@ def test_platform_owner_sees_clients_but_not_internal_workspace(app_client, clie
     internal = control.create_client(
         company_name="Cepoch QA internal", slug=slug, settings=internal_settings, created_by="pytest"
     )
-    from bizos.tenancy import provisioning
+    from freedombot.tenancy import provisioning
 
     provisioning.provision_client(internal)
     try:
@@ -86,7 +86,7 @@ def test_platform_owner_sees_clients_but_not_internal_workspace(app_client, clie
             email=f"owner@{slug}.example.com",
             password="bizos-dev-password",
             display_name="Owner",
-            roles=(__import__("bizos.types", fromlist=["Role"]).Role.ADMIN,),
+            roles=(__import__("freedombot.types", fromlist=["Role"]).Role.ADMIN,),
             created_by="pytest",
         )
         control.set_platform_owner(user.id, True)
@@ -98,7 +98,7 @@ def test_platform_owner_sees_clients_but_not_internal_workspace(app_client, clie
         assert app_client.get("/api/auth/me", headers=headers).json()["user"]["is_platform_owner"]
     finally:
         provisioning.deprovision_client(internal)
-        from bizos.control.db import control_connection
+        from freedombot.control.db import control_connection
 
         with control_connection() as conn:
             conn.execute(text("DELETE FROM clients WHERE id = :i"), {"i": internal.id})
@@ -296,7 +296,7 @@ def test_assessment_review_asks_flags_and_does_not_assume():
 
 
 def test_handoff_invents_no_systems_and_keeps_beliefs_unverified(client_b, ctx_factory):
-    from bizos.onboarding import OnboardingProfile, apply_profile
+    from freedombot.onboarding import OnboardingProfile, apply_profile
 
     ctx = ctx_factory(client_b, "admin")
     original = control.get_client(client_b.id).settings.to_dict()

@@ -6,11 +6,11 @@ from decimal import Decimal
 
 import pytest
 
-from bizos.policy.engine import evaluate
-from bizos.policy.models import PolicyRequest
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import guarded_call
-from bizos.types import ExecutionMode, PolicyEffect, RiskLevel
+from freedombot.policy.engine import evaluate
+from freedombot.policy.models import PolicyRequest
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import guarded_call
+from freedombot.types import ExecutionMode, PolicyEffect, RiskLevel
 
 
 def _request(scope, tool, **kwargs):
@@ -63,7 +63,7 @@ def test_destructive_write_is_never_automatic(client_a, scope_factory, settings_
 
 def test_always_approve_tools_never_auto_execute(client_a, scope_factory, settings_with):
     """Tools flagged always_requires_approval always require a human."""
-    from bizos.rbac.registry import TOOL_SPECS
+    from freedombot.rbac.registry import TOOL_SPECS
 
     flagged = [s for s in TOOL_SPECS if s.always_requires_approval]
     assert flagged, "at least one tool should always require approval"
@@ -120,8 +120,8 @@ def test_bulk_action_over_the_limit_requires_approval(client_a, scope_factory, s
     caller — so an agent that claims a small change cannot slip past the limit.
     """
     from sqlalchemy import text
-    from bizos.tenancy.registry import workspace_connection
-    from bizos.util.ids import new_id
+    from freedombot.tenancy.registry import workspace_connection
+    from freedombot.util.ids import new_id
 
     settings = settings_with(
         client_a.settings,
@@ -252,7 +252,7 @@ def test_the_engine_is_deterministic(client_a, scope_factory):
 
 def test_every_write_tool_is_capped_in_advise_mode(client_a, scope_factory):
     """No registered write tool escapes ADVISE, whatever its other metadata."""
-    from bizos.rbac.registry import TOOL_SPECS
+    from freedombot.rbac.registry import TOOL_SPECS
 
     settings = scope_factory(client_a, "admin").settings
     for spec in TOOL_SPECS:

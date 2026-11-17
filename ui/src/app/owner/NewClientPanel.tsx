@@ -37,7 +37,7 @@ interface Created {
   signs_in_here: boolean
 }
 
-/** Mirrors bizos.util.ids.slugify so the preview matches what the server will use. */
+/** Mirrors freedombot.util.ids.slugify so the preview matches what the server will use. */
 function previewSlug(value: string): string {
   let slug = value
     .trim()

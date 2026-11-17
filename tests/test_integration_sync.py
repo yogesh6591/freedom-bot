@@ -1,4 +1,4 @@
-"""Integration sync (bizos/sync): incremental Gmail, updates by content, owner-only search, forget on disconnect.
+"""Integration sync (freedombot/sync): incremental Gmail, updates by content, owner-only search, forget on disconnect.
 
 Fake connectors only: no request reaches Composio, Google, YouTube or HubSpot.
 """
@@ -7,11 +7,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from bizos import settings
-from bizos.sync import scheduler, store
-from bizos.sync.runner import sync_user
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
+from freedombot import settings
+from freedombot.sync import scheduler, store
+from freedombot.sync.runner import sync_user
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
 
 
 def ok(rows):

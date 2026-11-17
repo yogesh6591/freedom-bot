@@ -48,11 +48,11 @@ def _flat(data: Any, prefix: str = "", out: Optional[list] = None) -> list[tuple
 
 def user_id_from_request(request: Any) -> Optional[str]:
     """The signed-in workspace user, read from the same signed cookie the admin pages already trust."""
-    token = (request.cookies.get("bizos_session") or "").strip()
+    token = (request.cookies.get("freedombot_session") or "").strip()
     if not token:
         return None
     try:
-        from bizos.control.tokens import verify_token
+        from freedombot.control.tokens import verify_token
 
         return str(verify_token(token).get("sub") or "") or None
     except Exception:  # noqa: BLE001
@@ -63,8 +63,8 @@ def prospeo_usage(user_id: Optional[str]) -> dict:
     if not user_id:
         return {"error": "Sign in through the chat app to see the Prospeo balance."}
     try:
-        from bizos.connectors import composio
-        from bizos.control import store as control
+        from freedombot.connectors import composio
+        from freedombot.control import store as control
 
         ctx = control.build_context(control.get_user(user_id))
         if not composio._active_accounts(ctx).get("prospeo"):

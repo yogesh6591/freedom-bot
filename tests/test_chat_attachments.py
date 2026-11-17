@@ -14,11 +14,11 @@ from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
 from app.api import chat as chat_api
-from bizos import chat_attachments as files
-from bizos import chat_history
-from bizos.control import store as control
-from bizos.tenancy.context import tenant_scope
-from bizos.types import ExecutionMode
+from freedombot import chat_attachments as files
+from freedombot import chat_history
+from freedombot.control import store as control
+from freedombot.tenancy.context import tenant_scope
+from freedombot.types import ExecutionMode
 from tests.test_pipeline_v2 import _settings, ask, call, effects, final, route  # noqa: F401
 from tests.test_unified_assistant import SCRIPT, _reset, fake_model  # noqa: F401
 
@@ -235,8 +235,8 @@ def test_someone_elses_file_id_is_refused(fake_model, client_scratch, ctx_factor
 def test_an_attached_file_can_be_saved_to_memory_for_everyone_or_one_data_area(
         client_scratch, ctx_factory, scope_factory):
     """Add to memory → everyone; finance only → only people with finance access."""
-    from bizos.memory import store as memory
-    from bizos.tools.base import guarded_call
+    from freedombot.memory import store as memory
+    from freedombot.tools.base import guarded_call
 
     import app.assistant.company_tools  # noqa: F401 — register effects
 

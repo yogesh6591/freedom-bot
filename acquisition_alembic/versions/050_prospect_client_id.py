@@ -1,4 +1,4 @@
-"""Prospects scoped per BizOS workspace (client_id).
+"""Prospects scoped per FreedomBot workspace (client_id).
 
 Revision ID: 050_prospect_client_id
 Revises: 049_prospect_icp_category

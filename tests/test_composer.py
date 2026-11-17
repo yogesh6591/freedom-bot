@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from bizos.agents.composer import NOTHING_DONE, compose
-from bizos.agents.tool_result import ToolResult
+from freedombot.agents.composer import NOTHING_DONE, compose
+from freedombot.agents.tool_result import ToolResult
 
 
 def r(tool, status, summary="", kind=None, ref=None):

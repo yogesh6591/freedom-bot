@@ -19,7 +19,7 @@ from typing import Iterator
 
 import pytest
 
-from bizos.util.dotenv import load_dotenv
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 # Tests must never be able to mint a token accepted by a real deployment.
@@ -27,8 +27,8 @@ os.environ.setdefault("RUNTIME_ENV", "dev")
 # Tests wipe and rebuild acquisition data, so they ALWAYS use a throwaway database,
 # whatever DATABASE_URL says in .env or the shell. The real acquisition database is never touched.
 _DB = dict(
-    u=os.environ.get("DB_USER", "bizos"),
-    p=os.environ.get("DB_PASS", "bizos"),
+    u=os.environ.get("DB_USER", "freedombot"),
+    p=os.environ.get("DB_PASS", "freedombot"),
     h=os.environ.get("DB_HOST", "localhost"),
     port=os.environ.get("DB_PORT", "5432"),
 )
@@ -43,16 +43,16 @@ os.environ["SCHEDULED_TASKS_ENABLED"] = "off"
 # Tests never reach Composio (CLAUDE.md: mocked tools only); tests that need it patch it in.
 os.environ["COMPOSIO_API_KEY"] = ""
 
-from bizos.bootstrap import admin_context, ensure_dev_users, seed_business_data  # noqa: E402
-from bizos.connectors.registry import seed_default_integrations  # noqa: E402
-from bizos.control import store as control  # noqa: E402
-from bizos.control.db import control_connection, migrate_control_plane  # noqa: E402
-from bizos.control.models import ClientSettings  # noqa: E402
-from bizos.tenancy import provisioning  # noqa: E402
-from bizos.tenancy.context import TenantContext  # noqa: E402
-from bizos.tools.base import RunScope  # noqa: E402
-from bizos.tools.registry_check import load_all_tools  # noqa: E402
-from bizos.types import DeploymentType, ExecutionMode, Role  # noqa: E402
+from freedombot.bootstrap import admin_context, ensure_dev_users, seed_business_data  # noqa: E402
+from freedombot.connectors.registry import seed_default_integrations  # noqa: E402
+from freedombot.control import store as control  # noqa: E402
+from freedombot.control.db import control_connection, migrate_control_plane  # noqa: E402
+from freedombot.control.models import ClientSettings  # noqa: E402
+from freedombot.tenancy import provisioning  # noqa: E402
+from freedombot.tenancy.context import TenantContext  # noqa: E402
+from freedombot.tools.base import RunScope  # noqa: E402
+from freedombot.tools.registry_check import load_all_tools  # noqa: E402
+from freedombot.types import DeploymentType, ExecutionMode, Role  # noqa: E402
 
 load_all_tools()
 

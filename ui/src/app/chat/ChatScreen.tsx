@@ -732,7 +732,7 @@ function ChatView({ home }: { home: boolean }) {
   const [accessOpen, setAccessOpen] = useState(false)
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
-  const storageKey = me ? `bizos:chat:${me.client.id}:${me.user.id}` : null
+  const storageKey = me ? `freedombot:chat:${me.client.id}:${me.user.id}` : null
   const [history, setHistory] = useState<ChatSessionSummary[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
@@ -792,7 +792,7 @@ function ChatView({ home }: { home: boolean }) {
 
   useEffect(() => {
     try {
-      setDeveloper(localStorage.getItem('bizos:chat:developer') === 'on')
+      setDeveloper(localStorage.getItem('freedombot:chat:developer') === 'on')
     } catch {
       setDeveloper(false)
     }
@@ -802,7 +802,7 @@ function ChatView({ home }: { home: boolean }) {
     setDeveloper((current) => {
       const next = !current
       try {
-        localStorage.setItem('bizos:chat:developer', next ? 'on' : 'off')
+        localStorage.setItem('freedombot:chat:developer', next ? 'on' : 'off')
       } catch {
         // The toggle still works for this visit.
       }
@@ -954,7 +954,7 @@ function ChatView({ home }: { home: boolean }) {
 
   useEffect(() => {
     try {
-      setSidebarOpen(localStorage.getItem('bizos:chat:sidebar') !== 'closed')
+      setSidebarOpen(localStorage.getItem('freedombot:chat:sidebar') !== 'closed')
     } catch {
       setSidebarOpen(true)
     }
@@ -980,7 +980,7 @@ function ChatView({ home }: { home: boolean }) {
     setSidebarOpen((open) => {
       const next = !open
       try {
-        localStorage.setItem('bizos:chat:sidebar', next ? 'open' : 'closed')
+        localStorage.setItem('freedombot:chat:sidebar', next ? 'open' : 'closed')
       } catch {
         /* storage blocked: still toggles for this page */
       }

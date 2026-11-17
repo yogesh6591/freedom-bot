@@ -13,17 +13,17 @@ from types import SimpleNamespace
 import pytest
 
 from app.assistant.assistant import _packs_for
-from bizos.actions import store as actions
-from bizos.audit import events as audit
-from bizos.connectors.base import ConnectorResult
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.rbac.registry import TOOL_SPECS
-from bizos.tenancy.context import tenant_scope
-from bizos.tools import base as tools_base
-from bizos.tools.base import RunScope, guarded_call
-from bizos.tools.dry_run import GATE_FOR_EFFECT, bound_scope, dry_run, dry_run_for_user
-from bizos.types import ExecutionMode
+from freedombot.actions import store as actions
+from freedombot.audit import events as audit
+from freedombot.connectors.base import ConnectorResult
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.rbac.registry import TOOL_SPECS
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools import base as tools_base
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.tools.dry_run import GATE_FOR_EFFECT, bound_scope, dry_run, dry_run_for_user
+from freedombot.types import ExecutionMode
 
 ROLES = ("viewer", "drafter", "approver", "operator", "admin")
 MODES = tuple(ExecutionMode)

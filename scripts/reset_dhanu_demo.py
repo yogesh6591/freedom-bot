@@ -18,18 +18,18 @@ from __future__ import annotations
 
 import sys
 
-from bizos.util.dotenv import load_dotenv
+from freedombot.util.dotenv import load_dotenv
 
 load_dotenv()
 
 from sqlalchemy import text  # noqa: E402
 
-from bizos.actions import store as actions  # noqa: E402
-from bizos.bootstrap import admin_context, bootstrap  # noqa: E402
-from bizos.control import store as control  # noqa: E402
-from bizos.tenancy.context import tenant_scope  # noqa: E402
-from bizos.tenancy.registry import workspace_connection  # noqa: E402
-from bizos.types import ActionStatus  # noqa: E402
+from freedombot.actions import store as actions  # noqa: E402
+from freedombot.bootstrap import admin_context, bootstrap  # noqa: E402
+from freedombot.control import store as control  # noqa: E402
+from freedombot.tenancy.context import tenant_scope  # noqa: E402
+from freedombot.tenancy.registry import workspace_connection  # noqa: E402
+from freedombot.types import ActionStatus  # noqa: E402
 
 _TEST_KEY_PATTERNS = ("demo\\_%", "fb03%", "test\\_%", "%checklist%")
 

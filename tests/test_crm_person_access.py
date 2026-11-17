@@ -1,6 +1,6 @@
 """Whose CRM login an approved change runs on, and who owns new HubSpot records.
 
-The per-person CRM level is gone: the person's one role (bizos/policy/person_role.py) holds them back now.
+The per-person CRM level is gone: the person's one role (freedombot/policy/person_role.py) holds them back now.
 
 Mocked connectors only: nothing reaches HubSpot.
 """
@@ -12,12 +12,12 @@ from uuid import uuid4
 import pytest
 
 from app.assistant import company_tools
-from bizos.connectors import composio
-from bizos.control import store as control
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.tools.executor import approve_and_execute
-from bizos.types import APP_AREAS, PolicyEffect, Role
+from freedombot.connectors import composio
+from freedombot.control import store as control
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.tools.executor import approve_and_execute
+from freedombot.types import APP_AREAS, PolicyEffect, Role
 
 CONNECTED = frozenset({"email", "calendar", "crm"})
 LEVEL_ROLE = {"approval": "approve", "draft": "draft"}
@@ -39,7 +39,7 @@ def person(client, *, level=None, role=Role.OPERATOR, tags=SALES):
 @pytest.fixture
 def fake_crm(monkeypatch):
     """The workspace CRM (nothing connected); records whose login each CRM call used."""
-    from bizos.tools import base as tools_base
+    from freedombot.tools import base as tools_base
 
     monkeypatch.setattr(tools_base, "connected_categories", lambda ctx=None: CONNECTED)
     logins = []
@@ -56,7 +56,7 @@ def fake_crm(monkeypatch):
 def _a_contact(ctx) -> str:
     from sqlalchemy import text
 
-    from bizos.tenancy.registry import readonly_connection
+    from freedombot.tenancy.registry import readonly_connection
 
     with readonly_connection(ctx) as conn:
         return conn.execute(text("SELECT id FROM crm_contacts ORDER BY id LIMIT 1")).scalar()
@@ -81,7 +81,7 @@ def test_an_approved_crm_change_runs_on_the_requesters_login(client_scratch, fak
     # In the demo CRM the note is from the requester too.
     from sqlalchemy import text
 
-    from bizos.tenancy.registry import readonly_connection
+    from freedombot.tenancy.registry import readonly_connection
 
     with readonly_connection(requester) as conn:
         author = conn.execute(text("SELECT author FROM crm_notes WHERE id = :i"), {"i": out.data["id"]}).scalar()

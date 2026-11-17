@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from bizos.rbac.permissions import resolve
-from bizos.rbac.registry import TOOL_SPECS, assert_no_generic_tools, get_spec
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import guarded_call
-from bizos.types import ExecutionMode, PolicyEffect, Role, ToolPermission
+from freedombot.rbac.permissions import resolve
+from freedombot.rbac.registry import TOOL_SPECS, assert_no_generic_tools, get_spec
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import guarded_call
+from freedombot.types import ExecutionMode, PolicyEffect, Role, ToolPermission
 
 
 def test_viewer_cannot_send_email(client_a, scope_factory):
@@ -36,8 +36,8 @@ def test_viewer_can_read(client_a, scope_factory):
 
 def test_viewer_never_sees_a_write_tool(client_a, scope_factory):
     """Layer 1: the forbidden tool is not even on the surface."""
-    from bizos.agents.surface import visible_specs
-    from bizos.domains.packs import get_pack
+    from freedombot.agents.surface import visible_specs
+    from freedombot.domains.packs import get_pack
 
     scope = scope_factory(client_a, "viewer", mode=ExecutionMode.AUTO_WITHIN_SCOPE)
     with tenant_scope(scope.ctx):
@@ -89,7 +89,7 @@ def test_approver_alone_queues_for_approval(client_a, scope_factory):
 
 def test_admin_cannot_exceed_the_registry_ceiling(client_a, ctx_factory):
     """§7 overrides are configurable, but not past the tool's declared ceiling."""
-    from bizos.rbac import permissions
+    from freedombot.rbac import permissions
 
     ctx = ctx_factory(client_a, "admin")
     with tenant_scope(ctx):
@@ -102,7 +102,7 @@ def test_admin_cannot_exceed_the_registry_ceiling(client_a, ctx_factory):
 
 def test_client_override_tightens_a_permission(client_a, ctx_factory, scope_factory):
     """An admin can restrict a tool below its default for their workspace."""
-    from bizos.rbac import permissions
+    from freedombot.rbac import permissions
 
     ctx = ctx_factory(client_a, "admin")
     with tenant_scope(ctx):

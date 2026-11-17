@@ -11,12 +11,12 @@ import socket
 import httpx
 import pytest
 
-from bizos.connectors import composio, composio_actions as acts, web, youtube_transcript as yt
-from bizos.connectors.base import ConnectorError, ConnectorNotConfigured
-from bizos.control.models import ClientSettings
-from bizos.tenancy.context import tenant_scope
-from bizos.tools.base import RunScope, guarded_call
-from bizos.types import PolicyEffect
+from freedombot.connectors import composio, composio_actions as acts, web, youtube_transcript as yt
+from freedombot.connectors.base import ConnectorError, ConnectorNotConfigured
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tools.base import RunScope, guarded_call
+from freedombot.types import PolicyEffect
 
 # --------------------------------------------------------------------------- tiers
 
@@ -96,7 +96,7 @@ def _call(client, ctx, tool, args, settings=None):
 @pytest.fixture
 def fake_apps(monkeypatch):
     """Every app connected (as the evals do) and a fake Composio that records what would run."""
-    from bizos.tools import base as tools_base
+    from freedombot.tools import base as tools_base
 
     monkeypatch.setattr(tools_base, "connected_categories", lambda ctx=None: frozenset({"email", "calendar", "crm", "youtube"}))
     ran = []

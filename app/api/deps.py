@@ -2,7 +2,7 @@
 API Dependencies
 ================
 
-Turns an HTTP request into a verified :class:`~bizos.tenancy.context.TenantContext`.
+Turns an HTTP request into a verified :class:`~freedombot.tenancy.context.TenantContext`.
 
 This is the platform's authentication boundary, and it has one rule: **the client
 and the roles come from the signed token, never from the request**. There is no
@@ -10,7 +10,7 @@ and the roles come from the signed token, never from the request**. There is no
 request body. A caller who wants a different workspace or a higher role has to
 forge an HMAC, not edit JSON.
 
-The resolved context is bound with :func:`bizos.tenancy.tenant_scope` for the
+The resolved context is bound with :func:`freedombot.tenancy.tenant_scope` for the
 duration of the request, so every store the handler touches reaches exactly one
 workspace, and the binding is released even if the handler raises.
 """
@@ -23,21 +23,21 @@ from typing import Any, Iterator, Optional
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from bizos import settings as app_settings
-from bizos.control import store as control
-from bizos.control.tokens import TokenError, roles_from_claims, verify_token
-from bizos.control.models import ClientSettings
-from bizos.tenancy.context import TenantContext, tenant_scope
-from bizos.tools.base import RunScope
-from bizos.types import ExecutionMode, Role
+from freedombot import settings as app_settings
+from freedombot.control import store as control
+from freedombot.control.tokens import TokenError, roles_from_claims, verify_token
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy.context import TenantContext, tenant_scope
+from freedombot.tools.base import RunScope
+from freedombot.types import ExecutionMode, Role
 
 #: Cookie the browser UI uses. ``HttpOnly`` so page scripts cannot read it, which
 #: is what keeps an XSS from becoming a token theft.
-SESSION_COOKIE = "bizos_session"
+SESSION_COOKIE = "freedombot_session"
 
 #: Headers the UI sends with the client and user the tab is displaying (M01-06).
-EXPECTED_CLIENT_HEADER = "X-Bizos-Client"
-EXPECTED_USER_HEADER = "X-Bizos-User"
+EXPECTED_CLIENT_HEADER = "X-FreedomBot-Client"
+EXPECTED_USER_HEADER = "X-FreedomBot-User"
 #: 409 detail when those no longer match the session cookie.
 WORKSPACE_CHANGED = "workspace_changed"
 
@@ -67,7 +67,7 @@ def current_context(
         ) from exc
 
     user_id = str(payload["sub"])
-    client_id = str(payload["bizos_client"])
+    client_id = str(payload["freedombot_client"])
     try:
         client = control.get_client(client_id)
     except control.ClientNotFound as exc:
@@ -180,7 +180,7 @@ def run_scope(
 ) -> RunScope:
     """Build a RunScope from verified request context.
 
-    A scheduled run (bizos/automation.py) carries its schedule id as the workflow id, so every request it
+    A scheduled run (freedombot/automation.py) carries its schedule id as the workflow id, so every request it
     makes is stored with it and the approval card can say which schedule asked.
     """
     mode = ExecutionMode.parse(requested_mode) if requested_mode else None

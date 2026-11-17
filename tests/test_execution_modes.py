@@ -9,10 +9,10 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import readonly_connection
-from bizos.tools.base import guarded_call
-from bizos.types import ActionStatus, ExecutionMode, PolicyEffect
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import readonly_connection
+from freedombot.tools.base import guarded_call
+from freedombot.types import ActionStatus, ExecutionMode, PolicyEffect
 
 
 def _counts(ctx) -> dict[str, int]:
@@ -95,7 +95,7 @@ def test_draft_creates_a_draft_and_sends_nothing(client_a, scope_factory):
 
 
 def test_draft_records_the_action_as_draft(client_a, scope_factory):
-    from bizos.actions import store as actions
+    from freedombot.actions import store as actions
 
     scope = scope_factory(client_a, "drafter", mode=ExecutionMode.DRAFT)
     with tenant_scope(scope.ctx):
@@ -112,7 +112,7 @@ def test_draft_records_the_action_as_draft(client_a, scope_factory):
 
 def test_approval_mode_queues_and_changes_nothing(client_a, scope_factory):
     """§30 Approval Mode: the calendar stays untouched until someone approves."""
-    from bizos.actions import store as actions
+    from freedombot.actions import store as actions
 
     scope = scope_factory(client_a, "operator", domain="planning",
                           mode=ExecutionMode.WAIT_FOR_APPROVAL)
@@ -133,8 +133,8 @@ def test_approval_mode_queues_and_changes_nothing(client_a, scope_factory):
 
 def test_approval_then_execution_creates_the_event(client_a, scope_factory, ctx_factory):
     """After an approver accepts, an operator's execution makes the change."""
-    from bizos.actions import store as actions
-    from bizos.tools.executor import execute_approved_action
+    from freedombot.actions import store as actions
+    from freedombot.tools.executor import execute_approved_action
 
     proposer = scope_factory(client_a, "operator", domain="planning",
                              mode=ExecutionMode.WAIT_FOR_APPROVAL)
@@ -171,7 +171,7 @@ def test_approval_then_execution_creates_the_event(client_a, scope_factory, ctx_
 
 def test_auto_executes_a_low_risk_action(client_a, scope_factory):
     """§30 Auto Mode: tagging a lead is low risk, so it happens immediately."""
-    from bizos.audit import events as audit
+    from freedombot.audit import events as audit
 
     scope = scope_factory(client_a, "operator", domain="intake",
                           mode=ExecutionMode.AUTO_WITHIN_SCOPE)

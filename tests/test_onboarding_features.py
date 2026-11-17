@@ -13,19 +13,19 @@ from types import SimpleNamespace
 
 import pytest
 
-from bizos import automation
-from bizos.connectors import composio
-from bizos.connectors import composio_actions as acts
-from bizos.tenancy.context import tenant_scope
+from freedombot import automation
+from freedombot.connectors import composio
+from freedombot.connectors import composio_actions as acts
+from freedombot.tenancy.context import tenant_scope
 
 
 # --------------------------------------------------------------------------- own CRM
 
 
 def test_crm_records_go_to_freedombot_when_nothing_is_connected(client_a, ctx_factory):
-    from bizos import crm_storage
-    from bizos.connectors.mock_crm import CrmConnector
-    from bizos.connectors.registry import get_connector
+    from freedombot import crm_storage
+    from freedombot.connectors.mock_crm import CrmConnector
+    from freedombot.connectors.registry import get_connector
 
     ctx = ctx_factory(client_a, "operator")
     with tenant_scope(ctx):
@@ -41,7 +41,7 @@ def test_crm_records_go_to_freedombot_when_nothing_is_connected(client_a, ctx_fa
 
 
 def test_the_place_follows_the_request_then_the_saved_choice_then_automatic(client_a, ctx_factory, monkeypatch):
-    from bizos import crm_storage
+    from freedombot import crm_storage
 
     ctx = ctx_factory(client_a, "admin")
     links = {"freedombot": True, "hubspot": True, "google_drive": True}
@@ -69,7 +69,7 @@ def test_the_place_follows_the_request_then_the_saved_choice_then_automatic(clie
 
 
 def test_a_place_that_is_not_connected_is_refused_before_any_approval(client_a, scope_factory):
-    from bizos.tools.base import guarded_call
+    from freedombot.tools.base import guarded_call
 
     operator = scope_factory(client_a, "operator", domain="sales")
     with tenant_scope(operator.ctx):
@@ -85,8 +85,8 @@ def test_a_place_that_is_not_connected_is_refused_before_any_approval(client_a, 
 
 def test_records_saved_in_google_drive_are_rated_high_risk(client_a, scope_factory, monkeypatch):
     from app.assistant import company_tools
-    from bizos import crm_storage
-    from bizos.types import RiskLevel
+    from freedombot import crm_storage
+    from freedombot.types import RiskLevel
 
     scope = scope_factory(client_a, "operator", domain="sales")
     monkeypatch.setattr(crm_storage, "connected", lambda c, u: {"freedombot": True, "hubspot": False,
@@ -123,8 +123,8 @@ class _FakeSheets:
 
 
 def test_crm_records_in_a_google_drive_sheet(client_a, ctx_factory, monkeypatch):
-    from bizos import crm_storage
-    from bizos.connectors.drive_crm import DriveSheetCrmConnector
+    from freedombot import crm_storage
+    from freedombot.connectors.drive_crm import DriveSheetCrmConnector
 
     ctx = ctx_factory(client_a, "employee")
     fake = _FakeSheets()
@@ -194,7 +194,7 @@ def test_hubspot_companies_and_deals_are_not_duplicated(client_a, ctx_factory, m
 
 
 def test_companies_and_deals_are_saved_once(client_a, ctx_factory):
-    from bizos.connectors.mock_crm import CrmConnector
+    from freedombot.connectors.mock_crm import CrmConnector
 
     ctx = ctx_factory(client_a, "operator")
     with tenant_scope(ctx):
@@ -222,8 +222,8 @@ def test_companies_and_deals_are_saved_once(client_a, ctx_factory):
 
 
 def test_new_crm_tools_go_through_the_policy_check(client_a, scope_factory):
-    from bizos.tools.base import guarded_call
-    from bizos.types import PolicyEffect
+    from freedombot.tools.base import guarded_call
+    from freedombot.types import PolicyEffect
 
     viewer = scope_factory(client_a, "viewer", domain="sales")
     with tenant_scope(viewer.ctx):
@@ -292,7 +292,7 @@ def test_every_n_minutes_schedules_keep_their_beat_and_are_never_under_five_minu
 
 
 def test_an_interval_schedule_from_chat_needs_five_minutes_or_more(client_a, scope_factory):
-    from bizos.tools.base import guarded_call
+    from freedombot.tools.base import guarded_call
 
     scope = scope_factory(client_a, "admin", domain="general")
     with tenant_scope(scope.ctx):
@@ -351,7 +351,7 @@ def test_a_due_task_runs_once_as_the_person_who_set_it_up(client_a, ctx_factory)
 
 
 def test_a_scheduled_run_cannot_set_up_more_schedules(client_a, scope_factory):
-    from bizos.tools.base import guarded_call
+    from freedombot.tools.base import guarded_call
 
     scope = scope_factory(client_a, "admin", domain="general")
     scheduled = dataclasses.replace(scope, ctx=dataclasses.replace(scope.ctx, attributes={"scheduled_task": "sch_1"}))
@@ -365,10 +365,10 @@ def test_a_scheduled_run_cannot_set_up_more_schedules(client_a, scope_factory):
 
 
 def test_a_schedule_approved_for_someone_else_is_theirs_and_its_status_shows_on_the_card(client_a, scope_factory):
-    from bizos.actions import store as actions
-    from bizos.actions.preview import content_for
-    from bizos.tools.base import guarded_call
-    from bizos.tools.executor import execute_approved_action
+    from freedombot.actions import store as actions
+    from freedombot.actions.preview import content_for
+    from freedombot.tools.base import guarded_call
+    from freedombot.tools.executor import execute_approved_action
 
     operator = scope_factory(client_a, "operator", domain="general")
     stamp = datetime.now().timestamp()
@@ -408,9 +408,9 @@ def app_client():
 
 def test_requests_made_by_a_scheduled_run_show_their_schedule_on_approvals(client_a, ctx_factory, app_client):
     from app.api.deps import run_scope
-    from bizos.actions import store as actions
-    from bizos.actions.preview import content_for
-    from bizos.tools.base import guarded_call
+    from freedombot.actions import store as actions
+    from freedombot.actions.preview import content_for
+    from freedombot.tools.base import guarded_call
 
     owner = ctx_factory(client_a, "operator")
     stamp = datetime.now().timestamp()

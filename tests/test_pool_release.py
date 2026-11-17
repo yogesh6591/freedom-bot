@@ -8,13 +8,13 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.pool import NullPool
 
-from bizos import settings
-from bizos.control import store as control
-from bizos.control.db import control_connection
-from bizos.control.models import ClientSettings
-from bizos.tenancy import agnodb, provisioning
-from bizos.tenancy.registry import registry, workspace_location
-from bizos.types import DeploymentType
+from freedombot import settings
+from freedombot.control import store as control
+from freedombot.control.db import control_connection
+from freedombot.control.models import ClientSettings
+from freedombot.tenancy import agnodb, provisioning
+from freedombot.tenancy.registry import registry, workspace_location
+from freedombot.types import DeploymentType
 
 
 def _client(deployment):

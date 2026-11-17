@@ -15,7 +15,7 @@ before any application code.
 Forking the framework to add an application layer would guarantee divergence from upstream.
 The *application* shape is forked from `context`.
 
-**A2 — Package name `bizos/`.** Not `platform/` — that shadows the Python stdlib `platform`
+**A2 — Package name `freedombot/`.** Not `platform/` — that shadows the Python stdlib `platform`
 module and would break imports inside dependencies.
 
 **A3 — Tenancy = workspace registry + per-client engine.** A control-plane database holds
@@ -53,10 +53,10 @@ only ever runs an action that is `APPROVED`.
 ### 1. Client isolation — **NEW** (built on EXISTING pieces)
 | Piece | Status | Source |
 |---|---|---|
-| Control-plane store (clients, users, roles) | NEW | `bizos/control/` |
-| Workspace provisioning (`CREATE DATABASE` / `CREATE SCHEMA` + DDL) | NEW | `bizos/tenancy/provisioning.py` |
+| Control-plane store (clients, users, roles) | NEW | `freedombot/control/` |
+| Workspace provisioning (`CREATE DATABASE` / `CREATE SCHEMA` + DDL) | NEW | `freedombot/tenancy/provisioning.py` |
 | Per-client engine cache + read-only engine | NEEDS MODIFICATION | generalizes `context/db/session.py` |
-| Tenant context propagation (`contextvars`) | NEW | `bizos/tenancy/context.py` |
+| Tenant context propagation (`contextvars`) | NEW | `freedombot/tenancy/context.py` |
 | Agno session/memory/knowledge isolation | EXISTING | `PostgresDb(db_url=<client url>)` per workspace |
 
 ### 2. Organizational memory — **NEW**
@@ -72,7 +72,7 @@ effective_until, superseded_by`. AI-inferred entries default to
 `approval_status=PENDING`; retrieval ranks approved-and-explicit above inferred.
 
 ### 4. Users and roles — **NEW** (auth primitives EXISTING)
-`VIEWER < DRAFTER < APPROVER < OPERATOR < ADMIN` in `bizos/rbac/`. Password login
+`VIEWER < DRAFTER < APPROVER < OPERATOR < ADMIN` in `freedombot/rbac/`. Password login
 (PBKDF2-HMAC-SHA256, stdlib) issuing a JWT whose `sub` is the user id and whose claims carry
 `client_id` + `role`. Agno verifies the JWT (`authorization=True`); the platform verifies the
 claims. **Roles are never read from a request body.**
@@ -82,7 +82,7 @@ claims. **Roles are never read from a request body.**
 workspace default → domain override → per-request override (only *downward*, never upward).
 The mode is an input to the policy engine and to the tool-surface builder.
 
-### 6. Policy engine — **NEW.** `bizos/policy/engine.py`. Single entry point
+### 6. Policy engine — **NEW.** `freedombot/policy/engine.py`. Single entry point
 `evaluate(PolicyRequest) -> PolicyDecision` returning `ALLOW | DENY | DRAFT_ONLY |
 REQUIRE_APPROVAL`. Ordered, deterministic rules; **no LLM in the path**. Inputs: client,
 user, role, domain, tool, action, mode, risk, data classification, financial amount, record
@@ -106,7 +106,7 @@ Phase 1: **Mock CRM** (deterministic, seeded, testable), **Email** (mock + Gmail
 **Calendar** (mock + Google adapter). Each connector exposes narrow capabilities; the tool
 layer maps 1:1 to them. Slack / accounting / storage: interface defined, adapter deferred.
 
-### 11 & 12. Domain packs — **NEW.** `bizos/domains/`. Phase 1 built: `operations`, `sales`,
+### 11 & 12. Domain packs — **NEW.** `freedombot/domains/`. Phase 1 built: `operations`, `sales`,
 `intake`, `planning`, plus `general`. Configuration-only placeholders: `strategy`, `finance`,
 `brand`, `legal` (registered, admin-toggleable, minimal instructions — **NOT IN PHASE 1** for
 depth).
@@ -163,15 +163,15 @@ instruction-shaped patterns in retrieved content are neutralized before the mode
 
 | Step | Deliverable |
 |---|---|
-| 4 | `bizos/tenancy`, `bizos/control`, provisioning, auth, `.env.example`, compose |
-| 5 | `bizos/rbac` — roles, tool registry, permission matrix |
-| 6 | `bizos/policy` — engine, rules, limits, classification |
+| 4 | `freedombot/tenancy`, `freedombot/control`, provisioning, auth, `.env.example`, compose |
+| 5 | `freedombot/rbac` — roles, tool registry, permission matrix |
+| 6 | `freedombot/policy` — engine, rules, limits, classification |
 | 7 | Execution modes + mode-aware tool surface |
-| 8 | `bizos/actions` — actions, approval queue, executor |
-| 9 | `bizos/memory` — org memory, versioning, corrections |
-| 10 | `bizos/audit` |
-| 11 | `bizos/connectors` — mock CRM, email, calendar |
-| 12 | `bizos/domains` + `bizos/workflows` |
+| 8 | `freedombot/actions` — actions, approval queue, executor |
+| 9 | `freedombot/memory` — org memory, versioning, corrections |
+| 10 | `freedombot/audit` |
+| 11 | `freedombot/connectors` — mock CRM, email, calendar |
+| 12 | `freedombot/domains` + `freedombot/workflows` |
 | 13 | `ui/` — fork of agent-ui + 7 new sections |
 | 14 | `tests/` — all §30 scenarios, executed |
 | 15 | Security review |

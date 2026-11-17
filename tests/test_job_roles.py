@@ -12,12 +12,12 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from bizos import admin_ops as ops
-from bizos.control import access_requests
-from bizos.control import store as control
-from bizos.rbac import matrix
-from bizos.rbac.job_roles import JOB_ROLES, resolve_job_role, roles_for, tags_after_change
-from bizos.types import DATA_AREAS, DeploymentType, ExecutionMode, Role
+from freedombot import admin_ops as ops
+from freedombot.control import access_requests
+from freedombot.control import store as control
+from freedombot.rbac import matrix
+from freedombot.rbac.job_roles import JOB_ROLES, resolve_job_role, roles_for, tags_after_change
+from freedombot.types import DATA_AREAS, DeploymentType, ExecutionMode, Role
 from tests.conftest import _destroy, _make_client
 
 PASSWORD = "bizos-dev-password"

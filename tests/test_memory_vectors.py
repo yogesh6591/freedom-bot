@@ -11,11 +11,11 @@ import math
 import pytest
 from sqlalchemy import text
 
-from bizos.memory import store as memory
-from bizos.memory import vectors
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.registry import workspace_connection
-from bizos.types import MemoryCategory
+from freedombot.memory import store as memory
+from freedombot.memory import vectors
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.registry import workspace_connection
+from freedombot.types import MemoryCategory
 
 CONCEPTS = [("refund", "money back", "returns"), ("salary", "pay band", "compensation"), ("dock", "warehouse")]
 

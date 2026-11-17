@@ -12,9 +12,9 @@ from typing import Any, Optional
 
 from agno.models.message import Message
 
-from bizos import settings as app_settings
-from bizos.agents.persona import AUTO
-from bizos.domains.packs import DomainPack, enabled_packs, get_pack
+from freedombot import settings as app_settings
+from freedombot.agents.persona import AUTO
+from freedombot.domains.packs import DomainPack, enabled_packs, get_pack
 
 log = logging.getLogger(__name__)
 
@@ -115,8 +115,8 @@ def _packs_for(settings: Any, pinned: str) -> list[DomainPack]:
 
 def _guardrail_audit(ctx: Any, scope: Any, session_id: str, status: str, domain: str = "") -> None:
     try:
-        from bizos.audit.events import log
-        from bizos.types import AuditEventType
+        from freedombot.audit.events import log
+        from freedombot.types import AuditEventType
 
         fields: dict[str, Any] = {"session_id": session_id, "status": status, "execution_mode": str(scope.mode)}
         if domain:

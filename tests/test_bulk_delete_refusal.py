@@ -85,7 +85,7 @@ def live_env(monkeypatch):
     if not os.environ.get("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY is not set")
     from app.assistant import assistant as agent
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     monkeypatch.setattr(
         agent,

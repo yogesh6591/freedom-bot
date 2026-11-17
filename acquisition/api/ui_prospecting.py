@@ -33,17 +33,17 @@ router = APIRouter(tags=["admin-ui-prospecting"], dependencies=[Depends(require_
 def _actor(request: Request) -> tuple[str, Any]:
     ctx = None
     try:
-        from bizos.tenancy.context import current_context
+        from freedombot.tenancy.context import current_context
 
         ctx = current_context()
     except Exception:  # noqa: BLE001
         ctx = None
     if ctx is None:
-        token = (request.cookies.get("bizos_session") or "").strip()
+        token = (request.cookies.get("freedombot_session") or "").strip()
         if token:
             try:
-                from bizos.control import store as control
-                from bizos.control.tokens import verify_token
+                from freedombot.control import store as control
+                from freedombot.control.tokens import verify_token
 
                 payload = verify_token(token)
                 ctx = control.build_context(control.get_user(str(payload.get("sub") or "")))

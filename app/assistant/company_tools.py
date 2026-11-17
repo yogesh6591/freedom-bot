@@ -10,17 +10,17 @@ from __future__ import annotations
 ####################################################################################################
 
 # ------------------------------------------------------------------------------------------------
-# crm  (bizos/tools/crm.py) - CRM Tool Effects
+# crm  (freedombot/tools/crm.py) - CRM Tool Effects
 # ------------------------------------------------------------------------------------------------
 from typing import Any, Optional
 
-from bizos.connectors.base import ConnectorResult
-from bizos.connectors.registry import get_connector
-from bizos.tools.base import RunScope, effect, precheck, risk_inputs
+from freedombot.connectors.base import ConnectorResult
+from freedombot.connectors.registry import get_connector
+from freedombot.tools.base import RunScope, effect, precheck, risk_inputs
 
 
 def _crm(scope: RunScope, args: Optional[dict[str, Any]] = None):
-    # An approved change runs on the requester's own CRM login and storage choice (bizos/crm_storage.py),
+    # An approved change runs on the requester's own CRM login and storage choice (freedombot/crm_storage.py),
     # like email and calendar, so the record shows the person who asked for it rather than the approver.
     return _Placed(get_connector("crm", ctx=scope.ctx, owner_user_id=scope.on_behalf_of,
                                  save_to=(args or {}).get("save_to") or None))
@@ -33,7 +33,7 @@ _CRM_READS = frozenset({"search_contacts", "get_contact", "search_companies", "s
 
 def _where(crm: Any, result: ConnectorResult, *, wrote: bool) -> ConnectorResult:
     """Say in the result where the records were saved or read (FreedomBot, HubSpot or Google Drive)."""
-    from bizos import crm_storage
+    from freedombot import crm_storage
 
     place = getattr(crm, "storage", None)
     if not place:
@@ -75,7 +75,7 @@ _SAVE_TO_TOOLS = ("crm_create_contact", "crm_create_company", "crm_create_deal")
 
 def _save_to_problem(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
     """Refuse a place that is unknown or not connected for the person, before any approval is queued."""
-    from bizos import crm_storage
+    from freedombot import crm_storage
 
     requested = args.get("save_to")
     if requested in (None, ""):
@@ -91,8 +91,8 @@ def _save_to_problem(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
 
 def _storage_risk(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
     """A record saved into Google Drive is an outside write: rate it HIGH like any other Google Sheets change."""
-    from bizos import crm_storage
-    from bizos.types import RiskLevel
+    from freedombot import crm_storage
+    from freedombot.types import RiskLevel
 
     owner = scope.on_behalf_of or scope.ctx.user_id
     try:
@@ -239,7 +239,7 @@ def crm_create_deal(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 @effect("crm_get_storage")
 def crm_get_storage(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Where this person's CRM records are saved now, their saved choice, and which places are connected."""
-    from bizos import crm_storage
+    from freedombot import crm_storage
 
     info = crm_storage.describe(scope.ctx, scope.on_behalf_of or scope.ctx.user_id)
     connected = [crm_storage.label(p) for p, ok in info["available"].items() if ok]
@@ -252,7 +252,7 @@ def crm_get_storage(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @precheck("crm_set_storage")
 def _set_storage_problem(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
-    from bizos import crm_storage
+    from freedombot import crm_storage
 
     place = crm_storage.parse(args.get("destination"))
     if place is None:
@@ -267,7 +267,7 @@ def _set_storage_problem(scope: RunScope, args: dict[str, Any]) -> Optional[str]
 @effect("crm_set_storage")
 def crm_set_storage(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Save where this person's new CRM records go. Existing records are not moved."""
-    from bizos import crm_storage
+    from freedombot import crm_storage
 
     owner = scope.on_behalf_of or scope.ctx.user_id
     place = crm_storage.parse(args.get("destination"))
@@ -353,11 +353,11 @@ def crm_delete_record(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     )
 
 # ------------------------------------------------------------------------------------------------
-# email  (bizos/tools/email.py) - Email Tool Effects
+# email  (freedombot/tools/email.py) - Email Tool Effects
 # ------------------------------------------------------------------------------------------------
 import re
 
-from bizos.agents.tool_args import EMAIL_PATTERN
+from freedombot.agents.tool_args import EMAIL_PATTERN
 
 
 def _email(scope: RunScope):
@@ -440,7 +440,7 @@ def _send_inputs(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
     return {"recipients": tuple(recipients), "record_count": max(1, len(recipients))}
 
 # ------------------------------------------------------------------------------------------------
-# calendar  (bizos/tools/calendar.py) - Calendar tool effects.
+# calendar  (freedombot/tools/calendar.py) - Calendar tool effects.
 # ------------------------------------------------------------------------------------------------
 
 
@@ -504,13 +504,13 @@ def calendar_cancel_event(scope: RunScope, args: dict[str, Any]) -> ConnectorRes
     return _calendar(scope).cancel_event(str(args.get("event_id", "")))
 
 # ------------------------------------------------------------------------------------------------
-# memory  (bizos/tools/memory.py) - Memory and Knowledge Tool Effects
+# memory  (freedombot/tools/memory.py) - Memory and Knowledge Tool Effects
 # ------------------------------------------------------------------------------------------------
 from typing import Any, Optional
 
-from bizos.memory import store as memory_store
-from bizos.tools.base import RunScope, effect
-from bizos.types import ApprovalStatus, MemoryCategory, SourceType
+from freedombot.memory import store as memory_store
+from freedombot.tools.base import RunScope, effect
+from freedombot.types import ApprovalStatus, MemoryCategory, SourceType
 
 
 def _render_memory(item: Any) -> dict[str, Any]:
@@ -587,8 +587,8 @@ def memory_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @effect("synced_search")
 def synced_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    """The caller's own synced Gmail / Calendar / YouTube / HubSpot records (bizos/sync), newest first."""
-    from bizos.sync import store as sync_store
+    """The caller's own synced Gmail / Calendar / YouTube / HubSpot records (freedombot/sync), newest first."""
+    from freedombot.sync import store as sync_store
 
     raw = args.get("sources")
     sources = [raw] if isinstance(raw, str) else [str(s) for s in (raw or [])]
@@ -686,7 +686,7 @@ _EVERYONE_AREAS = frozenset({"", "everyone", "all", "company", "open", "none", "
 
 def _normalize_access_area(raw: Any) -> Optional[str]:
     """``None`` = everyone; otherwise a DATA_AREAS name, or raise ValueError."""
-    from bizos.types import DATA_AREAS
+    from freedombot.types import DATA_AREAS
 
     area = str(raw or "").strip().casefold()
     if area in _EVERYONE_AREAS:
@@ -889,10 +889,10 @@ def memory_escalate_conflict(scope: RunScope, args: dict[str, Any]) -> Connector
     )
 
 # ------------------------------------------------------------------------------------------------
-# support  (bizos/tools/support.py) - Support Tool Effects (FB-046)
+# support  (freedombot/tools/support.py) - Support Tool Effects (FB-046)
 # ------------------------------------------------------------------------------------------------
 
-from bizos import support
+from freedombot import support
 
 
 _render_support = support.requester_view
@@ -939,10 +939,10 @@ def support_my_tickets(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
     )
 
 # ------------------------------------------------------------------------------------------------
-# scheduled tasks  (bizos/automation.py) - recurring work (daily, weekly or every N minutes), run as the person
+# scheduled tasks  (freedombot/automation.py) - recurring work (daily, weekly or every N minutes), run as the person
 # who set it up
 # ------------------------------------------------------------------------------------------------
-from bizos import automation
+from freedombot import automation
 
 
 def _schedule_fields(scope: RunScope, args: dict[str, Any]) -> dict[str, Any]:
@@ -1039,8 +1039,8 @@ def schedule_update(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 def _new_client_problem(args: dict[str, Any]) -> Optional[str]:
     """Why platform_create_client cannot run with these arguments, before anything is made (or None)."""
-    from bizos.tenancy import new_client
-    from bizos.util.ids import slugify
+    from freedombot.tenancy import new_client
+    from freedombot.util.ids import slugify
 
     name = " ".join(str(args.get("company_name") or "").split())
     email = str(args.get("admin_email") or "").strip()
@@ -1049,7 +1049,7 @@ def _new_client_problem(args: dict[str, Any]) -> Optional[str]:
     if not ops._EMAIL.match(email):
         return f"{email or 'The admin email'!r} is not a valid email address. Nothing was created."
     if not _list(args.get("bought")):
-        from bizos.domains.catalog import DOMAIN_CATALOG
+        from freedombot.domains.catalog import DOMAIN_CATALOG
 
         menu = "; ".join(f"{d.name} ({d.title}): {d.description.rstrip('.')}" for d in DOMAIN_CATALOG)
         return ("The user has not said what this client bought, so ask them now and create nothing yet. Show "
@@ -1073,7 +1073,7 @@ def _platform_create_client_precheck(scope: RunScope, args: dict[str, Any]) -> O
 @effect("platform_create_client")
 def platform_create_client(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """A new client with its own workspace and first admin, as on Administration > Workspaces > New client."""
-    from bizos.tenancy import new_client
+    from freedombot.tenancy import new_client
 
     problem = _new_client_problem(args)
     if problem:
@@ -1113,7 +1113,7 @@ def platform_create_client(scope: RunScope, args: dict[str, Any]) -> ConnectorRe
 @effect("platform_overview")
 def platform_overview(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Every client workspace (control-plane metadata only). The policy check already limits it to platform owners."""
-    import bizos.owner as owner_view
+    import freedombot.owner as owner_view
 
     portfolio = owner_view.owner_portfolio()
     spaces = {w["client_id"]: w for w in owner_view.all_workspaces()["workspaces"]}
@@ -1172,14 +1172,14 @@ def schedule_cancel(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 
 # ------------------------------------------------------------------------------------------------
-# approvals  (bizos/tools/approvals.py) - Approval Tool Effects
+# approvals  (freedombot/tools/approvals.py) - Approval Tool Effects
 # ------------------------------------------------------------------------------------------------
 import dataclasses
 
-from bizos.actions import store as actions
-from bizos.actions.models import Action
-from bizos.rbac.registry import get_spec
-from bizos.types import ActionStatus, Role
+from freedombot.actions import store as actions
+from freedombot.actions.models import Action
+from freedombot.rbac.registry import get_spec
+from freedombot.types import ActionStatus, Role
 
 _STATUS_WORDS: dict[str, tuple[ActionStatus, ...]] = {
     "pending": (ActionStatus.PENDING_APPROVAL,),
@@ -1220,7 +1220,7 @@ def _statuses(raw: Any) -> Optional[list[ActionStatus]]:
 
 
 def _names(scope: RunScope) -> dict[str, str]:
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     try:
         return {u.id: u.display_name or u.email for u in control.list_users(scope.ctx.client_id)}
@@ -1237,7 +1237,7 @@ def _can_decide(scope: RunScope) -> bool:
 
 
 def _summary_of(action: Action, scope: RunScope) -> str:
-    from bizos.actions.preview import content_for
+    from freedombot.actions.preview import content_for
 
     try:
         content = content_for(action, ctx=scope.ctx)
@@ -1416,7 +1416,7 @@ def approvals_get(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 @effect("approvals_approve")
 def approvals_approve(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Approve a pending action, then run it when this user may execute it."""
-    from bizos.tools.executor import can_execute, execute_approved_action
+    from freedombot.tools.executor import can_execute, execute_approved_action
 
     action, problem = _resolve(scope, args, [ActionStatus.PENDING_APPROVAL])
     if action is None:
@@ -1540,13 +1540,13 @@ def approvals_cancel(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     )
 
 # ------------------------------------------------------------------------------------------------
-# admin  (bizos/tools/admin.py) - Admin Tool Effects
+# admin  (freedombot/tools/admin.py) - Admin Tool Effects
 # ------------------------------------------------------------------------------------------------
 import secrets
 
-from bizos import admin_ops as ops
-from bizos.control import store as control
-from bizos.types import Role
+from freedombot import admin_ops as ops
+from freedombot.control import store as control
+from freedombot.types import Role
 
 
 def _failure(exc: ops.AdminError) -> ConnectorResult:
@@ -1567,7 +1567,7 @@ def _list(value: Any) -> list[str]:
 
 def _role_summary(user) -> str:
     """"Draft in Sales, Finance": a person's role and the departments in their data access."""
-    from bizos.policy.person_role import describe, label
+    from freedombot.policy.person_role import describe, label
 
     if any(str(r) == "ADMIN" for r in user.roles):
         return "Admin, every department"
@@ -1620,10 +1620,10 @@ def _temporary_password() -> str:
 
 @effect("admin_workspace_overview")
 def admin_workspace_overview(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.insights import open_alerts
-    from bizos.launch import checklist_summary
-    from bizos.onboarding import get_profile
-    from bizos.pricing import get_rules
+    from freedombot.insights import open_alerts
+    from freedombot.launch import checklist_summary
+    from freedombot.onboarding import get_profile
+    from freedombot.pricing import get_rules
 
     settings = _settings(scope)
     users = control.list_users(scope.ctx.client_id)
@@ -1660,7 +1660,7 @@ def admin_workspace_overview(scope: RunScope, args: dict[str, Any]) -> Connector
 
 @effect("admin_list_users")
 def admin_list_users(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.types import DATA_AREAS
+    from freedombot.types import DATA_AREAS
 
     users = control.list_users(scope.ctx.client_id)
     return ConnectorResult(
@@ -1676,7 +1676,7 @@ def admin_list_users(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @effect("admin_get_setup")
 def admin_get_setup(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.onboarding import get_profile
+    from freedombot.onboarding import get_profile
 
     settings = _settings(scope)
     profile = get_profile(settings).to_dict()
@@ -1689,7 +1689,7 @@ def admin_get_setup(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @effect("admin_list_alerts")
 def admin_list_alerts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.insights import last_scanned, list_alerts, list_baselines, visible_to
+    from freedombot.insights import last_scanned, list_alerts, list_baselines, visible_to
 
     settings = _settings(scope)
     alerts = [a for a in list_alerts(settings) if visible_to(a, scope.ctx)]
@@ -1707,7 +1707,7 @@ def admin_list_alerts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @effect("admin_launch_checklist")
 def admin_launch_checklist(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.launch import checklist_summary
+    from freedombot.launch import checklist_summary
 
     summary = checklist_summary(_settings(scope))
     return ConnectorResult(
@@ -1723,7 +1723,7 @@ def admin_launch_checklist(scope: RunScope, args: dict[str, Any]) -> ConnectorRe
 
 @effect("admin_pricing")
 def admin_pricing(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.pricing import face_scope_config, get_rules, list_consult_quotes
+    from freedombot.pricing import face_scope_config, get_rules, list_consult_quotes
 
     settings = _settings(scope)
     return ConnectorResult(
@@ -1739,7 +1739,7 @@ def admin_pricing(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @effect("admin_list_domains")
 def admin_list_domains(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.domains.packs import PACKS
+    from freedombot.domains.packs import PACKS
 
     settings = _settings(scope)
     items = [
@@ -1757,8 +1757,8 @@ def admin_list_domains(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
 
 @effect("admin_tool_permissions")
 def admin_tool_permissions(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.rbac import permissions as perms
-    from bizos.rbac.registry import TOOL_SPECS
+    from freedombot.rbac import permissions as perms
+    from freedombot.rbac.registry import TOOL_SPECS
 
     query = str(args.get("tool") or args.get("query") or "").strip().casefold()
     settings = _settings(scope)
@@ -1809,7 +1809,7 @@ def admin_apply_setup(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Apply first-client setup. Fields left out keep their current values."""
     if not any(args.get(k) for k in _SETUP_FIELDS):
         return ConnectorResult.failure("Nothing to apply. Tell me what to set up.")
-    from bizos.onboarding import get_profile
+    from freedombot.onboarding import get_profile
 
     settings = _settings(scope)
     current = get_profile(settings).to_dict()
@@ -1857,7 +1857,7 @@ def admin_handoff_assessment(scope: RunScope, args: dict[str, Any]) -> Connector
 
 @effect("admin_scan_alerts")
 def admin_scan_alerts(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.insights import scan_alerts
+    from freedombot.insights import scan_alerts
 
     items = scan_alerts(client_id=scope.ctx.client_id, settings=_settings(scope), ctx=scope.ctx)
     open_items = [a for a in items if a.get("status", "open") == "open"]
@@ -1883,7 +1883,7 @@ def admin_dismiss_alert(scope: RunScope, args: dict[str, Any]) -> ConnectorResul
 @effect("admin_set_baselines")
 def admin_set_baselines(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Add or update before/after baselines; others are kept unless removed."""
-    from bizos.insights import list_baselines
+    from freedombot.insights import list_baselines
 
     settings = _settings(scope)
     keep = ("id", "workflow", "metric", "before_value", "after_value", "unit", "notes")
@@ -2229,11 +2229,11 @@ def admin_set_tool_mode(scope: RunScope, args: dict[str, Any]) -> ConnectorResul
     )
 
 # ------------------------------------------------------------------------------------------------
-# domains  (bizos/tools/domains.py) - Domain-oriented tools (FB-035)
+# domains  (freedombot/tools/domains.py) - Domain-oriented tools (FB-035)
 # ------------------------------------------------------------------------------------------------
 
-from bizos.memory import store as memory
-from bizos.tools.base import RunScope, effect, precheck
+from freedombot.memory import store as memory
+from freedombot.tools.base import RunScope, effect, precheck
 
 
 def _hit(i: Any) -> dict:
@@ -2343,7 +2343,7 @@ def finance_list_pending_billables(scope: RunScope, args: dict[str, Any]) -> Con
     """List CRM deals staged as pending_invoice for a customer (finance-scoped)."""
     from sqlalchemy import text
 
-    from bizos.tenancy.registry import readonly_connection
+    from freedombot.tenancy.registry import readonly_connection
 
     customer = str(args.get("customer") or args.get("company") or "").strip()
     limit = max(1, min(int(args.get("limit") or 50), 100))
@@ -2386,8 +2386,8 @@ def finance_list_pending_billables(scope: RunScope, args: dict[str, Any]) -> Con
 @precheck("finance_draft_invoice")
 def _draft_invoice_precheck(scope: RunScope, args: dict[str, Any]) -> Optional[str]:
     """No empty invoices and no duplicate requests reach the approval queue."""
-    from bizos.actions import store as actions
-    from bizos.types import ActionStatus
+    from freedombot.actions import store as actions
+    from freedombot.types import ActionStatus
 
     customer = str(args.get("customer") or args.get("company") or "").strip()
     if not customer:
@@ -2429,7 +2429,7 @@ def finance_list_invoices(scope: RunScope, args: dict[str, Any]) -> ConnectorRes
     """List invoices (including drafts) for a customer from the accounting ledger."""
     from sqlalchemy import text
 
-    from bizos.tenancy.registry import readonly_connection
+    from freedombot.tenancy.registry import readonly_connection
 
     customer = str(args.get("customer") or args.get("company") or "").strip()
     params: dict[str, Any] = {"limit": max(1, min(int(args.get("limit") or 20), 100))}
@@ -2469,8 +2469,8 @@ def finance_draft_invoice(scope: RunScope, args: dict[str, Any]) -> ConnectorRes
     """Draft an invoice from pending billables (runs only after policy/approval)."""
     from sqlalchemy import text
 
-    from bizos.tenancy.registry import workspace_connection
-    from bizos.util.ids import new_id
+    from freedombot.tenancy.registry import workspace_connection
+    from freedombot.util.ids import new_id
 
     customer = str(args.get("customer") or args.get("company") or "").strip()
     if not customer:
@@ -2723,7 +2723,7 @@ def legal_flag_for_counsel(scope: RunScope, args: dict[str, Any]) -> ConnectorRe
 @effect("n8n_trigger_webhook")
 def n8n_trigger_webhook(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Call the client's n8n webhook after policy/approval (FB-040)."""
-    event = str(args.get("event") or args.get("workflow") or "bizos.event").strip()
+    event = str(args.get("event") or args.get("workflow") or "freedombot.event").strip()
     payload = args.get("payload") if isinstance(args.get("payload"), dict) else {
         k: v for k, v in args.items() if k not in {"event", "workflow", "payload"}
     }
@@ -2735,7 +2735,7 @@ def n8n_trigger_webhook(scope: RunScope, args: dict[str, Any]) -> ConnectorResul
     )
 
 # ------------------------------------------------------------------------------------------------
-# youtube  (bizos/tools/youtube.py) - YouTube tool effects (read-only, the user's own Composio connection).
+# youtube  (freedombot/tools/youtube.py) - YouTube tool effects (read-only, the user's own Composio connection).
 # ------------------------------------------------------------------------------------------------
 
 
@@ -2784,9 +2784,9 @@ def youtube_video_comments(scope: RunScope, args: dict[str, Any]) -> ConnectorRe
 
 @effect("youtube_transcript")
 def youtube_transcript(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.connectors import composio as composio_conn
-    from bizos.connectors import youtube_transcript as transcripts
-    from bizos.connectors.base import ConnectorError
+    from freedombot.connectors import composio as composio_conn
+    from freedombot.connectors import youtube_transcript as transcripts
+    from freedombot.connectors.base import ConnectorError
 
     try:
         data = transcripts.fetch(composio_conn.as_user(scope.ctx, scope.on_behalf_of), str(args.get("video") or ""),
@@ -2800,10 +2800,10 @@ def youtube_transcript(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
 
 
 # ------------------------------------------------------------------------------------------------
-# integrations  (bizos/connectors/composio_actions.py) - any action of the user's connected apps.
+# integrations  (freedombot/connectors/composio_actions.py) - any action of the user's connected apps.
 # ------------------------------------------------------------------------------------------------
 
-from bizos.connectors import composio_actions as app_actions
+from freedombot.connectors import composio_actions as app_actions
 
 #: The dedicated tool a generic action of each app and tier may never be looser than. Reads compare
 #: with the app's read tool; writes and destructive actions with its write tool.
@@ -2819,7 +2819,7 @@ _ACTION_REFERENCE = {
 
 
 def _app_owner(scope: RunScope):
-    from bizos.connectors import composio as composio_conn
+    from freedombot.connectors import composio as composio_conn
 
     return composio_conn.as_user(scope.ctx, scope.on_behalf_of)
 
@@ -2832,9 +2832,9 @@ def _app_action_problem(scope: RunScope, args: dict[str, Any], tier: str) -> Opt
     An approver executing an approved action was not the requester; the requester was checked when
     the request was made.
     """
-    from bizos.connectors.base import ConnectorError
-    from bizos.domains.packs import enabled_packs
-    from bizos.tools.dry_run import is_visible
+    from freedombot.connectors.base import ConnectorError
+    from freedombot.domains.packs import enabled_packs
+    from freedombot.tools.dry_run import is_visible
 
     try:
         toolkit, problem = app_actions.check(str(args.get("action") or ""), tier)
@@ -2854,7 +2854,7 @@ def _app_action_problem(scope: RunScope, args: dict[str, Any], tier: str) -> Opt
 def _duplicate_post_problem(scope: RunScope, toolkit: Optional[str], args: dict[str, Any], tier: str) -> Optional[str]:
     """A new public post whose content already went to the same place is refused (checked again when an
     approved post is released, so two identical requests never both go out)."""
-    from bizos import automation
+    from freedombot import automation
 
     slug = str(args.get("action") or "").strip().upper()
     if tier != app_actions.DESTRUCTIVE or not toolkit or not app_actions.is_new_public_post(slug):
@@ -2868,8 +2868,8 @@ def _duplicate_post_problem(scope: RunScope, toolkit: Optional[str], args: dict[
 
 
 def _run_app_action(scope: RunScope, args: dict[str, Any], tier: str) -> ConnectorResult:
-    from bizos import automation
-    from bizos.connectors.base import ConnectorError
+    from freedombot import automation
+    from freedombot.connectors.base import ConnectorError
 
     slug = str(args.get("action") or "").strip().upper()
     try:
@@ -2888,7 +2888,7 @@ def _run_app_action(scope: RunScope, args: dict[str, Any], tier: str) -> Connect
 
 @effect("integration_find_action")
 def integration_find_action(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.connectors.base import ConnectorError
+    from freedombot.connectors.base import ConnectorError
 
     try:
         data = app_actions.find(_app_owner(scope), str(args.get("query") or ""),
@@ -2934,14 +2934,14 @@ def integration_destructive_action(scope: RunScope, args: dict[str, Any]) -> Con
 
 
 # ------------------------------------------------------------------------------------------------
-# research  (bizos/connectors/web.py) - public web search and page reading.
+# research  (freedombot/connectors/web.py) - public web search and page reading.
 # ------------------------------------------------------------------------------------------------
 
 
 @effect("web_search")
 def web_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.connectors import web
-    from bizos.connectors.base import ConnectorError
+    from freedombot.connectors import web
+    from freedombot.connectors.base import ConnectorError
 
     try:
         data = web.search(str(args.get("query") or ""), limit=int(args.get("limit") or 6))
@@ -2953,8 +2953,8 @@ def web_search(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 @effect("web_read")
 def web_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos.connectors import web
-    from bizos.connectors.base import ConnectorError
+    from freedombot.connectors import web
+    from freedombot.connectors.base import ConnectorError
 
     try:
         data = web.read(str(args.get("url") or ""))
@@ -2965,13 +2965,13 @@ def web_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 
 
 # ------------------------------------------------------------------------------------------------
-# files  (bizos/chat_attachments.py) - files the user attached in the chat.
+# files  (freedombot/chat_attachments.py) - files the user attached in the chat.
 # ------------------------------------------------------------------------------------------------
 
 
 @effect("attachment_read")
 def attachment_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
-    from bizos import chat_attachments
+    from freedombot import chat_attachments
 
     try:
         data = chat_attachments.read(scope.ctx, str(args.get("attachment_id") or ""),
@@ -2991,10 +2991,10 @@ def attachment_read(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
 @effect("memory_save_attachment")
 def memory_save_attachment(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """Save a chat attachment into company memory, optionally limited to one data area."""
-    from bizos import chat_attachments
-    from bizos.memory import documents
-    from bizos.types import DataClassification
-    from bizos.util.ids import new_id
+    from freedombot import chat_attachments
+    from freedombot.memory import documents
+    from freedombot.types import DataClassification
+    from freedombot.util.ids import new_id
 
     attachment_id = str(args.get("attachment_id") or "").strip()
     if not attachment_id:

@@ -68,7 +68,7 @@ def owner_context() -> Any | None:
     user_id = owner_user_id()
     if not user_id:
         return None
-    from bizos.control import store as control
+    from freedombot.control import store as control
 
     user = control.get_user(user_id)
     return control.build_context(user) if user is not None else None

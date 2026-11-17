@@ -1,4 +1,4 @@
-# Phase 0 discovery report: BizOS assistant tool selection
+# Phase 0 discovery report: FreedomBot assistant tool selection
 
 Branch: `club-freedom` at `fe5b089`. This phase was read-only: no code was changed.
 The §8 decisions were answered and are recorded in docs/agent/plan.md. This file is kept as the
@@ -11,26 +11,26 @@ The code is the source of truth. Wherever it disagrees with `docs/agent/ARCHITEC
 | Expected | Found |
 |---|---|
 | `docs/agent/plan.md` | **Missing at the time.** It was not in the repo or the git history. (Since added.) |
-| `bizos/agent/prompts/` | `bizos/agents/prompts/` (plural `agents`). ARCHITECTURE.md §5.2 and §5.5 use the wrong path. |
+| `freedombot/agent/prompts/` | `freedombot/agents/prompts/` (plural `agents`). ARCHITECTURE.md §5.2 and §5.5 use the wrong path. |
 | `CLAUDE.md` | `claude.md` (lowercase, untracked). It works on macOS because the filesystem ignores case, but on Linux or CI anything that looks for `CLAUDE.md` will not find it. |
 | `docs/agent/drafts/` | Missing. TOOL_DESCRIPTIONS.md mentions it. |
 | Eval runner | None exists. `evals/cases.yaml` has 9 cases and nothing runs them. |
 
-`docs/agent/`, `evals/`, `bizos/agents/prompts/` and `claude.md` are all untracked.
+`docs/agent/`, `evals/`, `freedombot/agents/prompts/` and `claude.md` are all untracked.
 
 ## 1. How a chat turn runs today
 
 `POST /chat` (`app/api/chat.py:164`) picks an engine from `ASSISTANT_ENGINE`:
 - `unified` (the default) → `app/assistant/assistant.py:reply()` (line 4266)
-- `legacy` → `_legacy_chat` (per-domain agent, `bizos/agents/agent.py`)
+- `legacy` → `_legacy_chat` (per-domain agent, `freedombot/agents/agent.py`)
 
 The unified turn:
 1. Load the chat session and pending campaign state from `chat_messages.meta.state`.
 2. **Pre-model refusals.** Regulated data (PHI, cards, children) and restricted HR candidates get a
    fixed reply. No model call is made.
-3. **Platform grounding** (`bizos/agents/grounding.py`). This can run `hr_match_candidate`
+3. **Platform grounding** (`freedombot/agents/grounding.py`). This can run `hr_match_candidate`
    deterministically before the model.
-4. **Tool surface.** `build_unified_tools(scope, packs)` (`bizos/agents/surface.py`) exposes every
+4. **Tool surface.** `build_unified_tools(scope, packs)` (`freedombot/agents/surface.py`) exposes every
    tool from every enabled domain pack that the policy engine would not DENY outright. For admins it
    adds the 6 campaign tools. About 60–80 tools are visible on each turn. There is no router.
 5. **One Agno `Agent`** per attempt: `output_schema=AssistantTurn {message, explanation}`,
@@ -47,14 +47,14 @@ campaign sends.
 
 ## 2. The guard that already exists
 
-Every ops tool call goes through `bizos/tools/base.py:guarded_call`:
+Every ops tool call goes through `freedombot/tools/base.py:guarded_call`:
 build a `PolicyRequest` from verified context → `risk_inputs` extractor (record counts, recipients
 and fields measured from the database, not taken from the model's claims) → PHI/card classifier →
 `policy.engine.evaluate()` → audit → **ALLOW | DRAFT_ONLY | REQUIRE_APPROVAL | DENY**.
 `PRECHECKS` run after policy, for example "nothing to invoice". Approved actions are later released
-through `bizos/tools/executor.py`.
+through `freedombot/tools/executor.py`.
 
-`evaluate()` (`bizos/policy/engine.py`) applies 22 deterministic rules, and the most restrictive one
+`evaluate()` (`freedombot/policy/engine.py`) applies 22 deterministic rules, and the most restrictive one
 wins. They cover: implemented, domain enabled, integration connected, RBAC, data area, PHI, card,
 child, biometrics, restricted classification, licensed judgment, always-requires-approval,
 critical risk, risk floor, execution mode, auto risk ceiling, record limit, financial limit, email
@@ -65,7 +65,7 @@ become a second, parallel permission system unless they are derived from this en
 The spec does not mention this engine at all.
 
 Not implemented today, compared with spec §5.6:
-- Step 2: Pydantic validation. Tools take `**kwargs`. `bizos/agents/tool_args.py` has JSON schemas
+- Step 2: Pydantic validation. Tools take `**kwargs`. `freedombot/agents/tool_args.py` has JSON schemas
   and normalisation but no validation messages.
 - Step 3: "IDs looked up" (`id_fields`). Not tracked anywhere.
 - Step 4: `requires_prior`. Not modelled for ops tools. The campaign flow enforces its own order in
@@ -77,13 +77,13 @@ Not implemented today, compared with spec §5.6:
 
 ## 3. Roles, permissions, modes: what the code actually has
 
-- **Roles:** `VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN` (`bizos/types.py`). Users can hold
+- **Roles:** `VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN` (`freedombot/types.py`). Users can hold
   several roles. **Data areas** (`exec, hr, salary, finance, legal`) are a separate grant
   (`data_scopes`).
   **[SPEC≠CODE]** `evals/cases.yaml` uses the roles `sales` and `member`, which do not exist.
   "finance access" maps to a data area, not a role.
 - **Per-role permission:** `DENIED | ALLOWED | DRAFT_ONLY | APPROVE_ONLY | EXECUTE_AFTER_APPROVAL`,
-  from templates in `bizos/rbac/matrix.py`. Admins can override this per tool and role
+  from templates in `freedombot/rbac/matrix.py`. Admins can override this per tool and role
   (`admin_set_tool_permission`).
 - **Execution modes:** `ADVISE | DRAFT | WAIT_FOR_APPROVAL | AUTO_WITHIN_SCOPE`. There is a workspace
   mode, a per-pack mode ceiling, a per-request requested mode, and a **per-tool mode
@@ -96,7 +96,7 @@ Not implemented today, compared with spec §5.6:
 
 ## 4. Tool inventory: 83 registry tools + 6 campaign tools = 89
 
-All 83 have a `ToolSpec` in `bizos/rbac/registry.py` and an `@effect` implementation in
+All 83 have a `ToolSpec` in `freedombot/rbac/registry.py` and an `@effect` implementation in
 `app/assistant/assistant.py` (PART 1). The 6 campaign tools (`update_selection`, `show_contacts`,
 `show_campaigns`, `propose_email`, `approve_move`, `send_approved`) are raw OpenAI function
 specs in `CAMPAIGN_TOOLS` (`assistant.py:3191`). They are executed by `CampaignSession` and **do
@@ -249,7 +249,7 @@ through them.
    path *executes* these four tools under the general domain while their pack is off. The unified
    assistant, the legacy engine and the chat context offer them only through their own packs, and the
    approved-action executor never sees them (they are reads and are never queued). But
-   `bizos/agents/grounding.py:blocked_capabilities`, which writes the "capabilities you lack access for"
+   `freedombot/agents/grounding.py:blocked_capabilities`, which writes the "capabilities you lack access for"
    lines in the prompt, does rely on `general`. In a default workspace (finance and legal packs off), a
    user without the data area is told "Look up finance policy — needs Finance access" and "Find a
    recorded clause summary — needs Legal access". Both lines exist only because `general` is in those
@@ -291,11 +291,11 @@ through them.
        defaults to `"general"`. The test never names a domain, so the general-domain path may be
        incidental rather than intended.
      - *What the test does not tell us.* The Acme demo client has every pack enabled
-       (`bizos/bootstrap.py`, "The demo client has bought every domain"). So under the finance domain
+       (`freedombot/bootstrap.py`, "The demo client has bought every domain"). So under the finance domain
        this test's calls would get the same results (finance user allowed, ops refused on data area). It
        cannot tell whether a workspace with the finance pack **off** is meant to list billables from a
        general thread. On the surface, only the finance pack offers these tools
-       (`bizos/domains/packs.py`), so the assistant never shows them with that pack off. `general` (and
+       (`freedombot/domains/packs.py`), so the assistant never shows them with that pack off. `general` (and
        `operations`) matter only to a direct `guarded_call` caller, whom the policy check lets list
        billables and invoices with the finance pack off.
      - *For the team to decide.* (a) Is "list billables/invoices with the finance pack off" a product
@@ -376,18 +376,18 @@ through them.
    calendar-dependent zone.** Nothing in the repo stores or receives a user's timezone: there is no
    user-profile field, no workspace setting (`ClientSettings`), no `ChatRequest` field, and the UI
    sends no browser timezone (`ui/src` has no `Intl`/`resolvedOptions`/`getTimezoneOffset`).
-   - *"Today", "tomorrow" (current assistant).* `bizos/agents/instructions.py:280` puts
+   - *"Today", "tomorrow" (current assistant).* `freedombot/agents/instructions.py:280` puts
      `datetime.now(timezone.utc)` in the prompt as "Current date and time: … (UTC). Resolve 'today',
      'tomorrow', 'this week' from this." So between 00:00 and 05:30 IST, "tomorrow" resolves to the
      IST date of today.
-   - *Times, Google Calendar connected* (`bizos/connectors/composio.py`, `ComposioCalendarConnector`).
+   - *Times, Google Calendar connected* (`freedombot/connectors/composio.py`, `ComposioCalendarConnector`).
      The connector reads the calendar's own `timeZone` from Google (`GOOGLECALENDAR_GET_CALENDAR`,
      cached per user; UTC if the call fails). A naive time from the model ("2026-10-22T15:00:00") is
      read as wall-clock time in that zone. So "3pm" lands at 15:00 IST for a calendar set to
      Asia/Kolkata. A time the model sends with an offset or `Z` is used as given.
-   - *Times, workspace calendar* (`bizos/connectors/calendar.py`). The naive string goes straight into
+   - *Times, workspace calendar* (`freedombot/connectors/calendar.py`). The naive string goes straight into
      `CAST(:s AS TIMESTAMPTZ)`, so Postgres reads it in the **database server's** `TimeZone` setting.
-     The app sets no session timezone (`bizos/tenancy/registry.py` sets only `search_path`). The project's
+     The app sets no session timezone (`freedombot/tenancy/registry.py` sets only `search_path`). The project's
      database (compose `db`, `pgvector/pgvector:pg17`, port 5434 — the one `.env` and the tests use)
      reports `Etc/UTC`, the image default. So "3pm" is stored as 15:00 UTC = 20:30 IST. (Corrected
      before Phase 8: the `Asia/Kolkata` reading first reported here came from an unrelated Homebrew
@@ -417,6 +417,6 @@ through them.
      aware datetimes to Postgres. The database server's timezone no longer matters.
    - `ed775cb`: v2 uses the workspace timezone for "today" and names it as the zone, and the calendar
      playbook asks for local times without an offset. Google calendars keep their own zone.
-   - Not changed: the legacy `GoogleCalendarConnector` in `bizos/connectors/calendar.py` (agno's
+   - Not changed: the legacy `GoogleCalendarConnector` in `freedombot/connectors/calendar.py` (agno's
      `GoogleCalendarTools`, workspace-level credentials, marked NOT TESTED). It passes times through as
      given. Per-user timezones are in plan.md "Later".

@@ -30,7 +30,7 @@ from agno.eval.reliability import ReliabilityEval
 from agno.models.response import ToolExecution
 from agno.run.agent import RunOutput
 
-from bizos.agents.composer import NOTHING_DONE, claims_in
+from freedombot.agents.composer import NOTHING_DONE, claims_in
 
 WRITE_STATUSES = ("run", "approval", "draft")
 PRECHECK_STAGES = ("schema", "provenance", "prerequisite")
@@ -76,7 +76,7 @@ def _clean(call: dict, *, blocked_expected: bool) -> bool:
 
 
 def _is_write(tool: str) -> bool:
-    from bizos.agents.guard import is_write
+    from freedombot.agents.guard import is_write
 
     return is_write(tool)
 

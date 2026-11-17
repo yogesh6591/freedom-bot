@@ -863,8 +863,8 @@ class OutreachSession:
 
     def _signer_name(self, db: Any) -> str:
         """The signed-in user's display name (or the local part of their email), for the {{senderName}} blank."""
-        from bizos.control import store as control
-        from bizos.control.store import UserNotFound
+        from freedombot.control import store as control
+        from freedombot.control.store import UserNotFound
 
         user_id = getattr(self.ctx, "user_id", None)
         if not user_id:

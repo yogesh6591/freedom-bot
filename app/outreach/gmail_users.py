@@ -22,8 +22,8 @@ def list_connected(toolkit: str = "gmail") -> list[dict[str, str]]:
     Composio user id ``fb:{client_id}:{user_id}``. Accounts that belong to nobody on this platform are skipped,
     so only a user that can actually use the app is offered. (``gmail`` holds the account's address.)
     """
-    from bizos.connectors import composio
-    from bizos.control import store as control
+    from freedombot.connectors import composio
+    from freedombot.control import store as control
 
     out: list[dict[str, str]] = []
     try:

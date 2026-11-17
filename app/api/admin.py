@@ -9,7 +9,7 @@ Every route here requires ADMIN and every write is audited. User management is
 scoped to the caller's own client: an admin at one customer cannot see, create or
 modify users at another, because the client id comes from their token.
 
-The changes themselves live in :mod:`bizos.admin_ops`, shared with the admin
+The changes themselves live in :mod:`freedombot.admin_ops`, shared with the admin
 chat tools.
 """
 
@@ -21,15 +21,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 
 from app.api.deps import bound, client_settings, current_context, require_admin
-from bizos import admin_ops as ops
-from bizos.control import store as control
-from bizos.control.models import ClientSettings
-from bizos.domains.packs import PACKS
-from bizos.rbac import permissions as perms
-from bizos.rbac.matrix import MATRIX_TEMPLATES
-from bizos.rbac.registry import TOOL_SPECS
-from bizos.tenancy.context import TenantContext
-from bizos.types import Role
+from freedombot import admin_ops as ops
+from freedombot.control import store as control
+from freedombot.control.models import ClientSettings
+from freedombot.domains.packs import PACKS
+from freedombot.rbac import permissions as perms
+from freedombot.rbac.matrix import MATRIX_TEMPLATES
+from freedombot.rbac.registry import TOOL_SPECS
+from freedombot.tenancy.context import TenantContext
+from freedombot.types import Role
 
 router = APIRouter(prefix="/api", tags=["admin"])
 
@@ -160,7 +160,7 @@ def set_job_role(
 @router.get("/person-roles")
 def list_person_roles(ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
     """The four roles with what each means, and the departments a person's data access can include."""
-    from bizos.policy.person_role import choices
+    from freedombot.policy.person_role import choices
 
     return choices()
 
@@ -196,7 +196,7 @@ def set_scopes(
 
 @router.get("/data-areas")
 def list_data_areas() -> dict[str, Any]:
-    from bizos.types import DATA_AREAS
+    from freedombot.types import DATA_AREAS
 
     return {"items": list(DATA_AREAS)}
 
@@ -222,7 +222,7 @@ def set_password(
 @router.get("/roles")
 def list_roles() -> dict[str, Any]:
     """The role catalogue with the permission-matrix templates behind it."""
-    from bizos.control.schema import ROLE_SEED
+    from freedombot.control.schema import ROLE_SEED
 
     return {
         "roles": [
@@ -370,7 +370,7 @@ def get_onboarding(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Current first-client configuration profile."""
-    from bizos.onboarding import get_profile
+    from freedombot.onboarding import get_profile
 
     profile = get_profile(settings).to_dict()
     blob = settings.onboarding or {}
@@ -421,7 +421,7 @@ def get_alerts(
     rescanned when the last scan is stale (M09-13), and filtered to the areas
     this caller may see (M09-14).
     """
-    from bizos.insights import last_scanned, list_alerts, open_alerts, refresh_if_stale, visible_to
+    from freedombot.insights import last_scanned, list_alerts, open_alerts, refresh_if_stale, visible_to
 
     with bound(ctx):
         settings = refresh_if_stale(client_id=ctx.client_id, settings=settings, ctx=ctx)
@@ -439,7 +439,7 @@ def scan_alerts_route(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Look for recurring waste in this client's data now (M09-13)."""
-    from bizos.insights import last_scanned, scan_alerts
+    from freedombot.insights import last_scanned, scan_alerts
 
     with bound(ctx):
         items = scan_alerts(client_id=ctx.client_id, settings=settings, ctx=ctx)
@@ -469,7 +469,7 @@ def get_baselines(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """Before/after metrics for sold workflows (FB-050). Directional only."""
-    from bizos.insights import list_baselines
+    from freedombot.insights import list_baselines
 
     return {
         "items": list_baselines(settings),
@@ -518,7 +518,7 @@ def get_launch_checklist(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """First-client launch checklist status (FB-045)."""
-    from bizos.launch import checklist_summary
+    from freedombot.launch import checklist_summary
 
     _ = ctx
     return checklist_summary(settings)
@@ -565,7 +565,7 @@ def get_resale_rules(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """JeanneCAIO resale rules + face quote values (FB-048)."""
-    from bizos.pricing import get_rules
+    from freedombot.pricing import get_rules
 
     return {"rules": get_rules(settings)}
 
@@ -600,7 +600,7 @@ def get_consult_config(
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
     """This client's scope weights + FB-048 rules for the consult calculator."""
-    from bizos.pricing import face_scope_config, get_rules
+    from freedombot.pricing import face_scope_config, get_rules
 
     return {"config": face_scope_config(settings), "rules": get_rules(settings)}
 
@@ -610,7 +610,7 @@ def get_consult_quotes(
     ctx: TenantContext = Depends(require_admin),
     settings: ClientSettings = Depends(client_settings),
 ) -> dict[str, Any]:
-    from bizos.pricing import list_consult_quotes
+    from freedombot.pricing import list_consult_quotes
 
     return {"items": list_consult_quotes(settings)}
 

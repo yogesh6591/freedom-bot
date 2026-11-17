@@ -15,12 +15,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import text
 
-from bizos.memory import store as memory
-from bizos.tenancy.context import tenant_scope
-from bizos.tenancy.context import NoTenantContextError
-from bizos.tenancy.registry import readonly_connection, registry, workspace_location
-from bizos.tools.base import guarded_call
-from bizos.types import DeploymentType, MemoryCategory
+from freedombot.memory import store as memory
+from freedombot.tenancy.context import tenant_scope
+from freedombot.tenancy.context import NoTenantContextError
+from freedombot.tenancy.registry import readonly_connection, registry, workspace_location
+from freedombot.tools.base import guarded_call
+from freedombot.types import DeploymentType, MemoryCategory
 
 
 def test_workspaces_are_physically_separate(client_a, client_b, ctx_factory):
@@ -98,7 +98,7 @@ def test_crm_records_never_cross_clients(client_a, client_b, scope_factory):
 
 def test_audit_trails_are_isolated(client_a, client_b, ctx_factory):
     """One client's audit log is not readable from another's workspace."""
-    from bizos.audit import events as audit
+    from freedombot.audit import events as audit
 
     ctx_a = ctx_factory(client_a, "admin")
     ctx_b = ctx_factory(client_b, "admin")
@@ -112,7 +112,7 @@ def test_audit_trails_are_isolated(client_a, client_b, ctx_factory):
 
 def test_workspace_access_requires_a_bound_tenant():
     """Reaching customer data with no resolved client raises rather than guessing."""
-    from bizos.tenancy.registry import workspace_connection
+    from freedombot.tenancy.registry import workspace_connection
 
     with pytest.raises(NoTenantContextError):
         with workspace_connection():

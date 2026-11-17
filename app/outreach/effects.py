@@ -1,7 +1,7 @@
 """Outreach and acquisition tools as ops-style effects.
 
-Each tool is registered in bizos/rbac/registry.py (policy), bizos/agents/tool_meta.py (what the model reads) and
-bizos/agents/tool_args.py (argument shapes). The effects below only run after ``guarded_call`` allowed the call.
+Each tool is registered in freedombot/rbac/registry.py (policy), freedombot/agents/tool_meta.py (what the model reads) and
+freedombot/agents/tool_args.py (argument shapes). The effects below only run after ``guarded_call`` allowed the call.
 The chat turn's OutreachSession is ``scope.campaign_session`` (field renamed in a later cleanup).
 
 Two kinds of tool:
@@ -14,8 +14,8 @@ from __future__ import annotations
 from typing import Any
 
 from app.outreach import toolkit
-from bizos.connectors.base import ConnectorResult
-from bizos.tools.base import RunScope, effect
+from freedombot.connectors.base import ConnectorResult
+from freedombot.tools.base import RunScope, effect
 
 #: email tool name -> OutreachSession method and the arguments it accepts
 _EMAIL_METHODS: dict[str, tuple[str, tuple[str, ...]]] = {

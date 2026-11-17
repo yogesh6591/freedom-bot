@@ -8,17 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import bound, client_settings, current_context, require_admin, run_scope
-from bizos.audit import events as audit
-from bizos.connectors import composio
-from bizos.connectors import composio_catalog as catalog
-from bizos.connectors import registry as connectors
-from bizos import settings
-from bizos.connectors.base import ConnectorNotConfigured
-from bizos.control.models import ClientSettings
-from bizos.sync import store as sync_store
-from bizos.tenancy.context import TenantContext
-from bizos.tools.base import guarded_call
-from bizos.types import AuditEventType, PolicyEffect
+from freedombot.audit import events as audit
+from freedombot.connectors import composio
+from freedombot.connectors import composio_catalog as catalog
+from freedombot.connectors import registry as connectors
+from freedombot import settings
+from freedombot.connectors.base import ConnectorNotConfigured
+from freedombot.control.models import ClientSettings
+from freedombot.sync import store as sync_store
+from freedombot.tenancy.context import TenantContext
+from freedombot.tools.base import guarded_call
+from freedombot.types import AuditEventType, PolicyEffect
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])
 
@@ -83,7 +83,7 @@ class ConnectRequest(BaseModel):
 def _safe_callback(url: Optional[str]) -> Optional[str]:
     if not url:
         return None
-    from bizos import settings
+    from freedombot import settings
 
     for origin in settings.cors_origins():
         if url == origin or url.startswith(origin.rstrip("/") + "/"):
@@ -242,7 +242,7 @@ def crm_storage_choose(
 @router.get("/composio/sync")
 def composio_sync_status(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
     """When each of the signed-in user's sources last synced, and how many records are kept."""
-    from bizos.sync import scheduler
+    from freedombot.sync import scheduler
 
     return {"enabled": settings.integration_sync_enabled(), "interval_sec": settings.integration_sync_interval(),
             "next_run_in_sec": scheduler.seconds_until_next(), "sources": sync_store.status(ctx)}
@@ -251,7 +251,7 @@ def composio_sync_status(ctx: TenantContext = Depends(current_context)) -> dict[
 @router.post("/composio/sync")
 def composio_sync_now(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
     """Sync the signed-in user's connected sources now."""
-    from bizos.sync.runner import sync_user
+    from freedombot.sync.runner import sync_user
 
     report = sync_user(ctx)
     return {"report": report, "sources": sync_store.status(ctx)}

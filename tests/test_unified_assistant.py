@@ -20,7 +20,7 @@ TEST_DB_NAME = "acquisition_test"
 
 from app.api.chat import ChatRequest  # noqa: E402
 from app.api.deps import bound  # noqa: E402
-from bizos import chat_history  # noqa: E402
+from freedombot import chat_history  # noqa: E402
 
 SCRIPT: list = []
 REQUESTS: list = []
@@ -100,7 +100,7 @@ def fake_model():
     os.environ["OPENAI_API_KEY"] = "test-key"
     os.environ["ASSISTANT_REASONING_EFFORT"] = "none"
     os.environ.pop("MODEL_REASONING_EFFORT", None)
-    from bizos import settings as app_settings
+    from freedombot import settings as app_settings
 
     app_settings.llm_available.cache_clear()
     yield

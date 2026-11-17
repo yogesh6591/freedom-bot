@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-const EVENT = 'bizos:switch-changed'
+const EVENT = 'freedombot:switch-changed'
 
 function read(key: string): boolean {
   try {
@@ -51,9 +51,9 @@ function useStoredSwitch(key: string): [boolean, (next: boolean) => void] {
 }
 
 export function useDebug(): [boolean, (next: boolean) => void] {
-  return useStoredSwitch('bizos:debug')
+  return useStoredSwitch('freedombot:debug')
 }
 
 export function useShowAcquisition(): [boolean, (next: boolean) => void] {
-  return useStoredSwitch('bizos:show-acquisition')
+  return useStoredSwitch('freedombot:show-acquisition')
 }

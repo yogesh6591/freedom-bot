@@ -14,9 +14,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.deps import current_context, require_admin
-from bizos import admin_ops as ops
-from bizos.control import access_requests
-from bizos.tenancy.context import TenantContext
+from freedombot import admin_ops as ops
+from freedombot.control import access_requests
+from freedombot.tenancy.context import TenantContext
 
 router = APIRouter(prefix="/api/access", tags=["access"])
 

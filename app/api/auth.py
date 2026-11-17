@@ -23,13 +23,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 
 from app.api.deps import SESSION_COOKIE, current_context
-from bizos import settings as app_settings
-from bizos.control import store as control
-from bizos.control.db import control_connection
-from bizos.control.tokens import issue_token
-from bizos.tenancy.context import TenantContext
-from bizos.types import AuditEventType
-from bizos.util.ids import new_id
+from freedombot import settings as app_settings
+from freedombot.control import store as control
+from freedombot.control.db import control_connection
+from freedombot.control.tokens import issue_token
+from freedombot.tenancy.context import TenantContext
+from freedombot.types import AuditEventType
+from freedombot.util.ids import new_id
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -123,7 +123,7 @@ def login(body: LoginRequest, request: Request, response: Response) -> LoginResp
     )
     # Also record it inside the workspace, where the customer's own audit view reads.
     try:
-        from bizos.audit.events import log
+        from freedombot.audit.events import log
 
         log(
             AuditEventType.LOGIN,
@@ -160,8 +160,8 @@ def logout(response: Response, ctx: TenantContext = Depends(current_context)) ->
 def me(ctx: TenantContext = Depends(current_context)) -> dict[str, Any]:
     """Who the caller is, and what their workspace allows."""
     client = control.get_client(ctx.client_id)
-    from bizos.domains.packs import PACKS_BY_NAME
-    from bizos.rbac.permissions import permitted_tools
+    from freedombot.domains.packs import PACKS_BY_NAME
+    from freedombot.rbac.permissions import permitted_tools
 
     person = control.get_user(ctx.user_id)
     return {

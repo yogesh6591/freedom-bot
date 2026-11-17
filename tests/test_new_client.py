@@ -11,16 +11,16 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from bizos import settings as app_settings
-from bizos import template
-from bizos.bootstrap import admin_context
-from bizos.control import store as control
-from bizos.control.db import control_connection
-from bizos.control.models import ClientSettings
-from bizos.memory import store as memory
-from bizos.tenancy import new_client, provisioning
-from bizos.tenancy.context import tenant_scope
-from bizos.types import DeploymentType, Role
+from freedombot import settings as app_settings
+from freedombot import template
+from freedombot.bootstrap import admin_context
+from freedombot.control import store as control
+from freedombot.control.db import control_connection
+from freedombot.control.models import ClientSettings
+from freedombot.memory import store as memory
+from freedombot.tenancy import new_client, provisioning
+from freedombot.tenancy.context import tenant_scope
+from freedombot.types import DeploymentType, Role
 from tests.conftest import _destroy
 
 PASSWORD = "bizos-dev-password"
@@ -261,7 +261,7 @@ def test_the_server_command_runs_the_same_setup(monkeypatch):
 
 def test_chat_onboarding_asks_which_domains_before_creating_anything():
     from app.assistant.company_tools import _new_client_problem
-    from bizos.domains.catalog import DOMAIN_CATALOG
+    from freedombot.domains.catalog import DOMAIN_CATALOG
 
     slug = f"tchat{uuid.uuid4().hex[:6]}"
     asked = _new_client_problem({"company_name": "Chat Co", "admin_email": "a@chat.example.com", "workspace_id": slug})

@@ -4,7 +4,7 @@ Expected gates come from the policy check
 
 ``gate_for(client, case, tool)`` is what the policy check gives ``tool`` for this case's user, workspace preset
 and arguments (``expected_args``, completed by ``gate_args`` where the gate depends on the full call, such as
-an email body): the policy dry-run (bizos/tools/dry_run.py) in the scope the live assistant binds the tool to,
+an email body): the policy dry-run (freedombot/tools/dry_run.py) in the scope the live assistant binds the tool to,
 in the case's mocked world. A merged tool's gate is the strictest gate of the old tools its call maps to.
 ``tests/test_eval_cases.py`` checks every case's ``expected_gates`` and ``expected_hidden`` against it, so a
 case can never carry a hand-written gate.
@@ -23,7 +23,7 @@ DEFAULT_OLD = {"admin_update_user": "admin_set_user_roles", "approvals_decide": 
 
 
 def _olds(tool: str, args: dict, scope_for) -> list[tuple[str, dict]]:
-    from bizos.agents.merged_tools import MERGED, MergeArgumentError
+    from freedombot.agents.merged_tools import MERGED, MergeArgumentError
 
     if tool not in MERGED:
         return [(tool, args)]
@@ -40,10 +40,10 @@ def gates_and_visible(client, case: dict) -> tuple[dict[str, str], frozenset[str
 
     import app.assistant.assistant as current
     from app.api.deps import bound
-    from bizos.agents.persona import AUTO
-    from bizos.agents.routing import visible_tools
-    from bizos.tools.base import RunScope
-    from bizos.tools.dry_run import bound_scope, dry_run_for_user
+    from freedombot.agents.persona import AUTO
+    from freedombot.agents.routing import visible_tools
+    from freedombot.tools.base import RunScope
+    from freedombot.tools.dry_run import bound_scope, dry_run_for_user
     from evals.run import context_for, patch_world, settings_for
     from evals.world import World
 
