@@ -321,7 +321,12 @@ class AuditEventType(StrEnum):
 #: ``ops`` is the operations/department bucket (distinct from finance and HR).
 #: Apps whose data a person needs a tag for. Without it the assistant cannot read or change that app for them.
 APP_AREAS: tuple[str, ...] = ("crm", "email", "calendar")
-DATA_AREAS: tuple[str, ...] = ("exec", "hr", "salary", "finance", "legal", "ops", "sales", *APP_AREAS)
+#: Departments with no restricted data of their own; as data access tags they say a person works there
+#: (bizos/policy/person_role.py). Sales, Finance, Legal, Operations (ops) and HR use the areas below.
+DEPARTMENT_AREAS: tuple[str, ...] = ("general", "planning", "intake", "strategy", "brand")
+DATA_AREAS: tuple[str, ...] = (
+    "exec", "hr", "salary", "finance", "legal", "ops", "sales", *DEPARTMENT_AREAS, *APP_AREAS
+)
 
 
 __all__ = [

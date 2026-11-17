@@ -215,7 +215,7 @@ def test_a_department_job_role_from_chat_sets_level_and_data_access_together(cli
     assert moved.data["job_role"] == "HR"
 
     intake = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="INTAKE")
-    assert intake.ok and intake.data["job_role"] == "Intake" and intake.data["data_access"] == []
+    assert intake.ok and intake.data["job_role"] == "Intake" and intake.data["data_access"] == ["intake"]
 
     bad = _call(client_scratch, ctx_factory, "admin_set_user_roles", user="Fin User", job_role="CEO")
     assert not bad.ok and "Job role must be one of" in bad.message

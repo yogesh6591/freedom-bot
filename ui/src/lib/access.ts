@@ -2,32 +2,28 @@
 
 import type { DepartmentMode } from './types'
 
-/** The departments an admin can give a person (the domain packs). Admin has every department. */
+/** Departments as data access tags: where a person works. Operations is "ops"; HR also brings salary. */
 export const DEPARTMENTS = [
   { value: 'general', label: 'General' },
   { value: 'sales', label: 'Sales' },
   { value: 'planning', label: 'Planning' },
   { value: 'finance', label: 'Finance' },
   { value: 'legal', label: 'Legal' },
-  { value: 'operations', label: 'Operations' },
+  { value: 'ops', label: 'Operations' },
   { value: 'intake', label: 'Intake' },
   { value: 'strategy', label: 'Strategy' },
   { value: 'brand', label: 'Brand' },
-  { value: 'hr', label: 'Human Resources' }
+  { value: 'hr', label: 'HR' }
 ] as const
 
-/** Listed with the departments, but these are levels: no role inside them, and choosing one replaces
- *  the person's departments. */
-export const LEVEL_CHOICES = [
-  {
-    value: 'employee',
-    label: 'Employee',
-    meaning: 'Asks and looks things up. Cannot change anything.'
-  },
-  { value: 'admin', label: 'Admin', meaning: 'Every department, full access.' }
+/** Apps as data access tags. */
+export const APP_TAGS = [
+  { value: 'crm', label: 'CRM' },
+  { value: 'email', label: 'Gmail' },
+  { value: 'calendar', label: 'Calendar' }
 ] as const
 
-/** A person's role inside one department. Only admins can change it. */
+/** A person's one role, for all their work. Only admins can change it. */
 export const DEPARTMENT_MODES: {
   value: DepartmentMode
   label: string
@@ -43,29 +39,17 @@ export const DEPARTMENT_MODES: {
   { value: 'auto', label: 'Auto', meaning: 'Routine work runs by itself.' }
 ]
 
-export function departmentLabel(value: string): string {
-  return DEPARTMENTS.find((d) => d.value === value)?.label ?? value
-}
-
 export function modeMeaning(value: string): string {
   return DEPARTMENT_MODES.find((m) => m.value === value)?.meaning ?? ''
 }
 
-export const DATA_TAGS = [
-  { value: 'crm', label: 'CRM' },
-  { value: 'email', label: 'Gmail' },
-  { value: 'calendar', label: 'Calendar' },
-  { value: 'sales', label: 'Sales' },
-  { value: 'finance', label: 'Finance' },
-  { value: 'hr', label: 'HR' },
-  { value: 'salary', label: 'Salary' },
-  { value: 'ops', label: 'Operations' },
-  { value: 'legal', label: 'Legal' },
-  { value: 'exec', label: 'Exec' }
-] as const
+/** Everything a person can be given or ask for: departments, then apps. */
+export const DATA_TAGS = [...DEPARTMENTS, ...APP_TAGS]
+
+const OTHER_LABELS: Record<string, string> = { salary: 'Salary', exec: 'Exec' }
 
 export function tagLabel(value: string): string {
-  return DATA_TAGS.find((tag) => tag.value === value)?.label ?? value
+  return DATA_TAGS.find((tag) => tag.value === value)?.label ?? OTHER_LABELS[value] ?? value
 }
 
 export interface AccessOverview {

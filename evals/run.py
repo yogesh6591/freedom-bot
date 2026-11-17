@@ -238,8 +238,8 @@ def context_for(client, case: dict):
         ctx, roles=frozenset(Role(r) for r in roles), display_name=user.get("name") or ctx.display_name,
         attributes=attributes,
         data_scopes=frozenset(user["data_scopes"] if "data_scopes" in user else ALL_AREAS),
-        # Departments an admin gave this user, {department: advise|draft|approve|auto} (bizos/policy/department_modes.py).
-        department_modes=tuple(sorted((user.get("departments") or {}).items())),
+        # The user's one role, advise|draft|approve|auto (bizos/policy/person_role.py); departments are data_scopes.
+        access_mode=user.get("role"),
     )
 
 

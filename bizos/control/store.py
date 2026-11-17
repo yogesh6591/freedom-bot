@@ -319,22 +319,20 @@ def set_user_scopes(user_id: str, scopes: Iterable[str]) -> User:
     return get_user(user_id)
 
 
-def set_user_department_modes(user_id: str, departments: dict[str, str]) -> User:
-    """Replace the departments an admin gave one person, ``{department: role}``. See bizos/policy/department_modes.py."""
-    from bizos.policy.department_modes import stored_departments
+def set_user_access_mode(user_id: str, mode: Optional[str]) -> User:
+    """Set one person's role: advise, draft, approve or auto (``None`` clears it). See bizos/policy/person_role.py."""
+    from bizos.policy.person_role import MODES
 
-    clean = stored_departments(departments)
-    if clean != dict(departments):
-        raise ValueError(f"unknown department or role in {departments!r}")
+    if mode is not None and mode not in MODES:
+        raise ValueError(f"{mode!r} is not a role")
     with control_connection() as conn:
         updated = conn.execute(
-            text("UPDATE users SET department_modes = CAST(:m AS JSONB), updated_at = NOW() WHERE id = :i"),
-            {"m": json.dumps(clean), "i": user_id},
+            text("UPDATE users SET access_mode = :m, updated_at = NOW() WHERE id = :i"),
+            {"m": mode, "i": user_id},
         )
         if updated.rowcount == 0:
             raise UserNotFound(user_id)
     return get_user(user_id)
-
 
 def set_user_job_role(user_id: str, job_role: Optional[str]) -> User:
     """Record the job title an admin picked. Permission changes go through ``set_user_roles``."""
@@ -447,6 +445,12 @@ def _roles_for(conn: Any, user_id: str) -> frozenset[Role]:
     return frozenset(r for r in parsed if r is not None)  # type: ignore[misc]
 
 
+def _access_mode(raw: Any) -> Optional[str]:
+    from bizos.policy.person_role import stored_mode
+
+    return stored_mode(raw)
+
+
 def _user_from_row(conn: Any, row: Any) -> User:
     return User(
         id=row.id,
@@ -460,16 +464,8 @@ def _user_from_row(conn: Any, row: Any) -> User:
         data_scopes=frozenset(getattr(row, "data_scopes", None) or ()),
         platform_owner=bool(getattr(row, "platform_owner", False)),
         job_role=getattr(row, "job_role", None),
-        department_modes=_department_modes(getattr(row, "department_modes", None)),
+        access_mode=_access_mode(getattr(row, "access_mode", None)),
     )
-
-
-def _department_modes(raw: Any) -> dict[str, str]:
-    from bizos.policy.department_modes import stored_departments
-
-    if isinstance(raw, str):
-        raw = json.loads(raw or "{}")
-    return stored_departments(raw)
 
 
 def get_user(user_id: str) -> User:
@@ -581,7 +577,7 @@ def build_context(user: User, *, attributes: Optional[dict] = None) -> TenantCon
         email=user.email,
         display_name=user.display_name,
         data_scopes=user.data_scopes,
-        department_modes=tuple(sorted(user.department_modes.items())),
+        access_mode=user.access_mode,
         attributes={**(attributes or {}), "platform_owner": user.platform_owner},
     )
 

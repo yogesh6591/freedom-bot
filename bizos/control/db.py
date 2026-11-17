@@ -81,30 +81,32 @@ def migrate_control_plane() -> None:
                     "x": pack.depth,
                 },
             )
-        _fold_crm_person_levels(conn)
+        _fold_legacy_person_access(conn)
 
 
-def _fold_crm_person_levels(conn: Connection) -> None:
-    """Move each person's old CRM level (Needs approval / Draft only) into their department roles, once.
+def _fold_legacy_person_access(conn: Connection) -> None:
+    """Move each person's earlier per-department roles and CRM level into one role and data tags, once.
 
-    Department roles are now the only per-person limit. The fold never makes anyone less strict
-    (bizos/policy/department_modes.fold_crm_level); the old value is then cleared, so this runs once.
+    Never less strict (bizos/policy/person_role.fold_legacy): the role is the strictest they had and each
+    department they held becomes a data tag. The old values are then cleared, so this runs once.
     """
     import json
 
-    from bizos.policy.department_modes import fold_crm_level
+    from bizos.policy.person_role import fold_legacy
 
     rows = conn.execute(
-        text("SELECT id, job_role, department_modes, app_modes FROM users WHERE app_modes <> '{}'::jsonb")
+        text("SELECT id, job_role, data_scopes, access_mode, department_modes, app_modes FROM users "
+             "WHERE department_modes <> '{}'::jsonb OR app_modes <> '{}'::jsonb")
     ).fetchall()
     for row in rows:
-        modes = row.app_modes if isinstance(row.app_modes, dict) else json.loads(row.app_modes or "{}")
-        departments = row.department_modes if isinstance(row.department_modes, dict) else json.loads(
-            row.department_modes or "{}"
-        )
-        folded = fold_crm_level(departments, modes.get("crm"), row.job_role)
+        crm = row.app_modes if isinstance(row.app_modes, dict) else json.loads(row.app_modes or "{}")
+        mode, tags = fold_legacy(row.department_modes, crm.get("crm"), row.job_role, row.data_scopes or ())
+        if row.access_mode and mode:
+            from bizos.policy.person_role import _strictest
+
+            mode = _strictest([row.access_mode, mode])
         conn.execute(
-            text("UPDATE users SET department_modes = CAST(:d AS JSONB), app_modes = '{}'::jsonb, "
-                 "updated_at = NOW() WHERE id = :i"),
-            {"d": json.dumps(folded), "i": row.id},
+            text("UPDATE users SET access_mode = COALESCE(:m, access_mode), data_scopes = :t, "
+                 "department_modes = '{}'::jsonb, app_modes = '{}'::jsonb, updated_at = NOW() WHERE id = :i"),
+            {"m": mode, "t": tags, "i": row.id},
         )

@@ -126,7 +126,7 @@ def create_user(
     roles: Iterable[str] = ("VIEWER",),
     data_scopes: Iterable[str] = (),
     job_role: Optional[str] = None,
-    department_mode: Optional[str] = None,
+    access_mode: Optional[str] = None,
 ):
     email = (email or "").strip()
     if not _EMAIL.match(email):
@@ -134,10 +134,17 @@ def create_user(
     if len(password or "") < MIN_PASSWORD_LENGTH:
         raise AdminError(f"Password must be at least {MIN_PASSWORD_LENGTH} characters")
     job = _job_role(job_role) if job_role else None
-    department = _department_of(job)
-    mode = _mode(department_mode) if department else None
+    admin = (job is not None and job.level is Role.ADMIN) or "ADMIN" in {str(r).upper() for r in roles}
+    # Everyone but an admin gets one role (Advise, Draft, Approve, Auto); Approve when none is named.
+    mode = None if admin else (_mode(access_mode) if (access_mode or job) else None)
     if job:
-        roles, data_scopes = (str(job.level),), job.tags
+        roles, data_scopes = (str(job.level),), sorted({*job.tags, *data_scopes})
+    elif mode and not admin:
+        approver = "APPROVER" in {str(r).upper() for r in roles}
+        roles = ("OPERATOR", "APPROVER") if approver else ("OPERATOR",)
+    from bizos.policy.person_role import companions
+
+    data_scopes = sorted(companions(data_scopes))
     role_names = list(roles)
     try:
         user = control.create_user(
@@ -155,10 +162,10 @@ def create_user(
         raise AdminError(str(exc)) from exc
     if job:
         user = control.set_user_job_role(user.id, job.key)
-    if department and mode:
-        user = control.set_user_department_modes(user.id, {department: mode})
+    if mode:
+        user = control.set_user_access_mode(user.id, mode)
     _log(ctx, AuditEventType.CONFIG_CHANGED, "USER_CREATED",
-         request={"email": email, "roles": role_names, "departments": dict(user.department_modes)})
+         request={"email": email, "roles": role_names, "role": mode, "data_access": sorted(user.data_scopes)})
     return user
 
 
@@ -202,16 +209,8 @@ def _job_role(name: str) -> JobRole:
     return job
 
 
-def _department_of(job: Optional[JobRole]) -> Optional[str]:
-    """The department a job role stands for (none for Admin and the legacy HR and Employee titles)."""
-    from bizos.policy.department_modes import DEPARTMENTS
-
-    name = job.key.casefold() if job else ""
-    return name if name in DEPARTMENTS else None
-
-
 def _mode(value: Optional[str]) -> str:
-    from bizos.policy.department_modes import DEFAULT_MODE, parse_mode
+    from bizos.policy.person_role import DEFAULT_MODE, parse_mode
 
     if not str(value or "").strip():
         return DEFAULT_MODE
@@ -221,12 +220,11 @@ def _mode(value: Optional[str]) -> str:
         raise AdminError(str(exc)) from exc
 
 
-def set_job_role(ctx: TenantContext, user_id: str, job_role: str, department_mode: Optional[str] = None):
+def set_job_role(ctx: TenantContext, user_id: str, job_role: str, access_mode: Optional[str] = None):
     """Give a person a job role: its permission level, plus its data tags in place of the old role's.
 
-    A department job role also becomes the person's only department, keeping the role (Advise, Draft,
-    Approve, Auto) they had there, or ``department_mode``, or Approve. Admin and Employee clear
-    departments: Admin has every department, Employee (view only) changes nothing.
+    A department job role keeps the person's role (Advise, Draft, Approve, Auto), or sets ``access_mode``,
+    or Approve if they had none.
     """
     user = user_in_client(ctx, user_id)
     job = _job_role(job_role)
@@ -235,83 +233,45 @@ def set_job_role(ctx: TenantContext, user_id: str, job_role: str, department_mod
     set_roles(ctx, user_id, [str(r) for r in roles_for(job, can_approve=Role.APPROVER in user.roles)])
     set_scopes(ctx, user_id, tags_after_change(user.data_scopes, previous, job))
     updated = control.set_user_job_role(user_id, job.key)
-    department = _department_of(job)
-    if department:
-        kept = user.department_modes.get(department)
-        mode = _mode(department_mode) if department_mode else (kept or _mode(None))
-        updated = control.set_user_department_modes(user_id, {department: mode})
-    elif updated.department_modes:
-        # Admin and Employee are levels, not departments: Admin has every department, Employee none.
-        updated = control.set_user_department_modes(user_id, {})
+    if job.level is Role.OPERATOR:
+        mode = _mode(access_mode) if access_mode else (user.access_mode or _mode(None))
+        if mode != updated.access_mode:
+            updated = control.set_user_access_mode(user_id, mode)
     _log(ctx, AuditEventType.CONFIG_CHANGED, "JOB_ROLE_CHANGED",
-         request={"user_id": user_id, "job_role": job.key, "departments": dict(updated.department_modes)})
+         request={"user_id": user_id, "job_role": job.key, "role": updated.access_mode})
     return updated
 
 
-def set_department(ctx: TenantContext, user_id: str, department: str, mode: str):
-    """Give a person a department with a role (Advise, Draft, Approve, Auto), or change that role.
+def set_access_mode(ctx: TenantContext, user_id: str, mode: str):
+    """Set a person's one role: Advise, Draft, Approve or Auto. It applies to all their work.
 
-    Other departments are kept. The department's data tags come with it. A person with no level yet
-    (or an Employee) gets this department as their job role first, which sets the level. ``employee``
-    and ``admin`` are levels, so choosing one replaces the person's departments.
+    A person below the Operator level is raised to it, keeping the right to approve if they had it: the
+    role, not the level, now decides what their changes do.
     """
-    from bizos.policy.department_modes import DEPARTMENT_TAGS, LEVEL_CHOICES, parse_department
-
     user = user_in_client(ctx, user_id)
-    level = str(department or "").strip().casefold()
-    if level in LEVEL_CHOICES:
-        return set_job_role(ctx, user_id, level.upper())
-    try:
-        name = parse_department(department)
-    except ValueError as exc:
-        raise AdminError(str(exc)) from exc
     chosen = _mode(mode)
     if Role.ADMIN in user.roles:
-        raise AdminError("Admins already have every department with full access. Pick another role for them first.")
+        raise AdminError("Admins have full access in every department. Turn off Admin first to give them a role.")
     if Role.OPERATOR not in user.roles:
-        return set_job_role(ctx, user_id, name.upper(), chosen)
-    tags = set(DEPARTMENT_TAGS.get(name, ()))
-    if not tags <= set(user.data_scopes):
-        set_scopes(ctx, user_id, sorted({*user.data_scopes, *tags}))
-    updated = control.set_user_department_modes(user_id, {**user.department_modes, name: chosen})
-    if not updated.job_role:
-        updated = control.set_user_job_role(user_id, name.upper())
-    _log(ctx, AuditEventType.CONFIG_CHANGED, "DEPARTMENT_ACCESS_CHANGED",
-         request={"user_id": user_id, "department": name, "role": chosen})
+        set_roles(ctx, user_id, ["OPERATOR", *(["APPROVER"] if Role.APPROVER in user.roles else [])])
+    updated = control.set_user_access_mode(user_id, chosen)
+    _log(ctx, AuditEventType.CONFIG_CHANGED, "PERSON_ROLE_CHANGED", request={"user_id": user_id, "role": chosen})
     return updated
 
 
-def remove_department(ctx: TenantContext, user_id: str, department: str):
-    """Take one department away from a person, with its data tag. Their other departments are kept.
-
-    The last department cannot be removed: with none left the person would have no department limit at
-    all, which is less strict. Set it to Advise instead, or suspend the person.
-    """
-    from bizos.policy.department_modes import DEPARTMENT_LABELS, DEPARTMENT_TAGS, parse_department
-
+def set_admin(ctx: TenantContext, user_id: str, admin: bool):
+    """Make a person an admin (every department, full access), or turn it off (they keep their role)."""
     user = user_in_client(ctx, user_id)
-    try:
-        name = parse_department(department)
-    except ValueError as exc:
-        raise AdminError(str(exc)) from exc
-    label = DEPARTMENT_LABELS.get(name, name)
-    if name not in user.department_modes:
-        raise AdminNotFound(f"{user.display_name or user.email} does not have the {label} department")
-    rest = {d: m for d, m in user.department_modes.items() if d != name}
-    if not rest:
-        raise AdminConflict(
-            f"{label} is their only department. Add another first, set {label} to Advise, or make them an Employee."
-        )
-    tags = set(DEPARTMENT_TAGS.get(name, ()))
-    if tags & set(user.data_scopes):
-        set_scopes(ctx, user_id, sorted(set(user.data_scopes) - tags))
-    updated = control.set_user_department_modes(user_id, rest)
-    if (updated.job_role or "").casefold() == name:
-        updated = control.set_user_job_role(user_id, sorted(rest)[0].upper())
-    _log(ctx, AuditEventType.CONFIG_CHANGED, "DEPARTMENT_ACCESS_CHANGED",
-         request={"user_id": user_id, "department": name, "role": None})
+    if admin:
+        return set_job_role(ctx, user_id, "ADMIN")
+    if Role.ADMIN not in user.roles:
+        return user
+    # set_roles carries the "not your own Admin" and "keep one active admin" rules.
+    set_roles(ctx, user_id, ["OPERATOR"])
+    control.set_user_job_role(user_id, None)
+    updated = control.set_user_access_mode(user_id, user.access_mode or _mode(None))
+    _log(ctx, AuditEventType.CONFIG_CHANGED, "ADMIN_REMOVED", request={"user_id": user_id})
     return updated
-
 
 
 def set_can_approve(ctx: TenantContext, user_id: str, can_approve: bool):

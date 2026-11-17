@@ -51,8 +51,8 @@ class UserCreate(BaseModel):
     data_scopes: list[str] = Field(default_factory=list)
     #: When set, this decides the permission level and data tags instead of the two fields above.
     job_role: Optional[str] = None
-    #: The person's role in that department: advise, draft, approve or auto (Approve when left out).
-    department_mode: Optional[str] = None
+    #: The person's one role: advise, draft, approve or auto (Approve when left out). Not for admins.
+    access_mode: Optional[str] = None
 
 
 class RoleUpdate(BaseModel):
@@ -65,14 +65,16 @@ class ScopeUpdate(BaseModel):
 
 class JobRoleUpdate(BaseModel):
     job_role: str
-    department_mode: Optional[str] = None
+    access_mode: Optional[str] = None
 
 
-class DepartmentUpdate(BaseModel):
-    #: general, sales, planning, finance, legal, operations, intake, strategy or brand
-    department: str
+class AccessModeUpdate(BaseModel):
     #: advise, draft, approve or auto
     mode: str
+
+
+class AdminUpdate(BaseModel):
+    admin: bool
 
 
 class CanApproveUpdate(BaseModel):
@@ -137,7 +139,7 @@ def create_user(body: UserCreate, ctx: TenantContext = Depends(require_admin)) -
         roles=body.roles,
         data_scopes=body.data_scopes,
         job_role=body.job_role,
-        department_mode=body.department_mode,
+        access_mode=body.access_mode,
     ).to_dict()
 
 
@@ -152,31 +154,29 @@ def set_roles(
 def set_job_role(
     user_id: str, body: JobRoleUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
-    return _run(ops.set_job_role, ctx, user_id, body.job_role, body.department_mode).to_dict()
+    return _run(ops.set_job_role, ctx, user_id, body.job_role, body.access_mode).to_dict()
 
 
-@router.get("/departments")
-def list_departments(ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
-    """The departments an admin can give a person, and the four roles with what each means."""
-    from bizos.policy.department_modes import choices
+@router.get("/person-roles")
+def list_person_roles(ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
+    """The four roles with what each means, and the departments a person's data access can include."""
+    from bizos.policy.person_role import choices
 
     return choices()
 
 
-@router.patch("/users/{user_id}/departments")
-def set_department(
-    user_id: str, body: DepartmentUpdate, ctx: TenantContext = Depends(require_admin)
+@router.patch("/users/{user_id}/access-mode")
+def set_access_mode(
+    user_id: str, body: AccessModeUpdate, ctx: TenantContext = Depends(require_admin)
 ) -> dict[str, Any]:
-    """Give a person a department with a role (Advise, Draft, Approve, Auto), or change that role."""
-    return _run(ops.set_department, ctx, user_id, body.department, body.mode).to_dict()
+    """Set a person's one role: Advise, Draft, Approve or Auto."""
+    return _run(ops.set_access_mode, ctx, user_id, body.mode).to_dict()
 
 
-@router.delete("/users/{user_id}/departments/{department}")
-def remove_department(
-    user_id: str, department: str, ctx: TenantContext = Depends(require_admin)
-) -> dict[str, Any]:
-    """Take one department away from a person. Their last department cannot be removed."""
-    return _run(ops.remove_department, ctx, user_id, department).to_dict()
+@router.patch("/users/{user_id}/admin")
+def set_admin(user_id: str, body: AdminUpdate, ctx: TenantContext = Depends(require_admin)) -> dict[str, Any]:
+    """Make a person an admin, or turn it off. Nobody can remove their own admin, nor the last one."""
+    return _run(ops.set_admin, ctx, user_id, body.admin).to_dict()
 
 
 @router.patch("/users/{user_id}/can-approve")

@@ -177,10 +177,9 @@ MEMORY_ADD = MergedTool(
 
 # --------------------------------------------------------------------------- admin_update_user
 
-_ROLE_FIELDS = ("roles_add", "roles_remove", "job_role", "department_mode")
+_ROLE_FIELDS = ("roles_add", "roles_remove", "job_role")
 _ACCESS_FIELDS = ("access_grant", "access_revoke")
-_DEPARTMENT_FIELDS = ("department", "department_mode", "department_remove")
-
+_MODE_FIELDS = ("role",)
 
 def _names(value: Any) -> list[str]:
     if value is None:
@@ -195,26 +194,12 @@ def _plan_update_user(scope_for, args):
     from bizos import admin_ops as ops
 
     job_name = str(args.get("job_role") or "").strip().upper()
-    department = str(args.get("department") or "").strip()
-    removed = _names(args.get("department_remove"))
+    role = str(args.get("role") or "").strip()
     wants_roles = bool(job_name) or any(_names(args.get(k)) for k in ("roles_add", "roles_remove"))
     wants_access = any(_names(args.get(k)) for k in _ACCESS_FIELDS)
-    wants_departments = bool(department or removed)
-    if not (wants_roles or wants_access or wants_departments):
+    if not (wants_roles or wants_access or role):
         raise MergeArgumentError(
-            "Say what changes: department with department_mode, department_remove, job_role, roles_add, "
-            "roles_remove, access_grant or access_revoke."
-        )
-    if job_name and wants_departments:
-        raise MergeArgumentError(
-            "Use job_role to replace all departments with one, or department/department_remove to add or "
-            "remove one while keeping the rest; not both."
-        )
-    if department and not str(args.get("department_mode") or "").strip():
-        raise MergeArgumentError(
-            "Say the role in that department: advise (just answers), draft (prepares, they review), approve "
-            "(waits for a human before sending email, CRM writes or spending money) or auto (routine work "
-            "runs by itself)."
+            "Say what changes: role, access_grant, access_revoke, job_role, roles_add or roles_remove."
         )
     try:
         user = _find_user(scope_for("admin_set_user_roles"), args.get("user"))
@@ -229,12 +214,9 @@ def _plan_update_user(scope_for, args):
             raise MergeArgumentError(f"job_role must be one of {', '.join(JOB_ROLES)}.")
         if _names(args.get("roles_add")) or _names(args.get("roles_remove")):
             raise MergeArgumentError("Use job_role on its own, or roles_add/roles_remove; a job role sets the level itself.")
-        job_args = {"user": user.id, "job_role": job_name}
-        if str(args.get("department_mode") or "").strip():
-            job_args["department_mode"] = str(args["department_mode"]).strip()
         calls.append(Call(
             "admin_set_user_roles",
-            job_args,
+            {"user": user.id, "job_role": job_name},
             undo=Call("admin_set_user_roles", {"user": user.id, "roles": sorted(str(r) for r in user.roles)}),
         ))
     elif wants_roles:
@@ -249,21 +231,12 @@ def _plan_update_user(scope_for, args):
             {"user": user.id, "roles": sorted(wanted)},
             undo=Call("admin_set_user_roles", {"user": user.id, "roles": current}),
         ))
-    if department:
-        previous = user.department_modes.get(department.casefold())
+    if role:
+        previous = getattr(user, "access_mode", None)
         calls.append(Call(
-            "admin_set_user_department",
-            {"user": user.id, "department": department, "mode": str(args["department_mode"]).strip()},
-            undo=Call("admin_set_user_department",
-                      {"user": user.id, "department": department, "mode": previous or "remove"}),
-        ))
-    for name in removed:
-        previous = user.department_modes.get(name.casefold())
-        calls.append(Call(
-            "admin_set_user_department",
-            {"user": user.id, "department": name, "mode": "remove"},
-            undo=Call("admin_set_user_department", {"user": user.id, "department": name, "mode": previous})
-            if previous else None,
+            "admin_set_user_mode",
+            {"user": user.id, "role": role},
+            undo=Call("admin_set_user_mode", {"user": user.id, "role": previous}) if previous else None,
         ))
     if wants_access:
         calls.append(Call(
@@ -272,39 +245,31 @@ def _plan_update_user(scope_for, args):
         ))
     return calls
 
-
 def _narrow_update_user(schema, allowed):
     roles, access = "admin_set_user_roles" in allowed, "admin_set_user_access" in allowed
-    departments = "admin_set_user_department" in allowed
-    if not (roles or access or departments):
+    mode = "admin_set_user_mode" in allowed
+    if not (roles or access or mode):
         return None
-    dropped = set(() if roles else _ROLE_FIELDS) | set(() if access else _ACCESS_FIELDS)
-    dropped |= set(() if departments else _DEPARTMENT_FIELDS)
-    if roles or departments:
-        dropped.discard("department_mode")
-    return _drop(schema, tuple(sorted(dropped)))
-
+    dropped = (() if roles else _ROLE_FIELDS) + (() if access else _ACCESS_FIELDS) + (() if mode else _MODE_FIELDS)
+    return _drop(schema, dropped)
 
 ADMIN_UPDATE_USER = MergedTool(
     name="admin_update_user",
     domain="admin_users",
-    wraps=("admin_set_user_roles", "admin_set_user_access", "admin_set_user_department"),
+    wraps=("admin_set_user_roles", "admin_set_user_access", "admin_set_user_mode"),
     schema=_schema(
         {
             "user": _s("The user's user_id from admin_list_users"),
-            "roles_add": _arr("Roles to add: VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN"),
-            "roles_remove": _arr("Roles to remove"),
-            "job_role": _s("For 'make him X', 'move him to X', 'change his role to X', 'X person': replace all "
-                           "departments with this one: GENERAL, SALES, PLANNING, FINANCE, LEGAL, OPERATIONS, "
-                           "INTAKE, STRATEGY, BRAND, HR; or EMPLOYEE (view only, no departments) or ADMIN"),
-            "department": _s("Only for 'also', 'too', 'add', 'as well', or changing his role inside a department "
-                             "he has: one department to add or change, keeping the others: general, sales, "
-                             "planning, finance, legal, operations, intake, strategy, brand or hr"),
-            "department_mode": _s("The person's role in that department (or in job_role's): advise, draft, "
-                                  "approve or auto"),
-            "department_remove": _arr("Departments to take away"),
-            "access_grant": _arr("Restricted data areas to grant, e.g. finance, hr, legal"),
-            "access_revoke": _arr("Restricted data areas to revoke"),
+            "roles_add": _arr("Rare: permission levels to add (VIEWER, DRAFTER, APPROVER, OPERATOR, ADMIN)"),
+            "roles_remove": _arr("Rare: permission levels to remove"),
+            "role": _s("The person's one role: advise, draft, approve or auto"),
+            "job_role": _s("For 'make him X', 'move him to X', 'X person': GENERAL, SALES, PLANNING, FINANCE, "
+                           "LEGAL, OPERATIONS, INTAKE, STRATEGY, BRAND, HR (swaps his department), EMPLOYEE "
+                           "(view only) or ADMIN"),
+            "access_grant": _arr("For 'also', 'too', 'X access': data access to add, keeping the rest. Departments "
+                                 "general, sales, planning, finance, legal, ops, intake, strategy, brand, hr; apps "
+                                 "crm, email, calendar"),
+            "access_revoke": _arr("Data access to remove"),
         },
         ["user"],
     ),

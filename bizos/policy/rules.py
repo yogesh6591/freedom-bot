@@ -362,51 +362,48 @@ def rule_mode(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]
     return None
 
 
-def rule_person_department(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
-    """An admin gave this person departments, each with a role: Advise, Draft, Approve or Auto.
+def rule_person_role(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """An admin gave this person one role (Advise, Draft, Approve, Auto) and departments in their data access.
 
-    Only ever narrows (bizos/policy/department_modes.py). Admins have every department. Not applied
+    Only ever narrows (bizos/policy/person_role.py). A write that belongs only to departments the person
+    does not have is refused; otherwise their role decides. Admins have every department. Not applied
     when an approver releases an approved action: the requester's role was applied when it was raised.
     """
-    from bizos.policy.department_modes import DEPARTMENT_LABELS, mode_for_tool, tool_departments
+    from bizos.policy.person_role import (
+        DEPARTMENT_LABELS, MODE_LABELS, describe, departments_of, mode_of, tool_departments,
+    )
 
+    role = req.ctx.access_mode
     if (
-        not inp.spec.write
+        not role
+        or not inp.spec.write
         or req.executing_approved_action
         or inp.spec.skips_mode_queue
         or req.ctx.is_admin
-        or not req.ctx.department_modes
     ):
         return None
-    held = dict(req.ctx.department_modes)
-    mode = mode_for_tool(held, inp.spec)
-    if mode is None:
-        return None
-    covering = sorted(d for d in held if d in tool_departments(inp.spec))
-    names = ", ".join(DEPARTMENT_LABELS.get(d, d) for d in covering)
+    covering = tool_departments(inp.spec)
+    if covering and not covering & departments_of(req.ctx.data_scopes):
+        names = ", ".join(DEPARTMENT_LABELS.get(d, d) for d in sorted(covering))
+        mine = describe(req.ctx.data_scopes) or "none"
+        return Constraint(
+            "PERSON_DEPARTMENT",
+            DENY,
+            f"this is {names} work and your data access does not include it (your departments: {mine}); "
+            "an admin can add it",
+        )
+    mode = mode_of(role)
+    name = MODE_LABELS.get(role, role)
     if mode == ExecutionMode.ADVISE:
-        if not covering:
-            mine = ", ".join(DEPARTMENT_LABELS.get(d, d) for d in sorted(held))
-            reason = (f"this is outside the departments an admin gave you ({mine}), so I can answer "
-                      "but not create, change or send anything")
-        else:
-            reason = (f"an admin set your {names} role to Advise, so I can answer but not create, "
-                      "change or send anything")
-        return Constraint("PERSON_DEPT_ADVISE", DENY, reason)
+        return Constraint("PERSON_ROLE_ADVISE", DENY,
+                          f"your role is {name}, so I can answer but not create, change or send anything")
     if mode == ExecutionMode.DRAFT:
-        return Constraint(
-            "PERSON_DEPT_DRAFT",
-            DRAFT_ONLY,
-            f"an admin set your {names} role to Draft, so this is prepared for your review rather than done",
-        )
+        return Constraint("PERSON_ROLE_DRAFT", DRAFT_ONLY,
+                          f"your role is {name}, so this is prepared for your review rather than done")
     if mode == ExecutionMode.WAIT_FOR_APPROVAL:
-        return Constraint(
-            "PERSON_DEPT_APPROVAL",
-            REQUIRE_APPROVAL,
-            f"an admin set your {names} role to Approve, so a human must approve this before it runs",
-        )
+        return Constraint("PERSON_ROLE_APPROVAL", REQUIRE_APPROVAL,
+                          f"your role is {name}, so a human must approve this before it runs")
     return None
-
 
 def rule_auto_risk_ceiling(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """In AUTO mode, only risk at or below the configured ceiling runs unattended."""
@@ -539,7 +536,7 @@ RULES: tuple[Rule, ...] = (
     rule_critical_risk,
     rule_risk_floor,
     rule_mode,
-    rule_person_department,
+    rule_person_role,
     rule_auto_risk_ceiling,
     rule_record_limit,
     rule_financial_limit,

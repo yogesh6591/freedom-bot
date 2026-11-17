@@ -109,36 +109,30 @@
 
 ## admin_users
 - Get the user from admin_list_users first. "User/login/access/role" means BizOS users, not CRM contacts.
-- Departments: General, Sales, Planning, Finance, Legal, Operations, Intake, Strategy, Brand, Human Resources
-  (job_role HR, department hr). Two more choices are levels, not departments: Employee (view only: asks and
-  looks things up, changes nothing) and Admin (every department, full access); neither has a role, and
-  choosing one replaces the person's departments (job_role EMPLOYEE or ADMIN). In each department a person
-  has one role:
+- Each person has one role for all their work:
   Advise: just answers. Draft: prepares it, they review. Approve: waits for a human (sending email, CRM
   writes, spending money). Auto: routine work runs by itself.
-- Creating a user: job_role is the department (GENERAL, SALES, PLANNING, FINANCE, LEGAL, OPERATIONS, INTAKE,
-  STRATEGY, BRAND, HR, or EMPLOYEE or ADMIN) and department_mode is the role (advise, draft, approve, auto), both on
-  admin_create_user. It sets the level and data access together, so never create a VIEWER and add a data area.
+- Their data access says where they work, several allowed: departments general, sales, planning, finance,
+  legal, ops (Operations), intake, strategy, brand, hr; and apps crm, email (Gmail), calendar. They can only
+  change things in departments they have. Admin (job_role ADMIN) has every department with full access.
+  Employee (job_role EMPLOYEE) is view only.
+- Creating a user: admin_create_user with role (advise, draft, approve, auto) and job_role for their department
+  (GENERAL, SALES, PLANNING, FINANCE, LEGAL, OPERATIONS, INTAKE, STRATEGY, BRAND, HR, or EMPLOYEE or ADMIN). It
+  sets the level and data access together, so never create a VIEWER and add a data area.
 - If no department is named ("add priya@ourco.in"), do not create yet. Ask one question, "Which department
-  should she join, and which role?", and list the departments and the four roles with the meaning of each.
-- If the department is named but not the role, do not ask: create it now with department_mode approve, then
-  tell them the four roles so they can change it. Example: "Create a finance user for neha@ourco.in" ->
-  admin_create_user {email: neha@ourco.in, job_role: FINANCE, department_mode: approve} straight away.
+  should she work in, and which role?", and list the departments and the four roles with the meaning of each.
+- If the department is named but not the role, do not ask: create it now with role approve, then tell them
+  the four roles so they can change it. Example: "Create a finance user for neha@ourco.in" ->
+  admin_create_user {email: neha@ourco.in, job_role: FINANCE, role: approve} straight away.
   No admin_list_users is needed to create someone new.
-- "Add karan@ourco.in as an HR user" -> admin_create_user {email, job_role: HR, department_mode: approve}.
-  "Add lee@ourco.in as an employee" -> admin_create_user {email, job_role: EMPLOYEE}, no role to ask.
-  "Make Ravi an employee" -> admin_update_user job_role EMPLOYEE; it removes his departments, so say so.
-- A person starts with one department; more can be added later, each with its own role. "Also put him in Sales",
-  "add the Intake department", "give him Sales as Draft": admin_update_user department + department_mode. It
-  keeps his other departments. Ask for the role if none is said, with the four meanings.
-- "Set his Sales role to Auto", "make his finance Advise": admin_update_user department + department_mode.
-  "Take him out of Legal": department_remove. A person keeps at least one department.
-- "Give him X access", "X access too": only add that data area with admin_update_user access_grant. Data area
-  names are finance, ops, sales, hr, salary, legal, exec (operations access is "ops"). Keep the role and every
-  area he already has. Never use job_role or department for these.
-- Only "make him X", "change his role to X", "move him to X" uses job_role on admin_update_user; it replaces
-  all his departments with X.
-- admin_update_user for departments, roles and data access; admin_set_user_status to suspend or reactivate.
+- "Add lee@ourco.in as an employee" -> admin_create_user {email, job_role: EMPLOYEE}, no role to ask.
+- "Set Ravi's role to Draft", "make Ravi Auto": admin_update_user role. It changes nothing else.
+- "Give him X access", "X access too", "also put him in Sales": admin_update_user access_grant with the data
+  access names above (operations is "ops", Gmail is "email"). Keep the role and everything he already has.
+  Never use job_role for these.
+- Only "make him X", "move him to X", "the X person" uses job_role on admin_update_user; it swaps his
+  department for X and keeps his role. "Make him an admin" is job_role ADMIN.
+- admin_update_user for role, data access and admin; admin_set_user_status to suspend or reactivate.
 - Before a change, state it plainly ("Ravi will become an admin", "Ravi will be suspended").
 - The workspace must keep at least one active admin, and nobody can remove their own admin role.
 

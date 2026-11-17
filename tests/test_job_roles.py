@@ -28,8 +28,9 @@ PASSWORD = "bizos-dev-password"
     ("FINANCE", Role.OPERATOR, ("finance",)),
     ("OPERATIONS", Role.OPERATOR, ("ops",)),
     ("SALES", Role.OPERATOR, ("sales",)),
-    ("INTAKE", Role.OPERATOR, ()),
-    ("PLANNING", Role.OPERATOR, ()),
+    # Every department now has a data access tag that says the person works there.
+    ("INTAKE", Role.OPERATOR, ("intake",)),
+    ("PLANNING", Role.OPERATOR, ("planning",)),
     ("ADMIN", Role.ADMIN, ()),
     ("EMPLOYEE", Role.VIEWER, ()),
 ])

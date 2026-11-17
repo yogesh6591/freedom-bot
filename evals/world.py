@@ -194,7 +194,7 @@ class World:
                     return User(id=u["id"], client_id=scope.ctx.client_id, email=u.get("email", ""),
                                 display_name=u.get("name", ""), roles=frozenset(Role(r) for r in u.get("roles") or ["VIEWER"]),
                                 status=u.get("status", "ACTIVE"), data_scopes=frozenset(u.get("data_scopes") or []),
-                                department_modes=dict(u.get("departments") or {}))
+                                access_mode=u.get("role"))
             return real(scope, ref)
 
         return find

@@ -59,9 +59,9 @@ class TenantContext:
     display_name: Optional[str] = None
     #: Restricted data areas this user may see (FB-037), from the user record.
     data_scopes: frozenset[str] = frozenset()
-    #: Departments an admin gave this person, as ``(department, role)`` pairs (advise, draft, approve,
-    #: auto). Only ever narrows writes (bizos/policy/department_modes.py). From the user record.
-    department_modes: tuple[tuple[str, str], ...] = ()
+    #: The person's role an admin set: advise, draft, approve or auto. Only ever narrows writes, and
+    #: their departments come from ``data_scopes`` (bizos/policy/person_role.py). From the user record.
+    access_mode: Optional[str] = None
     #: Non-authoritative extras (session id, run id) useful for audit.
     attributes: dict = field(default_factory=dict, compare=False)
 

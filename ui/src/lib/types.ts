@@ -29,8 +29,8 @@ export interface SessionUser {
   job_role_label?: string | null
   can_approve?: boolean
   data_scopes?: string[]
-  /** Departments an admin gave this person, each with their role in it. */
-  department_modes?: Record<string, DepartmentMode>
+  /** The person's one role (advise, draft, approve, auto). Departments are in data_scopes. */
+  access_mode?: DepartmentMode | null
   /** M15-20: may open the cross-client owner view. */
   is_platform_owner?: boolean
 }

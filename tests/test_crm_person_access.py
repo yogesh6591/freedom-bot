@@ -1,6 +1,6 @@
 """Whose CRM login an approved change runs on, and who owns new HubSpot records.
 
-The per-person CRM level is gone: department roles (bizos/policy/department_modes.py) hold a person back now.
+The per-person CRM level is gone: the person's one role (bizos/policy/person_role.py) holds them back now.
 
 Mocked connectors only: nothing reaches HubSpot.
 """
@@ -21,14 +21,15 @@ from bizos.types import APP_AREAS, PolicyEffect, Role
 
 CONNECTED = frozenset({"email", "calendar", "crm"})
 LEVEL_ROLE = {"approval": "approve", "draft": "draft"}
+SALES = (*APP_AREAS, "sales")
 
 
-def person(client, *, level=None, role=Role.OPERATOR, tags=APP_AREAS):
+def person(client, *, level=None, role=Role.OPERATOR, tags=SALES):
     user = control.create_user(client_id=client.id, email=f"{uuid4().hex[:10]}@{client.slug}.example.com",
                                password="test-only-password-1", display_name="Test", roles=(role,),
                                created_by="test", data_scopes=tags)
     if level:
-        user = control.set_user_department_modes(user.id, {"sales": LEVEL_ROLE[level]})
+        user = control.set_user_access_mode(user.id, LEVEL_ROLE[level])
     return control.build_context(user)
 
 

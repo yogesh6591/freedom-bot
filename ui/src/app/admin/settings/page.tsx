@@ -21,11 +21,9 @@ import { AllWorkspaces } from '@/components/owner/WorkspaceMembers'
 import { NewClientPanel } from '@/app/owner/NewClientPanel'
 import { useSession } from '@/components/SessionProvider'
 import {
-  DATA_TAGS,
+  APP_TAGS,
   DEPARTMENTS,
   DEPARTMENT_MODES,
-  LEVEL_CHOICES,
-  departmentLabel,
   modeMeaning,
   tagLabel,
   type AccessRequest
@@ -1089,125 +1087,60 @@ function AccessRequests({ onDecided }: { onDecided: () => Promise<void> }) {
 const selectClass =
   'min-h-9 rounded-lg border border-border bg-background-secondary px-2.5 text-[13px] text-primary'
 
-/** One person's departments, each with their role in it (Advise, Draft, Approve, Auto). Admins only. */
-function DepartmentAccess({
-  user,
-  onSet,
-  onRemove
+/** A data access tag on or off. HR also brings salary data. */
+function withTag(scopes: string[], tag: string, on: boolean): string[] {
+  const out = new Set(scopes)
+  const group = tag === 'hr' ? ['hr', 'salary'] : [tag]
+  for (const t of group) {
+    if (on) out.add(t)
+    else out.delete(t)
+  }
+  return Array.from(out)
+}
+
+/** The data access chips: departments, then apps. */
+function DataAccessChips({
+  scopes,
+  onToggle
 }: {
-  user: SessionUser
-  onSet: (department: string, mode: DepartmentMode) => void
-  onRemove: (department: string) => void
+  scopes: string[]
+  onToggle: (tag: string, on: boolean) => void
 }) {
-  const isAdmin = user.roles.includes('ADMIN')
-  const isEmployee = !isAdmin && user.job_role === 'EMPLOYEE'
-  const held = isAdmin ? [] : Object.entries(user.department_modes ?? {})
-  const missing = DEPARTMENTS.filter(
-    (d) => isAdmin || !(user.department_modes ?? {})[d.value]
-  )
-  const levels = LEVEL_CHOICES.filter(
-    (l) => !(l.value === 'admin' ? isAdmin : isEmployee)
-  )
-  const level = isAdmin ? LEVEL_CHOICES[1] : isEmployee ? LEVEL_CHOICES[0] : null
   return (
-    <div className="flex min-w-[15rem] flex-col gap-2">
-      {level && (
-        <div className="flex flex-col gap-0.5">
-          <span className="text-[13px] font-medium text-primary">{level.label}</span>
-          <span className="text-[11px] leading-4 text-muted">{level.meaning}</span>
-        </div>
-      )}
-      {!level && held.length === 0 && (
-        <span className="text-xs text-muted">
-          No department yet. Add one to give this person access.
-        </span>
-      )}
-      {held.map(([department, mode]) => (
-        <div key={department} className="flex flex-col gap-0.5">
-          <div className="flex items-center gap-1.5">
-            <span className="w-20 text-[13px] text-primary">
-              {departmentLabel(department)}
-            </span>
-            <select
-              aria-label={`${departmentLabel(department)} role for ${user.display_name}`}
-              value={mode}
-              onChange={(event) =>
-                onSet(department, event.target.value as DepartmentMode)
-              }
-              className={selectClass}
-            >
-              {DEPARTMENT_MODES.map((m) => (
-                <option key={m.value} value={m.value} title={m.meaning}>
-                  {m.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              aria-label={`Remove ${departmentLabel(department)} from ${user.display_name}`}
-              title={
-                held.length === 1
-                  ? 'A person keeps at least one department. Add another first.'
-                  : `Remove ${departmentLabel(department)}`
-              }
-              disabled={held.length === 1}
-              onClick={() => onRemove(department)}
-              className="min-h-7 rounded-md px-1.5 text-sm text-muted hover:text-primary disabled:opacity-30"
-            >
-              ×
-            </button>
-          </div>
-          <span className="pl-[5.4rem] text-[11px] leading-4 text-muted">
-            {modeMeaning(mode)}
-          </span>
+    <div className="flex max-w-md flex-col gap-2">
+      {[
+        { title: 'Departments', tags: DEPARTMENTS },
+        { title: 'Apps', tags: APP_TAGS }
+      ].map((group) => (
+        <div key={group.title} className="flex flex-wrap gap-1.5">
+          {group.tags.map((tag) => {
+            const on = scopes.includes(tag.value)
+            return (
+              <TagChip
+                key={tag.value}
+                label={tag.label}
+                on={on}
+                onClick={() => onToggle(tag.value, !on)}
+              />
+            )
+          })}
         </div>
       ))}
-      <select
-        aria-label={`Add a department for ${user.display_name}`}
-        value=""
-        onChange={(event) => {
-          const choice = event.target.value
-          if (!choice) return
-          const replaces =
-            LEVEL_CHOICES.some((l) => l.value === choice) || isAdmin
-          if (
-            replaces &&
-            !window.confirm(
-              `This replaces ${user.display_name}'s current access. Continue?`
-            )
-          )
-            return
-          onSet(choice, 'approve')
-        }}
-        className={`${selectClass} text-muted`}
-      >
-        <option value="">
-          {level ? 'Change to a department' : '+ Add department'}
-        </option>
-        {missing.map((d) => (
-          <option key={d.value} value={d.value}>
-            {d.label}
-          </option>
-        ))}
-        {levels.map((l) => (
-          <option key={l.value} value={l.value}>
-            {l.label}: {l.meaning}
-          </option>
-        ))}
-      </select>
     </div>
   )
 }
 
 function Users() {
   const [users, setUsers] = useState<SessionUser[]>([])
-  const [form, setForm] = useState({
+  const empty = {
     email: '',
     password: '',
     display_name: '',
-    department: '',
-    department_mode: '' as DepartmentMode | ''
-  })
+    access_mode: '' as DepartmentMode | '',
+    data_scopes: [] as string[],
+    admin: false
+  }
+  const [form, setForm] = useState(empty)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -1226,21 +1159,16 @@ function Users() {
   async function create(event: React.FormEvent) {
     event.preventDefault()
     try {
-      const level = LEVEL_CHOICES.some((l) => l.value === form.department)
       await api.post('/api/users', {
         email: form.email,
         password: form.password,
         display_name: form.display_name,
-        job_role: form.department.toUpperCase(),
-        department_mode: level ? undefined : form.department_mode
+        data_scopes: form.data_scopes,
+        ...(form.admin
+          ? { job_role: 'ADMIN' }
+          : { access_mode: form.access_mode })
       })
-      setForm({
-        email: '',
-        password: '',
-        display_name: '',
-        department: '',
-        department_mode: ''
-      })
+      setForm(empty)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create user')
@@ -1257,31 +1185,12 @@ function Users() {
     }
   }
 
-  async function removeDepartment(user: SessionUser, department: string) {
-    try {
-      await api.del(`/api/users/${user.id}/departments/${department}`)
-      await load()
-    } catch (err) {
-      await load()
-      setError(err instanceof Error ? err.message : 'Could not change access')
-    }
-  }
-
-  function toggleTag(user: SessionUser, area: string) {
-    const current = new Set(user.data_scopes ?? [])
-    if (current.has(area)) current.delete(area)
-    else current.add(area)
-    void update(`/api/users/${user.id}/scopes`, {
-      data_scopes: Array.from(current)
-    })
-  }
-
   return (
     <>
       <AccessRequests onDecided={load} />
       <Panel
         title="Users"
-        description="A person starts with one department and you can add more. In each department they have a role: Advise just answers; Draft prepares it and they review; Approve waits for a human before sending email, CRM writes or spending money; Auto runs routine work by itself. Workspace rules still apply on top. Employee can only ask and look things up; Admin has every department with full access. Tags set what they can see: apps like CRM and Gmail, and restricted data."
+        description="Each person has one role for all their work: Advise just answers; Draft prepares it and they review; Approve waits for a human before sending email, CRM writes or spending money; Auto runs routine work by itself. Workspace rules still apply on top. Data access sets where they work: the departments they can act in (pick several) and the apps they can use. Admin has every department with full access."
       >
         {error && <ErrorNote>{error}</ErrorNote>}
         <DataTable
@@ -1291,155 +1200,182 @@ function Users() {
             { key: 'e', header: 'Email', render: (u) => displayEmail(u.email) },
             { key: 'n', header: 'Name', render: (u) => u.display_name },
             {
-              key: 'd',
-              header: 'Departments and roles',
-              render: (u) => (
-                <DepartmentAccess
-                  user={u}
-                  onSet={(department, mode) =>
-                    u.roles.includes('ADMIN')
-                      ? void update(`/api/users/${u.id}/job-role`, {
-                          job_role: department.toUpperCase(),
-                          department_mode: mode
+              key: 'r',
+              header: 'Role',
+              render: (u) =>
+                u.roles.includes('ADMIN') ? (
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[13px] font-medium text-primary">Admin</span>
+                    <span className="text-[11px] leading-4 text-muted">
+                      Every department, full access.
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex max-w-[14rem] flex-col gap-1">
+                    <select
+                      aria-label={`Role for ${u.display_name}`}
+                      value={u.access_mode ?? ''}
+                      onChange={(event) =>
+                        void update(`/api/users/${u.id}/access-mode`, {
+                          mode: event.target.value
                         })
-                      : void update(`/api/users/${u.id}/departments`, {
-                          department,
-                          mode
-                        })
-                  }
-                  onRemove={(department) => void removeDepartment(u, department)}
-                />
-              )
+                      }
+                      className={selectClass}
+                    >
+                      {!u.access_mode && (
+                        <option value="" disabled>
+                          Choose role
+                        </option>
+                      )}
+                      {DEPARTMENT_MODES.map((m) => (
+                        <option key={m.value} value={m.value} title={m.meaning}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    {u.access_mode && (
+                      <span className="text-[11px] leading-4 text-muted">
+                        {modeMeaning(u.access_mode)}
+                      </span>
+                    )}
+                  </div>
+                )
             },
             {
               key: 'tags',
-              header: 'Access tags',
-              render: (u) =>
-                u.roles.includes('ADMIN') ? (
-                  <span className="text-xs text-muted">
-                    All areas and approvals
-                  </span>
-                ) : Object.keys(u.department_modes ?? {}).length === 0 &&
-                  !u.job_role ? (
-                  <span className="text-xs text-muted">
-                    Add a department first: a department gives the person its access.
-                  </span>
-                ) : (
-                  <div className="flex max-w-md flex-wrap gap-1.5">
-                    {DATA_TAGS.map((tag) => (
-                      <TagChip
-                        key={tag.value}
-                        label={tag.label}
-                        on={(u.data_scopes ?? []).includes(tag.value)}
-                        onClick={() => toggleTag(u, tag.value)}
-                      />
-                    ))}
-                    <TagChip
-                      label="Can approve"
-                      on={Boolean(u.can_approve)}
-                      onClick={() =>
-                        void update(`/api/users/${u.id}/can-approve`, {
-                          can_approve: !u.can_approve
+              header: 'Data access',
+              render: (u) => (
+                <div className="flex max-w-md flex-col gap-2">
+                  {u.roles.includes('ADMIN') ? (
+                    <span className="text-xs text-muted">All departments and apps</span>
+                  ) : (
+                    <DataAccessChips
+                      scopes={u.data_scopes ?? []}
+                      onToggle={(tag, on) =>
+                        void update(`/api/users/${u.id}/scopes`, {
+                          data_scopes: withTag(u.data_scopes ?? [], tag, on)
                         })
                       }
                     />
+                  )}
+                  <div className="flex flex-wrap gap-1.5">
+                    {!u.roles.includes('ADMIN') && (
+                      <TagChip
+                        label="Can approve"
+                        on={Boolean(u.can_approve)}
+                        onClick={() =>
+                          void update(`/api/users/${u.id}/can-approve`, {
+                            can_approve: !u.can_approve
+                          })
+                        }
+                      />
+                    )}
+                    <TagChip
+                      label="Admin"
+                      on={u.roles.includes('ADMIN')}
+                      onClick={() => {
+                        const admin = !u.roles.includes('ADMIN')
+                        if (
+                          admin &&
+                          !window.confirm(
+                            `Make ${u.display_name} an admin with full access to every department?`
+                          )
+                        )
+                          return
+                        void update(`/api/users/${u.id}/admin`, { admin })
+                      }}
+                    />
                   </div>
-                )
+                </div>
+              )
             }
           ]}
         />
       </Panel>
 
       <Panel title="Add user">
-        <form onSubmit={create} className="grid gap-2 md:grid-cols-6">
-          <Field label="Email">
-            <input
-              className={inputClass}
-              type="email"
-              required
-              value={form.email}
-              onChange={(event) =>
-                setForm({ ...form, email: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Name">
-            <input
-              className={inputClass}
-              value={form.display_name}
-              onChange={(event) =>
-                setForm({ ...form, display_name: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Password" hint="Minimum 12 characters.">
-            <input
-              className={inputClass}
-              type="password"
-              minLength={12}
-              required
-              value={form.password}
-              onChange={(event) =>
-                setForm({ ...form, password: event.target.value })
-              }
-            />
-          </Field>
-          <Field label="Department">
-            <select
-              className={inputClass}
-              required
-              value={form.department}
-              onChange={(event) =>
-                setForm({ ...form, department: event.target.value })
-              }
-            >
-              <option value="" disabled>
-                Choose department
-              </option>
-              {DEPARTMENTS.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-              {LEVEL_CHOICES.map((l) => (
-                <option key={l.value} value={l.value}>
-                  {l.label}: {l.meaning}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {!LEVEL_CHOICES.some((l) => l.value === form.department) && (
-            <Field
-              label="Role in this department"
-              hint={
-                form.department_mode
-                  ? modeMeaning(form.department_mode)
-                  : 'More departments can be added later.'
-              }
-            >
-              <select
+        <form onSubmit={create} className="grid gap-3">
+          <div className="grid gap-2 md:grid-cols-4">
+            <Field label="Email">
+              <input
                 className={inputClass}
+                type="email"
                 required
-                value={form.department_mode}
+                value={form.email}
+                onChange={(event) => setForm({ ...form, email: event.target.value })}
+              />
+            </Field>
+            <Field label="Name">
+              <input
+                className={inputClass}
+                value={form.display_name}
                 onChange={(event) =>
-                  setForm({
-                    ...form,
-                    department_mode: event.target.value as DepartmentMode
-                  })
+                  setForm({ ...form, display_name: event.target.value })
+                }
+              />
+            </Field>
+            <Field label="Password" hint="Minimum 12 characters.">
+              <input
+                className={inputClass}
+                type="password"
+                minLength={12}
+                required
+                value={form.password}
+                onChange={(event) => setForm({ ...form, password: event.target.value })}
+              />
+            </Field>
+            {!form.admin && (
+              <Field
+                label="Role"
+                hint={
+                  form.access_mode
+                    ? modeMeaning(form.access_mode)
+                    : 'Applies to all their work.'
                 }
               >
-                <option value="" disabled>
-                  Choose role
-                </option>
-                {DEPARTMENT_MODES.map((m) => (
-                  <option key={m.value} value={m.value}>
-                    {m.label}: {m.meaning}
+                <select
+                  className={inputClass}
+                  required
+                  value={form.access_mode}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      access_mode: event.target.value as DepartmentMode
+                    })
+                  }
+                >
+                  <option value="" disabled>
+                    Choose role
                   </option>
-                ))}
-              </select>
-            </Field>
-          )}
-          <div className="flex items-end">
+                  {DEPARTMENT_MODES.map((m) => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}: {m.meaning}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </div>
+          <Field label="Data access" hint="Pick the departments they work in and the apps they use.">
+            <div className="flex flex-col gap-2">
+              {!form.admin && (
+                <DataAccessChips
+                  scopes={form.data_scopes}
+                  onToggle={(tag, on) =>
+                    setForm({ ...form, data_scopes: withTag(form.data_scopes, tag, on) })
+                  }
+                />
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                <TagChip
+                  label="Admin"
+                  on={form.admin}
+                  onClick={() => setForm({ ...form, admin: !form.admin })}
+                />
+              </div>
+            </div>
+          </Field>
+          <div>
             <Btn type="submit" size="sm">
               Create
             </Btn>

@@ -207,14 +207,13 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: the request is approved, closed, or returned. {gate}
     """), id_fields=("action_id",)),
     "admin_update_user": M("admin_users", d("""
-        Change one BizOS user's departments, role or data access. department + department_mode adds or
-        changes one department; job_role replaces them all.
-        Use when: "also put Ravi in Sales as Draft" (department), "move Lee to finance" (job_role), "make
-        Ravi an admin".
+        Change a BizOS user's role (advise, draft, approve, auto) or data access (departments, apps).
+        access_grant adds and keeps the rest; job_role moves them to one department.
+        Use when: "set Ravi's role to Draft", "give Ravi finance access too", "move Lee to finance".
         Don't use: suspending -> admin_set_user_status; a tool's roles -> admin_set_tool_permission; a
         pack for everyone -> admin_toggle_domain.
         Needs: user from admin_list_users.
-        Effect: all changes apply or none do. You cannot remove your own Admin role. {gate}
+        Effect: all changes apply or none do. You cannot remove your own Admin. {gate}
     """), id_fields=("user",)),
     "youtube_video": M("youtube", d("""
         Get one video's title, statistics and details, and with include_comments what viewers said.
@@ -809,9 +808,9 @@ TOOL_META: dict[str, AgentMeta] = {
         the CRM.
     """)),
     "admin_create_user": M("admin_users", d("""
-        Create a BizOS login for a new person: job_role is their department (or ADMIN) and
-        department_mode their role in it (advise, draft, approve, auto; approve if not said, do not ask).
-        A temporary password is returned once.
+        Create a BizOS login for a new person: role (advise, draft, approve, auto; approve if not said,
+        do not ask) and job_role, their department (or ADMIN), plus any extra data_access. A temporary
+        password is returned once.
         Use when: "add priya@ourco.in to finance as Draft", "give Lee a login".
         Don't use: a customer or lead -> crm_create_contact; an existing user -> admin_update_user.
         Effect: the person can log in. {gate}
@@ -826,16 +825,17 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: changes what they can do. You cannot remove your own Admin role or the last active
         admin. {gate}
     """), id_fields=("user",)),
-    "admin_set_user_department": M("admin_users", d("""
-        Give a BizOS user one more department with their role in it (advise, draft, approve, auto),
-        change that role, or remove it (mode remove). Other departments are kept.
-        Use when: "also put Ravi in Sales as Draft", "take Lee out of Legal".
-        Don't use: replacing all departments -> admin_set_user_roles; data areas -> admin_set_user_access.
+    "admin_set_user_mode": M("admin_users", d("""
+        Set a BizOS user's one role, which applies to all their work: advise (just answers), draft
+        (prepares, they review), approve (waits for a human) or auto (routine work runs by itself).
+        Use when: "set Ravi's role to Draft", "make Lee Auto".
+        Don't use: departments or apps -> admin_set_user_access; admin -> admin_set_user_roles.
         Needs: the user from admin_list_users.
-        Effect: changes what they can send, write or draft there. {gate}
+        Effect: changes whether their emails and CRM writes run, wait or stay drafts. {gate}
     """), id_fields=("user",)),
     "admin_set_user_access": M("admin_users", d("""
-        Grant or revoke a BizOS user's restricted data areas (such as finance, hr, legal, exec, salary).
+        Grant or revoke a BizOS user's data access: departments (general, sales, planning, finance, legal,
+        ops, intake, strategy, brand, hr) and apps (crm, email, calendar).
         Use when: "give Ravi finance access".
         Don't use: roles -> admin_set_user_roles; a pack for everyone -> admin_toggle_domain;
         suspending -> admin_set_user_status.

@@ -323,9 +323,8 @@ class User:
     platform_owner: bool = False
     #: The job title an admin picked. Read it through ``effective_job_role``.
     job_role: Optional[str] = None
-    #: Departments an admin gave this person, ``{department: role}``. Only ever narrows
-    #: (bizos/policy/department_modes.py).
-    department_modes: dict[str, str] = field(default_factory=dict)
+    #: The person's role: advise, draft, approve or auto (bizos/policy/person_role.py). ``None``: not set.
+    access_mode: Optional[str] = None
 
     @property
     def primary_role(self) -> Role:
@@ -358,7 +357,7 @@ class User:
             "job_role_label": self.job_role_label,
             "can_approve": Role.APPROVER in self.roles or Role.ADMIN in self.roles,
             "data_scopes": sorted(self.data_scopes),
-            "department_modes": dict(sorted(self.department_modes.items())),
+            "access_mode": self.access_mode,
             "is_platform_owner": self.platform_owner,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
