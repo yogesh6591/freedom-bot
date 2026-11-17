@@ -422,6 +422,8 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         prospeo_on = bool(composio._active_accounts(ctx).get("prospeo"))
     except Exception:  # noqa: BLE001 - a status lookup that fails counts as not connected
         prospeo_on = False
+    if not prospeo_on:
+        exa_on = False
 
     rules = get_prospecting_rules()
     place = _state(state)
@@ -526,7 +528,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             for p in nomail) + ". Their Email shows No email yet. They can be researched but cannot be emailed.")
     if notes:
         lines.append(" ".join(dict.fromkeys(notes)))
-    if not exa_on and not key:
+    if not exa_on:
         lines.append("Exa is not connected, so web search found the firms.")
     if not prospeo_on:
         lines.append("Prospeo is not connected or stopped, so emails come from public pages and are not verified.")
