@@ -22,6 +22,11 @@ export function isSignInPath(path: string): boolean {
   return path === '/' || path === '/admin' || path === '/login'
 }
 
+/** Pages anyone may open signed out: self-serve signup and onboarding. */
+export function isPublicPath(path: string): boolean {
+  return path === '/signup' || path.startsWith('/signup/')
+}
+
 /** Where a signed-out visitor to ``path`` signs in. */
 export function signInPathFor(path: string): string {
   return isHomePath(path) || path === '/' ? '/' : '/admin'

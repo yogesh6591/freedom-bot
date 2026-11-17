@@ -130,6 +130,10 @@ services:
         NEXT_PUBLIC_API_URL: https://freedombot-core.cloud.cepoch.com
     container_name: fb-core-ui
     restart: unless-stopped
+    environment:
+      # /signup (self-serve onboarding) calls the API on the internal network with the shared signup key.
+      FREEDOMBOT_API_URL: http://api:8000
+      SELF_SERVE_SIGNUP_KEY: ${SELF_SERVE_SIGNUP_KEY:-}
     depends_on:
       api:
         condition: service_healthy

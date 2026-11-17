@@ -13,7 +13,7 @@
  * tabs, and reloads a tab whose workspace changed underneath it.
  */
 
-import { isHomePath, isSignInPath, setAdminUnlocked, signInPathFor } from '@/lib/panel'
+import { isHomePath, isPublicPath, isSignInPath, setAdminUnlocked, signInPathFor } from '@/lib/panel'
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { api, ApiError, setExpectedSession, WORKSPACE_CHANGED_EVENT } from '@/lib/api'
@@ -57,7 +57,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     } catch (err) {
       setMe(null)
       if (err instanceof ApiError && err.status === 401) {
-        if (!isSignInPath(pathname)) router.replace(signInPathFor(pathname))
+        if (!isSignInPath(pathname) && !isPublicPath(pathname)) router.replace(signInPathFor(pathname))
       } else {
         setError(err instanceof Error ? err.message : 'Could not load session')
       }
