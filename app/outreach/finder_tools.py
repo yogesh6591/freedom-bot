@@ -22,6 +22,7 @@ from typing import Any, Optional
 
 import httpx
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from acquisition.config import get_settings
 from acquisition.models.prospect import Prospect
@@ -371,6 +372,7 @@ def _outside(facts: dict, place: str) -> bool:
 
 
 def _taken(call: Call, domain: str) -> bool:
+    """True when this website is already saved in this organisation (another organisation may hold it too)."""
     return (
         call.db.scalar(
             select(Prospect.id).where(prospect_client_clause(), Prospect.domain == domain).limit(1)
@@ -380,7 +382,7 @@ def _taken(call: Call, domain: str) -> bool:
 
 
 def _saved_domains(call: Call) -> set[str]:
-    """Websites already saved, so web search is told not to return them again."""
+    """Websites already saved in this organisation, so web search is told not to return them again."""
     try:
         rows = call.db.scalars(select(Prospect.domain).where(prospect_client_clause()).limit(400)).all()
     except Exception:  # noqa: BLE001 - the per-firm check still stops repeats
@@ -535,15 +537,24 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
                 if len(nomail) >= MAX_NO_EMAIL:
                     skipped.append(f"{name}: no email found for {person}")
                     continue
-                nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts,
-                                    unique_placeholder_email(), via_exa=not row.get("_web"), relaxed=step_note))
+                try:
+                    nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts,
+                                        unique_placeholder_email(), via_exa=not row.get("_web"), relaxed=step_note))
+                except IntegrityError:
+                    call.db.rollback()  # saved elsewhere meanwhile: skip this one and carry on
+                    skipped.append(f"{name}: already saved")
                 continue
             if lookup.by_email(call.db, email) is not None:
                 skipped.append(f"{person} <{email}>: already saved")
                 continue
             note = step_note
-            made = _save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, verified,
-                         via_exa=not row.get("_web"), relaxed=note)
+            try:
+                made = _save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, verified,
+                             via_exa=not row.get("_web"), relaxed=note)
+            except IntegrityError:
+                call.db.rollback()  # saved elsewhere meanwhile: skip this one and carry on
+                skipped.append(f"{name}: already saved")
+                continue
             added.append((made, "verified by Prospeo" if verified else "found on a public page, not verified", note))
     lines = [f"Added {len(added)} of {want} asked: " + "; ".join(
         f"{p.executive_name} <{p.email}> ({p.company}; category: {p.icp_category or '-'}; "
