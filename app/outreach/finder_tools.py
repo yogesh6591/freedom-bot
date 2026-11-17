@@ -7,7 +7,9 @@ One chat tool, ``find_new_prospects``. It is small on purpose (credits are limit
 * Prospeo (when connected) is asked for the email only for a named founder, and only a VERIFIED email is kept;
   without Prospeo, only an email printed on a public page of the firm's own domain is kept, never a guessed one
 * a connected tool that fails during the run is dropped for the rest of that run and web search takes over
-* round 1 applies every rule; later rounds relax only the size range, never the excluded kinds or the place
+* the search widens step by step until the count is reached: round 1 applies every rule, then the saved size range is
+  relaxed, then the saved kinds of firm are widened to any owner-led firm; what the user named in the request (kind,
+  state, sizes), the excluded kinds and the country are never loosened
 * people already saved (same email or same company website) are never searched again or paid for
 """
 
@@ -33,7 +35,7 @@ from app.outreach.toolkit import Call, ToolError, tool
 MAX_FIND = 5  # people per run
 COMPANY_POOL = 12  # companies asked from Exa per run (some will be skipped)
 MAX_LOOKUPS = 15  # Prospeo lookups per run, whatever the count
-MAX_ROUNDS = 3  # Exa searches per run: each round asks for more firms than the last
+MAX_ROUNDS = 5  # searches per run: strict first, then looser each round, until the count is reached
 MAX_NO_EMAIL = 0  # founders saved without an email per run: none, an email is always needed
 WEB_POOL = 8  # firms asked from web search per round
 EXA_URL = "https://api.exa.ai/search"
@@ -80,7 +82,7 @@ def _state(value: str) -> str:
 
 
 def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
-              hi: Optional[int] = None, relax: bool = False) -> list[tuple[str, str]]:
+              hi: Optional[int] = None, relax: bool = False, broad: bool = False) -> list[tuple[str, str]]:
     """(category, search text) pairs: one search per category, best priority first (or one search for the kind of
     firm the user named, labelled with the closest saved category or "Other").
     Whatever the user named replaces that part of the saved rules; everything else comes from the rules."""
@@ -91,6 +93,8 @@ def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
         name = next((c.name for c in rules.categories
                      if any(w and w.casefold() in low for w in [c.name, *c.keywords])), "Other")
         return [(name, f"founder-led {focus.strip()} firm, {tail}")]
+    if broad:  # saved kinds of firm widened: any owner-led firm that is not an excluded kind
+        return [("Other", f"founder-led small consulting, advisory or professional-services firm, {tail}")]
     out = []
     for category in sorted(rules.categories, key=lambda c: c.priority):
         kind = " or ".join(category.keywords[:2]) or category.name
@@ -99,8 +103,8 @@ def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
 
 
 def _queries(rules: Any, focus: str, state: str = "", lo: Optional[int] = None, hi: Optional[int] = None,
-             relax: bool = False) -> list[str]:
-    return [q for _, q in _labelled(rules, focus, state, lo, hi, relax)]
+             relax: bool = False, broad: bool = False) -> list[str]:
+    return [q for _, q in _labelled(rules, focus, state, lo, hi, relax, broad)]
 
 
 def _small_model(prompt: str) -> str:
@@ -116,13 +120,14 @@ def _small_model(prompt: str) -> str:
     return reply.choices[0].message.content or ""
 
 
-def _classify(rules: Any, focus: str, rows: list[dict]) -> dict[int, tuple[str, Optional[str], bool]]:
+def _classify(rules: Any, focus: str, rows: list[dict], broad: bool = False) -> dict[int, tuple[str, Optional[str], bool]]:
     """{row number: (category, what the firm is, matches what was asked)} from ONE small-model call for all the
     firms found. Empty when the call fails, so the search's own category is used and nothing is dropped."""
     if not rows:
         return {}
     names = [c.name for c in rules.categories]
     wanted = (f"the kind of firm the user asked for: {focus.strip()}" if focus.strip()
+              else "any small consulting, advisory or professional-services firm" if broad
               else "one of these kinds of firm: " + "; ".join(names))
     skip = ", ".join(rules.exclusions) or "none"
     firms = "\n".join(f"{i}. {r.get('title') or ''} - {str(r.get('summary') or '')[:400]}" for i, r in enumerate(rows))
@@ -150,9 +155,10 @@ def _classify(rules: Any, focus: str, rows: list[dict]) -> dict[int, tuple[str, 
 
 
 def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
-               hi: Optional[int] = None, size: int = COMPANY_POOL, relax: bool = False) -> list[dict]:
+               hi: Optional[int] = None, size: int = COMPANY_POOL, relax: bool = False,
+               broad: bool = False) -> list[dict]:
     """Companies from every category, taken in turns so each category gets a chance, minus the excluded kinds."""
-    pairs = _labelled(rules, focus, state, lo, hi, relax)
+    pairs = _labelled(rules, focus, state, lo, hi, relax, broad)
     per = max(3, -(-size // len(pairs)))
     lists = [[dict(r, _category=cat, _query=q) for r in _exa(key, {
                  "query": q, "category": "company", "userLocation": "US", "numResults": per,
@@ -281,14 +287,14 @@ def _web_email(email: Any, domain: str) -> Optional[str]:
 
 
 def _web_firms(rules: Any, focus: str, state: str, lo: Optional[int], hi: Optional[int], skip: set[str],
-               relax: bool = False) -> list[dict]:
+               relax: bool = False, broad: bool = False) -> list[dict]:
     """Firms found by web search, shaped like Exa rows, each with its founder and any email printed on a public page."""
-    pairs = _labelled(rules, focus, state, lo, hi, relax)
+    pairs = _labelled(rules, focus, state, lo, hi, relax, broad)
     names = [c.name for c in rules.categories]
     prompt = (
         f"Use web search to find up to {WEB_POOL} real, owner-led firms that match these searches, best priority first: "
         + " | ".join(q for _, q in pairs) + f". Never include these kinds of business: {', '.join(rules.exclusions) or 'none'}. "
-        f"Never include these websites: {', '.join(sorted(d for d in skip if d)[:60]) or 'none'}. "
+        f"Never include these websites: {', '.join(sorted(d for d in skip if d)[:150]) or 'none'}. "
         "For each firm find its current founder, owner or CEO (name and title), the founder's public LinkedIn URL if you "
         "see one, and a business email address for that person ONLY if it is printed on a public page. Never guess an "
         "address and never build one from a name pattern: use null when you did not see one, and give the page where you "
@@ -373,9 +379,18 @@ def _taken(call: Call, domain: str) -> bool:
     )
 
 
+def _saved_domains(call: Call) -> set[str]:
+    """Websites already saved, so web search is told not to return them again."""
+    try:
+        rows = call.db.scalars(select(Prospect.domain).where(prospect_client_clause()).limit(400)).all()
+    except Exception:  # noqa: BLE001 - the per-firm check still stops repeats
+        return set()
+    return {str(d).lower() for d in rows if d}
+
+
 def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: str, _unused: str, category: str,
           label: Optional[str], row: dict, facts: dict, email: str, verified: bool = False,
-          via_exa: bool = True, relaxed: bool = False) -> Prospect:
+          via_exa: bool = True, relaxed: str = "") -> Prospect:
     size = facts.get("employee_range") or facts.get("employee_count")
     if via_exa and verified:
         source, found_by = SOURCE, "exa_prospeo"
@@ -385,7 +400,7 @@ def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: s
         source, found_by = "Web search", "web_search"
     note = _trim(str(row.get("summary") or ""), 480)
     if relaxed:
-        note = (note + " (found with the size range relaxed)").strip()
+        note = (note + f" (found with {relaxed})").strip()
     prospect = Prospect(
         company=name, executive_name=proper_case(person), email=email, website=url, domain=domain,
         linkedin_url=linkedin or None, source=source, discovery_source=found_by,
@@ -428,34 +443,42 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
     rules = get_prospecting_rules()
     place = _state(state)
     lo, hi = _num(employees_min), _num(employees_max)
-    added: list[tuple[Prospect, str]] = []
+    added: list[tuple[Prospect, str, str]] = []
     nomail: list[Prospect] = []
     skipped: list[str] = []
     notes: list[str] = []
     lookups = 0
     tried: set[str] = set()
+    saved = _saved_domains(call)
+    people: set[str] = set()
     for round_no in range(MAX_ROUNDS):
         if len(added) >= want or lookups >= MAX_LOOKUPS:
             break
-        relax = round_no >= 1  # round 1 applies every rule; later rounds relax only the size range
+        # strict first, then looser each round; what the user named in the request is never loosened
+        step = min(round_no, 2)
+        relax = step >= 1 and not (lo or hi)
+        broad = step >= 2 and not focus.strip()
+        step_note = ("the size range and kind of firm relaxed" if relax and broad else
+                     "the size range relaxed" if relax else "the kind of firm relaxed" if broad else "")
         rows: list[dict] = []
         if exa_on:
             try:
-                rows = _companies(key, rules, focus, place, lo, hi, COMPANY_POOL * (round_no + 1), relax)
+                rows = _companies(key, rules, focus, place, lo, hi, min(COMPANY_POOL * (round_no + 1), 40), relax, broad)
             except ToolError:
                 exa_on = False
                 notes.append("Exa did not answer, so web search was used for the rest of this run.")
         if not exa_on:
-            rows = _web_firms(rules, focus, place, lo, hi, tried, relax)
+            rows = _web_firms(rules, focus, place, lo, hi, tried | saved, relax, broad)
         # firms already tried in an earlier round are dropped
-        companies = [r for r in rows
-                     if (domain_from_website_or_email(website=str(r.get('url') or '')) or '') not in tried]
+        companies = []
+        for r in rows:  # a firm seen before (an earlier round, or twice in this one) is never worked again
+            d = domain_from_website_or_email(website=str(r.get("url") or "")) or ""
+            if d and d not in tried:
+                tried.add(d)
+                companies.append(r)
         if not companies:
-            if exa_on:
-                break
             continue
-        tried.update(domain_from_website_or_email(website=str(r.get('url') or '')) or '' for r in companies)
-        kinds = _classify(rules, focus, companies)  # one cheap call; the firms that do not match are never looked up
+        kinds = _classify(rules, focus, companies, broad)  # one cheap call; the firms that do not match are never looked up
         for number, row in enumerate(companies):
             if len(added) >= want or lookups >= MAX_LOOKUPS:
                 break
@@ -482,6 +505,10 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
                 skipped.append(f"{name}: no founder or owner found")
                 continue
             person, job, linkedin = found
+            if person.casefold() in people:
+                skipped.append(f"{name}: {person} already found in this search")
+                continue
+            people.add(person.casefold())
             email: Optional[str] = None
             facts: dict = {}
             verified = False
@@ -509,19 +536,26 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
                     skipped.append(f"{name}: no email found for {person}")
                     continue
                 nomail.append(_save(call, name, person, linkedin, url, domain, "", category, label, row, facts,
-                                    unique_placeholder_email(), via_exa=not row.get("_web"), relaxed=relax))
+                                    unique_placeholder_email(), via_exa=not row.get("_web"), relaxed=step_note))
                 continue
             if lookup.by_email(call.db, email) is not None:
                 skipped.append(f"{person} <{email}>: already saved")
                 continue
+            note = step_note
             made = _save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, verified,
-                         via_exa=not row.get("_web"), relaxed=relax)
-            added.append((made, "verified by Prospeo" if verified else "found on a public page, not verified"))
+                         via_exa=not row.get("_web"), relaxed=note)
+            added.append((made, "verified by Prospeo" if verified else "found on a public page, not verified", note))
     lines = [f"Added {len(added)} of {want} asked: " + "; ".join(
         f"{p.executive_name} <{p.email}> ({p.company}; category: {p.icp_category or '-'}; "
         f"business type: {p.business_type or '-'}; found by: {p.discovery_query or '-'}; "
-        f"source: {p.source}; email: {how})" for p, how in added) + "." if added
+        f"source: {p.source}; email: {how})" for p, how, _ in added) + "." if added
         else f"Added 0 of {want} asked."]
+    loose = [(p, n) for p, _, n in added if n]
+    if added and loose:
+        lines.append(f"{len(added) - len(loose)} matched every saved rule; {len(loose)} came from a looser round: " + "; ".join(
+            f"{p.executive_name} ({n})" for p, n in loose) + ".")
+    elif added:
+        lines.append("All of them matched every saved rule.")
     if nomail:
         lines.append("Also saved without an email (founder found, no email): " + "; ".join(
             f"{p.executive_name} ({p.company}; category: {p.icp_category or '-'}; business type: {p.business_type or '-'})"
