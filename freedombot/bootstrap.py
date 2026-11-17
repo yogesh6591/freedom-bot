@@ -641,6 +641,8 @@ def _align_memory_access_areas(ctx: TenantContext, seeds: list[tuple]) -> None:
 #: M15-20: Cepoch's internal workspace, where platform owners sign in.
 OWNER_WORKSPACE_SLUG = "cepoch"
 OWNER_EMAIL = "jeanne@cepoch.com"
+#: Cepoch's support account: technical tickets and the triage queue.
+CEPOCH_SUPPORT_EMAIL = "yogesh@cepoch.com"
 #: Older demo installs used this address; still promoted when present so re-bootstrap stays safe.
 _LEGACY_OWNER_EMAIL = "jeanne@cepoch.example.com"
 
@@ -688,7 +690,22 @@ def ensure_owner_workspace() -> dict[str, Any]:
     )
     if legacy is not None:
         control.set_platform_owner(legacy.id, True)
-    return {"slug": owner_ws.slug, "owner": OWNER_EMAIL}
+    # Support tickets reach only these two teams (freedombot/support.py): Jeanne for business issues,
+    # Cepoch (first layer) for technical ones.
+    control.set_support_team(user.id, "JEANNE")
+    try:
+        cepoch = control.create_user(
+            client_id=owner_ws.id,
+            email=CEPOCH_SUPPORT_EMAIL,
+            password=DEV_PASSWORD,
+            display_name="Yogesh (Cepoch support)",
+            roles=(Role.ADMIN,),
+            created_by="bootstrap",
+        )
+    except control.DuplicateUser:
+        cepoch = next(u for u in control.list_users(owner_ws.id) if u.email == CEPOCH_SUPPORT_EMAIL)
+    control.set_support_team(cepoch.id, "CEPOCH")
+    return {"slug": owner_ws.slug, "owner": OWNER_EMAIL, "cepoch_support": CEPOCH_SUPPORT_EMAIL}
 
 
 def bootstrap(*, with_demo: bool = True) -> dict[str, Any]:

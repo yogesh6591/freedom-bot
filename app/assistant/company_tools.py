@@ -900,26 +900,49 @@ _render_support = support.requester_view
 
 @effect("support_create_ticket")
 def support_create_ticket(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """Raise a support ticket with its chat context. From the assistant (source CHAT), the Escalate form
+    (MANUAL) or a flagged answer (AI_FLAG, with ``message_id``). Routing is never shown to the requester."""
+    from freedombot import chat_history, support_context
+    from freedombot.support_routing import SOURCE_AI_FLAG, SOURCE_CHAT, SOURCES
+
+    source = str(args.get("source") or SOURCE_CHAT).upper()
+    source = source if source in SOURCES else SOURCE_CHAT
+    message_id = str(args.get("message_id") or "").strip() or None
     subject = str(args.get("subject") or "").strip()
+    body = str(args.get("body") or "").strip()
+    try:
+        context = support_context.chat_context(scope.ctx, scope.session_id, message_id)
+    except chat_history.SessionNotFound:
+        if source == SOURCE_AI_FLAG:
+            return ConnectorResult.failure("That conversation was not found, so the answer could not be flagged.")
+        # A brand-new chat has nothing saved yet; keep which conversation it was.
+        context = {**support_context.who(scope.ctx), "session_id": scope.session_id}
+    except LookupError:
+        return ConnectorResult.failure("That answer was not found in the conversation, so it could not be flagged.")
+    if source == SOURCE_AI_FLAG and not subject:
+        asked = (context.get("question") or "").splitlines()[0][:120] if context.get("question") else ""
+        subject = f"Flagged AI answer: {asked}" if asked else "Flagged AI answer"
     if not subject:
         return ConnectorResult.failure("subject is required — summarize the problem in one line.")
-    body = str(args.get("body") or "").strip()
-    if scope.session_id:
-        body = f"{body}\n\nRaised from FreedomBot chat (session {scope.session_id}).".strip()
+    dedupe = f"flag:{scope.ctx.user_id}:{message_id}" if source == SOURCE_AI_FLAG and message_id else None
     ticket, merged = support.submit_ticket(
         client_id=scope.ctx.client_id,
         subject=subject,
         body=body,
         severity=str(args.get("severity") or support.SEVERITY_NORMAL),
         created_by=scope.ctx.user_id,
+        source=source,
+        context=context,
+        category_hint=str(args.get("category") or "") or None,
+        dedupe_key=dedupe,
     )
     return ConnectorResult(
         ok=True,
-        data=_render_support(ticket),
+        data={**_render_support(ticket), "merged": merged},
         summary=(
-            f"added to the open Cepoch support ticket {ticket['id']} with the same subject"
+            f"added to the open support ticket {ticket['id']} for the same issue"
             if merged
-            else f"opened Cepoch support ticket {ticket['id']} ({ticket['severity']})"
+            else f"opened support ticket {ticket['id']} ({ticket['severity']})"
         ),
     )
 
@@ -938,6 +961,36 @@ def support_my_tickets(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
         summary=f"{len(mine)} support ticket(s) raised by this user",
     )
 
+
+
+@effect("support_client_records")
+def support_client_records(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """One client's support history for support staff (Cepoch, Jeanne). The policy check already limits
+    who may run it; this refuses again so no other path can read across clients."""
+    from freedombot.control import store as control
+
+    if scope.ctx.attributes.get("support_team") not in support.TEAMS:
+        return ConnectorResult.failure("Client service records are for FreedomBot support staff only.")
+    wanted = str(args.get("client") or "").strip().casefold()
+    if not wanted:
+        return ConnectorResult.failure("client is required: the company name or workspace identifier.")
+    clients = [c for c in control.list_clients() if not getattr(c.settings, "internal_workspace", False)]
+    exact = [c for c in clients if wanted in (c.slug.casefold(), c.company_name.casefold())]
+    matches = exact or [c for c in clients if wanted in c.company_name.casefold() or wanted in c.slug.casefold()]
+    if not matches:
+        return ConnectorResult.failure(f"No client matches {args.get('client')!r}.")
+    if len(matches) > 1:
+        names = ", ".join(f"{c.company_name} ({c.slug})" for c in matches[:8])
+        return ConnectorResult.failure(f"More than one client matches: {names}. Say which one.")
+    client = matches[0]
+    records = support.service_records(client.id)
+    data = {"client": {"name": client.company_name, "slug": client.slug, "status": client.status}, **records}
+    return ConnectorResult(
+        ok=True,
+        data=data,
+        summary=(f"{client.company_name}: {records['total']} ticket(s), {len(records['open'])} open, "
+                 f"{len(records['resolved'])} resolved, {len(records['escalations'])} escalation(s)"),
+    )
 # ------------------------------------------------------------------------------------------------
 # scheduled tasks  (freedombot/automation.py) - recurring work (daily, weekly or every N minutes), run as the person
 # who set it up

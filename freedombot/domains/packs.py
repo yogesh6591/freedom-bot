@@ -90,12 +90,11 @@ GENERAL = DomainPack(
         "organization has recorded, cite where it came from and when it was last updated. "
         "If the user tells you something has changed, record it as a correction so the "
         "previous value is superseded rather than silently overwritten. "
-        "When the user reports a problem with FreedomBot or the platform, or asks for "
-        "support, raise a ticket with support_create_ticket (a one-line subject plus the "
-        "details they gave) and tell them the ticket id. Tickets go to Cepoch support — never "
-        "say Jeanne will handle it; Cepoch support brings her in only for CEO-level judgment, "
-        "relationship risk or an at-risk account. Support is not a sales desk: for buying, pricing or "
-        "upgrades, say an admin can arrange a change order instead of raising a ticket."
+        "When the user reports a problem with FreedomBot, asks to escalate something to support, or "
+        "needs help with billing, their subscription or onboarding, raise a ticket with "
+        "support_create_ticket (a one-line subject plus the details they gave, and category technical "
+        "or business) and tell them the ticket id. Never say which team or person handles it or how "
+        "it was routed: say FreedomBot support has it."
     ),
     tools=(
         "memory_search",
@@ -126,6 +125,7 @@ GENERAL = DomainPack(
         "memory_escalate_conflict",
         "support_create_ticket",
         "support_my_tickets",
+        "support_client_records",
         "youtube_search_videos",
         "youtube_my_channel",
         "youtube_my_videos",

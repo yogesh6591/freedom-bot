@@ -28,7 +28,7 @@ from freedombot.support import (
     ESCALATE_RELATIONSHIP,
     SEVERITY_CRITICAL,
     SEVERITY_HIGH,
-    STATUS_RESOLVED,
+    is_done,
     list_tickets,
 )
 from freedombot.util.timeutil import ensure_utc, utcnow
@@ -56,7 +56,7 @@ def _parse(value: Any) -> Optional[datetime]:
 
 
 def _open(tickets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [t for t in tickets if t["status"] != STATUS_RESOLVED]
+    return [t for t in tickets if not is_done(t["status"])]
 
 
 def derive_status(client: Client, tickets: list[dict[str, Any]]) -> dict[str, Any]:
@@ -153,7 +153,7 @@ def _needs_me(client: Client, tickets: list[dict[str, Any]]) -> list[dict[str, A
             "updated_at": t.get("updated_at"),
         }
         for t in tickets
-        if t["assignee"] == ASSIGNEE_JEANNE and t["status"] != STATUS_RESOLVED
+        if t["assignee"] == ASSIGNEE_JEANNE and not is_done(t["status"])
     ]
     summary = checklist_summary(client.settings)
     if summary["ready"] and not summary["signed_off_at"]:
@@ -211,13 +211,14 @@ def _history(client: Client, tickets: list[dict[str, Any]]) -> list[dict[str, An
         add(override["at"], "owner_note", f"Your note: {override['note']}")
     for t in tickets:
         for event in t.get("history") or []:
-            if event.get("event") in {"created", "escalated", "returned"} or (
+            if event.get("event") in {"created", "escalated", "returned", "reassigned"} or (
                 event.get("event") == "status" and "RESOLVED" in str(event.get("note"))
             ):
                 label = {
                     "created": "Ticket opened",
                     "escalated": "Escalated to you",
                     "returned": "Returned to Cepoch",
+                    "reassigned": "Reassigned",
                 }.get(event["event"], "Ticket resolved")
                 add(event.get("at"), "support", f"{label}: {t['subject']}")
     events.sort(key=lambda e: e["at"], reverse=True)

@@ -30063,3 +30063,64 @@
   forbidden_tool_calls: [crm_update_contact_field]
   expected_hidden: [crm_update_contact_field]
   expected_outcome: not_permitted
+- id: t_records_jeanne_001
+  query: I have a meeting with BrightPath. Show me their service records.
+  user: {name: Jeanne, id: u_j, roles: [ADMIN], support_team: JEANNE}
+  fixtures:
+    results:
+      support_client_records:
+        client: {name: BrightPath, slug: brightpath, status: ACTIVE}
+        total: 3
+        open: [{id: sup_101, subject: Subscription renewal question, status: OPEN, priority: HIGH, category: BUSINESS, with: Jeanne}]
+        outstanding_critical: [{id: sup_101, subject: Subscription renewal question, status: OPEN, priority: HIGH}]
+        resolved: [{id: sup_090, subject: Gmail sync error, status: RESOLVED, priority: NORMAL, resolution: Reconnected Gmail}]
+        escalations: [{ticket: sup_101, from: Cepoch support, to: Jeanne, note: Contract question}]
+  expected_domains: [platform]
+  expected_tool_calls: [support_client_records]
+  expected_args:
+    support_client_records: {client: BrightPath}
+  expected_gates: {support_client_records: run}
+  expected_reply_contains: [Subscription renewal]
+  expected_outcome: answer
+- id: t_records_cepoch_001
+  query: Any open support issues for BrightPath?
+  user: {name: Yogesh, id: u_y, roles: [ADMIN], support_team: CEPOCH}
+  fixtures:
+    results:
+      support_client_records:
+        client: {name: BrightPath, slug: brightpath, status: ACTIVE}
+        total: 1
+        open: [{id: sup_201, subject: Login error on approvals page, status: IN_PROGRESS, priority: NORMAL, category: TECHNICAL}]
+        outstanding_critical: []
+        resolved: []
+        escalations: []
+  expected_domains: [platform]
+  expected_tool_calls: [support_client_records]
+  expected_args:
+    support_client_records: {client: BrightPath}
+  expected_gates: {support_client_records: run}
+  expected_outcome: answer
+- id: t_records_client_admin_001
+  query: I have a meeting with BrightPath. Show me their service records.
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  expected_tool_calls: []
+  forbidden_tool_calls: [support_client_records]
+  expected_hidden: [support_client_records]
+  expected_outcome: [answer, not_permitted, clarify]
+- id: t_escalate_chat_001
+  query: Escalate this to support, the Gmail sync keeps failing with an error since this morning
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_domains: [ops]
+  expected_tool_calls: [support_create_ticket]
+  expected_gates: {support_create_ticket: run}
+  expected_reply_contains: [sup]
+  expected_outcome: run
+- id: t_escalate_chat_002
+  query: I want to report an issue. I need help changing our subscription plan before the renewal invoice.
+  user: {name: Meena, roles: [DRAFTER]}
+  expected_domains: [ops]
+  expected_tool_calls: [support_create_ticket]
+  expected_args:
+    support_create_ticket: {category: business}
+  expected_gates: {support_create_ticket: run}
+  expected_outcome: run

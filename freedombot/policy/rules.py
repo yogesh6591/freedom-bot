@@ -138,6 +138,19 @@ def rule_platform_owner(req: PolicyRequest, inp: EvaluationInputs) -> Optional[C
 _AREA_LABELS = {"crm": "CRM", "email": "Gmail", "calendar": "Calendar"}
 
 
+def rule_support_staff(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
+    """Cross-client support records are for Cepoch's support staff only (freedombot/support.py), never a client's ADMIN."""
+    if getattr(inp.spec, "support_staff_only", False) and req.ctx.attributes.get("support_team") not in (
+        "CEPOCH", "JEANNE"
+    ):
+        return Constraint(
+            "SUPPORT_STAFF_ONLY",
+            DENY,
+            f"{inp.spec.title} is available to FreedomBot support staff only",
+        )
+    return None
+
+
 def rule_data_area(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
     """FB-037: tools over a restricted data area need that area in the user's scopes."""
     area = inp.spec.data_area
@@ -521,6 +534,7 @@ RULES: tuple[Rule, ...] = (
     rule_integration_connected,
     rule_rbac,
     rule_platform_owner,
+    rule_support_staff,
     rule_data_area,
     rule_phi,
     rule_ssn,

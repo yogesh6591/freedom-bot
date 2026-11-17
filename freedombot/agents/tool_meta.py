@@ -502,12 +502,12 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: records the question as needing counsel. {gate}
     """)),
     "support_create_ticket": M("ops", d("""
-        Raise a Cepoch support ticket about a problem with FreedomBot. A ticket with the same open subject
-        gets the new details added instead.
-        Use when: "the approvals page won't load", "report a bug", "I need help from support".
+        Raise a support ticket with the recent chat attached. category: technical (errors, login,
+        integrations, wrong answers) or business (billing, onboarding, operations). Repeats join it.
+        Use when: "report an issue", "escalate this to support", "the approvals page won't load".
         Don't use: a sales follow-up -> crm_create_task; never in place of an action you can't take
         yourself (counsel flags, change orders, packs, alerts, settings) - say it isn't available.
-        Effect: Cepoch support receives the ticket. {gate}
+        Effect: support receives the ticket. {gate}
     """)),
     "support_my_tickets": M("ops", d("""
         List the support tickets this user raised, with status and latest update.
@@ -530,6 +530,14 @@ TOOL_META: dict[str, AgentMeta] = {
         clients are at risk".
         Don't use: CRM customers or contacts -> crm_search_contacts; this workspace's own users -> admin_users.
     """)),
+    "support_client_records": M("platform", d("""
+        Support staff only: one client's support history, for a meeting or a check-in: open and resolved
+        tickets, outstanding problems, escalations between Cepoch and Jeanne, resolution summaries.
+        Use when: "I have a meeting with BrightPath, show me their service records", "any open issues for
+        Globex", "what support problems has Acme had".
+        Don't use: the client list or members -> platform_overview; your own tickets -> support_my_tickets.
+        Needs: client, a company name or workspace identifier.
+    """), id_fields=("client",)),
     "platform_create_client": M("platform", d("""
         Platform owners only: onboard a new client company. Creates its own workspace and first admin
         login, and returns a temporary password once.

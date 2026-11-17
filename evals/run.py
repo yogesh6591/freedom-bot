@@ -233,7 +233,9 @@ def context_for(client, case: dict):
     record = next(u for u in control.list_users(client.id) if u.email == email)
     ctx = control.build_context(record)
     # A platform owner (Cepoch staff) case: build_context reads the flag from the account, so set it here.
-    attributes = {**ctx.attributes, "platform_owner": bool(user.get("platform_owner"))}
+    attributes = {**ctx.attributes, "platform_owner": bool(user.get("platform_owner")),
+                  # Cepoch's support staff: CEPOCH or JEANNE (freedombot/support.py).
+                  "support_team": user.get("support_team")}
     return dataclasses.replace(
         ctx, roles=frozenset(Role(r) for r in roles), display_name=user.get("name") or ctx.display_name,
         attributes=attributes,

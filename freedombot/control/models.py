@@ -325,6 +325,8 @@ class User:
     job_role: Optional[str] = None
     #: The person's role: advise, draft, approve or auto (freedombot/policy/person_role.py). ``None``: not set.
     access_mode: Optional[str] = None
+    #: CEPOCH or JEANNE when this person works the support queue (freedombot/support.py). Internal staff only.
+    support_team: Optional[str] = None
 
     @property
     def primary_role(self) -> Role:
@@ -358,6 +360,7 @@ class User:
             "can_approve": Role.APPROVER in self.roles or Role.ADMIN in self.roles,
             "data_scopes": sorted(self.data_scopes),
             "access_mode": self.access_mode,
+            "support_team": self.support_team,
             "is_platform_owner": self.platform_owner,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,

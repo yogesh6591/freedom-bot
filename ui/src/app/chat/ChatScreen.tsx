@@ -38,6 +38,7 @@ import {
   X
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
+import { EscalateButton, FlagAnswer } from './SupportActions'
 import { RequestAccessDialog } from '@/components/RequestAccess'
 import { api, ApiError } from '@/lib/api'
 import { useSession } from '@/components/SessionProvider'
@@ -1594,6 +1595,7 @@ function ChatView({ home }: { home: boolean }) {
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
+            <EscalateButton sessionId={sessionId || null} />
             {chatHome && (
               <>
                 <ThemeToggle className="!h-9 !min-h-9 !w-9 !min-w-9 !rounded-full" />
@@ -1919,6 +1921,9 @@ function ChatView({ home }: { home: boolean }) {
                               people={turn.trace?.people_to_show}
                             />
                           )
+                        ) : null}
+                        {turn.id && sessionId && !busy ? (
+                          <FlagAnswer sessionId={sessionId} messageId={turn.id} />
                         ) : null}
                         {debug && turn.response ? (
                           <ToolsCalled activity={turn.response.tool_activity ?? []} />

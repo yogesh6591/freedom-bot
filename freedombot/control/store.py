@@ -360,6 +360,19 @@ def active_admin_emails(client_id: str, *, limit: int = 5) -> list[str]:
     return [r.email for r in rows]
 
 
+def set_support_team(user_id: str, team: Optional[str]) -> User:
+    """Make this person part of the support queue (CEPOCH or JEANNE), or take them off it (``None``)."""
+    if team is not None and team not in ("CEPOCH", "JEANNE"):
+        raise ValueError(f"{team!r} is not a support team")
+    with control_connection() as conn:
+        updated = conn.execute(
+            text("UPDATE users SET support_team = :t, updated_at = NOW() WHERE id = :i"), {"t": team, "i": user_id}
+        )
+        if updated.rowcount == 0:
+            raise UserNotFound(user_id)
+    return get_user(user_id)
+
+
 def set_platform_owner(user_id: str, flag: bool) -> User:
     """Grant or revoke the cross-client owner view (M15-20). Platform staff only."""
     with control_connection() as conn:
@@ -465,6 +478,7 @@ def _user_from_row(conn: Any, row: Any) -> User:
         platform_owner=bool(getattr(row, "platform_owner", False)),
         job_role=getattr(row, "job_role", None),
         access_mode=_access_mode(getattr(row, "access_mode", None)),
+        support_team=(getattr(row, "support_team", None) or None),
     )
 
 
@@ -578,7 +592,8 @@ def build_context(user: User, *, attributes: Optional[dict] = None) -> TenantCon
         display_name=user.display_name,
         data_scopes=user.data_scopes,
         access_mode=user.access_mode,
-        attributes={**(attributes or {}), "platform_owner": user.platform_owner},
+        attributes={**(attributes or {}), "platform_owner": user.platform_owner,
+                    "support_team": user.support_team},
     )
 
 

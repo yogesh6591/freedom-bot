@@ -161,6 +161,35 @@ CONTROL_DDL: tuple[str, ...] = (
     """,
     "CREATE INDEX IF NOT EXISTS support_tickets_client_idx ON support_tickets (client_id, updated_at DESC)",
     "CREATE INDEX IF NOT EXISTS support_tickets_assignee_idx ON support_tickets (assignee, status)",
+    # Ticketing and escalation: what kind of issue, where it came from, the chat it came with, and how
+    # it ended. Routing and notes are for support staff only (freedombot/support.py requester_view).
+    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'TECHNICAL'",
+    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'MANUAL'",
+    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS triage BOOLEAN NOT NULL DEFAULT FALSE",
+    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS context JSONB NOT NULL DEFAULT '{}'::jsonb",
+    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS resolution TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE support_tickets ADD COLUMN IF NOT EXISTS dedupe_key TEXT",
+    "CREATE INDEX IF NOT EXISTS support_tickets_dedupe_idx ON support_tickets (dedupe_key)",
+    # In-app notice to the team a ticket was routed or reassigned to. Only Cepoch and Jeanne get these.
+    """
+    CREATE TABLE IF NOT EXISTS support_notifications (
+        id          TEXT PRIMARY KEY,
+        ticket_id   TEXT NOT NULL REFERENCES support_tickets(id) ON DELETE CASCADE,
+        team        TEXT NOT NULL,
+        kind        TEXT NOT NULL,
+        message     TEXT NOT NULL,
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        read_at     TIMESTAMPTZ
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS support_notifications_team_idx ON support_notifications (team, read_at, created_at DESC)",
+    # Who works the support queue: CEPOCH (technical, first layer) or JEANNE (business). Set only on accounts
+    # in Cepoch's internal workspace; workspace admins never get it.
+    "ALTER TABLE users ADD COLUMN IF NOT EXISTS support_team TEXT",
+    "UPDATE users u SET support_team = 'JEANNE' FROM clients c WHERE u.client_id = c.id AND c.slug = 'cepoch' "
+    "AND lower(u.email) = 'jeanne@cepoch.com' AND u.support_team IS NULL",
+    "UPDATE users u SET support_team = 'CEPOCH' FROM clients c WHERE u.client_id = c.id AND c.slug = 'cepoch' "
+    "AND lower(u.email) = 'yogesh@cepoch.com' AND u.support_team IS NULL",
     # Workspace timezone: existing workspaces get the default once; a value an admin set is kept.
     "UPDATE clients SET settings = jsonb_set(settings, '{timezone}', '\"Asia/Kolkata\"') "
     "WHERE NOT (settings ? 'timezone')",

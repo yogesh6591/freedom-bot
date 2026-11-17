@@ -72,7 +72,11 @@ Do not clarify when:
   only, never admin_users: it makes a separate workspace, not a login in this one. Without platform listed,
   clients and customers are CRM records → crm.
 - Request ids (act_…), "my request", withdraw, submit or cancel a request → approvals.
-- Support tickets, bugs and problems with FreedomBot itself, company goals and strategic priorities → ops.
+- Support tickets, bugs and problems with FreedomBot itself, "escalate this to support", "report an issue",
+  "report a bug to Cepoch" (Cepoch is FreedomBot's support team; never ask who it is), company goals and
+  strategic priorities → ops.
+- A client's support or service records ("I have a meeting with BrightPath, show me their service
+  records") → platform when platform is listed above.
 - Anything to repeat every few minutes, hours, days or weeks ("every Monday post…", "daily at 8 summarise…",
   "every 5 minutes post AI news…"), and listing, changing or stopping those schedules → ops, plus the
   domain of the task itself (posting to an app → integrations; finding news → research; the inbox → email).

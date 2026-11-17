@@ -104,6 +104,9 @@ class ToolSpec:
     #: Reads every client workspace on the platform. Only Cepoch platform owners may see or run it,
     #: whatever their role in their own workspace (rule_platform_owner).
     platform_owner_only: bool = False
+    #: Reads support tickets across client workspaces. Only Cepoch's support staff (the Cepoch and Jeanne
+    #: support teams) may see or run it, never a client's ADMIN (rule_support_staff).
+    support_staff_only: bool = False
     #: Free-form tags used by domain packs to select tools.
     tags: frozenset[str] = field(default_factory=frozenset)
     #: Restricted data area this tool reads or writes (FB-037). A caller without
@@ -497,6 +500,17 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         permissions=matrix.ADMIN_ONLY,
         platform_owner_only=True,
         tags=frozenset({"read", "platform"}),
+    ),
+    _spec(
+        "support_client_records",
+        "Client service records",
+        "Support staff only (Cepoch and Jeanne): one client's support history for a meeting: open and resolved "
+        "tickets, outstanding problems, escalations and hand-overs, resolution summaries. Read only.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        support_staff_only=True,
+        classification=DataClassification.CONFIDENTIAL,
+        tags=frozenset({"read", "support"}),
     ),
     _spec(
         "platform_create_client",

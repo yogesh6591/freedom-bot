@@ -118,9 +118,12 @@ def current_context(
         email=user.email,
         display_name=user.display_name,
         data_scopes=user.data_scopes,
+        # The person's role (Advise, Draft, Approve, Auto); the policy check applies it to every write.
+        access_mode=user.access_mode,
         attributes={
             "ip": request.client.host if request.client else None,
             "platform_owner": user.platform_owner,
+            "support_team": user.support_team,
         },
     )
 

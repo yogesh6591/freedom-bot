@@ -1,7 +1,7 @@
 """Everyone signed in can raise a support ticket from the Support page, not only from the chat.
 
-Operators and Admins still work the queue (see every ticket, add notes, escalate to Jeanne).
-Everyone else sees only the tickets they raised, as the chat's support_my_tickets shows them.
+Only Cepoch's support staff work the queue (tests/test_ticketing.py). Everyone else, a workspace's
+operators and admins included, sees only the tickets they raised, as support_my_tickets shows them.
 """
 
 from __future__ import annotations
@@ -49,9 +49,10 @@ def test_every_role_can_raise_a_ticket_from_the_support_page(app_client, client_
     )
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["merged"] is False and body["message"] == "Ticket opened with Cepoch support."
+    assert body["merged"] is False and body["message"] == f"Ticket {body['ticket']['id']} opened with FreedomBot support."
     ticket = body["ticket"]
-    assert ticket["subject"] == subject and ticket["handled_by"] == "Cepoch support"
+    # The raiser never learns which team has it.
+    assert ticket["subject"] == subject and ticket["handled_by"] == "FreedomBot support"
     # The raiser sees status and the latest update, not the queue fields support works with.
     assert "assignee" not in ticket and "history" not in ticket and "escalate_reason" not in ticket
 
@@ -74,7 +75,10 @@ def test_non_staff_see_only_their_own_tickets_and_cannot_work_the_queue(app_clie
         assert all(t["id"] != raised["id"] for t in listed)
 
     ticket_id = raised["id"]
-    assert app_client.get(f"/api/support/tickets/{ticket_id}", headers=viewer).status_code == 403
+    # The raiser may open their own ticket (status only); anyone else in the workspace may not.
+    own = app_client.get(f"/api/support/tickets/{ticket_id}", headers=viewer)
+    assert own.status_code == 200 and "history" not in own.json()["ticket"]
+    assert app_client.get(f"/api/support/tickets/{ticket_id}", headers=drafter).status_code == 404
     assert app_client.post(f"/api/support/tickets/{ticket_id}/notes", json={"note": "hi"},
                            headers=viewer).status_code == 403
     assert app_client.post(f"/api/support/tickets/{ticket_id}/status", json={"status": "RESOLVED"},
@@ -83,23 +87,20 @@ def test_non_staff_see_only_their_own_tickets_and_cannot_work_the_queue(app_clie
                            headers=viewer).status_code == 403
 
 
-def test_support_staff_still_see_the_whole_queue(app_client, client_a):
+def test_workspace_operators_and_admins_do_not_work_the_queue(app_client, client_a):
+    """Tickets reach only Cepoch and Jeanne, never the workspace's own admins or operators."""
     viewer = _auth(app_client, client_a, "viewer")
-    operator = _auth(app_client, client_a, "operator")
     raised = app_client.post(
         "/api/support/tickets", json={"subject": _subject("Chat shows a blank screen"), "severity": "HIGH"},
         headers=viewer,
     ).json()["ticket"]
-
-    queue = app_client.get("/api/support/tickets", headers=operator).json()
-    assert queue["can_manage"] is True
-    seen = next(t for t in queue["items"] if t["id"] == raised["id"])
-    assert seen["assignee"] == "CEPOCH" and seen["severity"] == "HIGH"
-
-    own = app_client.post(
-        "/api/support/tickets", json={"subject": _subject("Approvals page error")}, headers=operator
-    ).json()["ticket"]
-    assert own["assignee"] == "CEPOCH" and own["history"][0]["event"] == "created"
+    for prefix in ("operator", "admin"):
+        staff = _auth(app_client, client_a, prefix)
+        queue = app_client.get("/api/support/tickets?view=all", headers=staff).json()
+        assert queue["can_manage"] is False
+        assert all(t["id"] != raised["id"] for t in queue["items"])
+        assert app_client.post(f"/api/support/tickets/{raised['id']}/notes", json={"note": "x"},
+                               headers=staff).status_code == 403
 
 
 def test_same_subject_again_is_merged(app_client, client_a):

@@ -37,7 +37,8 @@ def test_chat_tool_raises_a_cepoch_ticket_without_approval(client_a, scope_facto
     ticket = next(t for t in list_tickets(client_id=client_a.id) if t["id"] == ticket_id)
     assert ticket["assignee"] == ASSIGNEE_CEPOCH and ticket["severity"] == "HIGH"
     assert ticket["created_by"] == scope.ctx.user_id
-    assert "ses_fb046_chat" in ticket["body"]
+    # The chat it came from travels with the ticket (for support staff), not in the description.
+    assert ticket["context"]["session_id"] == "ses_fb046_chat" and ticket["source"] == "CHAT"
     assert any(t["id"] == ticket_id for t in mine.data)
 
 
@@ -106,12 +107,13 @@ def test_escalate_to_jeanne_and_return(client_a):
     assert back["status"] == "IN_PROGRESS"
 
 
-def test_resolve_returns_to_cepoch(client_a):
+def test_resolving_keeps_the_ticket_with_its_team(client_a):
+    """Jeanne's resolved business tickets stay in her history; resolving is not a hand-over."""
     ticket = create_ticket(client_id=client_a.id, subject="Done item", created_by="pytest")
     escalate_to_jeanne(ticket_id=ticket["id"], reason="AT_RISK", by="pytest")
-    done = set_status(ticket_id=ticket["id"], status="RESOLVED", by="pytest")
-    assert done["status"] == "RESOLVED"
-    assert done["assignee"] == ASSIGNEE_CEPOCH
+    done = set_status(ticket_id=ticket["id"], status="RESOLVED", by="pytest", resolution="Call held, renewal agreed.")
+    assert done["status"] == "RESOLVED" and done["resolution"] == "Call held, renewal agreed."
+    assert done["assignee"] == ASSIGNEE_JEANNE
 
 
 def _with_onboarding(client, **onboarding):

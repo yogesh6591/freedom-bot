@@ -218,6 +218,8 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
             "subject": _s("One-line summary of the problem"),
             "body": _s("What happened, what the user expected, any error text"),
             "severity": _s("NORMAL (default), HIGH (blocking work) or CRITICAL (platform down)"),
+            "category": _s("technical (errors, login, integrations, wrong AI answers) or business (billing, "
+                           "subscription, onboarding, operational or client requests)"),
         },
         ["subject"],
     ),
@@ -250,6 +252,9 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
                                                             "strategy", "finance", "brand", "legal"]}},
         },
         ["company_name", "admin_email"],
+    ),
+    "support_client_records": _obj(
+        {"client": _s("The client's company name or workspace identifier, e.g. BrightPath")}, ["client"]
     ),
     "platform_overview": _obj(
         {"client": _s("Optional: one client's company name or workspace identifier, to list its members too")}
