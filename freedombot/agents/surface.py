@@ -262,6 +262,7 @@ ARGUMENT_HINTS: dict[str, str] = {
     "platform_create_client": "company_name (str), admin_email (str), admin_name (str, optional), workspace_id (str, optional), bought (list of the domains the user named; ask them if not said)",
     "platform_overview": "client (str, optional: company name or workspace identifier)",
     "support_client_records": "client (str: company name or workspace identifier)",
+    "support_queue": "show (open|triage|done|all, optional)",
     "schedule_list": "everyone (bool, optional, admins), include_ended (bool, optional)",
     "schedule_update": "schedule_id (str), then only what changes: title, instruction, frequency (daily|weekly|interval), time (HH:MM), every_minutes (int >= 5), weekdays (list of mon..sun), timezone",
     "schedule_cancel": "schedule_id (str)",

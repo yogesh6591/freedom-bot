@@ -253,6 +253,9 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         },
         ["company_name", "admin_email"],
     ),
+    "support_queue": _obj(
+        {"show": _s("open (default) | triage | done | all")}
+    ),
     "support_client_records": _obj(
         {"client": _s("The client's company name or workspace identifier, e.g. BrightPath")}, ["client"]
     ),

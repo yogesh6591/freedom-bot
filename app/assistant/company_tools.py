@@ -963,6 +963,32 @@ def support_my_tickets(scope: RunScope, args: dict[str, Any]) -> ConnectorResult
 
 
 
+@effect("support_queue")
+def support_queue(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
+    """The tickets with the caller's support team, across clients. Support staff only."""
+    from freedombot.control import store as control
+
+    team = scope.ctx.attributes.get("support_team")
+    if team not in support.TEAMS:
+        return ConnectorResult.failure("The support queue is for FreedomBot support staff only.")
+    show = str(args.get("show") or "open").strip().lower()
+    if show == "triage":
+        items = support.list_tickets(triage=True)
+    else:
+        items = support.list_tickets(assignee=team)
+        items = [t for t in items if support.is_done(t["status"]) == (show == "done")] if show in ("open", "done") \
+            else items
+    names = {c.id: c.company_name for c in control.list_clients()}
+    rows = [
+        {"id": t["id"], "subject": t["subject"], "client": names.get(t["client_id"], t["client_id"]),
+         "status": t["status"], "priority": t["severity"], "category": t["category"], "source": t["source"],
+         "triage": t["triage"], "updated": t["updated_at"]}
+        for t in items[:30]
+    ]
+    label = support.TEAM_LABELS[team]
+    return ConnectorResult(ok=True, data=rows, summary=f"{len(items)} {show} ticket(s) with {label}")
+
+
 @effect("support_client_records")
 def support_client_records(scope: RunScope, args: dict[str, Any]) -> ConnectorResult:
     """One client's support history for support staff (Cepoch, Jeanne). The policy check already limits

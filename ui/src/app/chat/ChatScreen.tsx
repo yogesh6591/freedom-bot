@@ -38,7 +38,7 @@ import {
   X
 } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
-import { EscalateButton, FlagAnswer } from './SupportActions'
+import { EscalateButton, FlagAnswer, SupportDeskLink } from './SupportActions'
 import { RequestAccessDialog } from '@/components/RequestAccess'
 import { api, ApiError } from '@/lib/api'
 import { useSession } from '@/components/SessionProvider'
@@ -1595,6 +1595,7 @@ function ChatView({ home }: { home: boolean }) {
               </span>
             </div>
           <div className="flex shrink-0 items-center gap-2">
+            <SupportDeskLink />
             <EscalateButton sessionId={sessionId || null} />
             {chatHome && (
               <>

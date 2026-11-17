@@ -510,10 +510,11 @@ TOOL_META: dict[str, AgentMeta] = {
         Effect: support receives the ticket. {gate}
     """)),
     "support_my_tickets": M("ops", d("""
-        List the support tickets this user raised, with status and latest update.
-        Use when: "what happened to my support ticket", "any update from support", "show my tickets".
-        Don't use: raising a new one -> support_create_ticket; approval requests -> approvals_list;
-        CRM tasks -> crm_search_contacts.
+        List the support tickets this user raised themselves, with status and resolution.
+        Use when: "what happened to the ticket I raised", "any update on my support request", "did support
+        fix my issue".
+        Don't use: raising a new one -> support_create_ticket; as support staff, tickets for you or your
+        queue -> support_queue; approval requests -> approvals_list.
     """)),
     "schedule_create": M("ops", d("""
         Set up a recurring task that runs daily, on chosen weekdays, or every N minutes (at least 5), as
@@ -529,6 +530,14 @@ TOOL_META: dict[str, AgentMeta] = {
         Use when: "how many clients do we have", "list our clients", "who are Globex's users", "which
         clients are at risk".
         Don't use: CRM customers or contacts -> crm_search_contacts; this workspace's own users -> admin_users.
+    """)),
+    "support_queue": M("ops", d("""
+        Support staff only: the tickets assigned to you, your support team's queue from every client.
+        show is open (default), triage (unclear ones for Cepoch), done, or all. When available, use it
+        for any "my tickets" or "tickets for me".
+        Use when: "show me tickets for me", "my tickets", "what's in my queue", "any new tickets".
+        Don't use: tickets you raised yourself -> support_my_tickets; one client's history ->
+        support_client_records.
     """)),
     "support_client_records": M("platform", d("""
         Support staff only: one client's support history, for a meeting or a check-in: open and resolved

@@ -139,15 +139,17 @@ _AREA_LABELS = {"crm": "CRM", "email": "Gmail", "calendar": "Calendar"}
 
 
 def rule_support_staff(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
-    """Cross-client support records are for Cepoch's support staff only (freedombot/support.py), never a client's ADMIN."""
-    if getattr(inp.spec, "support_staff_only", False) and req.ctx.attributes.get("support_team") not in (
-        "CEPOCH", "JEANNE"
-    ):
+    """Cross-client support records are for Cepoch's support staff only (freedombot/support.py), never a client's
+    ADMIN. Support staff get their queue instead of the requester's own-ticket list."""
+    staff = req.ctx.attributes.get("support_team") in ("CEPOCH", "JEANNE")
+    if getattr(inp.spec, "support_staff_only", False) and not staff:
         return Constraint(
             "SUPPORT_STAFF_ONLY",
             DENY,
             f"{inp.spec.title} is available to FreedomBot support staff only",
         )
+    if getattr(inp.spec, "not_for_support_staff", False) and staff:
+        return Constraint("SUPPORT_STAFF_USE_QUEUE", DENY, "support staff use their support queue instead")
     return None
 
 

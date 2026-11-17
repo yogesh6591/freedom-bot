@@ -107,6 +107,8 @@ class ToolSpec:
     #: Reads support tickets across client workspaces. Only Cepoch's support staff (the Cepoch and Jeanne
     #: support teams) may see or run it, never a client's ADMIN (rule_support_staff).
     support_staff_only: bool = False
+    #: Not for support staff: they see the same tickets, and more, through their queue (rule_support_staff).
+    not_for_support_staff: bool = False
     #: Free-form tags used by domain packs to select tools.
     tags: frozenset[str] = field(default_factory=frozenset)
     #: Restricted data area this tool reads or writes (FB-037). A caller without
@@ -502,6 +504,17 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         tags=frozenset({"read", "platform"}),
     ),
     _spec(
+        "support_queue",
+        "My support queue",
+        "Support staff only (Cepoch and Jeanne): the tickets with your team, from every client: open ones by "
+        "default, or triage, or recently done. Read only.",
+        CATEGORY_INTERNAL,
+        _ALL,
+        support_staff_only=True,
+        classification=DataClassification.CONFIDENTIAL,
+        tags=frozenset({"read", "support"}),
+    ),
+    _spec(
         "support_client_records",
         "Client service records",
         "Support staff only (Cepoch and Jeanne): one client's support history for a meeting: open and resolved "
@@ -565,6 +578,7 @@ TOOL_SPECS: tuple[ToolSpec, ...] = (
         "List the support tickets this user raised, with status and latest update.",
         CATEGORY_INTERNAL,
         _ALL,
+        not_for_support_staff=True,
         tags=frozenset({"read", "support"}),
     ),
     # --------------------------------------------------------------- CRM

@@ -126,6 +126,7 @@ GENERAL = DomainPack(
         "support_create_ticket",
         "support_my_tickets",
         "support_client_records",
+        "support_queue",
         "youtube_search_videos",
         "youtube_my_channel",
         "youtube_my_videos",

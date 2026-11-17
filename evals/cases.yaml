@@ -30124,3 +30124,39 @@
     support_create_ticket: {category: business}
   expected_gates: {support_create_ticket: run}
   expected_outcome: run
+- id: t_queue_cepoch_001
+  query: show me tickets for me
+  user: {name: Yogesh, id: u_y, roles: [ADMIN], support_team: CEPOCH}
+  fixtures:
+    results:
+      support_queue:
+      - {id: sup_301, subject: Flagged AI answer, client: Acme Corp, status: OPEN, priority: NORMAL, category: TECHNICAL, source: AI_FLAG}
+  expected_domains: [ops]
+  expected_tool_calls: [support_queue]
+  forbidden_tool_calls: [support_my_tickets]
+  expected_gates: {support_queue: run}
+  expected_reply_contains: [Acme]
+  expected_outcome: answer
+- id: t_queue_jeanne_001
+  query: What's in my support queue?
+  user: {name: Jeanne, id: u_j, roles: [ADMIN], support_team: JEANNE}
+  fixtures:
+    results:
+      support_queue:
+      - {id: sup_302, subject: Subscription renewal question, client: BrightPath, status: OPEN, priority: HIGH, category: BUSINESS, source: CHAT}
+  expected_domains: [ops]
+  expected_tool_calls: [support_queue]
+  expected_gates: {support_queue: run}
+  expected_reply_contains: [BrightPath]
+  expected_outcome: answer
+- id: t_queue_client_admin_001
+  query: show me tickets for me
+  user: {name: Anita, id: u_1, roles: [ADMIN]}
+  fixtures:
+    results:
+      support_my_tickets: []
+  expected_domains: [ops]
+  expected_tool_calls: [support_my_tickets]
+  forbidden_tool_calls: [support_queue]
+  expected_hidden: [support_queue]
+  expected_outcome: answer

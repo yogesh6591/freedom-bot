@@ -278,3 +278,37 @@ def test_clients_never_see_internal_notes_routing_or_history(app_client, client_
         assert '"history"' not in text and '"category"' not in text and '"context"' not in text
     mine = app_client.get(f"/api/support/tickets/{raised['id']}", headers=viewer).json()["ticket"]
     assert mine["status"] == "RESOLVED" and mine["resolution"] == "Plan changed at renewal."
+
+
+# --------------------------------------------------------------------------- staff recognised at once; the queue in chat
+
+
+def test_the_two_support_accounts_are_recognised_without_a_restart():
+    from types import SimpleNamespace
+
+    def untagged(email):
+        return SimpleNamespace(email=email, support_team=None)
+
+    assert support.team_of(untagged("Yogesh@cepoch.com"), "cepoch") == "CEPOCH"
+    assert support.team_of(untagged("jeanne@cepoch.com"), "cepoch") == "JEANNE"
+    # The same address in a client's own workspace is nobody special.
+    assert support.team_of(untagged("yogesh@cepoch.com"), "acme") is None
+    assert support.team_of(untagged("amelia@acme.com"), "cepoch") is None
+
+
+def test_cepoch_sees_a_flagged_client_answer_in_its_queue_from_chat(client_a, client_scratch, ctx_factory, staff):
+    ctx = ctx_factory(client_a, "admin")
+    session_id, message_id = _chat(ctx, "add in memory rapido code is 778332", "Saved.")
+    scope = RunScope(ctx=ctx, settings=client_a.settings, session_id=session_id)
+    with tenant_scope(ctx):
+        raised = guarded_call(scope, "support_create_ticket", {"source": "AI_FLAG", "message_id": message_id})
+    assert raised.ok, raised.message
+
+    cepoch = control.build_context(staff["CEPOCH"]["user"])
+    with tenant_scope(cepoch):
+        queue = guarded_call(RunScope(ctx=cepoch, settings=client_scratch.settings), "support_queue", {})
+    assert queue.ok and any(row["id"] == raised.data["id"] for row in queue.data)
+
+    with tenant_scope(ctx):
+        refused = guarded_call(RunScope(ctx=ctx, settings=client_a.settings), "support_queue", {})
+    assert not refused.ok and refused.effect == PolicyEffect.DENY

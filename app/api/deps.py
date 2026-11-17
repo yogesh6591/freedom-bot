@@ -123,9 +123,15 @@ def current_context(
         attributes={
             "ip": request.client.host if request.client else None,
             "platform_owner": user.platform_owner,
-            "support_team": user.support_team,
+            "support_team": support_team_of(user, client.slug),
         },
     )
+
+
+def support_team_of(user: Any, client_slug: str) -> Optional[str]:
+    from freedombot.support import team_of
+
+    return team_of(user, client_slug)
 
 
 def client_settings(ctx: TenantContext = Depends(current_context)) -> ClientSettings:

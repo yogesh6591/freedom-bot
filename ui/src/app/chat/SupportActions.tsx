@@ -5,8 +5,9 @@
  * attaches the question, the answer and the recent conversation, so the person never repeats themselves.
  */
 
-import { useState } from 'react'
-import { Flag, LifeBuoy, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
+import { Flag, Headset, LifeBuoy, X } from 'lucide-react'
 import { api } from '@/lib/api'
 
 interface Raised {
@@ -84,6 +85,41 @@ export function FlagAnswer({ sessionId, messageId }: { sessionId: string; messag
         </div>
       )}
     </div>
+  )
+}
+
+/** For Cepoch and Jeanne only: a link to their Support desk, with how many notices are new. */
+export function SupportDeskLink() {
+  const [desk, setDesk] = useState<{ label: string; unread: number } | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    api
+      .get<{ is_staff: boolean; team_label?: string }>('/api/support/me')
+      .then(async (me) => {
+        if (!me.is_staff) return
+        const notes = await api.get<{ unread: number }>('/api/support/notifications')
+        if (alive) setDesk({ label: me.team_label || 'Support', unread: notes.unread })
+      })
+      .catch(() => undefined)
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  if (!desk) return null
+  return (
+    <Link
+      href="/support"
+      title={`Open the ${desk.label} support desk`}
+      className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-[12px] font-semibold text-muted hover:text-primary"
+    >
+      <Headset size={14} aria-hidden />
+      <span className="hidden sm:inline">Support desk</span>
+      {desk.unread > 0 && (
+        <span className="rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">{desk.unread}</span>
+      )}
+    </Link>
   )
 }
 

@@ -576,6 +576,12 @@ def _record_failed_login(user_id: str, failed: int) -> None:
         )
 
 
+def _support_team(user: User, client_slug: str) -> Optional[str]:
+    from freedombot.support import team_of
+
+    return team_of(user, client_slug)
+
+
 def build_context(user: User, *, attributes: Optional[dict] = None) -> TenantContext:
     """Turn an authenticated user into the tenant context for their workspace."""
     client = get_client(user.client_id)
@@ -593,7 +599,7 @@ def build_context(user: User, *, attributes: Optional[dict] = None) -> TenantCon
         data_scopes=user.data_scopes,
         access_mode=user.access_mode,
         attributes={**(attributes or {}), "platform_owner": user.platform_owner,
-                    "support_team": user.support_team},
+                    "support_team": _support_team(user, client.slug)},
     )
 
 

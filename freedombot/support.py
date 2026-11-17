@@ -72,6 +72,22 @@ SEVERITIES = (SEVERITY_NORMAL, SEVERITY_HIGH, SEVERITY_CRITICAL)
 DUPLICATE_WINDOW_HOURS = 72
 
 
+#: Cepoch's internal workspace, where the support accounts sign in.
+SUPPORT_WORKSPACE_SLUG = "cepoch"
+
+
+def team_of(user: Any, client_slug: str) -> Optional[str]:
+    """The support team a person works on: the one set on their account, else the team their address is
+    named for, when they sign in to Cepoch's internal workspace. Takes effect at once, without a restart."""
+    team = getattr(user, "support_team", None)
+    if team in TEAMS:
+        return team
+    if client_slug != SUPPORT_WORKSPACE_SLUG:
+        return None
+    email = str(getattr(user, "email", "") or "").strip().casefold()
+    return next((t for t, address in TEAM_EMAILS.items() if address == email), None)
+
+
 def is_done(status: str) -> bool:
     return str(status or "").upper() in DONE
 
