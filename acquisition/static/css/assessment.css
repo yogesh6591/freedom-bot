@@ -224,11 +224,11 @@ html, body {
 
 .assess-question {
   margin: 0 0 1.35rem;
-  font-family: var(--assess-display);
-  font-size: clamp(1.7rem, 3.8vw, 2.35rem);
-  font-weight: 650;
-  letter-spacing: -0.03em;
-  line-height: 1.18;
+  font-family: var(--assess-font);
+  font-size: clamp(1.125rem, 2.25vw, 1.375rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.45;
   color: var(--assess-ink);
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -380,7 +380,7 @@ html, body {
 
   .assess-question {
     margin-bottom: 1.1rem;
-    font-size: clamp(1.45rem, 7vw, 1.85rem);
+    font-size: clamp(1.05rem, 4.2vw, 1.22rem);
   }
 
   .assess-actions {
