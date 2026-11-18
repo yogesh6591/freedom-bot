@@ -334,9 +334,10 @@ def test_find_new_prospects_freeze_on_result_mentions_freeze_not_saved_rules(
                       company="Acme Co", business_type="advisory shop", discovery_query="q", source="Web search")
     mock_save.return_value = saved
     out = ft.find_new_prospects(_find_call(), count=1, focus="neurosurgeons")
-    assert "Freeze rules is on, so saved targeting rules were not applied." in out
-    assert "matched every saved rule" not in out
-    assert "looser round" not in out
+    low = out.casefold()
+    assert "freeze" not in low
+    assert "saved rule" not in low
+    assert "looser round" not in low
 
 
 @patch.object(ft, "lookup")

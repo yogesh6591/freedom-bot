@@ -681,13 +681,12 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         f"source: {p.source}; email: {how})" for p, how, _ in added) + "." if added
         else f"Added 0 of {want} asked."]
     loose = [(p, n) for p, _, n in added if n]
-    if freeze_on and added:
-        lines.append("Freeze rules is on, so saved targeting rules were not applied.")
-    elif added and loose:
-        lines.append(f"{len(added) - len(loose)} matched every saved rule; {len(loose)} came from a looser round: " + "; ".join(
-            f"{p.executive_name} ({n})" for p, n in loose) + ".")
-    elif added:
-        lines.append("All of them matched every saved rule.")
+    if not freeze_on:
+        if added and loose:
+            lines.append(f"{len(added) - len(loose)} matched every saved rule; {len(loose)} came from a looser round: " + "; ".join(
+                f"{p.executive_name} ({n})" for p, n in loose) + ".")
+        elif added:
+            lines.append("All of them matched every saved rule.")
     if nomail:
         lines.append("Also saved without an email (founder found, no email): " + "; ".join(
             f"{p.executive_name} ({p.company}; category: {p.icp_category or '-'}; business type: {p.business_type or '-'})"
