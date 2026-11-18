@@ -35,7 +35,7 @@ def sending_context(db: Session) -> dict:
     try:
         from app.outreach import followups
 
-        followup_summary = followups.describe(db, eff)
+        followup_summary = followups.describe(db, eff, rules=False)
     except Exception as exc:  # noqa: BLE001 - the page must still render
         followup_summary = f"follow-up status could not be checked: {exc}"
     return {
@@ -48,9 +48,10 @@ def sending_context(db: Session) -> dict:
         "stages": [{"key": k, "label": store.STAGE_LABELS[k], "body": eff.stage_bodies[k]} for k in store.STAGE_KEYS],
         "sender_gmail": sender_gmail,
         "followup_on": eff.followup_enabled,
-        "followup_days": eff.followup_days,
-        "followup_hour": eff.followup_hour,
-        "followup_max": eff.followup_max,
+        "followup_rules": [{"key": k, "label": store.STAGE_LABELS[k], **eff.followup_stages[k]}
+                           for k in store.FOLLOWUP_STAGE_KEYS],
+        "followup_total_max": eff.followup_total_max,
+        "followup_gap_days": eff.followup_gap_days,
         "followup_summary": followup_summary,
         "daily_ceiling": cfg.outreach_daily_ceiling,
         "gap_seconds": cfg.outreach_gap_seconds,
@@ -74,9 +75,40 @@ def save_sending(
     stage_calendar: Annotated[str, Form()] = "",
     stage_payment_pending: Annotated[str, Form()] = "",
     followup_enabled: Annotated[str | None, Form()] = None,
-    followup_days: Annotated[str | None, Form()] = None,
-    followup_hour: Annotated[str | None, Form()] = None,
-    followup_max: Annotated[str | None, Form()] = None,
+    fu_not_started_on: Annotated[str | None, Form()] = None,
+    fu_not_started_days: Annotated[str | None, Form()] = None,
+    fu_not_started_hour: Annotated[str | None, Form()] = None,
+    fu_not_started_max: Annotated[str | None, Form()] = None,
+    fu_in_progress_on: Annotated[str | None, Form()] = None,
+    fu_in_progress_days: Annotated[str | None, Form()] = None,
+    fu_in_progress_hour: Annotated[str | None, Form()] = None,
+    fu_in_progress_max: Annotated[str | None, Form()] = None,
+    fu_qualified_on: Annotated[str | None, Form()] = None,
+    fu_qualified_days: Annotated[str | None, Form()] = None,
+    fu_qualified_hour: Annotated[str | None, Form()] = None,
+    fu_qualified_max: Annotated[str | None, Form()] = None,
+    fu_proof_on: Annotated[str | None, Form()] = None,
+    fu_proof_days: Annotated[str | None, Form()] = None,
+    fu_proof_hour: Annotated[str | None, Form()] = None,
+    fu_proof_max: Annotated[str | None, Form()] = None,
+    fu_demo_on: Annotated[str | None, Form()] = None,
+    fu_demo_days: Annotated[str | None, Form()] = None,
+    fu_demo_hour: Annotated[str | None, Form()] = None,
+    fu_demo_max: Annotated[str | None, Form()] = None,
+    fu_value_on: Annotated[str | None, Form()] = None,
+    fu_value_days: Annotated[str | None, Form()] = None,
+    fu_value_hour: Annotated[str | None, Form()] = None,
+    fu_value_max: Annotated[str | None, Form()] = None,
+    fu_calendar_on: Annotated[str | None, Form()] = None,
+    fu_calendar_days: Annotated[str | None, Form()] = None,
+    fu_calendar_hour: Annotated[str | None, Form()] = None,
+    fu_calendar_max: Annotated[str | None, Form()] = None,
+    fu_payment_pending_on: Annotated[str | None, Form()] = None,
+    fu_payment_pending_days: Annotated[str | None, Form()] = None,
+    fu_payment_pending_hour: Annotated[str | None, Form()] = None,
+    fu_payment_pending_max: Annotated[str | None, Form()] = None,
+    followup_total_max: Annotated[str | None, Form()] = None,
+    followup_gap_days: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     want_on = worker_enabled is not None
@@ -130,10 +162,20 @@ def save_sending(
             flash = "sending_on" if flash != "template_on" else "template_on"
         else:
             flash = "sending_not_ready"
-    if followup_days is not None:  # the form carries the follow-up fields; an old cached page does not
+    if fu_not_started_days is not None:  # the form carries the follow-up table; an old cached page does not
+        rules = {
+            "not_started": {"enabled": fu_not_started_on is not None, "days": fu_not_started_days, "hour": fu_not_started_hour, "max": fu_not_started_max},
+            "in_progress": {"enabled": fu_in_progress_on is not None, "days": fu_in_progress_days, "hour": fu_in_progress_hour, "max": fu_in_progress_max},
+            "qualified": {"enabled": fu_qualified_on is not None, "days": fu_qualified_days, "hour": fu_qualified_hour, "max": fu_qualified_max},
+            "proof": {"enabled": fu_proof_on is not None, "days": fu_proof_days, "hour": fu_proof_hour, "max": fu_proof_max},
+            "demo": {"enabled": fu_demo_on is not None, "days": fu_demo_days, "hour": fu_demo_hour, "max": fu_demo_max},
+            "value": {"enabled": fu_value_on is not None, "days": fu_value_days, "hour": fu_value_hour, "max": fu_value_max},
+            "calendar": {"enabled": fu_calendar_on is not None, "days": fu_calendar_days, "hour": fu_calendar_hour, "max": fu_calendar_max},
+            "payment_pending": {"enabled": fu_payment_pending_on is not None, "days": fu_payment_pending_days, "hour": fu_payment_pending_hour, "max": fu_payment_pending_max},
+        }
         try:
-            store.save_followup(db, enabled=followup_enabled is not None, days=followup_days,
-                                hour=followup_hour, max_followups=followup_max, updated_by="admin")
+            store.save_followup_rules(db, enabled=followup_enabled is not None, rules=rules,
+                                      total_max=followup_total_max, gap_days=followup_gap_days, updated_by="admin")
         except ValueError:
             flash = "followup_invalid"
     return RedirectResponse(url=f"/integrations?flash={flash}", status_code=status.HTTP_303_SEE_OTHER)

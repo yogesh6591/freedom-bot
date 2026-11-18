@@ -915,10 +915,13 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
     }, ["change_evidence"]),
     "show_followup_schedule": _obj({}),
     "update_followup_schedule": _obj({
-        "enabled": {"type": "boolean", "description": "true to switch automatic follow-up on, false to switch it off. Leave out to keep it as it is."},
-        "days": _i("Days after a person's last email before they are followed up, 1 to 30. Leave out to keep it."),
+        "enabled": {"type": "boolean", "description": "true to switch on, false to switch off. With a stage it is that stage only; without a stage it is the whole automatic follow-up. Leave out to keep it."},
+        "stage": {"type": "string", "enum": ["not_started", "in_progress", "qualified", "proof", "demo", "value", "calendar", "payment_pending"], "description": "Change only this stage: not_started (emailed, has not started the assessment), in_progress (started, not finished), qualified (finished, good fit), proof (looking at examples), demo, value (value summary), calendar (ready to book), payment_pending (payment offered). Leave out to change every stage."},
+        "days": _i("Days after the person's last email or after they reached the stage, 1 to 30. Leave out to keep it."),
         "hour": _i("Hour of the day the follow-up goes out, Chicago time, 0 to 23 (6 pm is 18, 9 am is 9). Leave out to keep it."),
-        "max_followups": _i("Most automatic follow-ups per person, 1 to 10. Leave out to keep it."),
+        "max_followups": _i("Most automatic follow-ups per person at that stage, 1 to 10. Leave out to keep it."),
+        "total_max": _i("Most follow-ups per person in total across all stages, 1 to 20. Leave out to keep it."),
+        "gap_days": _i("Least days between any two emails to one person, 0 to 7. Leave out to keep it."),
         "change_evidence": _s("The user's own words asking for the change, copied from their latest message"),
     }, ["change_evidence"]),
     "send_from_template": _obj({

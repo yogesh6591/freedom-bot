@@ -497,6 +497,13 @@ class OutreachSession:
                         skipped.append({"name": r.get("name") or r["email"], "email": r["email"],
                                         "reason": "still being researched"})
                 chosen = [r for r in chosen if r["email"].lower() not in on_hold]
+            busy = aud.waiting_among(db, [r["email"] for r in chosen])
+            if busy:  # an email (for example an automatic follow-up) is already waiting for them: never send two
+                for r in chosen:
+                    if r["email"].lower() in busy:
+                        skipped.append({"name": r.get("name") or r["email"], "email": r["email"],
+                                        "reason": "an email is already waiting to go out to them"})
+                chosen = [r for r in chosen if r["email"].lower() not in busy]
             if not chosen:
                 why = ("; ".join(sorted({s["reason"] for s in skipped}))) if skipped else ""
                 return "error: nobody matches" + (f" ({len(skipped)} skipped: {why})" if skipped else "") + ". Nothing was queued."
@@ -898,30 +905,37 @@ class OutreachSession:
         db = self.db_factory()
         try:
             return (followups.describe(db, outreach_settings.effective(db))
-                    + "\n\nReply in one or two short sentences. Do not list people.")
+                    + "\n\nAnswer what the user asked from this. For the whole schedule give one short line per stage. "
+                    "Do not list people.")
         finally:
             db.close()
 
     def update_followup_schedule(self, enabled: Optional[bool] = None, days: Optional[int] = None,
                                  hour: Optional[int] = None, max_followups: Optional[int] = None,
-                                 change_evidence: str = "") -> str:
-        """Switch automatic follow-up on or off, or change its days, hour (Chicago time) or limit."""
+                                 stage: Optional[str] = None, total_max: Optional[int] = None,
+                                 gap_days: Optional[int] = None, change_evidence: str = "") -> str:
+        """Change the automatic follow-up rules. With a stage the change is for that stage only; without one the
+        days, hour and limit apply to every stage and ``enabled`` is the master switch."""
         from acquisition.services import outreach_settings
         from app.outreach import followups
 
-        if enabled is None and days is None and hour is None and max_followups is None:
-            return "error: give what to change: enabled, days, hour (0 to 23, Chicago time) or max_followups"
+        if all(v is None for v in (enabled, days, hour, max_followups, total_max, gap_days)):
+            return ("error: give what to change: enabled, days, hour (0 to 23, Chicago time), max_followups, "
+                    "total_max or gap_days")
         if not (change_evidence and self._said(change_evidence)):
             return "error: pass change_evidence, the user's own words asking for this change, copied from their latest message"
         db = self.db_factory()
         try:
             try:
-                outreach_settings.save_followup(db, enabled=enabled, days=days, hour=hour,
-                                                max_followups=max_followups, updated_by="chat")
+                row = outreach_settings.save_followup(db, enabled=enabled, days=days, hour=hour,
+                                                      max_followups=max_followups, stage=stage, total_max=total_max,
+                                                      gap_days=gap_days, updated_by="chat")
             except ValueError as exc:
                 db.rollback()
                 return f"error: {exc}"
-            return ("saved. " + followups.describe(db, outreach_settings.effective(db))
-                    + "\n\nReply in one or two short sentences with the rule. Do not list people.")
+            cancelled = int(getattr(row, "cancelled_count", 0) or 0)
+            note = f" {cancelled} follow-up(s) that were waiting to go out were cancelled." if cancelled else ""
+            return ("saved." + note + " " + followups.describe(db, outreach_settings.effective(db))
+                    + "\n\nReply in one or two short sentences with what changed. Do not list people.")
         finally:
             db.close()

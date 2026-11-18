@@ -223,6 +223,8 @@ def enqueue(
     requested_by: Optional[str] = None,
     batch_id: Optional[uuid.UUID] = None,
     new_thread: bool = False,
+    automatic: bool = False,
+    stage: Optional[str] = None,
 ) -> list[SentEmail]:
     """Fill the template for each person and queue it. Nothing is sent here.
 
@@ -272,6 +274,8 @@ def enqueue(
             body=body,
             status=STATUS_QUEUED,
             requested_by=requested_by,
+            automatic=bool(automatic),
+            stage=stage if automatic else None,
         )
         db.add(row)
         rows.append(row)

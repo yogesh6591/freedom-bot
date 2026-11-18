@@ -33,7 +33,8 @@ _EMAIL_METHODS: dict[str, tuple[str, tuple[str, ...]]] = {
                               ("first_subject", "first_body", "stage", "stage_body", "change_evidence", "remove_placeholders")),
     "show_followup_schedule": ("show_followup_schedule", ()),
     "update_followup_schedule": ("update_followup_schedule",
-                                  ("enabled", "days", "hour", "max_followups", "change_evidence")),
+                                  ("enabled", "days", "hour", "max_followups", "stage", "total_max", "gap_days",
+                                   "change_evidence")),
     "cancel_sending": ("cancel_sending", ()),
 }
 

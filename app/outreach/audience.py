@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from acquisition.models.assessment import AssessmentProfile
 from acquisition.models.campaign import AssessmentStatus, CampaignProspect, JourneyStage, OutreachStatus
 from acquisition.models.journey import QualificationStatus
-from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENT, SentEmail
+from acquisition.models.outreach import STATUS_QUEUED, STATUS_SENDING, STATUS_SENT, SentEmail
 from acquisition.models.prospect import Prospect
 from acquisition.tenant import prospect_client_clause
 from acquisition.services import outreach_service as svc
@@ -204,6 +204,21 @@ def held_among(db: Session, emails: list) -> set:
             prospect_client_clause(),
             func.lower(Prospect.email).in_(keys),
             Prospect.research_status.in_(RESEARCH_HOLD),
+        )
+    )
+    return {str(e).strip().lower() for e in rows}
+
+
+def waiting_among(db: Session, emails: list) -> set:
+    """Lower-case emails (of the given ones) whose person already has an email waiting to go out."""
+    keys = {str(e).strip().lower() for e in emails if e}
+    if not keys:
+        return set()
+    rows = db.scalars(
+        select(Prospect.email).join(SentEmail, SentEmail.prospect_id == Prospect.id).where(
+            prospect_client_clause(),
+            func.lower(Prospect.email).in_(keys),
+            SentEmail.status.in_((STATUS_QUEUED, STATUS_SENDING)),
         )
     )
     return {str(e).strip().lower() for e in rows}

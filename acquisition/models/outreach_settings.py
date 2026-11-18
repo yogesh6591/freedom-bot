@@ -31,6 +31,10 @@ class OutreachSettings(Base):
     followup_hour: Mapped[int] = mapped_column(Integer, nullable=False, default=18, server_default="18")
     followup_max: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
     followup_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # One rule per stage (JSON: stage -> enabled, days, hour, max), and limits that apply to every person.
+    followup_stages: Mapped[str | None] = mapped_column(Text, nullable=True)
+    followup_total_max: Mapped[int] = mapped_column(Integer, nullable=False, default=6, server_default="6")
+    followup_gap_days: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     updated_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
