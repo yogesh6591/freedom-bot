@@ -11,14 +11,16 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, Eye, EyeOff, FileText, Lock, Upload, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, Eye, EyeOff, FileText, Info, Lock, Upload, X } from 'lucide-react'
 import { BrandMark } from '@/components/BrandMark'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Btn, ErrorNote, Field, inputClass } from '@/components/common/primitives'
 import { api, API_BASE } from '@/lib/api'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { setAdminUnlocked } from '@/lib/panel'
 import { announceSessionChange } from '@/lib/sessionSync'
 import {
+  DEPARTMENT_GUIDE,
   DEPARTMENTS,
   PLANS,
   getPlan,
@@ -99,6 +101,16 @@ export default function SignupPage() {
   const [files, setFiles] = useState<File[]>([])
   const [uploads, setUploads] = useState<UploadState[]>([])
   const [signedIn, setSignedIn] = useState(false)
+  // "What each department does": opens by itself the first time the Departments step is reached.
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [guideShown, setGuideShown] = useState(false)
+
+  useEffect(() => {
+    if (step === 2 && !guideShown) {
+      setGuideOpen(true)
+      setGuideShown(true)
+    }
+  }, [step, guideShown])
   const [idEdited, setIdEdited] = useState(false)
 
   useEffect(() => {
@@ -352,7 +364,13 @@ export default function SignupPage() {
 
               {step === 2 && (
                 <div className="grid gap-4">
-                  <Heading title="Choose your departments" text="Your team can use FreedomBot in these departments. General is always included." />
+                  <div className="flex flex-wrap items-end justify-between gap-3">
+                    <Heading title="Choose your departments" text="Your team can use FreedomBot in these departments. General is always included." />
+                    <Btn variant="ghost" onClick={() => setGuideOpen(true)}>
+                      <Info size={15} aria-hidden /> What each department does
+                    </Btn>
+                  </div>
+                  <DepartmentGuideDialog open={guideOpen} onClose={() => setGuideOpen(false)} picked={draft.departments} />
                   <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
                     {DEPARTMENTS.map((d) => {
                       const on = draft.departments.includes(d.id)
@@ -552,6 +570,51 @@ export default function SignupPage() {
         )}
       </main>
     </div>
+  )
+}
+
+/** One dialog explaining every department: what the team usually does and how FreedomBot helps. */
+function DepartmentGuideDialog({ open, onClose, picked }: { open: boolean; onClose: () => void; picked: string[] }) {
+  return (
+    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>What each department does</DialogTitle>
+          <DialogDescription className="text-muted">
+            Pick the departments your team works in. FreedomBot then answers and helps with that kind of work.
+          </DialogDescription>
+        </DialogHeader>
+        <ul className="mt-2 grid gap-3">
+          {DEPARTMENTS.map((d) => {
+            const guide = DEPARTMENT_GUIDE[d.id]
+            if (!guide) return null
+            return (
+              <li key={d.id} className="rounded-xl border border-border bg-background p-4 text-[13px]">
+                <p className="flex items-center justify-between gap-2 text-[15px] font-semibold text-primary">
+                  {d.label}
+                  {picked.includes(d.id) && (
+                    <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[11px] font-medium text-brand">Picked</span>
+                  )}
+                </p>
+                <p className="mt-1 text-secondary">{guide.team}</p>
+                <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted">How FreedomBot helps</p>
+                <ul className="mt-1.5 grid gap-1">
+                  {guide.helps.map((h) => (
+                    <li key={h} className="flex gap-1.5 text-secondary">
+                      <Check size={13} className="mt-0.5 shrink-0 text-brand" aria-hidden />
+                      {h}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 text-[12px] text-muted">
+                  Try asking: <span className="italic text-secondary">&ldquo;{guide.example}&rdquo;</span>
+                </p>
+              </li>
+            )
+          })}
+        </ul>
+      </DialogContent>
+    </Dialog>
   )
 }
 
