@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -83,6 +84,11 @@ class Effective:
     first_body: str = ""
     followup_body: str = ""
     stage_bodies: dict = field(default_factory=lambda: dict(DEFAULT_STAGE_TEMPLATES))
+    followup_enabled: bool = False
+    followup_days: int = 2
+    followup_hour: int = 18
+    followup_max: int = 2
+    followup_since: Optional[datetime] = None
 
     @property
     def template_ready(self) -> bool:
@@ -116,6 +122,11 @@ def effective(db: Session) -> Effective:
         first_body=(row.first_body or "").strip(),
         followup_body=(row.followup_body or "").strip(),
         stage_bodies=_stage_bodies(row.stage_templates),
+        followup_enabled=bool(row.followup_enabled),
+        followup_days=int(row.followup_days or 2),
+        followup_hour=18 if row.followup_hour is None else int(row.followup_hour),
+        followup_max=int(row.followup_max or 2),
+        followup_since=row.followup_since,
     )
 
 
@@ -156,6 +167,57 @@ def save(
             if k in STAGE_KEYS:
                 merged[k] = (v or "").strip() or DEFAULT_STAGE_TEMPLATES[k]  # empty means back to the default
         row.stage_templates = json.dumps(merged)
+    row.updated_by = updated_by
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+FOLLOWUP_DAYS = (1, 30)
+FOLLOWUP_HOURS = (0, 23)
+FOLLOWUP_MAX = (1, 10)
+
+
+def _in_range(name: str, value, low_high: tuple) -> int:
+    low, high = low_high
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a whole number from {low} to {high}") from None
+    if not low <= number <= high:
+        raise ValueError(f"{name} must be from {low} to {high}")
+    return number
+
+
+def save_followup(
+    db: Session,
+    *,
+    enabled: bool | None = None,
+    days: int | None = None,
+    hour: int | None = None,
+    max_followups: int | None = None,
+    updated_by: str | None = None,
+) -> OutreachSettings:
+    """Change the automatic follow-up rule; only the values given change. Raises ValueError for a value out of range.
+
+    Switching it from off to on starts the clock: only people whose last email goes out after that are followed up."""
+    new_days = None if days is None else _in_range("days", days, FOLLOWUP_DAYS)
+    new_hour = None if hour is None else _in_range("hour", hour, FOLLOWUP_HOURS)
+    new_max = None if max_followups is None else _in_range("max_followups", max_followups, FOLLOWUP_MAX)
+    row = get_row(db)
+    if row is None:
+        row = OutreachSettings(id=1)
+        db.add(row)
+    if enabled is not None:
+        if bool(enabled) and not row.followup_enabled:
+            row.followup_since = datetime.now(timezone.utc)
+        row.followup_enabled = bool(enabled)
+    if new_days is not None:
+        row.followup_days = new_days
+    if new_hour is not None:
+        row.followup_hour = new_hour
+    if new_max is not None:
+        row.followup_max = new_max
     row.updated_by = updated_by
     db.commit()
     db.refresh(row)

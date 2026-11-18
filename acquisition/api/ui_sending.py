@@ -32,6 +32,12 @@ def sending_context(db: Session) -> dict:
     except Exception as exc:  # noqa: BLE001 - the page must still render
         ok, reason = False, f"email status could not be checked: {exc}"
     cfg = get_settings()
+    try:
+        from app.outreach import followups
+
+        followup_summary = followups.describe(db, eff)
+    except Exception as exc:  # noqa: BLE001 - the page must still render
+        followup_summary = f"follow-up status could not be checked: {exc}"
     return {
         "ready": ok,
         "reason": reason,
@@ -41,6 +47,11 @@ def sending_context(db: Session) -> dict:
         "first_body": eff.first_body,
         "stages": [{"key": k, "label": store.STAGE_LABELS[k], "body": eff.stage_bodies[k]} for k in store.STAGE_KEYS],
         "sender_gmail": sender_gmail,
+        "followup_on": eff.followup_enabled,
+        "followup_days": eff.followup_days,
+        "followup_hour": eff.followup_hour,
+        "followup_max": eff.followup_max,
+        "followup_summary": followup_summary,
         "daily_ceiling": cfg.outreach_daily_ceiling,
         "gap_seconds": cfg.outreach_gap_seconds,
     }
@@ -62,6 +73,10 @@ def save_sending(
     stage_value: Annotated[str, Form()] = "",
     stage_calendar: Annotated[str, Form()] = "",
     stage_payment_pending: Annotated[str, Form()] = "",
+    followup_enabled: Annotated[str | None, Form()] = None,
+    followup_days: Annotated[str | None, Form()] = None,
+    followup_hour: Annotated[str | None, Form()] = None,
+    followup_max: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     want_on = worker_enabled is not None
@@ -115,4 +130,10 @@ def save_sending(
             flash = "sending_on" if flash != "template_on" else "template_on"
         else:
             flash = "sending_not_ready"
+    if followup_days is not None:  # the form carries the follow-up fields; an old cached page does not
+        try:
+            store.save_followup(db, enabled=followup_enabled is not None, days=followup_days,
+                                hour=followup_hour, max_followups=followup_max, updated_by="admin")
+        except ValueError:
+            flash = "followup_invalid"
     return RedirectResponse(url=f"/integrations?flash={flash}", status_code=status.HTTP_303_SEE_OTHER)

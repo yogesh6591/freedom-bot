@@ -889,3 +889,39 @@ class OutreachSession:
             return f"stopped: {n} queued email(s) will not be sent. Emails already sent are not affected."
         finally:
             db.close()
+
+    # ------------------------------------------------------------------ automatic follow-up (see / change)
+    def show_followup_schedule(self) -> str:
+        from acquisition.services import outreach_settings
+        from app.outreach import followups
+
+        db = self.db_factory()
+        try:
+            return (followups.describe(db, outreach_settings.effective(db))
+                    + "\n\nReply in one or two short sentences. Do not list people.")
+        finally:
+            db.close()
+
+    def update_followup_schedule(self, enabled: Optional[bool] = None, days: Optional[int] = None,
+                                 hour: Optional[int] = None, max_followups: Optional[int] = None,
+                                 change_evidence: str = "") -> str:
+        """Switch automatic follow-up on or off, or change its days, hour (Chicago time) or limit."""
+        from acquisition.services import outreach_settings
+        from app.outreach import followups
+
+        if enabled is None and days is None and hour is None and max_followups is None:
+            return "error: give what to change: enabled, days, hour (0 to 23, Chicago time) or max_followups"
+        if not (change_evidence and self._said(change_evidence)):
+            return "error: pass change_evidence, the user's own words asking for this change, copied from their latest message"
+        db = self.db_factory()
+        try:
+            try:
+                outreach_settings.save_followup(db, enabled=enabled, days=days, hour=hour,
+                                                max_followups=max_followups, updated_by="chat")
+            except ValueError as exc:
+                db.rollback()
+                return f"error: {exc}"
+            return ("saved. " + followups.describe(db, outreach_settings.effective(db))
+                    + "\n\nReply in one or two short sentences with the rule. Do not list people.")
+        finally:
+            db.close()

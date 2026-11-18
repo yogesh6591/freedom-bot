@@ -12,6 +12,7 @@
   {% elif flash == 'sending_on' %}<div class="flash">Saved. Sending is on.</div>
   {% elif flash == 'template_on' %}<div class="flash">Saved. Template sending is on: the chat sends your saved email without showing a card.</div>
   {% elif flash == 'template_missing' %}<div class="flash flash-error">Saved, but template sending stayed off: fill in the first email subject and body first.</div>
+  {% elif flash == 'followup_invalid' %}<div class="flash flash-error">Saved, but the follow-up rule was not changed: days must be 1 to 30, the time 0 to 23 and the most per person 1 to 10.</div>
   {% elif flash == 'sending_not_ready' %}<div class="flash flash-error">Saved, but sending stayed off: {{ email.reason }}</div>
   {% elif flash == 'calcom_updated' %}<div class="flash">Cal.com webhook / bookings updated.</div>
   {% elif flash == 'calcom_error' %}<div class="flash flash-error">Cal.com request failed. Check that Cal.com is connected in the chat app, Integrations.</div>
@@ -166,6 +167,25 @@
       </label>
       {% endfor %}
       <p class="page-lede full">Blanks you can use: <code>{{ '{{firstName}}' }}</code>, <code>{{ '{{lastName}}' }}</code>, <code>{{ '{{companyName}}' }}</code>, <code>{{ '{{assessment_url}}' }}</code> (each person's own link) and <code>{{ '{{senderName}}' }}</code> (the signed-in user who sends). In the "started, not finished" email, <code>{{ '{{missingTopics}}' }}</code> is filled with what that person still has to answer. In the later-step and payment emails, <code>{{ '{{next_step_url}}' }}</code> is that person's own link to their next step (or to their checkout page). Follow-ups keep the earlier subject with "Re:".</p>
+      <p class="page-lede full"><strong>Automatic follow-up.</strong> {{ email.followup_summary }}</p>
+      <label class="field full checkbox-inline">
+        <input type="checkbox" name="followup_enabled" value="1" {% if email.followup_on %}checked{% endif %}>
+        <span>Follow up automatically. Each person has their own clock that starts when their last email went out, so people emailed later are followed up later. They get the saved email for where they are, in the same thread, from the Gmail of whoever emailed them. Only people emailed after you switch this on are covered; people who replied or unsubscribed are skipped. Sending above must also be on. "Send follow-ups to everyone" in the chat still sends instantly.</span>
+      </label>
+      <label class="field">
+        <span>Days after the last email</span>
+        <input type="number" name="followup_days" min="1" max="30" value="{{ email.followup_days }}">
+      </label>
+      <label class="field">
+        <span>Time of day (Chicago time)</span>
+        <select name="followup_hour">
+          {% for h in range(0, 24) %}<option value="{{ h }}" {% if h == email.followup_hour %}selected{% endif %}>{{ (h % 12) or 12 }}:00 {{ 'pm' if h >= 12 else 'am' }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field">
+        <span>Most follow-ups per person</span>
+        <input type="number" name="followup_max" min="1" max="10" value="{{ email.followup_max }}">
+      </label>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Save</button>

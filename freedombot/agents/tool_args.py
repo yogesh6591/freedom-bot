@@ -913,6 +913,14 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         "change_evidence": _s("The user's own words asking for the change, copied from their latest message"),
         "remove_placeholders": _arr("Blank names the user clearly asked to remove, for example companyName. Usually empty."),
     }, ["change_evidence"]),
+    "show_followup_schedule": _obj({}),
+    "update_followup_schedule": _obj({
+        "enabled": {"type": "boolean", "description": "true to switch automatic follow-up on, false to switch it off. Leave out to keep it as it is."},
+        "days": _i("Days after a person's last email before they are followed up, 1 to 30. Leave out to keep it."),
+        "hour": _i("Hour of the day the follow-up goes out, Chicago time, 0 to 23 (6 pm is 18, 9 am is 9). Leave out to keep it."),
+        "max_followups": _i("Most automatic follow-ups per person, 1 to 10. Leave out to keep it."),
+        "change_evidence": _s("The user's own words asking for the change, copied from their latest message"),
+    }, ["change_evidence"]),
     "send_from_template": _obj({
         "people": {
             "type": "array",

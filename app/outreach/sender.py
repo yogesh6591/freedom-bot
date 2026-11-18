@@ -165,6 +165,12 @@ def start() -> Optional[Callable[[], None]]:
     def loop() -> None:
         while not stop.is_set():
             try:
+                from app.outreach import followups
+
+                followups.run_if_due()  # queue the automatic follow-ups that are due; this loop then sends them
+            except Exception as exc:  # noqa: BLE001 - never stop the sender loop
+                log.warning("outreach: automatic follow-up check failed: %s", exc)
+            try:
                 busy = tick()
             except Exception as exc:  # noqa: BLE001 - keep the loop alive
                 log.warning("outreach: send tick failed: %s", exc)

@@ -994,6 +994,22 @@ TOOL_META: dict[str, AgentMeta] = {
         Needs: change_evidence, the user's own words.
         Effect: overwrites the saved template used by every later send. {gate}
     """)),
+    "show_followup_schedule": M("outreach", d("""
+        Show the automatic follow-up rule: on or off, days after a person's last email, time of day (Chicago
+        time), most follow-ups per person, and how many people are waiting. Each person has their own clock.
+        Read-only.
+        Use when: "is auto follow-up on", "when do follow-ups go out", "how many are waiting".
+        Don't use: changing it -> update_followup_schedule; sending follow-ups now -> send_from_template.
+    """)),
+    "update_followup_schedule": M("outreach", d("""
+        Change the automatic follow-up rule: on or off, days after a person's last email, hour (Chicago
+        time), most per person. Change only what the user asked.
+        Use when: "turn on auto follow-up", "follow up after 3 days at 5 pm", "at most 3 follow-ups".
+        Don't use: sending now -> send_from_template; email wording -> update_email_template;
+        viewing -> show_followup_schedule.
+        Needs: change_evidence, the user's own words.
+        Effect: saves the rule every later automatic follow-up uses. {gate}
+    """)),
     "cancel_sending": M("outreach", d("""
         Stop all emails that are queued but not sent yet. Emails already sent are not affected.
         Use when: "stop sending", "cancel the batch".

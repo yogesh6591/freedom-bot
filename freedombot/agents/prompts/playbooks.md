@@ -199,6 +199,11 @@
   and change only what the user asked for, copying every other line word for word. Remove a blank only when the user
   clearly asks for that (then pass it in remove_placeholders). The user sees the template as a card, so reply with
   one short sentence and never retype the template.
+- Automatic follow-up is a rule, not a send: show_followup_schedule shows it and update_followup_schedule changes it
+  (on or off, days after a person's last email, hour of the day in Chicago time as 0 to 23, most per person). Each
+  person has their own clock that starts when their last email went out, so people added later are due later.
+  Change only what the user asked and pass their words as change_evidence. It is separate from "send follow-ups to
+  everyone", which sends now with send_from_template. Reply in one short sentence with the rule.
 - Template mode, who and what to write: turn the user's words into send_from_template filters (stage, order with
   count, emailed, inactive_days, text, place); never list or pick people yourself. "latest/newest" is order newest,
   "older/oldest" is order oldest, no number means 1. Do not ask for confirmation, just send. If a filter says
