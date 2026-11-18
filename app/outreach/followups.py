@@ -9,8 +9,8 @@ follow-ups to everyone" in the chat is a separate, manual, instant action and is
 * A person's clock starts at the later of their last email and the moment they reached their stage (for example
   opened the assessment), so someone who just did something is not emailed at once because of an old email.
 * Only people whose last email went out after the switch was turned on are considered (``followup_since``).
-* Limits: each stage has its own "most per person"; on top of that everybody has a total limit of automatic and
-  manual follow-ups, and a minimum number of days between any two emails.
+* Limit: each stage has its own "most per person". There is no overall limit: a person who keeps moving to a new
+  stage and stalls there gets that stage's follow-ups too, so the stages' "most" are all that decides.
 * Skipped: people who unsubscribed, bounced or replied, people with an email already waiting, stages switched off,
   people who need no email (booked, paid, result not ready, not a fit), and a payment reminder that is too soon or
   too many. A person whose sender has no connected Gmail waits and goes out once it is connected.
@@ -90,12 +90,12 @@ def stage_event_at(link: Any, stage: str) -> Optional[datetime]:
     return None
 
 
-def due_for(last_sent_at: datetime, event_at: Optional[datetime], rule: dict, gap_days: int) -> datetime:
+def due_for(last_sent_at: datetime, event_at: Optional[datetime], rule: dict) -> datetime:
     """When this person is due: the stage's days and hour counted from the later of the last email and the stage
-    event, but never sooner than ``gap_days`` after the last email."""
+    event."""
     last = _aware(last_sent_at)
     start = event_at if event_at is not None and event_at > last else last
-    return max(due_at(start, rule["days"], rule["hour"]), last + timedelta(days=int(gap_days)))
+    return due_at(start, rule["days"], rule["hour"])
 
 
 def rule_line(stage: str, rule: dict) -> str:
@@ -107,13 +107,9 @@ def rule_line(stage: str, rule: dict) -> str:
 
 
 def rule_text(cfg: Any) -> str:
-    """The whole rule, one line per stage, plus the limits that apply to everybody."""
+    """The whole rule, one line per stage."""
     lines = [rule_line(k, cfg.followup_stages[k]) for k in outreach_settings.FOLLOWUP_STAGE_KEYS]
-    gap = int(cfg.followup_gap_days)
-    tail = (f"At most {int(cfg.followup_total_max)} follow-ups per person in total, and at least {gap} "
-            f"day{'s' if gap != 1 else ''} between two emails." if gap else
-            f"At most {int(cfg.followup_total_max)} follow-ups per person in total.")
-    return "; ".join(lines) + ". Times are Chicago time. " + tail
+    return "; ".join(lines) + ". Times are Chicago time."
 
 
 def scan(db: Any, cfg: Any, now: Optional[datetime] = None, *, only_due: bool = False) -> list[Waiting]:
@@ -138,8 +134,6 @@ def scan(db: Any, cfg: Any, now: Optional[datetime] = None, *, only_due: bool = 
     for pid, rows in mails.items():
         if any(r.status in (STATUS_QUEUED, STATUS_SENDING) for r in rows):
             continue  # something is already waiting for this person
-        if sum(1 for r in rows if r.kind == KIND_FOLLOW_UP) >= int(cfg.followup_total_max):
-            continue
         last = max((r for r in rows if r.sent_at), key=lambda r: _aware(r.sent_at), default=None)
         if last is None or _aware(last.sent_at) < since or not last.requested_by:
             continue
@@ -172,7 +166,7 @@ def scan(db: Any, cfg: Any, now: Optional[datetime] = None, *, only_due: bool = 
             continue  # this stage is switched off
         if sum(1 for r in rows if r.kind == KIND_FOLLOW_UP and r.stage == key) >= int(rule["max"]):
             continue  # this stage's limit is used up
-        due = due_for(last_sent, stage_event_at(link, key), rule, cfg.followup_gap_days)
+        due = due_for(last_sent, stage_event_at(link, key), rule)
         if only_due and due > now:
             continue
         if key == "payment_pending" and OutreachSession._payment_hold(db, pid):

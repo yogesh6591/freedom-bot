@@ -50,8 +50,6 @@ def sending_context(db: Session) -> dict:
         "followup_on": eff.followup_enabled,
         "followup_rules": [{"key": k, "label": store.STAGE_LABELS[k], **eff.followup_stages[k]}
                            for k in store.FOLLOWUP_STAGE_KEYS],
-        "followup_total_max": eff.followup_total_max,
-        "followup_gap_days": eff.followup_gap_days,
         "followup_summary": followup_summary,
         "daily_ceiling": cfg.outreach_daily_ceiling,
         "gap_seconds": cfg.outreach_gap_seconds,
@@ -107,8 +105,6 @@ def save_sending(
     fu_payment_pending_days: Annotated[str | None, Form()] = None,
     fu_payment_pending_hour: Annotated[str | None, Form()] = None,
     fu_payment_pending_max: Annotated[str | None, Form()] = None,
-    followup_total_max: Annotated[str | None, Form()] = None,
-    followup_gap_days: Annotated[str | None, Form()] = None,
     db: Session = Depends(get_db),
 ):
     want_on = worker_enabled is not None
@@ -174,8 +170,7 @@ def save_sending(
             "payment_pending": {"enabled": fu_payment_pending_on is not None, "days": fu_payment_pending_days, "hour": fu_payment_pending_hour, "max": fu_payment_pending_max},
         }
         try:
-            store.save_followup_rules(db, enabled=followup_enabled is not None, rules=rules,
-                                      total_max=followup_total_max, gap_days=followup_gap_days, updated_by="admin")
+            store.save_followup_rules(db, enabled=followup_enabled is not None, rules=rules, updated_by="admin")
         except ValueError:
             flash = "followup_invalid"
     return RedirectResponse(url=f"/integrations?flash={flash}", status_code=status.HTTP_303_SEE_OTHER)

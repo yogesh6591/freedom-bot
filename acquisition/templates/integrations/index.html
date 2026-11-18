@@ -12,7 +12,7 @@
   {% elif flash == 'sending_on' %}<div class="flash">Saved. Sending is on.</div>
   {% elif flash == 'template_on' %}<div class="flash">Saved. Template sending is on: the chat sends your saved email without showing a card.</div>
   {% elif flash == 'template_missing' %}<div class="flash flash-error">Saved, but template sending stayed off: fill in the first email subject and body first.</div>
-  {% elif flash == 'followup_invalid' %}<div class="flash flash-error">Saved, but the follow-up rules were not changed: days must be 1 to 30, the time 0 to 23, the most per stage 1 to 10, the total 1 to 20 and the days between emails 0 to 7.</div>
+  {% elif flash == 'followup_invalid' %}<div class="flash flash-error">Saved, but the follow-up rules were not changed: days must be 1 to 30, the time 0 to 23, and the most per stage 1 to 10.</div>
   {% elif flash == 'sending_not_ready' %}<div class="flash flash-error">Saved, but sending stayed off: {{ email.reason }}</div>
   {% elif flash == 'calcom_updated' %}<div class="flash">Cal.com webhook / bookings updated.</div>
   {% elif flash == 'calcom_error' %}<div class="flash flash-error">Cal.com request failed. Check that Cal.com is connected in the chat app, Integrations.</div>
@@ -198,14 +198,6 @@
         </table>
       </div>
       <p class="page-lede full">Days are counted from the later of the person's last email and the moment they reached that stage. "Most" is how many automatic follow-ups one person gets at that stage. People who are booked, have paid, finished with no result yet, or are not a fit get none.</p>
-      <label class="field">
-        <span>Most follow-ups per person in total</span>
-        <input type="number" name="followup_total_max" min="1" max="20" value="{{ email.followup_total_max }}">
-      </label>
-      <label class="field">
-        <span>Days between any two emails (at least)</span>
-        <input type="number" name="followup_gap_days" min="0" max="7" value="{{ email.followup_gap_days }}">
-      </label>
     </div>
     <div class="form-actions">
       <button class="btn btn-primary" type="submit">Save</button>

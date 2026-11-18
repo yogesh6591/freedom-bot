@@ -920,8 +920,6 @@ TOOL_PARAMETER_SCHEMAS: dict[str, dict[str, Any]] = {
         "days": _i("Days after the person's last email or after they reached the stage, 1 to 30. Leave out to keep it."),
         "hour": _i("Hour of the day the follow-up goes out, Chicago time, 0 to 23 (6 pm is 18, 9 am is 9). Leave out to keep it."),
         "max_followups": _i("Most automatic follow-ups per person at that stage, 1 to 10. Leave out to keep it."),
-        "total_max": _i("Most follow-ups per person in total across all stages, 1 to 20. Leave out to keep it."),
-        "gap_days": _i("Least days between any two emails to one person, 0 to 7. Leave out to keep it."),
         "change_evidence": _s("The user's own words asking for the change, copied from their latest message"),
     }, ["change_evidence"]),
     "send_from_template": _obj({

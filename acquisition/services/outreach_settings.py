@@ -119,8 +119,6 @@ class Effective:
     followup_max: int = 2
     followup_since: Optional[datetime] = None
     followup_stages: dict = field(default_factory=lambda: _stage_rules(None, 2, 18, 2))
-    followup_total_max: int = 6
-    followup_gap_days: int = 1
 
     @property
     def template_ready(self) -> bool:
@@ -162,8 +160,6 @@ def effective(db: Session) -> Effective:
         followup_stages=_stage_rules(row.followup_stages, int(row.followup_days or 2),
                                      18 if row.followup_hour is None else int(row.followup_hour),
                                      int(row.followup_max or 2)),
-        followup_total_max=int(row.followup_total_max or 6),
-        followup_gap_days=1 if row.followup_gap_days is None else int(row.followup_gap_days),
     )
 
 
@@ -213,8 +209,6 @@ def save(
 FOLLOWUP_DAYS = (1, 30)
 FOLLOWUP_HOURS = (0, 23)
 FOLLOWUP_MAX = (1, 10)
-FOLLOWUP_TOTAL = (1, 20)
-FOLLOWUP_GAP = (0, 7)
 
 
 def _in_range(name: str, value, low_high: tuple) -> int:
@@ -250,8 +244,7 @@ def _cancel_waiting(db: Session, stage: str | None = None) -> int:
     return len(rows)
 
 
-def _apply(db: Session, master: bool | None, changes: dict, total_max: int | None, gap_days: int | None,
-           updated_by: str | None) -> OutreachSettings:
+def _apply(db: Session, master: bool | None, changes: dict, updated_by: str | None) -> OutreachSettings:
     """Write checked values. Nothing is touched before this point, so a refused value changes nothing."""
     row = get_row(db)
     if row is None:
@@ -268,10 +261,6 @@ def _apply(db: Session, master: bool | None, changes: dict, total_max: int | Non
         row.followup_stages = json.dumps(rules)
         first = rules["not_started"]  # the old single rule is kept in step, only for a rollback
         row.followup_days, row.followup_hour, row.followup_max = first["days"], first["hour"], first["max"]
-    if total_max is not None:
-        row.followup_total_max = total_max
-    if gap_days is not None:
-        row.followup_gap_days = gap_days
     if master is not None:
         now = datetime.now(timezone.utc)
         if master and not row.followup_enabled:
@@ -296,8 +285,6 @@ def save_followup_rules(
     *,
     enabled: bool | None = None,
     rules: dict | None = None,
-    total_max: int | None = None,
-    gap_days: int | None = None,
     updated_by: str | None = None,
 ) -> OutreachSettings:
     """Save the whole table from the admin page: rules is {stage: {enabled, days, hour, max}}. Every value is checked
@@ -310,9 +297,7 @@ def save_followup_rules(
             "hour": _in_range("hour", one.get("hour"), FOLLOWUP_HOURS),
             "max": _in_range("max_followups", one.get("max"), FOLLOWUP_MAX),
         }
-    new_total = None if total_max is None else _in_range("total_max", total_max, FOLLOWUP_TOTAL)
-    new_gap = None if gap_days is None else _in_range("gap_days", gap_days, FOLLOWUP_GAP)
-    return _apply(db, enabled, checked, new_total, new_gap, updated_by)
+    return _apply(db, enabled, checked, updated_by)
 
 
 def save_followup(
@@ -323,8 +308,6 @@ def save_followup(
     hour: int | None = None,
     max_followups: int | None = None,
     stage: str | None = None,
-    total_max: int | None = None,
-    gap_days: int | None = None,
     updated_by: str | None = None,
 ) -> OutreachSettings:
     """Change the automatic follow-up rules; only the values given change. Raises ValueError for a bad value.
@@ -335,8 +318,6 @@ def save_followup(
     new_days = None if days is None else _in_range("days", days, FOLLOWUP_DAYS)
     new_hour = None if hour is None else _in_range("hour", hour, FOLLOWUP_HOURS)
     new_max = None if max_followups is None else _in_range("max_followups", max_followups, FOLLOWUP_MAX)
-    new_total = None if total_max is None else _in_range("total_max", total_max, FOLLOWUP_TOTAL)
-    new_gap = None if gap_days is None else _in_range("gap_days", gap_days, FOLLOWUP_GAP)
     key = None if stage is None else _check_stage(stage)
     row = get_row(db)
     current = _stage_rules(row.followup_stages if row else None, int(row.followup_days or 2) if row else 2,
@@ -355,4 +336,4 @@ def save_followup(
             rule["enabled"] = bool(enabled)
         if rule != current[k]:
             changes[k] = rule
-    return _apply(db, enabled if key is None else None, changes, new_total, new_gap, updated_by)
+    return _apply(db, enabled if key is None else None, changes, updated_by)

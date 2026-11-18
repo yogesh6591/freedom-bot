@@ -1003,8 +1003,7 @@ TOOL_META: dict[str, AgentMeta] = {
     """)),
     "update_followup_schedule": M("outreach", d("""
         Change the automatic follow-up rules. Each stage has its own on/off, days after the person's last
-        email or stage change, hour (Chicago time) and most per person; no stage means all stages. Also
-        total_max and gap_days.
+        email or stage change, hour (Chicago time) and most per person; no stage means all stages.
         Use when: "turn on auto follow-up", "demo follow-up after 3 days at 5 pm".
         Don't use: sending now -> send_from_template; wording -> update_email_template.
         Needs: change_evidence, the user's own words.

@@ -912,24 +912,21 @@ class OutreachSession:
 
     def update_followup_schedule(self, enabled: Optional[bool] = None, days: Optional[int] = None,
                                  hour: Optional[int] = None, max_followups: Optional[int] = None,
-                                 stage: Optional[str] = None, total_max: Optional[int] = None,
-                                 gap_days: Optional[int] = None, change_evidence: str = "") -> str:
+                                 stage: Optional[str] = None, change_evidence: str = "") -> str:
         """Change the automatic follow-up rules. With a stage the change is for that stage only; without one the
         days, hour and limit apply to every stage and ``enabled`` is the master switch."""
         from acquisition.services import outreach_settings
         from app.outreach import followups
 
-        if all(v is None for v in (enabled, days, hour, max_followups, total_max, gap_days)):
-            return ("error: give what to change: enabled, days, hour (0 to 23, Chicago time), max_followups, "
-                    "total_max or gap_days")
+        if all(v is None for v in (enabled, days, hour, max_followups)):
+            return "error: give what to change: enabled, days, hour (0 to 23, Chicago time) or max_followups"
         if not (change_evidence and self._said(change_evidence)):
             return "error: pass change_evidence, the user's own words asking for this change, copied from their latest message"
         db = self.db_factory()
         try:
             try:
                 row = outreach_settings.save_followup(db, enabled=enabled, days=days, hour=hour,
-                                                      max_followups=max_followups, stage=stage, total_max=total_max,
-                                                      gap_days=gap_days, updated_by="chat")
+                                                      max_followups=max_followups, stage=stage, updated_by="chat")
             except ValueError as exc:
                 db.rollback()
                 return f"error: {exc}"
