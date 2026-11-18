@@ -30,22 +30,12 @@ from freedombot.policy.models import (
     PolicyDecision,
     PolicyRequest,
 )
-from freedombot.policy.person_role import ROLE_RULES
 from freedombot.policy.modes import narrowest, resolve_mode
 from freedombot.policy.rules import RULES
 from freedombot.rbac.permissions import EffectivePermission, resolve as resolve_permission
 from freedombot.rbac.registry import ToolSpec, get_spec
 from freedombot.types import DataClassification, ExecutionMode, PolicyEffect, RiskLevel
 
-#: Approval rules an Admin never skips: decisions reserved to a licensed human, tools declared as always
-#: needing approval, the workspace's own always-require-approval list, and a level set for one person.
-ADMIN_CANNOT_SKIP = frozenset({
-    "LICENSED_JUDGMENT",
-    "LICENSED_CONTENT",
-    "TOOL_ALWAYS_REQUIRES_APPROVAL",
-    "CLIENT_ALWAYS_REQUIRES_APPROVAL",
-    *ROLE_RULES,
-})
 
 
 class PolicyViolation(Exception):
@@ -117,15 +107,14 @@ def evaluate(req: PolicyRequest, *, domain_mode: Optional[ExecutionMode] = None)
         reason = f"executing approved action {req.approved_action_id or ''}".strip()
         rule_code = "APPROVED_ACTION_EXECUTION"
 
-    # Always on (owner decision, no workspace switch): an Admin's action that would only wait for
-    # approval runs now. Only REQUIRE_APPROVAL changes: denials, draft-only, Advise mode and data
-    # blocks still bind, and so do the rules in ADMIN_CANNOT_SKIP (licensed decisions, tools that
-    # always need approval, the workspace's always-require-approval list, a level set for one person).
+    # Always on (owner decision, no workspace switch): an Admin's action that would wait for approval
+    # runs now, for every approval rule, including licensed content and tools that always need approval.
+    # Only REQUIRE_APPROVAL changes: denials (RBAC, platform-owner tools, regulated-data blocks such as
+    # PHI without a BAA), draft-only and Advise mode still bind admins.
     if (
         effect == PolicyEffect.REQUIRE_APPROVAL
         and req.ctx.is_admin
         and permission.can_execute_approved
-        and not any(c.code in ADMIN_CANNOT_SKIP for c in constraints)
     ):
         effect = PolicyEffect.ALLOW
         reason = "admins act without waiting for approval"

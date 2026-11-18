@@ -264,8 +264,8 @@
   expected_tool_calls: [crm_search_contacts, crm_delete_record]
   expected_args:
     crm_delete_record: {record_type: contact, record_id: C-312}
-  expected_gates: {crm_delete_record: approval}   # always-approval, admins included
-  expected_outcome: approval
+  expected_gates: {crm_delete_record: run}   # admins skip approval, even for always-approval tools
+  expected_outcome: run
 
 - id: crm_delete_drafter_001
   query: "Delete the contact Dev Rao"
@@ -1414,8 +1414,8 @@
   expected_tool_calls: [crm_search_deals, crm_delete_record]
   expected_args:
     crm_delete_record: {record_type: deal, record_id: D-2240}
-  expected_gates: {crm_delete_record: approval}
-  expected_outcome: approval
+  expected_gates: {crm_delete_record: run}
+  expected_outcome: run
 
 - id: t_crm_delete_record_003
   query: Delete Raj Mehta from the CRM
@@ -3022,8 +3022,8 @@
   expected_tool_calls: [finance_draft_invoice]
   expected_args:
     finance_draft_invoice: {customer: Acme}
-  expected_gates: {finance_draft_invoice: approval}
-  expected_outcome: approval
+  expected_gates: {finance_draft_invoice: run}
+  expected_outcome: run
 
 - id: t_fin_draft_invoice_003
   query: Make an invoice for Initech
@@ -3125,8 +3125,8 @@
   expected_tool_calls: [finance_lookup_policy, finance_propose_adjustment]
   expected_args:
     finance_propose_adjustment: {customer: Globex}
-  expected_gates: {finance_propose_adjustment: approval}
-  expected_outcome: approval
+  expected_gates: {finance_propose_adjustment: run}
+  expected_outcome: run
 
 - id: t_fin_adjust_003
   query: Propose a 200 credit for Acme
@@ -3738,8 +3738,8 @@
     - {id: C-311, name: Priya Shah, email: priya@globex.com, company: Globex, lifecycle_stage: customer}
     - {id: C-312, name: Dev Rao, email: dev@acme.com, company: Acme, lifecycle_stage: lead}
   expected_tool_calls: [n8n_trigger_webhook]
-  expected_gates: {n8n_trigger_webhook: approval}
-  expected_outcome: approval
+  expected_gates: {n8n_trigger_webhook: run}
+  expected_outcome: run
 
 - id: t_n8n_003
   query: Fire the lead-nurture webhook
@@ -28872,8 +28872,8 @@
   expected_tool_calls: [integration_find_action, integration_destructive_action]
   expected_args:
     integration_destructive_action: {action: LINKEDIN_CREATE_LINKED_IN_POST}
-  expected_gates: {integration_destructive_action: approval}
-  expected_outcome: approval
+  expected_gates: {integration_destructive_action: run}
+  expected_outcome: run
 - id: t_googletasks_list_001
   query: What is on my Google Tasks list?
   user: {name: Dev, roles: [OPERATOR]}
@@ -28987,8 +28987,8 @@
   expected_tool_calls: [integration_find_action, integration_destructive_action]
   expected_args:
     integration_destructive_action: {action: APOLLO_ADD_CONTACTS_TO_SEQUENCE}
-  expected_gates: {integration_destructive_action: approval}
-  expected_outcome: approval
+  expected_gates: {integration_destructive_action: run}
+  expected_outcome: run
 - id: t_integration_read_action_001
   query: How many views did my channel get per day this month?
   user: {name: Ada, roles: [ADMIN]}
@@ -29075,8 +29075,8 @@
   expected_tool_calls: [youtube_my_channel, youtube_transcript, youtube_video, integration_find_action, integration_destructive_action x3]
   expected_args:
     integration_destructive_action: {action: YOUTUBE_CREATE_COMMENT_REPLY}
-  expected_gates: {youtube_transcript: run, integration_destructive_action: approval}
-  expected_outcome: approval
+  expected_gates: {youtube_transcript: run, integration_destructive_action: run}
+  expected_outcome: run
 - id: t_integration_destructive_action_002
   query: Trash the promo email from deals@shop.example
   user: {name: Lee, roles: [APPROVER]}

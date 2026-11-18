@@ -42,20 +42,23 @@ def test_other_roles_still_wait(client_scratch, ctx_factory):
         assert _decide(ctx_factory(client_scratch, role), settings).effect != PolicyEffect.ALLOW, role
 
 
-def test_always_require_approval_still_binds_admins(client_scratch, ctx_factory):
+def test_admins_skip_the_always_require_approval_list(client_scratch, ctx_factory):
+    # Owner decision: an admin's request is done, even for tools on the workspace's always-approve list.
     settings = _settings(client_scratch, always=["crm_create_note"])
-    assert _decide(ctx_factory(client_scratch, "admin"), settings).effect == PolicyEffect.REQUIRE_APPROVAL
+    decision = _decide(ctx_factory(client_scratch, "admin"), settings)
+    assert decision.effect == PolicyEffect.ALLOW and decision.rule == "ADMIN_SKIPS_APPROVAL"
+    assert _decide(ctx_factory(client_scratch, "operator"), settings).effect == PolicyEffect.REQUIRE_APPROVAL
 
 
-def test_a_licensed_decision_still_needs_approval_for_admins(client_scratch, ctx_factory):
+def test_admins_skip_approval_for_a_licensed_decision(client_scratch, ctx_factory):
     base = _settings(client_scratch).to_dict()
     settings = ClientSettings.from_dict(
         {**base, "enabled_domains": [*base["enabled_domains"], "finance"],
          "purchased_domains": [*base["purchased_domains"], "finance"]})
     decision = evaluate(PolicyRequest(ctx=ctx_factory(client_scratch, "admin"), settings=settings,
                                       tool="finance_propose_adjustment", domain="finance"))
-    assert decision.effect == PolicyEffect.REQUIRE_APPROVAL
-    assert decision.rule != "ADMIN_SKIPS_APPROVAL"
+    assert decision.effect == PolicyEffect.ALLOW
+    assert decision.rule == "ADMIN_SKIPS_APPROVAL"
 
 
 def test_advise_mode_still_denies_admins(client_scratch, ctx_factory):

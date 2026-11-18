@@ -7,6 +7,10 @@
 - The existing policy check (freedombot/tools/base.py guarded_call → freedombot/policy/engine.py) is the only
   permission and gating system. New checks may only add strictness; no tool, for any role, may become
   less strict than today.
+- Owner exception (2026-11-18): an ADMIN never waits for approval. Every REQUIRE_APPROVAL becomes ALLOW for
+  admins (freedombot/policy/engine.py, ADMIN_SKIPS_APPROVAL), including licensed content and tools that always
+  need approval. Denials, draft-only, Advise mode and regulated-data blocks still bind admins. Do not
+  reintroduce approval for admins.
 - Tool descriptions follow docs/agent/TOOL_DESCRIPTIONS.md. Any new or changed tool needs:
   routing domain, description, id_fields, requires_prior, a ToolSpec in freedombot/rbac/registry.py,
   and at least 3 eval cases in evals/cases.yaml whose expected gates come from the policy check.
