@@ -295,7 +295,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {mobileNavOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-[#06070d]/70 lg:hidden"
+          className="fixed inset-0 z-40 bg-[#1c102b]/75 lg:hidden"
           aria-label="Close navigation"
           onClick={() => setMobileNavOpen(false)}
         />

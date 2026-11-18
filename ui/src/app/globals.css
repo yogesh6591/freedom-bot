@@ -3,72 +3,72 @@
 @tailwind utilities;
 
 /*
- * FreedomBot shares Acquisition's violet / blue palette.
+ * FreedomBot brand: Primary Purple #5B00E4 and Midnight Purple #1C102B (the dark background).
  * Day and night are the light and dark themes. Existing purple utilities
  * follow this palette so feature screens change with the rest of the app.
  */
 @layer base {
   :root {
-    --purple-50: 244 242 255;
-    --purple-100: 232 226 255;
-    --purple-200: 210 200 255;
-    --purple-300: 176 160 252;
-    --purple-400: 139 116 248;
-    --purple-500: 91 75 245;
-    --purple-600: 76 63 214;
-    --purple-700: 67 56 180;
-    --purple-800: 52 44 140;
-    --purple-900: 36 32 92;
+    --purple-50: 245 240 255;
+    --purple-100: 235 224 255;
+    --purple-200: 214 191 255;
+    --purple-300: 181 140 255;
+    --purple-400: 135 64 242;
+    --purple-500: 91 0 228;
+    --purple-600: 76 0 192;
+    --purple-700: 62 0 158;
+    --purple-800: 47 0 120;
+    --purple-900: 28 16 43;
 
-    --slate-50: 244 245 251;
-    --slate-100: 238 240 250;
-    --slate-200: 220 223 240;
-    --slate-300: 184 188 214;
-    --slate-400: 147 152 187;
-    --slate-500: 102 107 148;
-    --slate-600: 80 84 122;
-    --slate-700: 59 63 102;
-    --slate-800: 36 39 70;
-    --slate-900: 20 22 51;
+    --slate-50: 247 245 251;
+    --slate-100: 240 236 248;
+    --slate-200: 223 216 236;
+    --slate-300: 192 182 212;
+    --slate-400: 154 142 178;
+    --slate-500: 110 97 135;
+    --slate-600: 86 73 112;
+    --slate-700: 64 50 90;
+    --slate-800: 43 30 63;
+    --slate-900: 28 16 43;
 
     --color-success: 5 150 105;
     --color-warning: 180 83 9;
     --color-error: 220 38 38;
     --color-info: 37 99 235;
 
-    --color-primary: 20 22 51;
-    --color-primary-accent: 244 245 251;
-    --color-secondary: 59 63 102;
-    --color-muted: 102 107 148;
-    --color-brand: 91 75 245;
-    --color-brand-soft: 139 92 246;
-    --color-brand-deep: 76 63 214;
+    --color-primary: 28 16 43;
+    --color-primary-accent: 247 245 251;
+    --color-secondary: 64 50 90;
+    --color-muted: 110 97 135;
+    --color-brand: 91 0 228;
+    --color-brand-soft: 135 64 242;
+    --color-brand-deep: 72 0 184;
     --color-brand-ink: 255 255 255;
-    --color-bg: 244 245 251;
+    --color-bg: 247 245 251;
     --color-bg-secondary: 255 255 255;
-    --color-bg-elevated: 247 248 253;
-    --color-bg-wash: 238 240 250;
-    --color-accent: 238 240 250;
+    --color-bg-elevated: 250 248 254;
+    --color-bg-wash: 240 236 248;
+    --color-accent: 240 236 248;
     --color-destructive: var(--color-error);
     --color-positive: var(--color-success);
     --color-warning-fg: var(--color-warning);
     --color-info-fg: var(--color-info);
-    --color-border-default: 40, 44, 90, 0.14;
+    --color-border-default: 28, 16, 43, 0.13;
 
     --surface-glass: rgb(255 255 255 / 0.9);
-    --brand-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 45%, #3b82f6 100%);
-    --app-atmosphere:
-      radial-gradient(900px 480px at 85% -10%, rgba(99, 102, 241, 0.10), transparent 60%),
-      radial-gradient(700px 420px at 20% 110%, rgba(139, 92, 246, 0.06), transparent 60%),
-      #f4f5fb;
-    --login-atmosphere: #f4f5fb;
-    --shadow-panel: 0 1px 2px rgb(20 22 60 / 0.05), 0 10px 30px -18px rgb(20 22 60 / 0.25);
-    --shadow-glow: 0 0 0 3px rgb(91 75 245 / 0.16);
-    --shadow-lift: 0 24px 60px -24px rgb(20 22 60 / 0.35);
-    --selection-bg: rgb(139 92 246 / 0.28);
-    --selection-fg: rgb(20 22 51);
-    --scrollbar-thumb: rgb(147 152 187 / 0.45);
-    --scrollbar-thumb-hover: rgb(91 75 245 / 0.45);
+    --brand-gradient: linear-gradient(135deg, #8740f2 0%, #5b00e4 55%, #4800b8 100%);
+    --app-atmosphere: 
+      radial-gradient(900px 480px at 85% -10%, rgba(91, 0, 228, 0.08), transparent 60%),
+      radial-gradient(700px 420px at 20% 110%, rgba(135, 64, 242, 0.05), transparent 60%),
+      #f7f5fb;
+    --login-atmosphere: #f7f5fb;
+    --shadow-panel: 0 1px 2px rgb(28 16 43 / 0.05), 0 10px 30px -18px rgb(28 16 43 / 0.22);
+    --shadow-glow: 0 0 0 3px rgb(91 0 228 / 0.16);
+    --shadow-lift: 0 24px 60px -24px rgb(28 16 43 / 0.32);
+    --selection-bg: rgb(91 0 228 / 0.22);
+    --selection-fg: rgb(28 16 43);
+    --scrollbar-thumb: rgb(154 142 178 / 0.45);
+    --scrollbar-thumb-hover: rgb(91 0 228 / 0.45);
     --scrollbar-width: 0.5rem;
     --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
     --theme-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -78,50 +78,54 @@
   }
 
   .dark {
-    --purple-50: 26 22 48;
-    --purple-100: 36 30 72;
-    --purple-200: 49 42 102;
-    --purple-300: 76 64 160;
-    --purple-400: 124 108 255;
-    --purple-500: 139 116 248;
-    --purple-600: 167 139 250;
-    --purple-700: 196 181 253;
-    --purple-800: 55 48 110;
-    --purple-900: 32 28 64;
+    --purple-50: 36 21 56;
+    --purple-100: 46 27 72;
+    --purple-200: 62 34 100;
+    --purple-300: 88 30 160;
+    --purple-400: 135 64 242;
+    --purple-500: 160 105 250;
+    --purple-600: 181 140 255;
+    --purple-700: 214 191 255;
+    --purple-800: 62 34 100;
+    --purple-900: 36 21 56;
 
-    --color-primary: 236 238 255;
-    --color-primary-accent: 10 12 23;
-    --color-secondary: 183 188 224;
-    --color-muted: 129 137 179;
-    --color-brand: 124 108 255;
-    --color-brand-soft: 167 139 250;
-    --color-brand-deep: 99 102 241;
+    --color-primary: 245 240 255;
+    --color-primary-accent: 20 11 31;
+    --color-secondary: 208 196 230;
+    --color-muted: 152 137 180;
+    --color-brand: 91 0 228;
+    --color-brand-soft: 167 115 255;
+    --color-brand-deep: 72 0 184;
     --color-brand-ink: 255 255 255;
-    --color-bg: 6 7 13;
-    --color-bg-secondary: 15 18 34;
-    --color-bg-elevated: 20 24 48;
-    --color-bg-wash: 26 31 59;
-    --color-accent: 26 31 59;
+    --color-bg: 28 16 43;
+    --color-bg-secondary: 36 21 56;
+    --color-bg-elevated: 45 27 69;
+    --color-bg-wash: 56 34 84;
+    --color-accent: 56 34 84;
     --color-destructive: 248 113 113;
     --color-positive: 52 211 153;
     --color-warning-fg: 251 191 36;
     --color-info-fg: 96 165 250;
-    --color-border-default: 150, 160, 255, 0.16;
-    --surface-glass: rgb(15 18 34 / 0.92);
-    --brand-gradient: linear-gradient(135deg, #8b5cf6 0%, #6366f1 45%, #3b82f6 100%);
-    --app-atmosphere:
-      radial-gradient(900px 480px at 85% -10%, rgba(99, 102, 241, 0.16), transparent 60%),
-      radial-gradient(700px 420px at 20% 110%, rgba(139, 92, 246, 0.10), transparent 60%),
-      #06070d;
-    --login-atmosphere: #06070d;
+    --color-border-default: 190, 160, 255, 0.14;
+    --surface-glass: rgb(36 21 56 / 0.92);
+    --brand-gradient: linear-gradient(135deg, #8740f2 0%, #5b00e4 55%, #4800b8 100%);
+    --app-atmosphere: 
+      radial-gradient(900px 480px at 85% -10%, rgba(91, 0, 228, 0.28), transparent 60%),
+      radial-gradient(700px 420px at 20% 110%, rgba(135, 64, 242, 0.12), transparent 60%),
+      #1c102b;
+    --login-atmosphere: #1c102b;
     --shadow-panel: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -18px rgb(0 0 0 / 0.8);
-    --shadow-glow: 0 0 0 3px rgb(139 92 246 / 0.28);
+    --shadow-glow: 0 0 0 3px rgb(135 64 242 / 0.32);
     --shadow-lift: 0 24px 64px -24px rgb(0 0 0 / 0.85);
-    --selection-bg: rgb(139 92 246 / 0.35);
+    --selection-bg: rgb(135 64 242 / 0.4);
     --selection-fg: #fff;
-    --scrollbar-thumb: rgb(150 160 255 / 0.28);
-    --scrollbar-thumb-hover: rgb(167 139 250 / 0.45);
+    --scrollbar-thumb: rgb(190 160 255 / 0.25);
+    --scrollbar-thumb-hover: rgb(167 115 255 / 0.45);
   }
+
+  /* #5B00E4 is too dark to read as text on Midnight Purple: brand-coloured text uses the lighter shade there. */
+  .dark .text-brand,
+  .dark .hover\:text-brand:hover { color: rgb(var(--color-brand-soft)); }
 
   html { color-scheme: light; }
   html.dark { color-scheme: dark; }
@@ -204,12 +208,12 @@ html.theme-transition * {
 /* Acquisition login stage. Copy stays FreedomBot; this is only the frame. */
 .fb-auth-hero-glow {
   background:
-    radial-gradient(640px 420px at 18% 12%, rgba(56, 189, 248, 0.28), transparent 58%),
-    radial-gradient(520px 360px at 88% 78%, rgba(99, 102, 241, 0.22), transparent 60%);
+    radial-gradient(640px 420px at 18% 12%, rgba(135, 64, 242, 0.28), transparent 58%),
+    radial-gradient(520px 360px at 88% 78%, rgba(91, 0, 228, 0.24), transparent 60%);
   filter: blur(18px);
 }
 .fb-auth-hero-glow-b {
-  background: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.16), transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(91, 0, 228, 0.18), transparent 70%);
   filter: blur(30px);
   animation: fb-auth-drift 12s ease-in-out infinite alternate;
 }
@@ -243,66 +247,66 @@ html.theme-transition * {
 
 .fb-admin-stage {
   background:
-    radial-gradient(920px 560px at 92% -12%, rgba(91, 75, 245, 0.22), transparent 58%),
-    radial-gradient(760px 500px at -10% 108%, rgba(37, 99, 235, 0.12), transparent 56%),
+    radial-gradient(920px 560px at 92% -12%, rgba(91, 0, 228, 0.18), transparent 58%),
+    radial-gradient(760px 500px at -10% 108%, rgba(135, 64, 242, 0.10), transparent 56%),
     radial-gradient(520px 380px at 48% 42%, rgba(255, 255, 255, 0.72), transparent 68%),
-    linear-gradient(180deg, #eef0fa 0%, #f7f8fd 46%, #e8ecf8 100%);
+    linear-gradient(180deg, #f0ecf8 0%, #f7f5fb 46%, #ebe4f6 100%);
 }
 .dark .fb-admin-stage {
   background:
-    radial-gradient(920px 560px at 92% -12%, rgba(91, 75, 245, 0.32), transparent 58%),
-    radial-gradient(760px 500px at -10% 108%, rgba(37, 99, 235, 0.18), transparent 56%),
-    linear-gradient(180deg, #0c1024 0%, #121833 52%, #0b1428 100%);
+    radial-gradient(920px 560px at 92% -12%, rgba(91, 0, 228, 0.34), transparent 58%),
+    radial-gradient(760px 500px at -10% 108%, rgba(135, 64, 242, 0.14), transparent 56%),
+    linear-gradient(180deg, #170d24 0%, #1c102b 52%, #140b20 100%);
 }
 .fb-admin-grid {
   background-image:
-    linear-gradient(to right, rgba(76, 63, 214, 0.16) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(76, 63, 214, 0.16) 1px, transparent 1px);
+    linear-gradient(to right, rgba(91, 0, 228, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(91, 0, 228, 0.12) 1px, transparent 1px);
   background-size: 36px 36px;
 }
 .dark .fb-admin-grid {
   background-image:
-    linear-gradient(to right, rgba(196, 181, 253, 0.28) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(196, 181, 253, 0.28) 1px, transparent 1px);
+    linear-gradient(to right, rgba(190, 160, 255, 0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(190, 160, 255, 0.18) 1px, transparent 1px);
 }
 
 .assistant-stage {
   background:
-    radial-gradient(920px 540px at -6% -12%, rgba(167, 139, 250, 0.62), transparent 58%),
-    radial-gradient(780px 500px at 108% -6%, rgba(56, 189, 248, 0.48), transparent 56%),
-    radial-gradient(680px 440px at 96% 112%, rgba(244, 114, 182, 0.38), transparent 54%),
-    radial-gradient(560px 380px at 4% 108%, rgba(129, 140, 248, 0.4), transparent 54%),
-    linear-gradient(165deg, #efe7ff 0%, #f3f6ff 46%, #e5f3ff 100%);
+    radial-gradient(920px 540px at -6% -12%, rgba(135, 64, 242, 0.35), transparent 58%),
+    radial-gradient(780px 500px at 108% -6%, rgba(181, 140, 255, 0.40), transparent 56%),
+    radial-gradient(680px 440px at 96% 112%, rgba(214, 191, 255, 0.45), transparent 54%),
+    radial-gradient(560px 380px at 4% 108%, rgba(91, 0, 228, 0.18), transparent 54%),
+    linear-gradient(165deg, #efe6ff 0%, #f7f5fb 46%, #ebe1fb 100%);
 }
 .dark .assistant-stage {
   background:
-    radial-gradient(920px 540px at -6% -12%, rgba(124, 58, 237, 0.5), transparent 58%),
-    radial-gradient(780px 500px at 108% -6%, rgba(14, 165, 233, 0.32), transparent 56%),
-    radial-gradient(680px 440px at 96% 112%, rgba(219, 39, 119, 0.26), transparent 54%),
-    radial-gradient(560px 380px at 4% 108%, rgba(99, 102, 241, 0.32), transparent 54%),
-    linear-gradient(165deg, #0c1024 0%, #121833 48%, #0b1428 100%);
+    radial-gradient(920px 540px at -6% -12%, rgba(91, 0, 228, 0.45), transparent 58%),
+    radial-gradient(780px 500px at 108% -6%, rgba(135, 64, 242, 0.28), transparent 56%),
+    radial-gradient(680px 440px at 96% 112%, rgba(167, 115, 255, 0.18), transparent 54%),
+    radial-gradient(560px 380px at 4% 108%, rgba(72, 0, 184, 0.30), transparent 54%),
+    linear-gradient(165deg, #170d24 0%, #1c102b 48%, #140b20 100%);
 }
 .assistant-glass {
   background: rgb(255 255 255 / 0.78);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgb(255 255 255 / 0.9);
-  box-shadow: 0 18px 44px -26px rgb(79 70 229 / 0.55);
+  box-shadow: 0 18px 44px -26px rgb(91 0 228 / 0.4);
 }
 .dark .assistant-glass {
-  background: rgb(16 22 48 / 0.72);
+  background: rgb(36 21 56 / 0.72);
   border-color: rgb(255 255 255 / 0.1);
   box-shadow: 0 18px 44px -22px rgb(0 0 0 / 0.6);
 }
 .assistant-user-bubble {
-  background: linear-gradient(135deg, #7c3aed 0%, #6366f1 46%, #2563eb 100%);
+  background: linear-gradient(135deg, #8740f2 0%, #5b00e4 50%, #4800b8 100%);
   color: #fff;
-  box-shadow: 0 14px 30px -16px rgb(79 70 229 / 0.8);
+  box-shadow: 0 14px 30px -16px rgb(91 0 228 / 0.7);
 }
 .assistant-bot-bubble {
   background: rgb(255 255 255 / 0.94);
   border: 1px solid rgb(226 232 240 / 0.95);
-  box-shadow: 0 10px 28px -18px rgb(79 70 229 / 0.45);
+  box-shadow: 0 10px 28px -18px rgb(91 0 228 / 0.25);
 }
 .assistant-bot-bubble a {
   color: inherit;
@@ -310,20 +314,20 @@ html.theme-transition * {
   text-decoration: none;
 }
 .dark .assistant-bot-bubble {
-  background: rgb(22 28 58 / 0.9);
+  background: rgb(45 27 69 / 0.9);
   border-color: rgb(255 255 255 / 0.08);
 }
 .assistant-orb {
-  background: linear-gradient(135deg, #c4b5fd 0%, #818cf8 42%, #38bdf8 100%);
-  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.55), 0 8px 18px -8px rgb(99 102 241 / 0.85);
+  background: linear-gradient(135deg, #d6bfff 0%, #8740f2 45%, #5b00e4 100%);
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.55), 0 8px 18px -8px rgb(91 0 228 / 0.8);
 }
 .dark .assistant-orb {
-  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.08), 0 8px 18px -8px rgb(99 102 241 / 0.85);
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.08), 0 8px 18px -8px rgb(91 0 228 / 0.8);
 }
 .assistant-send {
-  background: linear-gradient(135deg, #7c3aed, #4f46e5 55%, #2563eb);
+  background: linear-gradient(135deg, #8740f2, #5b00e4 55%, #4800b8);
   color: #fff;
-  box-shadow: 0 8px 18px -8px rgb(79 70 229 / 0.9);
+  box-shadow: 0 8px 18px -8px rgb(91 0 228 / 0.9);
 }
 .assistant-send:disabled {
   opacity: 0.45;

@@ -5,62 +5,62 @@
 :root {
   color-scheme: light;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --fg: #0b1020;
-  --fg-muted: #4e5b7a;
-  --fg-soft: #243049;
-  --bg: #f4f6fb;
+  --fg: #1c102b;
+  --fg-muted: #6e6187;
+  --fg-soft: #40325a;
+  --bg: #f7f5fb;
   --bg-2: #ffffff;
   --surface: rgba(255, 255, 255, 0.86);
-  --surface-2: #eef1f8;
-  --surface-3: #e4e9f4;
-  --line: rgba(15, 23, 42, 0.12);
-  --line-strong: rgba(15, 23, 42, 0.2);
-  --brand: #4f5ef0;
-  --brand-soft: #5b6cff;
-  --accent: #0f766e;
-  --accent-soft: #0d9488;
-  --glow-a: rgba(79, 94, 240, 0.16);
-  --glow-b: rgba(14, 165, 233, 0.12);
-  --page-atmosphere:
-    radial-gradient(900px 480px at 78% -8%, rgba(79, 94, 240, 0.12), transparent 58%),
-    radial-gradient(700px 420px at 12% 110%, rgba(13, 148, 136, 0.08), transparent 55%),
-    linear-gradient(180deg, #f7f8fc 0%, #eef2f8 100%);
-  --header-bg: rgba(244, 246, 251, 0.82);
-  --header-bg-solid: rgba(244, 246, 251, 0.94);
-  --panel-shadow: 0 1px 0 rgba(15, 23, 42, 0.04), 0 18px 40px -28px rgba(15, 23, 42, 0.28);
+  --surface-2: #f0ecf8;
+  --surface-3: #e6dff3;
+  --line: rgba(28, 16, 43, 0.12);
+  --line-strong: rgba(28, 16, 43, 0.2);
+  --brand: #5b00e4;
+  --brand-soft: #7a2bf0;
+  --accent: #8740f2;
+  --accent-soft: #a773ff;
+  --glow-a: rgba(91, 0, 228, 0.14);
+  --glow-b: rgba(135, 64, 242, 0.12);
+  --page-atmosphere: 
+    radial-gradient(900px 480px at 78% -8%, rgba(91, 0, 228, 0.10), transparent 58%),
+    radial-gradient(700px 420px at 12% 110%, rgba(135, 64, 242, 0.06), transparent 55%),
+    linear-gradient(180deg, #f8f6fc 0%, #f0ecf8 100%);
+  --header-bg: rgba(247, 245, 251, 0.82);
+  --header-bg-solid: rgba(247, 245, 251, 0.94);
+  --panel-shadow: 0 1px 0 rgba(28, 16, 43, 0.04), 0 18px 40px -28px rgba(28, 16, 43, 0.28);
   --float-card: rgba(255, 255, 255, 0.82);
-  --mesh-line: rgba(100, 116, 139, 0.14);
-  --selection: rgba(79, 94, 240, 0.22);
+  --mesh-line: rgba(110, 97, 135, 0.14);
+  --selection: rgba(91, 0, 228, 0.2);
 }
 
 .dark {
   color-scheme: dark;
-  --fg: #f4f6fb;
-  --fg-muted: #9aa6c4;
-  --fg-soft: #c9d1e6;
-  --bg: #06070d;
-  --bg-2: #0b0e17;
-  --surface: rgba(18, 24, 38, 0.72);
-  --surface-2: #121826;
-  --surface-3: #1a2236;
+  --fg: #f5f0ff;
+  --fg-muted: #9889b4;
+  --fg-soft: #d0c4e6;
+  --bg: #1c102b;
+  --bg-2: #241538;
+  --surface: rgba(36, 21, 56, 0.72);
+  --surface-2: #2d1b45;
+  --surface-3: #382254;
   --line: rgba(255, 255, 255, 0.1);
   --line-strong: rgba(255, 255, 255, 0.18);
-  --brand: #6d7cff;
-  --brand-soft: #8b97ff;
-  --accent: #3dd6c6;
-  --accent-soft: #7eefe4;
-  --glow-a: rgba(109, 124, 255, 0.18);
-  --glow-b: rgba(61, 214, 198, 0.08);
-  --page-atmosphere:
-    radial-gradient(900px 480px at 78% -8%, rgba(109, 124, 255, 0.18), transparent 58%),
-    radial-gradient(700px 420px at 12% 110%, rgba(61, 214, 198, 0.08), transparent 55%),
-    linear-gradient(180deg, #06070d 0%, #0b0e17 100%);
-  --header-bg: rgba(6, 7, 13, 0.4);
-  --header-bg-solid: rgba(6, 7, 13, 0.85);
+  --brand: #5b00e4;
+  --brand-soft: #a773ff;
+  --accent: #b58cff;
+  --accent-soft: #d6bfff;
+  --glow-a: rgba(91, 0, 228, 0.30);
+  --glow-b: rgba(135, 64, 242, 0.14);
+  --page-atmosphere: 
+    radial-gradient(900px 480px at 78% -8%, rgba(91, 0, 228, 0.30), transparent 58%),
+    radial-gradient(700px 420px at 12% 110%, rgba(135, 64, 242, 0.10), transparent 55%),
+    linear-gradient(180deg, #1c102b 0%, #170d24 100%);
+  --header-bg: rgba(28, 16, 43, 0.4);
+  --header-bg-solid: rgba(28, 16, 43, 0.85);
   --panel-shadow: 0 1px 0 rgba(255, 255, 255, 0.04), 0 24px 60px -28px rgba(0, 0, 0, 0.65);
-  --float-card: rgba(8, 12, 22, 0.55);
-  --mesh-line: rgba(148, 163, 184, 0.07);
-  --selection: rgba(109, 124, 255, 0.35);
+  --float-card: rgba(28, 16, 43, 0.55);
+  --mesh-line: rgba(190, 160, 255, 0.07);
+  --selection: rgba(135, 64, 242, 0.4);
 }
 
 html {
@@ -263,7 +263,7 @@ body {
   filter: blur(18px);
 }
 .fb-auth-hero-glow-b {
-  background: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.16), transparent 70%);
+  background: radial-gradient(ellipse at center, rgba(91, 0, 228, 0.18), transparent 70%);
   filter: blur(30px);
   animation: fb-auth-drift 12s ease-in-out infinite alternate;
 }

@@ -41,9 +41,9 @@ export function HeroShowcase() {
     >
       <div
         aria-hidden
-        className="absolute -inset-8 rounded-[2rem] bg-[radial-gradient(circle_at_50%_0%,rgba(109,124,255,0.28),transparent_55%)] blur-2xl"
+        className="absolute -inset-8 rounded-[2rem] bg-[radial-gradient(circle_at_50%_0%,rgba(91,0,228,0.30),transparent_55%)] blur-2xl"
       />
-      <div className="hero-stage relative overflow-hidden rounded-[1.6rem] border border-white/12 bg-[#0a0d16]/90 shadow-[0_40px_120px_-40px_rgba(0,0,0,0.9)] backdrop-blur-xl">
+      <div className="hero-stage relative overflow-hidden rounded-[1.6rem] border border-white/12 bg-[#1c102b]/90 shadow-[0_40px_120px_-40px_rgba(0,0,0,0.9)] backdrop-blur-xl">
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-[9px] bg-brand text-fg">

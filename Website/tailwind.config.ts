@@ -7,29 +7,29 @@ export default {
     extend: {
       colors: {
         ink: {
-          950: '#06070d',
-          900: '#0b0e17',
-          800: '#121826',
-          700: '#1a2236',
-          600: '#243049'
+          950: '#140b20',
+          900: '#1c102b',
+          800: '#241538',
+          700: '#2d1b45',
+          600: '#382254'
         },
         mist: {
-          50: '#f4f6fb',
-          100: '#e8ecf6',
-          200: '#c9d1e6',
-          300: '#9aa6c4',
-          400: '#6d7a9b',
-          500: '#4e5b7a'
+          50: '#f7f5fb',
+          100: '#f0ecf8',
+          200: '#dfd8ec',
+          300: '#c0b6d4',
+          400: '#9a8eb2',
+          500: '#6e6187'
         },
         brand: {
-          DEFAULT: '#6d7cff',
-          soft: '#8b97ff',
-          deep: '#4f5ef0',
-          glow: 'rgba(109, 124, 255, 0.22)'
+          DEFAULT: '#5b00e4',
+          soft: '#8740f2',
+          deep: '#4800b8',
+          glow: 'rgba(91, 0, 228, 0.22)'
         },
         accent: {
-          DEFAULT: '#3dd6c6',
-          soft: '#7eefe4'
+          DEFAULT: '#8740f2',
+          soft: '#b58cff'
         }
       },
       fontFamily: {
@@ -38,12 +38,12 @@ export default {
         mono: ['var(--font-mono)', 'ui-monospace', 'monospace']
       },
       boxShadow: {
-        glow: '0 0 0 1px rgba(109,124,255,0.25), 0 18px 50px -24px rgba(79,94,240,0.55)',
+        glow: '0 0 0 1px rgba(91,0,228,0.25), 0 18px 50px -24px rgba(91,0,228,0.55)',
         panel: '0 1px 0 rgba(255,255,255,0.04), 0 24px 60px -28px rgba(0,0,0,0.65)'
       },
       backgroundImage: {
         atmosphere:
-          'radial-gradient(900px 480px at 78% -8%, rgba(109,124,255,0.18), transparent 58%), radial-gradient(700px 420px at 12% 110%, rgba(61,214,198,0.08), transparent 55%), linear-gradient(180deg, #06070d 0%, #0b0e17 100%)',
+          'radial-gradient(900px 480px at 78% -8%, rgba(91,0,228,0.30), transparent 58%), radial-gradient(700px 420px at 12% 110%, rgba(135,64,242,0.10), transparent 55%), linear-gradient(180deg, #1c102b 0%, #170d24 100%)',
         'hero-grid':
           'linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)'
       },

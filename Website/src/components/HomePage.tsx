@@ -90,12 +90,12 @@ export function HomePage() {
             </FadeIn>
 
             <motion.p
-              className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.19em] text-[#0284c7] dark:text-[#7dd3fc]"
+              className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.19em] text-[#5b00e4] dark:text-[#b58cff]"
               initial={reduce ? false : { opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.08, ease: [0.22, 1, 0.36, 1] }}
             >
-              <span className="h-1.5 w-1.5 rounded-full bg-[#38bdf8]" aria-hidden />
+              <span className="h-1.5 w-1.5 rounded-full bg-[#8740f2]" aria-hidden />
               Intelligence, with accountability
             </motion.p>
 

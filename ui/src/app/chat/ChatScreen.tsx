@@ -1532,7 +1532,7 @@ function ChatView({ home }: { home: boolean }) {
         <button
           type="button"
           aria-label="Close conversations"
-          className="absolute inset-0 z-20 bg-[#06070d]/55"
+          className="absolute inset-0 z-20 bg-[#1c102b]/60"
           onClick={() => setHistoryOpen(false)}
         />
       )}
@@ -1764,7 +1764,7 @@ function ChatView({ home }: { home: boolean }) {
               <div className="w-full pb-10">
                 <div className="mb-8 flex flex-col items-center text-center">
                   <span className="assistant-orb mb-5 h-14 w-14 rounded-full" aria-hidden />
-                  <h2 className="bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500 bg-clip-text font-[family-name:var(--font-display)] text-[30px] font-semibold tracking-tight text-transparent dark:from-violet-300 dark:via-indigo-300 dark:to-sky-300 sm:text-[38px]">
+                  <h2 className="bg-gradient-to-r from-[#8740f2] via-[#5b00e4] to-[#4800b8] bg-clip-text font-[family-name:var(--font-display)] text-[30px] font-semibold tracking-tight text-transparent dark:from-[#e3d4ff] dark:via-[#c4a3ff] dark:to-[#a773ff] sm:text-[38px]">
                     {greeting(me?.user.display_name)}
                   </h2>
                   <p className="mt-2 max-w-[460px] text-[14px] leading-6 text-secondary">
@@ -2094,7 +2094,7 @@ function ChatView({ home }: { home: boolean }) {
           <button
             type="button"
             aria-label="Close integrations"
-            className="absolute inset-0 bg-[#06070d]/55 backdrop-blur-sm"
+            className="absolute inset-0 bg-[#1c102b]/60 backdrop-blur-sm"
             onClick={() => setIntegrationsOpen(false)}
           />
           <div

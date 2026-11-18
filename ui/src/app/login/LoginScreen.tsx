@@ -158,7 +158,7 @@ function SignInForm({
           size="lg"
           className={
             admin
-              ? 'mt-2 w-full justify-center rounded-xl border-0 bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500 text-white shadow-[0_12px_28px_-12px_rgba(79,70,229,0.9)] hover:brightness-105'
+              ? 'mt-2 w-full justify-center rounded-xl border-0 bg-gradient-to-r from-[#8740f2] via-[#5b00e4] to-[#4800b8] text-white shadow-[0_12px_28px_-12px_rgba(91,0,228,0.9)] hover:brightness-105'
               : 'mt-1 w-full justify-center'
           }
         >
@@ -270,7 +270,7 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
 
         <main className="relative z-10 flex flex-1 items-center justify-center px-5 py-12 sm:px-8">
           <div className="w-full max-w-[440px] overflow-hidden rounded-2xl border border-border bg-background-secondary shadow-lift">
-            <div className="h-1 w-full bg-gradient-to-r from-violet-600 via-indigo-500 to-sky-500" aria-hidden />
+            <div className="h-1 w-full bg-gradient-to-r from-[#8740f2] via-[#5b00e4] to-[#4800b8]" aria-hidden />
             <div className="p-7 sm:p-8">
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-brand">
                 Administration
@@ -310,13 +310,13 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
               <p className="font-[family-name:var(--font-display)] text-[19px] font-semibold tracking-[-0.04em] text-primary">
                 FreedomBot
               </p>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7dd3fc]">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#b58cff]">
                 Business intelligence workspace
               </p>
             </div>
           </div>
-          <p className="mb-4 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.19em] text-[#7dd3fc]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#38bdf8]" aria-hidden />
+          <p className="mb-4 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.19em] text-[#b58cff]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#a773ff]" aria-hidden />
             Intelligence, with accountability
           </p>
           <h1 className="max-w-[16ch] font-[family-name:var(--font-display)] text-[clamp(32px,3vw,44px)] font-semibold leading-[1.2] tracking-[-0.03em] text-primary">
@@ -329,21 +329,21 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
         </div>
 
         <div className="relative z-10 my-8 grid min-h-[220px] flex-1 place-items-center">
-          <div aria-hidden className="fb-auth-ring absolute aspect-square w-[min(78%,340px)] rounded-full border border-[#7dd3fc]/20 shadow-[inset_0_0_40px_rgba(56,189,248,0.06)]">
-            <span className="absolute left-1/2 top-[8%] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#38bdf8] shadow-[0_0_16px_rgba(56,189,248,0.85)]" />
+          <div aria-hidden className="fb-auth-ring absolute aspect-square w-[min(78%,340px)] rounded-full border border-[#b58cff]/20 shadow-[inset_0_0_40px_rgba(135,64,242,0.08)]">
+            <span className="absolute left-1/2 top-[8%] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#a773ff] shadow-[0_0_16px_rgba(167,115,255,0.85)]" />
           </div>
-          <div aria-hidden className="fb-auth-ring-b absolute aspect-square w-[min(58%,250px)] rounded-full border border-[#818cf8]/20">
-            <span className="absolute bottom-[10%] left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#818cf8] shadow-[0_0_16px_rgba(129,140,248,0.8)]" />
+          <div aria-hidden className="fb-auth-ring-b absolute aspect-square w-[min(58%,250px)] rounded-full border border-[#8740f2]/25">
+            <span className="absolute bottom-[10%] left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#8740f2] shadow-[0_0_16px_rgba(135,64,242,0.8)]" />
           </div>
-          <div className="relative z-10 grid h-[78px] w-[78px] place-items-center rounded-[22px] bg-gradient-to-br from-[#0ea5e9] to-[#4f46e5] text-2xl font-bold text-white shadow-[0_18px_50px_rgba(14,165,233,0.35)]">
-            <span className="fb-auth-pulse absolute -inset-2.5 rounded-[28px] border border-[#38bdf8]/45" />
+          <div className="relative z-10 grid h-[78px] w-[78px] place-items-center rounded-[22px] bg-gradient-to-br from-[#8740f2] to-[#5b00e4] text-2xl font-bold text-white shadow-[0_18px_50px_rgba(91,0,228,0.4)]">
+            <span className="fb-auth-pulse absolute -inset-2.5 rounded-[28px] border border-[#a773ff]/45" />
             F
           </div>
           {CAPABILITIES.map(({ title, description }, index) => (
             <div
               key={title}
               className={cn(
-                'fb-auth-float absolute z-10 max-w-[170px] rounded-xl border border-white/10 bg-[#080c16]/55 px-3 py-2 backdrop-blur',
+                'fb-auth-float absolute z-10 max-w-[170px] rounded-xl border border-white/10 bg-[#1c102b]/60 px-3 py-2 backdrop-blur',
                 index === 0 && 'left-0 top-[8%]',
                 index === 1 && 'right-0 top-[42%]',
                 index === 2 && 'bottom-[6%] left-[12%]'

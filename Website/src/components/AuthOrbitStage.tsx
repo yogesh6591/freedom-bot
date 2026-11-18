@@ -29,19 +29,19 @@ export function AuthOrbitStage({ className }: { className?: string }) {
     >
       <div
         aria-hidden
-        className="fb-auth-ring absolute aspect-square w-[min(88%,360px)] rounded-full border border-[#7dd3fc]/35 shadow-[inset_0_0_40px_rgba(56,189,248,0.06)]"
+        className="fb-auth-ring absolute aspect-square w-[min(88%,360px)] rounded-full border border-[#b58cff]/35 shadow-[inset_0_0_40px_rgba(135,64,242,0.08)]"
       >
-        <span className="absolute left-1/2 top-[8%] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#38bdf8] shadow-[0_0_16px_rgba(56,189,248,0.85)]" />
+        <span className="absolute left-1/2 top-[8%] h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#a773ff] shadow-[0_0_16px_rgba(167,115,255,0.85)]" />
       </div>
       <div
         aria-hidden
-        className="fb-auth-ring-b absolute aspect-square w-[min(64%,260px)] rounded-full border border-[#818cf8]/35"
+        className="fb-auth-ring-b absolute aspect-square w-[min(64%,260px)] rounded-full border border-[#8740f2]/35"
       >
-        <span className="absolute bottom-[10%] left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#818cf8] shadow-[0_0_16px_rgba(129,140,248,0.8)]" />
+        <span className="absolute bottom-[10%] left-1/2 h-2.5 w-2.5 -translate-x-1/2 rounded-full bg-[#8740f2] shadow-[0_0_16px_rgba(135,64,242,0.8)]" />
       </div>
 
-      <div className="relative z-10 grid h-[78px] w-[78px] place-items-center rounded-[22px] bg-gradient-to-br from-[#0ea5e9] to-[#4f46e5] text-2xl font-bold text-white shadow-[0_18px_50px_rgba(14,165,233,0.35)]">
-        <span className="fb-auth-pulse absolute -inset-2.5 rounded-[28px] border border-[#38bdf8]/45" />
+      <div className="relative z-10 grid h-[78px] w-[78px] place-items-center rounded-[22px] bg-gradient-to-br from-[#8740f2] to-[#5b00e4] text-2xl font-bold text-white shadow-[0_18px_50px_rgba(91,0,228,0.4)]">
+        <span className="fb-auth-pulse absolute -inset-2.5 rounded-[28px] border border-[#a773ff]/45" />
         F
       </div>
 
