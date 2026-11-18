@@ -55,6 +55,10 @@ RISK_INPUTS: dict[str, Callable[["RunScope", dict[str, Any]], dict[str, Any]]] =
 #: useful (nothing to invoice, already queued), so no empty action is queued.
 PRECHECKS: dict[str, Callable[["RunScope", dict[str, Any]], Optional[str]]] = {}
 
+#: tool -> argument names that hold regulated-category *names* (labels), not regulated data, so the
+#: payload scan skips them. Everything else in the call is still scanned.
+_CATEGORY_LABEL_ARGS: dict[str, tuple[str, ...]] = {"admin_update_settings": ("order_dpa_allows",)}
+
 
 def effect(name: str) -> Callable:
     """Register the effect function for a registered tool."""
@@ -302,7 +306,10 @@ def assess(
     # FB-039: classify payload for PHI / card / licensed categories before decide.
     from freedombot.policy.classifier import classify_arguments
 
-    classified = classify_arguments(arguments)
+    # A settings change naming regulated categories (order_dpa_allows: ["card", "ssn", ...]) carries labels,
+    # not regulated data. Scanning them would refuse turning a blocked category back on from the chat.
+    labels = _CATEGORY_LABEL_ARGS.get(tool, ())
+    classified = classify_arguments({k: v for k, v in (arguments or {}).items() if k not in labels})
     if classified.contains_phi:
         request.contains_phi = True
     if classified.contains_card_data:
