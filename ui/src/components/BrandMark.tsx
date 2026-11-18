@@ -1,5 +1,5 @@
-import { Layers3 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { RobotMark } from './RobotMark'
 
 /** Shared mark: one visual identity across sign-in, the shell and the assistant. */
 export function BrandMark({
@@ -18,7 +18,7 @@ export function BrandMark({
         className
       )}
     >
-      <Layers3 size={21} strokeWidth={2.1} />
+      <RobotMark size={24} />
     </span>
   )
 }

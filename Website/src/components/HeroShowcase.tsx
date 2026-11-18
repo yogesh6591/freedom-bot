@@ -2,6 +2,7 @@
 
 import { motion, useReducedMotion } from 'framer-motion'
 import { CheckCheck, Layers3, Shield } from 'lucide-react'
+import { RobotMark } from './RobotMark'
 import { useEffect, useState } from 'react'
 
 const MESSAGES = [
@@ -47,7 +48,7 @@ export function HeroShowcase() {
         <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
           <div className="flex items-center gap-3">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-[9px] bg-brand text-fg">
-              <Layers3 size={16} />
+              <RobotMark size={18} />
             </span>
             <div>
               <p className="text-sm font-semibold text-fg">FreedomBot</p>

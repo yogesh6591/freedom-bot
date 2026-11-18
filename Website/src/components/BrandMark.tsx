@@ -1,6 +1,6 @@
-import { Layers3 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { RobotMark } from './RobotMark'
 
 export function BrandMark({
   className,
@@ -17,7 +17,7 @@ export function BrandMark({
         aria-hidden
         className="inline-flex h-10 w-10 items-center justify-center rounded-[11px] bg-brand text-white shadow-glow"
       >
-        <Layers3 size={21} strokeWidth={2.1} />
+        <RobotMark size={24} />
       </span>
       {showWordmark && (
         <span className="font-display text-lg font-semibold tracking-[-0.03em] text-fg">
