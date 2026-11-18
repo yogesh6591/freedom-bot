@@ -341,7 +341,7 @@ export default function SignupPage() {
         </Link>
         <div className="flex items-center gap-3 text-[13px]">
           <span className="hidden text-muted sm:inline">Already have a workspace?</span>
-          <Link href="/" className="font-semibold text-brand hover:underline">
+          <Link href="/login" className="font-semibold text-brand hover:underline">
             Sign in
           </Link>
           <ThemeToggle />
@@ -744,7 +744,7 @@ function Done({
       } catch {
         /* no session to end */
       }
-      window.location.assign(`/?workspace=${encodeURIComponent(created.workspace)}`)
+      window.location.assign(`/login?workspace=${encodeURIComponent(created.workspace)}`)
     }
   }
   const rows = [

@@ -170,13 +170,13 @@ function SignInForm({
   )
 }
 
-/** Sign-in for the home chat (``/``) or, with ``admin``, for the admin panel (``/admin``). */
+/** Sign-in for the home chat (``/login``) or, with ``admin``, for the admin panel (``/admin``). */
 export function LoginScreen({ admin = false }: { admin?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [clientSlug, setClientSlug] = useState('')
   // No workspace box on the form: sign-in finds the workspace from the email. An email used in more than
-  // one company can still pick one with a link like /?workspace=acme.
+  // one company can still pick one with a link like /login?workspace=acme.
   useEffect(() => {
     const wanted = new URLSearchParams(window.location.search).get('workspace')
     if (wanted) setClientSlug(wanted.trim())
@@ -191,7 +191,7 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
   // Already signed in: home goes straight to the chat; the admin panel only once unlocked here.
   useEffect(() => {
     if (!me) return
-    // A link for another workspace (/?workspace=acme) asks for that one: show the form, not this session.
+    // A link for another workspace (/login?workspace=acme) asks for that one: show the form, not this session.
     const wanted = new URLSearchParams(window.location.search).get('workspace')?.trim()
     if (wanted && wanted !== me.client.slug) return
     if (!admin) router.replace('/chat')

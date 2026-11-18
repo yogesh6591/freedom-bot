@@ -9,15 +9,31 @@ const nextConfig: NextConfig = {
   experimental: {
     proxyTimeout: 180000,
   },
-  async rewrites() {
+  async redirects() {
+    // Old sign-in links (/?workspace=acme) open the sign-in page; / itself is now the website.
     return [
+      {
+        source: '/',
+        has: [{ type: 'query', key: 'workspace' }],
+        destination: '/login',
+        permanent: false
+      }
+    ]
+  },
+  async rewrites() {
+    return {
+      // The website is the front page: / shows its home (its other pages stay under /website).
+      beforeFiles: [{ source: '/', destination: `${websiteProxy}/website` }],
+      afterFiles: [
       {
         source: '/acquire/:path*',
         destination: `${acquisitionProxy}/acquire/:path*`
       },
       { source: '/website', destination: `${websiteProxy}/website` },
       { source: '/website/:path*', destination: `${websiteProxy}/website/:path*` }
-    ]
+      ],
+      fallback: []
+    }
   }
 }
 

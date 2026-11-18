@@ -1,14 +1,17 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { LoginScreen } from '@/app/login/LoginScreen'
 
-/** Old sign-in address: the home sign-in is now /, the admin one /admin. */
-export default function LoginRedirect() {
+/** Home sign-in (the website at / links here); signing in opens /chat. ?panel=full is the old admin link. */
+export default function LoginPage() {
   const router = useRouter()
+  const [admin, setAdmin] = useState<boolean | null>(null)
   useEffect(() => {
-    const admin = new URLSearchParams(window.location.search).get('panel') === 'full'
-    router.replace(admin ? '/admin' : '/')
+    const full = new URLSearchParams(window.location.search).get('panel') === 'full'
+    if (full) router.replace('/admin')
+    setAdmin(full)
   }, [router])
-  return null
+  return admin === false ? <LoginScreen /> : null
 }

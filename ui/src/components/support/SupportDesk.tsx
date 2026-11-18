@@ -45,6 +45,17 @@ interface TicketContext {
   conversation?: { role: string; content: string; at?: string }[]
 }
 
+/** What the user asked and what FreedomBot answered: the flagged pair, else the last of each in the chat. */
+function exchange(ctx: TicketContext): { asked: string; answered: string; flagged: boolean } {
+  const turns = ctx.conversation ?? []
+  const last = (role: string) => [...turns].reverse().find((m) => m.role === role)?.content ?? ''
+  return {
+    asked: ctx.question || last('user'),
+    answered: ctx.flagged_answer || last('assistant'),
+    flagged: Boolean(ctx.flagged_answer)
+  }
+}
+
 /** The full ticket (staff) or what the person who raised it sees (status and resolution). */
 export interface Ticket {
   id: string
@@ -269,56 +280,88 @@ export function SupportDesk({
         <EmptyState>No tickets here.</EmptyState>
       ) : (
         <div className="space-y-2">
-          {items.map((ticket) => (
-            <button
-              key={ticket.id}
-              type="button"
-              onClick={() => void open(ticket.id)}
-              className={`ui-transition w-full rounded-xl border bg-background-secondary p-4 text-left shadow-panel hover:border-brand-soft ${
-                selected?.id === ticket.id ? 'border-brand' : 'border-border'
-              }`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone={statusTone(ticket.status)}>
-                  {STATUS_LABEL[ticket.status] ?? ticket.status}
-                </Badge>
-                <Badge tone={priorityTone(ticket.severity)}>{ticket.severity}</Badge>
-                {ticket.triage && <Badge tone="warn">Triage</Badge>}
-                <span className="font-geist text-sm font-semibold text-primary">
-                  {ticket.subject}
-                </span>
-              </div>
-              {ticket.raised_by && (
-                <p className="mt-1.5 text-xs text-secondary">
-                  Raised by{' '}
-                  <span className="font-medium text-primary">
-                    {ticket.raised_by.name || ticket.raised_by.email}
+          {items.map((ticket) => {
+            const preview = exchange(ticket.context || {})
+            return (
+            <div key={ticket.id} className="space-y-2">
+              <button
+                type="button"
+                aria-expanded={selected?.id === ticket.id}
+                onClick={() => (selected?.id === ticket.id ? setSelected(null) : void open(ticket.id))}
+                className={`ui-transition w-full rounded-xl border bg-background-secondary p-4 text-left shadow-panel hover:border-brand-soft ${
+                  selected?.id === ticket.id ? 'border-brand' : 'border-border'
+                }`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge tone={statusTone(ticket.status)}>
+                    {STATUS_LABEL[ticket.status] ?? ticket.status}
+                  </Badge>
+                  <Badge tone={priorityTone(ticket.severity)}>{ticket.severity}</Badge>
+                  {ticket.triage && <Badge tone="warn">Triage</Badge>}
+                  <span className="font-geist text-sm font-semibold text-primary">
+                    {ticket.subject}
                   </span>
-                  {ticket.raised_by.email && ticket.raised_by.name ? ` · ${ticket.raised_by.email}` : ''}
+                </div>
+                {ticket.raised_by && (
+                  <p className="mt-1.5 text-xs text-secondary">
+                    Raised by{' '}
+                    <span className="font-medium text-primary">
+                      {ticket.raised_by.name || ticket.raised_by.email}
+                    </span>
+                    {ticket.raised_by.email && ticket.raised_by.name ? ` · ${ticket.raised_by.email}` : ''}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-muted">
+                  {ticket.client?.name} · {ticket.category === 'BUSINESS' ? 'Business' : 'Technical'} ·{' '}
+                  {ticket.team_label} · {SOURCE_LABEL[ticket.source || ''] ?? ticket.source} ·{' '}
+                  {ticket.id} · {timestamp(ticket.updated_at)}
                 </p>
+                {(preview.asked || ticket.body) && (
+                  <div className="mt-2 space-y-0.5 text-xs">
+                    {preview.asked && (
+                      <p className="line-clamp-1 text-secondary">
+                        <span className="text-muted">Asked: </span>
+                        {preview.asked}
+                      </p>
+                    )}
+                    {ticket.body && (
+                      <p className="line-clamp-1 text-secondary">
+                        <span className="text-muted">User said: </span>
+                        {ticket.body}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </button>
+              {selected?.id === ticket.id && (
+                <TicketDetail
+                  ticket={selected}
+                  onClose={() => setSelected(null)}
+                  onChanged={async (t) => {
+                    setSelected(t)
+                    await load()
+                  }}
+                  onError={setError}
+                />
               )}
-              <p className="mt-1 text-xs text-muted">
-                {ticket.client?.name} · {ticket.category === 'BUSINESS' ? 'Business' : 'Technical'} ·{' '}
-                {ticket.team_label} · {SOURCE_LABEL[ticket.source || ''] ?? ticket.source} ·{' '}
-                {ticket.id} · {timestamp(ticket.updated_at)}
-              </p>
-            </button>
-          ))}
+            </div>
+            )
+          })}
         </div>
       )}
-
-      {selected && (
-        <TicketDetail
-          ticket={selected}
-          onClose={() => setSelected(null)}
-          onChanged={async (t) => {
-            setSelected(t)
-            await load()
-          }}
-          onError={setError}
-        />
-      )}
     </PageStack>
+  )
+}
+
+/** One labelled part of the ticket's story; "Not recorded" when the ticket has none. */
+function ContextBlock({ label, text }: { label: string; text: string }) {
+  return (
+    <div>
+      <p className="type-caption">{label}</p>
+      <p className={`mt-1 whitespace-pre-wrap rounded-lg bg-background p-3 text-xs ${text ? 'text-primary' : 'text-muted'}`}>
+        {text || 'Not recorded'}
+      </p>
+    </div>
   )
 }
 
@@ -358,6 +401,7 @@ function TicketDetail({
   }
 
   const ctx = ticket.context || {}
+  const talk = exchange(ctx)
   const other = ticket.assignee ? OTHER_TEAM[ticket.assignee] : undefined
 
   return (
@@ -370,56 +414,53 @@ function TicketDetail({
         </Btn>
       }
     >
-      <div className="grid gap-x-6 gap-y-1 text-xs text-secondary sm:grid-cols-2">
+      <div className="rounded-lg border border-border bg-background p-3 text-xs">
+        <p className="type-caption">Raised by</p>
+        <p className="mt-1 text-sm font-medium text-primary">
+          {ticket.raised_by?.name || ctx.user?.name || ticket.raised_by?.email || ctx.user?.email || '—'}
+        </p>
+        <p className="mt-0.5 text-secondary">
+          {[
+            ticket.raised_by?.email || ctx.user?.email,
+            ctx.user?.role ? ctx.user.role.charAt(0) + ctx.user.role.slice(1).toLowerCase() : '',
+            `${ctx.workspace?.name || ticket.client?.name || ''} (${ctx.workspace?.slug || ticket.client?.slug || ''})`
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </p>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <ContextBlock label="What the user asked" text={talk.asked} />
+        <ContextBlock
+          label={talk.flagged ? 'What FreedomBot answered (flagged)' : 'Last answer from FreedomBot'}
+          text={talk.answered}
+        />
+        <ContextBlock label="What the user said when raising the ticket" text={ticket.body || ''} />
+      </div>
+
+      {(ctx.conversation?.length ?? 0) > 0 && (
+        <details className="mt-4 text-xs">
+          <summary className="cursor-pointer text-muted">Full conversation ({ctx.conversation?.length} messages)</summary>
+          <ul className="mt-2 space-y-1.5">
+            {ctx.conversation?.map((m, i) => (
+              <li key={i} className="whitespace-pre-wrap">
+                <span className="font-medium text-primary">{m.role === 'user' ? 'User' : 'FreedomBot'}:</span>{' '}
+                {m.content}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      <div className="mt-4 grid gap-x-6 gap-y-1 border-t border-border pt-3 text-xs text-muted sm:grid-cols-2">
         <p>Category: {ticket.category === 'BUSINESS' ? 'Business' : 'Technical'}{ticket.triage ? ' (triage)' : ''}</p>
         <p>Priority: {ticket.severity}</p>
         <p>Status: {STATUS_LABEL[ticket.status] ?? ticket.status}</p>
         <p>Source: {SOURCE_LABEL[ticket.source || ''] ?? ticket.source}</p>
-        <p>
-          Raised by: {ticket.raised_by?.name || ticket.raised_by?.email || '—'}
-          {ticket.raised_by?.email && ticket.raised_by?.name ? ` (${ticket.raised_by.email})` : ''}
-        </p>
-        <p>Workspace: {ctx.workspace?.name || ticket.client?.name} ({ctx.workspace?.slug || ticket.client?.slug})</p>
         <p>Opened: {timestamp(ticket.created_at)}</p>
         <p>Updated: {timestamp(ticket.updated_at)}</p>
       </div>
-
-      <p className="type-muted mt-4 whitespace-pre-wrap">{ticket.body || '—'}</p>
-
-      {(ctx.question || ctx.flagged_answer || (ctx.conversation?.length ?? 0) > 0) && (
-        <div className="mt-4 space-y-2 border-t border-border pt-4">
-          <p className="type-caption">Chat context</p>
-          {ctx.question && (
-            <p className="text-xs">
-              <span className="text-muted">Question: </span>
-              <span className="whitespace-pre-wrap text-primary">{ctx.question}</span>
-            </p>
-          )}
-          {ctx.flagged_answer && (
-            <p className="text-xs">
-              <span className="text-muted">Flagged answer: </span>
-              <span className="whitespace-pre-wrap text-primary">{ctx.flagged_answer}</span>
-            </p>
-          )}
-          {(ctx.conversation?.length ?? 0) > 0 && (
-            <details className="text-xs">
-              <summary className="cursor-pointer text-muted">
-                Conversation ({ctx.conversation?.length} messages)
-              </summary>
-              <ul className="mt-2 space-y-1.5">
-                {ctx.conversation?.map((m, i) => (
-                  <li key={i} className="whitespace-pre-wrap">
-                    <span className="font-medium text-primary">
-                      {m.role === 'user' ? 'User' : 'FreedomBot'}:
-                    </span>{' '}
-                    {m.content}
-                  </li>
-                ))}
-              </ul>
-            </details>
-          )}
-        </div>
-      )}
 
       {ticket.resolution && (
         <p className="mt-4 whitespace-pre-wrap rounded-lg bg-success/10 p-3 text-xs text-primary">

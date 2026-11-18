@@ -13,7 +13,7 @@ export function appUrl(path = '/'): string {
 }
 
 /** Sign in: the app's sign-in page, which opens the AI chat. */
-export const SIGN_IN_URL = appUrl('/')
+export const SIGN_IN_URL = appUrl('/login')
 
 /** Sign up: the app's onboarding. A plan from the pricing cards is passed on as ?plan=. */
 export function signupUrl(plan?: string): string {

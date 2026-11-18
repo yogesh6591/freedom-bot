@@ -165,7 +165,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [locationQuery, setLocationQuery] = useState('')
 
   useEffect(() => {
-    if (!loading && !me) router.replace(chatOnly ? '/' : '/admin')
+    if (!loading && !me) router.replace(chatOnly ? '/login' : '/admin')
   }, [loading, me, router, chatOnly])
   useEffect(() => {
     if (me) setAdminOk(adminUnlocked(me.user.id))

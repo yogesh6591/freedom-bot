@@ -3,7 +3,7 @@
 /**
  * Two front doors, kept apart by URL:
  *
- * - Home:  `/` signs in, `/chat` is the assistant on its own.
+ * - Home:  `/login` signs in, `/chat` is the assistant on its own. `/` is the website.
  * - Admin: `/admin` signs in, `/admin/chat` and every other page is the full panel.
  *
  * Signing in at `/admin` unlocks the admin panel for that user in this browser; signing in at home or
@@ -19,7 +19,7 @@ export function isHomePath(path: string): boolean {
 }
 
 export function isSignInPath(path: string): boolean {
-  return path === '/' || path === '/admin' || path === '/login'
+  return path === '/admin' || path === '/login'
 }
 
 /** Pages anyone may open signed out: self-serve signup and onboarding. */
@@ -29,7 +29,7 @@ export function isPublicPath(path: string): boolean {
 
 /** Where a signed-out visitor to ``path`` signs in. */
 export function signInPathFor(path: string): string {
-  return isHomePath(path) || path === '/' ? '/' : '/admin'
+  return isHomePath(path) || path === '/' ? '/login' : '/admin'
 }
 
 export function adminUnlocked(userId: string): boolean {

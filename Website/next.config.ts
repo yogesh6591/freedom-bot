@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
     return [
       { source: '/signup', destination: `${appUrl}/signup`, permanent: false },
       { source: '/onboarding/:path*', destination: `${appUrl}/signup`, permanent: false },
-      { source: '/login', destination: `${appUrl}/`, permanent: false }
+      { source: '/login', destination: `${appUrl}/login`, permanent: false }
     ]
   }
 }
