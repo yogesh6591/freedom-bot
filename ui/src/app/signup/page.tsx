@@ -509,9 +509,9 @@ function Done({
 
       <Btn
         className="mt-6"
-        onClick={() => window.location.assign(`/admin?workspace=${encodeURIComponent(created.workspace)}`)}
+        onClick={() => window.location.assign(`/?workspace=${encodeURIComponent(created.workspace)}`)}
       >
-        Sign in to your admin portal <ArrowRight size={15} aria-hidden />
+        Sign in to FreedomBot <ArrowRight size={15} aria-hidden />
       </Btn>
     </section>
   )
