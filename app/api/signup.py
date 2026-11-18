@@ -94,16 +94,24 @@ def _plan(plan_id: str, domains: list[str]) -> dict[str, Any]:
     return plan
 
 
-def _stripe_keys() -> Optional[tuple[str, str]]:
-    """(secret key, publishable key) when Stripe checkout is switched on; None means the demo checkout."""
+def _stripe_secret() -> Optional[str]:
+    """The Stripe secret key when Stripe checkout is switched on (as for acquisition's payment links);
+    None means the demo checkout."""
     enabled = os.environ.get("STRIPE_ENABLED", "").strip().casefold() in {"1", "true", "yes", "on"}
     secret = os.environ.get("STRIPE_SECRET_KEY", "").strip()
-    publishable = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
     if not enabled:
         return None
-    if not secret or not publishable:
+    if not secret:
         raise HTTPException(status_code=503, detail="Payments are not set up yet. Please contact FreedomBot.")
-    return secret, publishable
+    return secret
+
+
+def _public_url() -> str:
+    """Where Stripe sends the customer back: SIGNUP_PUBLIC_URL, else the app's first CORS origin."""
+    url = os.environ.get("SIGNUP_PUBLIC_URL", "").strip()
+    if not url:
+        url = next((o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()), "")
+    return (url or "http://localhost:3000").rstrip("/")
 
 
 def _domains_tag(domains: list[str]) -> str:
@@ -128,13 +136,13 @@ class CheckoutBody(BaseModel):
 
 @router.post("/checkout")
 def start_checkout(request: Request, body: CheckoutBody, x_signup_key: Optional[str] = Header(default=None)) -> dict[str, Any]:
-    """Start paying for a workspace. With Stripe switched on this makes an embedded Checkout Session for the
-    plan's monthly subscription; otherwise the page uses the demo checkout."""
+    """Start paying for a workspace. With Stripe switched on this makes a hosted Checkout Session for the
+    plan's monthly subscription, opened in its own tab; otherwise the page uses the demo checkout."""
     _require_key(x_signup_key)
     _limit(request, "check", CHECKS_PER_HOUR)
     plan = _plan(body.plan_id, body.purchased_domains)
-    keys = _stripe_keys()
-    if keys is None:
+    secret = _stripe_secret()
+    if secret is None:
         return {"mode": "demo"}
     from freedombot.util.ids import slugify
 
@@ -145,11 +153,12 @@ def start_checkout(request: Request, body: CheckoutBody, x_signup_key: Optional[
 
     tags = _order_tags(slug=slug, plan_id=body.plan_id, email=str(body.admin_email), domains=body.purchased_domains)
     try:
+        back = _public_url()
         session = stripe.checkout.Session.create(
-            api_key=keys[0],
-            ui_mode="embedded",
+            api_key=secret,
             mode="subscription",
-            redirect_on_completion="never",
+            success_url=f"{back}/signup/paid?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{back}/signup/paid?cancelled=1",
             customer_email=str(body.admin_email),
             line_items=[{
                 "quantity": 1,
@@ -168,14 +177,33 @@ def start_checkout(request: Request, body: CheckoutBody, x_signup_key: Optional[
 
         log_warning(f"signup checkout could not start: {exc}")
         raise HTTPException(status_code=502, detail="Payment could not be started. Try again in a minute.") from exc
-    return {"mode": "stripe", "client_secret": session.client_secret, "publishable_key": keys[1],
-            "session_id": session.id}
+    return {"mode": "stripe", "url": session.url, "session_id": session.id}
+
+
+@router.get("/checkout/{session_id}")
+def checkout_status(request: Request, session_id: str, x_signup_key: Optional[str] = Header(default=None)) -> dict[str, Any]:
+    """Whether a signup Checkout Session has been paid; the signup page asks until it has."""
+    _require_key(x_signup_key)
+    _limit(request, "check", CHECKS_PER_HOUR * 5)
+    secret = _stripe_secret()
+    if secret is None or not session_id.startswith("cs_"):
+        raise HTTPException(status_code=404, detail="No such payment.")
+    import stripe
+
+    try:
+        session = stripe.checkout.Session.retrieve(session_id, api_key=secret)
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=404, detail="No such payment.") from exc
+    if not str((session.metadata or {}).get("signup_slug") or ""):
+        raise HTTPException(status_code=404, detail="No such payment.")
+    paid = session.status == "complete" and session.payment_status in {"paid", "no_payment_required"}
+    return {"paid": paid, "expired": session.status == "expired"}
 
 
 def _confirm_payment(body: "SignupBody") -> None:
     """With Stripe on: the Checkout Session must be complete, paid, and for exactly this workspace and plan."""
-    keys = _stripe_keys()
-    if keys is None:
+    secret = _stripe_secret()
+    if secret is None:
         return
     reference = (body.payment_reference or "").strip()
     if not reference.startswith("cs_"):
@@ -183,7 +211,7 @@ def _confirm_payment(body: "SignupBody") -> None:
     import stripe
 
     try:
-        session = stripe.checkout.Session.retrieve(reference, api_key=keys[0])
+        session = stripe.checkout.Session.retrieve(reference, api_key=secret)
     except stripe.StripeError as exc:
         raise HTTPException(status_code=402, detail="That payment could not be found.") from exc
     if session.status != "complete" or session.payment_status not in {"paid", "no_payment_required"}:
