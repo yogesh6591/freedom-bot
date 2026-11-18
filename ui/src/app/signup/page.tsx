@@ -11,11 +11,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, Eye, EyeOff, Lock } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, Eye, EyeOff, FileText, Lock, Upload, X } from 'lucide-react'
 import { BrandMark } from '@/components/BrandMark'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Btn, ErrorNote, Field, inputClass } from '@/components/common/primitives'
-import { api } from '@/lib/api'
+import { api, API_BASE } from '@/lib/api'
 import { setAdminUnlocked } from '@/lib/panel'
 import { announceSessionChange } from '@/lib/sessionSync'
 import {
@@ -29,7 +29,20 @@ import {
   type PlanId
 } from '@/lib/signup'
 
-const STEPS = ['Account', 'Company', 'Departments', 'Plan', 'Payment'] as const
+const STEPS = ['Account', 'Company', 'Departments', 'Plan', 'Knowledge', 'Payment'] as const
+const PAY_STEP = STEPS.length - 1
+
+/** Files for company memory: the same types and size the Memory page's upload accepts (documents.py). */
+const DOC_TYPES = ['.pdf', '.docx', '.txt', '.md']
+const DOC_MAX_MB = 10
+const DOC_MAX_FILES = 10
+
+/** One chosen file's upload after the workspace is made. */
+interface UploadState {
+  name: string
+  state: 'waiting' | 'uploading' | 'added' | 'failed'
+  detail?: string
+}
 // Non-secret progress survives a refresh; the password never does.
 const STORE = 'freedombot:signup'
 
@@ -82,6 +95,10 @@ export default function SignupPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [created, setCreated] = useState<Created | null>(null)
+  // Company documents picked in the Knowledge step. Kept in this tab only, never in storage.
+  const [files, setFiles] = useState<File[]>([])
+  const [uploads, setUploads] = useState<UploadState[]>([])
+  const [signedIn, setSignedIn] = useState(false)
   const [idEdited, setIdEdited] = useState(false)
 
   useEffect(() => {
@@ -113,6 +130,61 @@ export default function SignupPage() {
     setError(null)
     setStep(next)
     window.scrollTo({ top: 0 })
+  }
+
+  function addFiles(list: FileList | null) {
+    setError(null)
+    const picked = Array.from(list ?? [])
+    const problems: string[] = []
+    const ok = picked.filter((f) => {
+      const ext = f.name.toLowerCase().slice(f.name.lastIndexOf('.'))
+      if (!DOC_TYPES.includes(ext)) problems.push(`${f.name}: only PDF, Word (.docx), .txt or .md files`)
+      else if (f.size > DOC_MAX_MB * 1024 * 1024) problems.push(`${f.name}: larger than ${DOC_MAX_MB} MB`)
+      else return true
+      return false
+    })
+    setFiles((current) => {
+      const names = new Set(current.map((f) => f.name))
+      const merged = [...current, ...ok.filter((f) => !names.has(f.name))]
+      if (merged.length > DOC_MAX_FILES) problems.push(`Up to ${DOC_MAX_FILES} files; add more later from Memory.`)
+      return merged.slice(0, DOC_MAX_FILES)
+    })
+    if (problems.length) setError(problems.join(' · '))
+  }
+
+  /** Sign the new admin in, then add each chosen file to company memory for everyone in the workspace. */
+  async function addKnowledge(made: Created) {
+    if (!files.length) return
+    setUploads(files.map((f) => ({ name: f.name, state: 'waiting' })))
+    try {
+      await api.post('/api/auth/login', { email: made.admin_email, password, client_slug: made.workspace },
+        { anyWorkspace: true })
+      setAdminUnlocked(null)
+      announceSessionChange()
+      setSignedIn(true)
+    } catch {
+      setUploads(files.map((f) => ({ name: f.name, state: 'failed', detail: 'Sign in and add it from Memory.' })))
+      return
+    }
+    for (const [i, file] of files.entries()) {
+      setUploads((u) => u.map((x, j) => (j === i ? { ...x, state: 'uploading' } : x)))
+      const form = new FormData()
+      form.append('file', file)
+      form.append('title', '')
+      form.append('access_area', '') // empty: everyone in the workspace can use it
+      let result: UploadState = { name: file.name, state: 'added' }
+      try {
+        const response = await fetch(`${API_BASE}/api/memory/documents`, { method: 'POST', body: form, credentials: 'include' })
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}))
+          result = { name: file.name, state: 'failed', detail: detail(body, 'It could not be added.') }
+        }
+      } catch {
+        result = { name: file.name, state: 'failed', detail: 'FreedomBot could not be reached.' }
+      }
+      setUploads((u) => u.map((x, j) => (j === i ? result : x)))
+    }
+    setFiles([])
   }
 
   async function next() {
@@ -175,6 +247,7 @@ export default function SignupPage() {
       }
       setCreated(body as Created)
       setCard({ name: '', number: '', expiry: '', cvc: '' })
+      void addKnowledge(body as Created)
       try {
         sessionStorage.removeItem(STORE)
       } catch {
@@ -205,7 +278,8 @@ export default function SignupPage() {
 
       <main className="mx-auto max-w-5xl px-4 pb-16 sm:px-6">
         {created ? (
-          <Done created={created} password={password} departments={draft.departments} planId={draft.planId} />
+          <Done created={created} password={password} departments={draft.departments} planId={draft.planId}
+            uploads={uploads} signedIn={signedIn} />
         ) : (
           <>
             <ol className="mb-6 flex flex-wrap gap-2" aria-label="Steps">
@@ -348,6 +422,59 @@ export default function SignupPage() {
               )}
 
               {step === 4 && (
+                <div className="grid gap-4">
+                  <Heading
+                    title="Add your company knowledge"
+                    text="Optional. Upload handbooks, policies, price lists or FAQs. They go into company memory, so everyone in your workspace gets answers from them."
+                  />
+                  <label
+                    className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-background px-4 py-8 text-center ui-transition hover:border-brand/60"
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      addFiles(e.dataTransfer.files)
+                    }}
+                  >
+                    <Upload size={22} className="text-brand" aria-hidden />
+                    <span className="text-[14px] font-semibold text-primary">Choose files or drop them here</span>
+                    <span className="text-[12px] text-muted">
+                      PDF, Word (.docx), .txt or .md · up to {DOC_MAX_MB} MB each · up to {DOC_MAX_FILES} files
+                    </span>
+                    <input
+                      type="file"
+                      multiple
+                      accept={DOC_TYPES.join(',')}
+                      className="sr-only"
+                      onChange={(e) => {
+                        addFiles(e.target.files)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
+                  {files.length > 0 && (
+                    <ul className="grid gap-2">
+                      {files.map((f) => (
+                        <li key={f.name} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-[13px]">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <FileText size={15} className="shrink-0 text-brand" aria-hidden />
+                            <span className="truncate">{f.name}</span>
+                            <span className="shrink-0 text-[11px] text-muted">{Math.max(1, Math.round(f.size / 1024))} KB</span>
+                          </span>
+                          <button type="button" aria-label={`Remove ${f.name}`} className="text-muted hover:text-primary"
+                            onClick={() => setFiles((list) => list.filter((x) => x !== f))}>
+                            <X size={15} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-[12px] text-muted">
+                    Files are added right after your workspace is created. You can add more any time from Memory.
+                  </p>
+                </div>
+              )}
+
+              {step === PAY_STEP && (
                 <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
                   <div className="grid gap-4">
                     <Heading title="Review and pay" text="Your workspace is created as soon as the payment goes through." />
@@ -392,6 +519,12 @@ export default function SignupPage() {
                     <p className="mt-1 text-secondary">
                       {DEPARTMENTS.filter((d) => draft.departments.includes(d.id)).map((d) => d.label).join(' · ')}
                     </p>
+                    {files.length > 0 && (
+                      <>
+                        <p className="mt-4 text-[11px] font-semibold uppercase tracking-wider text-muted">Company knowledge</p>
+                        <p className="mt-1 text-secondary">{files.length} {files.length === 1 ? 'file' : 'files'} to add</p>
+                      </>
+                    )}
                   </aside>
                 </div>
               )}
@@ -404,9 +537,9 @@ export default function SignupPage() {
                 ) : (
                   <span />
                 )}
-                {step < 4 ? (
+                {step < PAY_STEP ? (
                   <Btn onClick={() => void next()} loading={busy}>
-                    Continue <ArrowRight size={15} aria-hidden />
+                    {step === 4 && files.length === 0 ? 'Skip for now' : 'Continue'} <ArrowRight size={15} aria-hidden />
                   </Btn>
                 ) : (
                   <Btn onClick={() => void pay()} loading={busy}>
@@ -445,12 +578,16 @@ function Done({
   created,
   password,
   departments,
-  planId
+  planId,
+  uploads,
+  signedIn
 }: {
   created: Created
   password: string
   departments: string[]
   planId: PlanId
+  uploads: UploadState[]
+  signedIn: boolean
 }) {
   const [reveal, setReveal] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
@@ -460,6 +597,8 @@ function Done({
   // account) is replaced instead of reopened. If that fails, sign the old one out and show the sign-in.
   async function openWorkspace() {
     setOpening(true)
+    // Adding the company files already signed the new admin in.
+    if (signedIn) return window.location.assign('/chat')
     try {
       await api.post(
         '/api/auth/login',
@@ -538,7 +677,30 @@ function Done({
         Departments: {DEPARTMENTS.filter((d) => departments.includes(d.id)).map((d) => d.label).join(' · ')}
       </p>
 
-      <Btn className="mt-6" disabled={opening} onClick={() => void openWorkspace()}>
+      {uploads.length > 0 && (
+        <div className="mt-5 rounded-xl border border-border bg-background p-5 text-[13px]">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Company knowledge</p>
+          <ul className="mt-3 grid gap-2">
+            {uploads.map((u) => (
+              <li key={u.name} className="flex items-start justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <FileText size={14} className="shrink-0 text-brand" aria-hidden />
+                  <span className="truncate">{u.name}</span>
+                </span>
+                <span className={`shrink-0 text-right text-[12px] ${u.state === 'added' ? 'text-success' : u.state === 'failed' ? 'text-error' : 'text-muted'}`}>
+                  {u.state === 'added' ? 'Added to memory' : u.state === 'failed' ? `Not added: ${u.detail ?? ''}` : u.state === 'uploading' ? 'Adding…' : 'Waiting'}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {uploads.some((u) => u.state === 'failed') && (
+            <p className="mt-3 text-[12px] text-muted">You can add these later from Memory.</p>
+          )}
+        </div>
+      )}
+
+      <Btn className="mt-6" disabled={opening || uploads.some((u) => u.state === 'waiting' || u.state === 'uploading')}
+        onClick={() => void openWorkspace()}>
         {opening ? 'Opening FreedomBot…' : 'Open FreedomBot'} <ArrowRight size={15} aria-hidden />
       </Btn>
     </section>
