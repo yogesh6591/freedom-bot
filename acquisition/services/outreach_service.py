@@ -110,6 +110,13 @@ def without_legacy_footer(body: str, optout_line: str, address: str) -> str:
     return body
 
 
+def thread_unreachable(error: Optional[str]) -> bool:
+    """True when a send failed only because Gmail could not open the thread (another mailbox, or deleted)."""
+    text = (error or "").casefold()
+    return "thread" in text and any(w in text for w in ("404", "cannot access", "not found", "does not exist",
+                                                       "different gmail", "invalid"))
+
+
 def can_send_now(
     *,
     sent_today: int,
@@ -244,7 +251,12 @@ def enqueue(
         subject = merge(subject_template, values)
         body = merge(body_template, values)
         previous = last_email_to(db, pid)
-        threaded = bool(previous) and not new_thread
+        follow_up = bool(previous) and not new_thread
+        # A thread belongs to one mailbox, so a reply goes into the old thread unless it is known that a DIFFERENT
+        # user sent that earlier email; then it is a normal new email. When either sender is not recorded the reply
+        # is tried, and the sender falls back to a normal new email if Gmail cannot open the thread.
+        threaded = follow_up and (
+            not previous.requested_by or not requested_by or previous.requested_by == requested_by)
         if threaded:
             # reply in the earlier Gmail thread: same subject with "Re: "
             base = previous.subject or ""
@@ -253,7 +265,7 @@ def enqueue(
             prospect_id=pid,
             campaign_prospect_id=link.id,
             batch_id=batch,
-            kind=KIND_FOLLOW_UP if threaded else KIND_FIRST,
+            kind=KIND_FOLLOW_UP if follow_up else KIND_FIRST,
             follow_up_of_id=previous.id if threaded else None,
             to_email=email,
             subject=subject[:500],
@@ -326,6 +338,15 @@ def send_next(
         res = send_fn(row.to_email, row.subject, row.body, thread_id)
     except Exception as exc:  # never lose the row because the connector blew up
         res = SendResult(ok=False, error=str(exc))
+    if not res.ok and thread_id and thread_unreachable(res.error):
+        # The earlier thread cannot be opened from this mailbox: send a normal new email, not a reply.
+        row.follow_up_of_id = None
+        if row.subject.lower().startswith("re:"):
+            row.subject = row.subject[3:].strip() or row.subject
+        try:
+            res = send_fn(row.to_email, row.subject, row.body, None)
+        except Exception as exc:  # noqa: BLE001
+            res = SendResult(ok=False, error=str(exc))
     if res.ok:
         row.status, row.sent_at, row.error = STATUS_SENT, now, None
         row.gmail_message_id, row.gmail_thread_id = res.message_id, res.thread_id

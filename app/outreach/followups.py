@@ -51,6 +51,7 @@ class Waiting:
     due: datetime  # UTC
     requested_by: str
     stage: str  # which saved email goes out (a key of outreach_settings.STAGE_KEYS)
+    missing: tuple = ()  # what an in-progress person still has to answer
 
 
 def _aware(value: datetime) -> datetime:
@@ -78,7 +79,8 @@ def scan(db: Any, cfg: Any, now: Optional[datetime] = None, *, only_due: bool = 
     """Everyone the rule applies to, with when they are due. ``only_due`` keeps just those whose time has come."""
     from acquisition.services.prospect_identity import is_placeholder_email
     from app.outreach import audience as aud
-    from app.outreach.records import link_row
+    from acquisition.tenant import prospect_client_clause
+    from app.outreach.records import structured_answers_and_missing
     from app.outreach.session import OutreachSession
 
     if not (cfg.followup_enabled and cfg.followup_since):
@@ -107,29 +109,36 @@ def scan(db: Any, cfg: Any, now: Optional[datetime] = None, *, only_due: bool = 
     if not candidates:
         return []
 
-    people = {p.id: p for p in db.scalars(select(Prospect).where(Prospect.id.in_([c[0] for c in candidates])))}
-    emails = [str(p.email or "").strip().lower() for p in people.values()]
-    stages = aud.stages_for(db, emails)
-    held = aud.held_among(db, emails)
+    # Only this workspace's people when called from the chat (tenant scope set); everyone for the background job.
+    people = {p.id: p for p in db.scalars(select(Prospect).where(
+        prospect_client_clause(), Prospect.id.in_([c[0] for c in candidates])))}
+    # Everything below is looked up by the person's own record, never by email address, so the same address in
+    # two organisations can never be mixed up.
+    links, profiles, mail = aud._loaded(db)
     out: list[Waiting] = []
     for pid, due, requester in candidates:
         p = people.get(pid)
         email = str(getattr(p, "email", "") or "").strip()
-        if p is None or not email or is_placeholder_email(email) or email.lower() in held:
+        if p is None or not email or is_placeholder_email(email) or p.research_status in aud.RESEARCH_HOLD:
             continue
-        link = link_row(db, pid)
+        link = links.get(pid)
         if link is not None and link.outreach_status in _STOPPED:
             continue
-        key = OutreachSession.STAGE_TEMPLATE.get(stages.get(email.lower(), ""))
+        profile = profiles.get(link.id) if link is not None else None
+        stage = aud.person_stage(link, profile, (mail.get(pid) or {"count": 0})["count"])
+        key = OutreachSession.STAGE_TEMPLATE.get(stage)
         if key is None or key == "unqualified":
             continue  # nothing to send at this stage, or a one-time thank-you that is never repeated
         if key == "payment_pending" and OutreachSession._payment_hold(db, pid):
             continue
-        out.append(Waiting(pid, email, p.executive_name or "", due, requester, key))
+        missing: tuple = ()
+        if key == "in_progress" and profile is not None:
+            missing = tuple(structured_answers_and_missing(profile.structured_state)[1])
+        out.append(Waiting(pid, email, p.executive_name or "", due, requester, key, missing))
     return out
 
 
-def _text(db: Any, session: Any, cfg: Any, w: Waiting, missing: dict) -> str:
+def _text(db: Any, session: Any, cfg: Any, w: Waiting) -> str:
     """The saved email for this person's stage, filled the same way a manual follow-up is."""
     from app.outreach.session import OutreachSession
 
@@ -137,7 +146,7 @@ def _text(db: Any, session: Any, cfg: Any, w: Waiting, missing: dict) -> str:
     if "{{next_step_url}}" in text:
         text = text.replace("{{next_step_url}}", OutreachSession._step_url(db, w.prospect_id, w.stage))
     if "{{missingTopics}}" in text:
-        text = text.replace("{{missingTopics}}", OutreachSession._missing_phrase(missing.get(w.email.lower())))
+        text = text.replace("{{missingTopics}}", OutreachSession._missing_phrase(list(w.missing)))
     return OutreachSession._tidy_email(text)
 
 
@@ -160,10 +169,6 @@ def run(now: Optional[datetime] = None) -> int:
         due = [w for w in due if w.requested_by in connected]  # the rest wait until that Gmail is connected
         if not due:
             return 0
-        in_progress = [{"email": w.email} for w in due if w.stage == "in_progress"]
-        missing = {r["email"].lower(): r.get("missing")
-                   for r in OutreachSession._in_progress_rows(db, in_progress, {r["email"].lower(): "in_progress"
-                                                                               for r in in_progress})}
         subject = strip_assessment_link(cfg.first_subject) or "Following up"
         sessions: dict[str, Any] = {}
         batch, queued = uuid.uuid4(), 0
@@ -172,7 +177,7 @@ def run(now: Optional[datetime] = None) -> int:
             try:
                 with db.begin_nested():
                     svc.enqueue(db, prospect_ids=[w.prospect_id], batch_id=batch, requested_by=w.requested_by,
-                                subject_template=subject, body_template=_text(db, session, cfg, w, missing))
+                                subject_template=subject, body_template=_text(db, session, cfg, w))
                 queued += 1
             except svc.OutreachError as exc:
                 log.warning("outreach: automatic follow-up skipped for %s: %s", w.email, exc)
