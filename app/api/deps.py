@@ -161,7 +161,7 @@ def require_platform_owner(ctx: TenantContext = Depends(current_context)) -> Ten
     if not ctx.attributes.get("platform_owner"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="The owner view is available to Cepoch platform owners only.",
+            detail="The owner view is available to platform owners only.",
         )
     return ctx
 

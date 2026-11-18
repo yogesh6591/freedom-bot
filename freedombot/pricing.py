@@ -432,7 +432,7 @@ def calculate_consult_quote(
     if not is_configured(rules):
         raise PricingNotConfigured(
             "No resale price rules are set for this client. Set customer price and "
-            "Cepoch cost under Admin → Pricing before calculating a quote."
+            "Platform cost under Admin → Pricing before calculating a quote."
         )
     scope = rules["scope_rules"]
     base_price = float(rules["customer_price_usd"])

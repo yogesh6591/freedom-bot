@@ -382,7 +382,7 @@ function PriceRules({ rules, onSaved }: { rules: Rules; onSaved: () => Promise<v
   return (
     <Panel
       title="Price & margin"
-      description="Your base package price for this client and what Cepoch keeps."
+      description="Your base package price for this client and what the platform keeps."
     >
       {error && <div className="mb-3"><ErrorNote>{error}</ErrorNote></div>}
       <div className="space-y-4">
@@ -401,7 +401,7 @@ function PriceRules({ rules, onSaved }: { rules: Rules; onSaved: () => Promise<v
               Set target margin
             </SegmentedTab>
             <SegmentedTab active={mode === 'cost'} onClick={() => setMode('cost')}>
-              Set Cepoch cost
+              Set platform cost
             </SegmentedTab>
           </SegmentedTabs>
           <div className="mt-3">
@@ -428,7 +428,7 @@ function PriceRules({ rules, onSaved }: { rules: Rules; onSaved: () => Promise<v
                 </div>
               </div>
             ) : (
-              <MoneyInput value={cost} onChange={setCost} placeholder="Cepoch delivery cost" />
+              <MoneyInput value={cost} onChange={setCost} placeholder="Platform delivery cost" />
             )}
           </div>
         </div>
@@ -558,7 +558,7 @@ function MarginBar({
         )}
       </div>
       <div className="mt-1.5 flex justify-between text-[11px] text-muted">
-        <span>Cepoch cost {usd(cost)}</span>
+        <span>Platform cost {usd(cost)}</span>
         <span className={low ? 'font-semibold text-error' : 'font-semibold text-positive'}>
           Margin {usd(price - cost)} · {marginPct.toFixed(1)}%
         </span>

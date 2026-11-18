@@ -652,7 +652,7 @@ def ensure_internal_workspace() -> Client:
     cfg = ClientSettings()
     cfg.internal_workspace = True
     owner_ws = ensure_client(
-        "Cepoch (internal)", slug=OWNER_WORKSPACE_SLUG, settings=cfg
+        "Syntech", slug=OWNER_WORKSPACE_SLUG, settings=cfg
     )
     if not owner_ws.settings.internal_workspace:
         payload = owner_ws.settings.to_dict()
@@ -698,7 +698,7 @@ def ensure_owner_workspace() -> dict[str, Any]:
             client_id=owner_ws.id,
             email=CEPOCH_SUPPORT_EMAIL,
             password=DEV_PASSWORD,
-            display_name="Yogesh (Cepoch support)",
+            display_name="Yogesh (Support)",
             roles=(Role.ADMIN,),
             created_by="bootstrap",
         )

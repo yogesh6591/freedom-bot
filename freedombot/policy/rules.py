@@ -129,7 +129,7 @@ def rule_platform_owner(req: PolicyRequest, inp: EvaluationInputs) -> Optional[C
         return Constraint(
             "PLATFORM_OWNER_ONLY",
             DENY,
-            f"{inp.spec.title} is available to Cepoch platform owners only",
+            f"{inp.spec.title} is available to platform owners only",
         )
     return None
 
