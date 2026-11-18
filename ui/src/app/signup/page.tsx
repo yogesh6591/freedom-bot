@@ -581,13 +581,13 @@ function DepartmentGuideDialog({ open, onClose, picked }: { open: boolean; onClo
         <DialogHeader>
           <DialogTitle>What each department does</DialogTitle>
           <DialogDescription className="text-muted">
-            Pick the departments your team works in. FreedomBot then answers and helps with that kind of work.
+            Pick the departments your team works in.
           </DialogDescription>
         </DialogHeader>
-        <ul className="mt-2 grid gap-3">
+        <ul className="mt-2 grid gap-3 sm:grid-cols-2">
           {DEPARTMENTS.map((d) => {
-            const guide = DEPARTMENT_GUIDE[d.id]
-            if (!guide) return null
+            const points = DEPARTMENT_GUIDE[d.id]
+            if (!points) return null
             return (
               <li key={d.id} className="rounded-xl border border-border bg-background p-4 text-[13px]">
                 <p className="flex items-center justify-between gap-2 text-[15px] font-semibold text-primary">
@@ -596,19 +596,11 @@ function DepartmentGuideDialog({ open, onClose, picked }: { open: boolean; onClo
                     <span className="rounded-full bg-brand/15 px-2 py-0.5 text-[11px] font-medium text-brand">Picked</span>
                   )}
                 </p>
-                <p className="mt-1 text-secondary">{guide.team}</p>
-                <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-muted">How FreedomBot helps</p>
-                <ul className="mt-1.5 grid gap-1">
-                  {guide.helps.map((h) => (
-                    <li key={h} className="flex gap-1.5 text-secondary">
-                      <Check size={13} className="mt-0.5 shrink-0 text-brand" aria-hidden />
-                      {h}
-                    </li>
+                <ul className="mt-2 grid list-disc gap-1 pl-4 text-secondary marker:text-brand">
+                  {points.map((point) => (
+                    <li key={point}>{point}</li>
                   ))}
                 </ul>
-                <p className="mt-3 text-[12px] text-muted">
-                  Try asking: <span className="italic text-secondary">&ldquo;{guide.example}&rdquo;</span>
-                </p>
               </li>
             )
           })}
