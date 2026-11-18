@@ -8,7 +8,7 @@ result, and the reply.
 
 Categories (FB-039): ``phi`` (health information about a person), ``card`` (payment card details),
 ``ssn``, ``child`` (a child's personal data) and ``biometrics``. A category is blocked when the
-workspace's Order/DPA does not allow it (PHI also needs a BAA-covered model). Blocked data is never
+workspace's Order/DPA does not allow it (no BAA is needed for PHI). Blocked data is never
 kept and never handed back: it is withheld whole (PHI, child data, biometrics) or masked (card numbers,
 CVVs, expiry dates, SSNs).
 

@@ -166,12 +166,8 @@ def rule_data_area(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constr
 
 
 def rule_phi(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
-    """PHI is refused unless Order/DPA allows it (§14 / FB-039).
-
-    Dental BAA vendor pattern: when PHI is on the Order/DPA list but the model
-    vendor has no BAA (OpenAI today), refuse — same posture as a dental practice
-    that cannot send PHI to a non-BAA processor.
-    """
+    """PHI is refused unless Order/DPA allows it (§14 / FB-039). No BAA is required (owner decision,
+    2026-11-18)."""
     if not (inp.spec.phi_sensitive or req.contains_phi):
         return None
     if not _order_dpa_allows(req.settings, "phi"):
@@ -179,17 +175,6 @@ def rule_phi(req: PolicyRequest, inp: EvaluationInputs) -> Optional[Constraint]:
             "PHI_NOT_PERMITTED",
             DENY,
             "this workspace's Order/DPA does not allow protected health information",
-        )
-    # Dental BAA vendor pattern: whatever the Order/DPA says, PHI never goes
-    # to a model vendor that has not signed a BAA for this client.
-    if not bool(getattr(req.settings, "llm_baa_covered", False)):
-        vendor = str(getattr(req.settings, "llm_vendor", "") or "openai")
-        label = "OpenAI" if vendor.casefold() in {"openai", "open_ai"} else vendor
-        return Constraint(
-            "PHI_NO_BAA",
-            DENY,
-            f"PHI is Order/DPA-allowed, but the configured model vendor ({label}) "
-            "has no BAA — use a BAA-covered vendor or remove PHI from Order/DPA",
         )
     return None
 

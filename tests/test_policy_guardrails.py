@@ -92,10 +92,9 @@ def test_phi_is_blocked_when_not_permitted(client_a, scope_factory, settings_wit
 
 
 def test_phi_is_allowed_when_the_contract_permits_it(client_a, scope_factory, settings_with):
-    # FB-039 dental BAA pattern: the Order/DPA must allow PHI *and* the model
-    # vendor must have a signed BAA.
+    # The Order/DPA allowing PHI is enough; no BAA is needed (owner decision, 2026-11-18).
     settings = settings_with(
-        client_a.settings, order_dpa_allows=["phi"], llm_baa_covered=True,
+        client_a.settings, order_dpa_allows=["phi"],
         default_execution_mode=ExecutionMode.AUTO_WITHIN_SCOPE.value,
     )
     scope = scope_factory(client_a, "operator", settings=settings)

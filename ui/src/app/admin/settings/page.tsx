@@ -7,7 +7,6 @@ import {
   Baby,
   Check,
   CreditCard,
-  FileCheck2,
   Fingerprint,
   HeartPulse,
   IdCard,
@@ -1601,18 +1600,14 @@ function Policies() {
           <div className="grid gap-3 md:grid-cols-2">
             {REGULATED.map(({ key, ...item }) => {
               const blocked = !allowed.has(key)
-              const heldByBaa =
-                key === 'phi' && !blocked && !settings.llm_baa_covered
               return (
                 <PolicyToggle
                   key={key}
                   {...item}
                   on={blocked}
                   disabled={saving}
-                  status={
-                    heldByBaa ? 'Needs BAA' : blocked ? 'Blocked' : 'Allowed'
-                  }
-                  tone={heldByBaa ? 'info' : blocked ? 'good' : 'warn'}
+                  status={blocked ? 'Blocked' : 'Allowed'}
+                  tone={blocked ? 'good' : 'warn'}
                   onChange={(block) => {
                     const next = new Set(allowed)
                     if (block) next.delete(key)
@@ -1622,24 +1617,6 @@ function Policies() {
                 />
               )
             })}
-            <div className="md:col-span-2">
-              <PolicyToggle
-                icon={FileCheck2}
-                title="Model vendor has signed a BAA for this client"
-                description={`Model vendor: ${settings.llm_vendor || 'openai'} (set by the deployment). PHI also needs a BAA with this vendor, so it stays blocked without one.`}
-                on={Boolean(settings.llm_baa_covered)}
-                disabled={saving}
-                status={settings.llm_baa_covered ? 'BAA in place' : 'No BAA'}
-                tone={settings.llm_baa_covered ? 'good' : 'neutral'}
-                onChange={(covered) => void save({ llm_baa_covered: covered })}
-              />
-              {allowed.has('phi') && !settings.llm_baa_covered && (
-                <p className="mt-2 rounded-lg border border-warning/35 bg-warning/10 px-3.5 py-2.5 text-xs text-secondary">
-                  PHI is unblocked here but stays blocked until a BAA is in
-                  place
-                </p>
-              )}
-            </div>
           </div>
         </PolicyGroup>
 

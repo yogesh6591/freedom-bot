@@ -110,7 +110,7 @@ def evaluate(req: PolicyRequest, *, domain_mode: Optional[ExecutionMode] = None)
     # Always on (owner decision, no workspace switch): an Admin's action that would wait for approval
     # runs now, for every approval rule, including licensed content and tools that always need approval.
     # Only REQUIRE_APPROVAL changes: denials (RBAC, platform-owner tools, regulated-data blocks such as
-    # PHI without a BAA), draft-only and Advise mode still bind admins.
+    # categories the Order/DPA does not allow), draft-only and Advise mode still bind admins.
     if (
         effect == PolicyEffect.REQUIRE_APPROVAL
         and req.ctx.is_admin

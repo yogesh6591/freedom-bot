@@ -145,9 +145,8 @@ class ClientSettings:
     #: ``MODEL_ID`` / ``LLM_VENDOR`` on every load — not editable per client, so
     #: a workspace cannot relabel the processor its data is sent to.
     llm_vendor: str = "openai"
-    #: FB-039: whether that vendor is under a signed BAA for this client. Dental
-    #: BAA vendor pattern: PHI is never sent to a processor without one, so PHI
-    #: stays blocked even when the Order/DPA allows it. OpenAI has no BAA today.
+    #: FB-039: whether that vendor is under a signed BAA for this client. Informational only: since the
+    #: owner decision of 2026-11-18 PHI is allowed whenever the Order/DPA allows it, with or without a BAA.
     llm_baa_covered: bool = False
     #: M15-20: Cepoch's own internal workspace (where platform owners sign in).
     #: Never counted as a client in the owner portfolio.
@@ -249,8 +248,9 @@ class ClientSettings:
         return category.casefold() in self.order_dpa_allows
 
     def phi_permitted(self) -> bool:
-        """PHI may be processed: Order/DPA allows it *and* the vendor has a BAA."""
-        return self.order_dpa_allows_category("phi") and self.llm_baa_covered
+        """PHI may be processed when the Order/DPA allows it. Owner decision (2026-11-18): no BAA is
+        required, so ``llm_baa_covered`` is kept for old records but no longer gates PHI."""
+        return self.order_dpa_allows_category("phi")
 
     # -- typed accessors ----------------------------------------------------
 

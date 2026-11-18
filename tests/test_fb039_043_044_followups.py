@@ -1,5 +1,5 @@
 """FB-039 / FB-043 / FB-044 follow-ups: one Order/DPA setting, biometrics, the
-dental BAA pattern in chat, removable baselines and the automatic sale handoff."""
+PHI in chat (no BAA needed), removable baselines and the automatic sale handoff."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def test_model_vendor_comes_from_the_deployment(monkeypatch):
     assert ClientSettings.from_dict({"llm_vendor": "hipaa-cloud"}).llm_vendor == "openai"
 
 
-def test_phi_needs_a_baa_whichever_way_it_was_allowed(client_a, scope_factory):
+def test_phi_needs_no_baa_whichever_way_it_was_allowed(client_a, scope_factory):
     base = client_a.settings.to_dict()
     base.pop("order_dpa_allows")  # a row written before the Order/DPA list existed
     base["default_execution_mode"] = ExecutionMode.AUTO_WITHIN_SCOPE.value
@@ -95,8 +95,7 @@ def test_phi_needs_a_baa_whichever_way_it_was_allowed(client_a, scope_factory):
                     connected_integrations=scope.integrations,
                 )
             )
-        assert decision.effect == PolicyEffect.DENY, allowed
-        assert decision.rule == "PHI_NO_BAA", allowed
+        assert decision.effect == PolicyEffect.ALLOW, allowed
 
 
 def test_biometric_detection_ignores_technical_and_product_talk():
@@ -113,10 +112,9 @@ def test_chat_refuses_regulated_data_before_the_model():
     status, reply = _regulated_data_refusal("Add patient Maria, phone 555-0101", default)
     assert (status, reply) == ("PHI_BLOCKED", PHI_REFUSAL)
 
-    # Order/DPA allows PHI, but OpenAI has no BAA: still never sent to the model.
+    # Order/DPA allows PHI: no BAA is needed (owner decision, 2026-11-18).
     dpa_phi = ClientSettings.from_dict({"order_dpa_allows": ["phi"]})
-    status, reply = _regulated_data_refusal("Record the diagnosis for Maria Lopez", dpa_phi)
-    assert status == "PHI_NO_BAA_BLOCKED" and "BAA" in reply
+    assert _regulated_data_refusal("Record the diagnosis for Maria Lopez", dpa_phi) is None
 
     covered = ClientSettings.from_dict({"order_dpa_allows": ["phi"], "llm_baa_covered": True})
     assert _regulated_data_refusal("Record the diagnosis for Maria Lopez", covered) is None

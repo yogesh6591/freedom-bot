@@ -40,7 +40,7 @@ CHECKLIST: tuple[dict[str, str], ...] = (
     {
         "id": "order_dpa",
         "title": "Order/DPA regulated-data setting reviewed",
-        "detail": "PHI / card / child / biometrics match the signed Order/DPA; OpenAI has no BAA.",
+        "detail": "PHI / card / child / biometrics match the signed Order/DPA.",
     },
     {
         "id": "roles_approvers",

@@ -788,13 +788,6 @@ PHI_REFUSAL = (
     "more of them. An admin can update the Order/DPA setting if your contract covers PHI."
 )
 
-PHI_NO_BAA_REFUSAL = (
-    "I can't process patient health information here. Your Order/DPA allows PHI, but the AI "
-    "model this workspace uses ({vendor}) has no signed BAA, so PHI can't be sent to it — the "
-    "same rule a dental practice follows with any vendor. Please don't share these details "
-    "here; keep them in your practice system until a BAA-covered model is configured."
-)
-
 BIOMETRICS_REFUSAL = (
     "I can't process biometric identifiers (fingerprints, face or voice prints, iris scans) "
     "here. This workspace's Order/DPA doesn't allow biometric data, so I won't add, store or "
@@ -858,8 +851,7 @@ def _regulated_data_refusal(
 ) -> Optional[tuple[str, str]]:
     """FB-039: refuse regulated data the Order/DPA doesn't allow, before any model call.
 
-    Returns ``(audit_status, reply)``. Dental BAA vendor pattern: PHI is never
-    sent to a model vendor without a BAA, even when the Order/DPA allows PHI.
+    Returns ``(audit_status, reply)``. PHI is allowed whenever the Order/DPA allows it (no BAA needed).
     The policy engine still denies tool calls carrying this data; this keeps it
     from reaching the model at all.
     """
@@ -885,10 +877,7 @@ def _regulated_data_refusal(
         and identifiable_phi(message)
         and not settings.phi_permitted()
     ):
-        if not settings.order_dpa_allows_category("phi"):
-            return "PHI_BLOCKED", PHI_REFUSAL
-        vendor = "OpenAI" if settings.llm_vendor in {"openai", "open_ai"} else settings.llm_vendor
-        return "PHI_NO_BAA_BLOCKED", PHI_NO_BAA_REFUSAL.format(vendor=vendor)
+        return "PHI_BLOCKED", PHI_REFUSAL
 
     # Card: digit PAN or classified card talk while handling / looking up.
     if (

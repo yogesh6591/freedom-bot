@@ -56,7 +56,8 @@ def test_biometrics_blocked_unless_order_dpa_allows(client_a, scope_factory, set
     assert outcome.effect == PolicyEffect.REQUIRE_APPROVAL
 
 
-def test_phi_order_dpa_blocked_without_baa_for_openai(client_a, scope_factory, settings_with):
+def test_phi_allowed_by_order_dpa_needs_no_baa(client_a, scope_factory, settings_with):
+    # Owner decision (2026-11-18): no BAA is needed; the Order/DPA alone decides.
     settings = settings_with(
         client_a.settings,
         order_dpa_allows=["phi"],
@@ -76,8 +77,7 @@ def test_phi_order_dpa_blocked_without_baa_for_openai(client_a, scope_factory, s
                 connected_integrations=scope.integrations,
             )
         )
-    assert decision.effect == PolicyEffect.DENY
-    assert decision.rule == "PHI_NO_BAA"
+    assert decision.effect == PolicyEffect.ALLOW
 
 
 def test_licensed_content_forces_approval_on_writes(client_a, scope_factory):

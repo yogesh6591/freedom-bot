@@ -432,6 +432,6 @@ def test_new_workspace_starts_with_every_order_dpa_category_allowed():
     settings = template.settings_from(template.load_template(), company_name="Fresh Co")
     assert set(settings.order_dpa_allows) == set(ORDER_DPA_CATEGORIES)
     assert settings.order_dpa_allows_category("child")
-    assert not settings.phi_permitted()  # PHI still needs a signed BAA with the model vendor
+    assert settings.phi_permitted()  # no BAA needed: a new workspace allows PHI too
     narrowed = template.settings_from({"order_dpa_allows": ["card"]}, company_name="Narrow Co")
     assert narrowed.order_dpa_allows == ["card"]

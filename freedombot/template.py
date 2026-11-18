@@ -81,7 +81,7 @@ def settings_from(config: dict[str, Any], *, company_name: str) -> ClientSetting
             "allow_card_data": bool(config.get("allow_card_data", False)),
             "allow_child_data": bool(config.get("allow_child_data", False)),
             # A new workspace starts with every Order/DPA category allowed (admins can
-            # narrow it later); a template can still name its own list. PHI still needs a BAA.
+            # narrow it later); a template can still name its own list. No BAA is needed for PHI.
             "order_dpa_allows": (
                 list(config["order_dpa_allows"])
                 if isinstance(config.get("order_dpa_allows"), list)
