@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any, Optional
 
 import httpx
@@ -56,6 +57,11 @@ STATES = {
 }
 STATE_OF = {name: code for code, name in STATES.items()}
 _OWNER = re.compile(r"\b(founder|co-?founder|owner|ceo|chief executive|president|managing (partner|director))\b", re.I)
+_OWNER_FOLLOW = re.compile(
+    r"\b(founder|co-?founder|owner|ceo|chief executive|chief|president|managing (partner|director)|"
+    r"director|head|partner|principal|administrator|practice manager)\b",
+    re.I,
+)
 _FORMER = re.compile(r"\b(former|formerly|ex-|previously|retired|past)\b", re.I)
 _SPLIT = re.compile(r"\s[-–—|·•]\s")
 
@@ -98,7 +104,13 @@ def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
     firm the user named, labelled with the closest saved category or "Other").
     Whatever the user named replaces that part of the saved rules; everything else comes from the rules."""
     place = f"based in {state}, United States" if state else rules.country
-    tail = place if relax else f"{lo or rules.employees_min} to {hi or rules.employees_max} employees, {place}"
+    req_only = _follow_user_request(rules, focus)
+    if relax:
+        tail = place
+    elif req_only and not (lo or hi):
+        tail = place
+    else:
+        tail = f"{lo or rules.employees_min} to {hi or rules.employees_max} employees, {place}"
     if focus.strip():
         low = focus.strip().casefold()
         name = next((c.name for c in rules.categories
@@ -226,15 +238,21 @@ def _person_name(title: str) -> Optional[str]:
     return head
 
 
-def _founder(key: str, company: str) -> Optional[tuple[str, str, str]]:
+def _founder(key: str, company: str, *, wide_titles: bool = False) -> Optional[tuple[str, str, str]]:
     """(name, job text, LinkedIn url) of the firm's founder/owner as found by Exa, or None."""
     token = next((w.lower() for w in re.findall(r"[A-Za-z0-9]+", company) if len(w) >= 3), "")
-    rows = _exa(key, {"query": f"founder or CEO of {company}", "category": "people", "numResults": 3,
+    role_query = (
+        "founder, owner, CEO, director, head, partner, principal, president, administrator, or practice manager"
+        if wide_titles
+        else "founder or CEO"
+    )
+    owner_pat = _OWNER_FOLLOW if wide_titles else _OWNER
+    rows = _exa(key, {"query": f"{role_query} of {company}", "category": "people", "numResults": 3,
                       "contents": {"summary": {"query": "Current job title and company"}}})
     for row in rows:
         name = _person_name(str(row.get("title") or ""))
         text = f"{row.get('title') or ''} {row.get('summary') or ''}"
-        if not name or not _OWNER.search(text) or _FORMER.search(str(row.get("summary") or "")):
+        if not name or not owner_pat.search(text) or _FORMER.search(str(row.get("summary") or "")):
             continue
         if token and token not in text.lower():
             continue  # a different company's founder
@@ -242,8 +260,8 @@ def _founder(key: str, company: str) -> Optional[tuple[str, str, str]]:
     return None
 
 
-def _verified_email(ctx: Any, name: str, domain: str) -> tuple[Optional[str], dict]:
-    """(email, Prospeo company facts). The email is only returned when Prospeo has verified it."""
+def _verified_email(ctx: Any, name: str, domain: str, *, accept_unverified: bool = False) -> tuple[Optional[str], dict, bool]:
+    """(email, Prospeo company facts, verified). When accept_unverified is false, only VERIFIED emails are returned."""
     from freedombot.connectors import composio
     from freedombot.connectors.base import ConnectorError
 
@@ -251,19 +269,21 @@ def _verified_email(ctx: Any, name: str, domain: str) -> tuple[Optional[str], di
     try:
         data = composio.execute(ctx, "prospeo", "PROSPEO_ENRICH_PERSON", {
             "person": {"first_name": first, "last_name": last.strip(), "company_website": domain},
-            "only_verified_email": True,
+            "only_verified_email": not accept_unverified,
         })
     except ConnectorError as exc:
         if any(word in str(exc).upper() for word in ("INVALID_DATAPOINTS", "NO_MATCH", "NOT_FOUND")):
-            return None, {}  # this one person cannot be matched: no verified email, move on to the next company
+            return None, {}, False  # this one person cannot be matched: no verified email, move on to the next company
         raise ToolError(str(exc)) from exc
     data = data if isinstance(data, dict) else {}
     data = data.get("data") if isinstance(data.get("data"), dict) and "person" not in data else data
     mail = ((data.get("person") or {}).get("email")) or {}
     company = data.get("company") or {}
-    if isinstance(mail, dict) and mail.get("email") and str(mail.get("status", "")).upper() == "VERIFIED":
-        return str(mail["email"]).strip().lower(), company
-    return None, company
+    if isinstance(mail, dict) and mail.get("email"):
+        is_verified = str(mail.get("status", "")).upper() == "VERIFIED"
+        if is_verified or accept_unverified:
+            return str(mail["email"]).strip().lower(), company, is_verified
+    return None, company, False
 
 
 def _web_ask(prompt: str) -> str:
@@ -446,7 +466,7 @@ def _saved_domains(call: Call) -> set[str]:
 
 def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: str, _unused: str, category: str,
           label: Optional[str], row: dict, facts: dict, email: str, verified: bool = False,
-          via_exa: bool = True, relaxed: str = "") -> Prospect:
+          prospeo_unverified: bool = False, via_exa: bool = True, relaxed: str = "") -> Prospect:
     size = facts.get("employee_range") or facts.get("employee_count")
     if via_exa and verified:
         source, found_by = SOURCE, "exa_prospeo"
@@ -460,7 +480,11 @@ def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: s
     prospect = Prospect(
         company=name, executive_name=proper_case(person), email=email, website=url, domain=domain,
         linkedin_url=linkedin or None, source=source, discovery_source=found_by,
-        email_confidence="verified" if verified else ("web" if email and "pending-discovery" not in email else "placeholder"),
+        email_confidence=(
+            "verified" if verified else
+            "unverified" if prospeo_unverified else
+            ("web" if email and "pending-discovery" not in email else "placeholder")
+        ),
         icp_category=category, business_type=label,
         discovery_query=str(row.get("_query") or "")[:600] or None,
         headcount_band=str(size) if size else None, fit_note=(note or None),
@@ -475,6 +499,7 @@ def _save(call: Call, name: str, person: str, linkedin: str, url: str, domain: s
 def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state: str = "",
                        employees_min: Optional[int] = None, employees_max: Optional[int] = None) -> str:
     """Find up to 5 new owner-led firms that match Jeanne's targeting rules and save them with an email."""
+    started = time.monotonic()
     if not call.user_id:
         raise ToolError("no signed-in user, so the connected tools cannot be checked.")
     try:
@@ -497,6 +522,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         exa_on = False
 
     rules = get_prospecting_rules()
+    req_only = _follow_user_request(rules, focus)
     place = _state(state)
     lo, hi = _num(employees_min), _num(employees_max)
     added: list[tuple[Prospect, str, str]] = []
@@ -554,7 +580,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             found = row.get("_founder")
             if found is None and exa_on:
                 try:
-                    found = _founder(key, name)
+                    found = _founder(key, name, wide_titles=req_only)
                 except ToolError:
                     exa_on = False
                     notes.append("Exa did not answer, so web search was used for the rest of this run.")
@@ -569,11 +595,12 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             email: Optional[str] = None
             facts: dict = {}
             verified = False
+            prospeo_unverified = False
             if prospeo_on:
                 lookups += 1
                 try:
-                    email, facts = _verified_email(ctx, person, domain)
-                    verified = bool(email)
+                    email, facts, verified = _verified_email(ctx, person, domain, accept_unverified=req_only)
+                    prospeo_unverified = bool(email) and not verified
                 except Exception:  # noqa: BLE001 - Prospeo failed (error, no credits): web search covers the rest
                     prospeo_on = False
                     notes.append("Prospeo did not answer, so emails were taken from public pages for the rest of this run.")
@@ -605,12 +632,17 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             note = step_note
             try:
                 made = _save(call, name, person, linkedin, url, domain, "", category, label, row, facts, email, verified,
-                             via_exa=not row.get("_web"), relaxed=note)
+                             prospeo_unverified=prospeo_unverified, via_exa=not row.get("_web"), relaxed=note)
             except IntegrityError:
                 call.db.rollback()  # saved elsewhere meanwhile: skip this one and carry on
                 skipped.append(f"{name}: already saved")
                 continue
-            added.append((made, "verified by Prospeo" if verified else "found on a public page, not verified", note))
+            how = (
+                "verified by Prospeo" if verified else
+                "not verified" if prospeo_unverified else
+                "found on a public page, not verified"
+            )
+            added.append((made, how, note))
     lines = [f"Added {len(added)} of {want} asked: " + "; ".join(
         f"{p.executive_name} <{p.email}> ({p.company}; category: {p.icp_category or '-'}; "
         f"business type: {p.business_type or '-'}; found by: {p.discovery_query or '-'}; "
@@ -644,6 +676,9 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
                 f"Only {len(added)} of {want} could be found: no more matching firms turned up "
                 f"after {lookups} email lookups."
             )
-    lines.append(f"Email lookups used: {lookups}. Nothing was emailed. Show the people added in the prospects table "
+    elapsed = time.monotonic() - started
+    lines.append(f"Search took {elapsed:.1f} seconds.")
+    lines.append(f"Email lookups used: {lookups}. Nothing was emailed. Tell the user how long the search took "
+                 f"({elapsed:.1f} seconds). Show the people added in the prospects table "
                  "with the Category column, as for any prospect answer.")
     return " ".join(lines)

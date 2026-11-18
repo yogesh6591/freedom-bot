@@ -155,11 +155,11 @@
         <small>Examples: trades, restaurants, law firms.</small>
       </label>
       <label class="acq-switch-row" for="pr-follow-request" style="margin-top: 1rem;">
-        <span>
-          <span class="acq-switch-label">Follow the user's request only</span>
-          <small>When on, if the user names an industry in chat, saved categories and exclusions are ignored and any firm matching the request can be found. Applies to all organisations.</small>
-        </span>
-        <span class="toggle-field">
+        <div>
+          <strong>Freeze rules</strong>
+          <span>When on, if the user names an industry in chat, the saved ICP rules are put aside: no categories, exclusions, founder-led or size limits, unverified emails and any contact person are accepted. It is a plain search for what the user asked. Applies to all organisations.</span>
+        </div>
+        <span class="toggle">
           <input type="checkbox" id="pr-follow-request" {% if pr.follow_request %}checked{% endif %}>
           <span class="toggle-track" aria-hidden="true"></span>
         </span>

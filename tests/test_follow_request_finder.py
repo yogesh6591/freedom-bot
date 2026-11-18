@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from acquisition.services.prospecting_rules_service import default_prospecting_rules, parse_and_validate
 from app.outreach import finder_tools as ft
+from app.outreach.toolkit import Call
 
 
 def _rules(**kwargs):
@@ -126,3 +127,86 @@ def test_web_firms_default_prompt_unchanged(mock_ask, _mock_json):
     assert "real, owner-led firms" in prompt
     assert "its current founder, owner or CEO" in prompt
     assert "Never include these kinds of business" in prompt
+
+
+def test_labelled_follow_omits_size_without_tool_employee_args():
+    rules = _rules(follow_request=True)
+    on = ft._labelled(rules, "clinics", "", relax=False)[0][1]
+    off = ft._labelled(_rules(follow_request=False), "clinics", "", relax=False)[0][1]
+    assert "employees" not in on
+    assert "employees" in off
+
+
+def test_labelled_follow_keeps_size_when_tool_passes_employee_args():
+    q = ft._labelled(_rules(follow_request=True), "clinics", "", lo=10, hi=50, relax=False)[0][1]
+    assert "10 to 50 employees" in q
+
+
+@patch("freedombot.connectors.composio.execute")
+def test_verified_email_accepts_unverified_in_follow_mode(mock_execute):
+    mock_execute.return_value = {
+        "person": {"email": {"email": "lead@acme.com", "status": "UNVERIFIED"}},
+        "company": {},
+    }
+    email, _facts, verified = ft._verified_email(MagicMock(), "Jane Doe", "acme.com", accept_unverified=True)
+    assert email == "lead@acme.com"
+    assert verified is False
+    args = mock_execute.call_args[0][3]
+    assert args["only_verified_email"] is False
+
+
+@patch("freedombot.connectors.composio.execute")
+def test_verified_email_rejects_unverified_when_not_follow(mock_execute):
+    mock_execute.return_value = {
+        "person": {"email": {"email": "lead@acme.com", "status": "UNVERIFIED"}},
+        "company": {},
+    }
+    email, _facts, verified = ft._verified_email(MagicMock(), "Jane Doe", "acme.com", accept_unverified=False)
+    assert email is None
+    assert verified is False
+    args = mock_execute.call_args[0][3]
+    assert args["only_verified_email"] is True
+
+
+@patch.object(ft, "_exa")
+def test_founder_wide_titles_accepts_practice_manager(mock_exa):
+    mock_exa.return_value = [
+        {
+            "title": "Pat Lee",
+            "summary": "Practice manager at Acme Clinic",
+            "url": "https://linkedin.com/in/pat",
+        }
+    ]
+    found = ft._founder("key", "Acme Clinic", wide_titles=True)
+    assert found is not None
+    assert found[0] == "Pat Lee"
+
+
+@patch.object(ft, "_exa")
+def test_founder_default_rejects_practice_manager(mock_exa):
+    mock_exa.return_value = [
+        {
+            "title": "Pat Lee",
+            "summary": "Practice manager at Acme Clinic",
+            "url": "https://linkedin.com/in/pat",
+        }
+    ]
+    assert ft._founder("key", "Acme Clinic", wide_titles=False) is None
+
+
+@patch.object(ft, "_web_firms", return_value=[])
+@patch("freedombot.connectors.composio._active_accounts", return_value={})
+@patch("freedombot.control.store.build_context", return_value=MagicMock())
+@patch("freedombot.control.store.get_user", return_value={})
+@patch.object(ft, "get_prospecting_rules")
+@patch.object(ft, "get_settings")
+def test_find_new_prospects_reports_search_duration(mock_settings, _mock_rules, _user, _ctx, _accounts, _web):
+    _mock_rules.return_value = _rules()
+    mock_settings.return_value.exa_api_key = ""
+    db = MagicMock()
+    db.scalar.return_value = None
+    db.scalars.return_value.all.return_value = []
+    call = Call(db=db, state={}, latest="", user_id="user-1")
+    out = ft.find_new_prospects(call, count=1)
+    assert "Search took" in out
+    assert "seconds." in out
