@@ -365,11 +365,17 @@ def _web_firms(rules: Any, focus: str, state: str, lo: Optional[int], hi: Option
         else f". Never include these kinds of business: {', '.join(rules.exclusions) or 'none'}"
     )
     sites = f"Never include these websites: {', '.join(sorted(d for d in skip if d)[:150]) or 'none'}. "
-    schema = (
-        '{"company": text, "website": text, "category": one of ['
+    category_part = (
+        '"category": a short plain-text kind of business (2 to 4 words), '
+        if req_only
+        else '"category": one of ['
         + ", ".join(f'"{n}"' for n in names)
         + ', "Other"], '
-        '"founder_name": text, "founder_title": text, "founder_linkedin": text or null, "email": text or null, '
+    )
+    schema = (
+        '{"company": text, "website": text, '
+        + category_part
+        + '"founder_name": text, "founder_title": text, "founder_linkedin": text or null, "email": text or null, '
         '"email_page": text or null, "summary": "what the firm does, in one sentence"}.')
     email_rules = (
         "Never guess an address and never build one from a name pattern: use null when you did not see one, "
@@ -675,7 +681,9 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         f"source: {p.source}; email: {how})" for p, how, _ in added) + "." if added
         else f"Added 0 of {want} asked."]
     loose = [(p, n) for p, _, n in added if n]
-    if added and loose:
+    if freeze_on and added:
+        lines.append("Freeze rules is on, so saved targeting rules were not applied.")
+    elif added and loose:
         lines.append(f"{len(added) - len(loose)} matched every saved rule; {len(loose)} came from a looser round: " + "; ".join(
             f"{p.executive_name} ({n})" for p, n in loose) + ".")
     elif added:

@@ -111,23 +111,30 @@ def test_icp_category_for_save_off_or_empty_focus_unchanged():
 @patch.object(ft, "_web_ask")
 def test_web_firms_follow_request_prompt(mock_ask, _mock_json):
     mock_ask.return_value = "[]"
-    ft._web_firms(_rules(follow_request=True), "neurosurgeons", "", None, None, set(), relax=True)
+    rules = _rules(follow_request=True)
+    ft._web_firms(rules, "neurosurgeons", "", None, None, set(), relax=True)
     prompt = mock_ask.call_args[0][0]
     assert "real businesses or organisations" in prompt
     assert "owner-led" not in prompt
     assert "practice manager" in prompt
     assert "best contact person" in prompt
+    for name in (c.name for c in rules.categories):
+        assert name not in prompt
+    assert "short plain-text kind of business" in prompt
 
 
 @patch.object(ft, "_json_in", return_value=[])
 @patch.object(ft, "_web_ask")
 def test_web_firms_default_prompt_unchanged(mock_ask, _mock_json):
     mock_ask.return_value = "[]"
-    ft._web_firms(_rules(follow_request=False), "neurosurgeons", "", None, None, set(), relax=True)
+    rules = _rules(follow_request=False)
+    ft._web_firms(rules, "neurosurgeons", "", None, None, set(), relax=True)
     prompt = mock_ask.call_args[0][0]
     assert "real, owner-led firms" in prompt
     assert "its current founder, owner or CEO" in prompt
     assert "Never include these kinds of business" in prompt
+    assert "Consultants and advisory firms" in prompt
+    assert "short plain-text kind of business" not in prompt
 
 
 def test_labelled_follow_omits_size_without_tool_employee_args():
@@ -294,3 +301,74 @@ def test_find_new_prospects_reports_search_duration(mock_settings, _mock_rules, 
     out = ft.find_new_prospects(_find_call(), count=1)
     assert "Search took" in out
     assert "seconds." in out
+
+
+@patch.object(ft, "lookup")
+@patch.object(ft, "_save")
+@patch.object(ft, "_classify", return_value={0: ("Consultants and advisory firms", "advisory shop", True)})
+@patch.object(ft, "_web_firms")
+@patch("freedombot.connectors.composio._active_accounts", return_value={})
+@patch("freedombot.control.store.build_context", return_value=MagicMock())
+@patch("freedombot.control.store.get_user", return_value={})
+@patch.object(ft, "get_prospecting_rules")
+@patch.object(ft, "get_settings")
+def test_find_new_prospects_freeze_on_result_mentions_freeze_not_saved_rules(
+    mock_settings, mock_rules, _user, _ctx, _accounts, mock_web, _classify, mock_save, mock_lookup,
+):
+    mock_rules.return_value = _rules(follow_request=True)
+    mock_settings.return_value.exa_api_key = ""
+    mock_web.return_value = [
+        {
+            "title": "Acme Co",
+            "url": "https://acme.co",
+            "summary": "An operating business",
+            "_category": "local shop",
+            "_query": "neurosurgeons firm or practice, United States",
+            "_web": True,
+            "_founder": ("Jane Smith", "Director", ""),
+            "_email": "jane@acme.co",
+        }
+    ]
+    mock_lookup.by_email.return_value = None
+    saved = MagicMock(icp_category="Neurosurgeons", executive_name="Jane Smith", email="jane@acme.co",
+                      company="Acme Co", business_type="advisory shop", discovery_query="q", source="Web search")
+    mock_save.return_value = saved
+    out = ft.find_new_prospects(_find_call(), count=1, focus="neurosurgeons")
+    assert "Freeze rules is on, so saved targeting rules were not applied." in out
+    assert "matched every saved rule" not in out
+    assert "looser round" not in out
+
+
+@patch.object(ft, "lookup")
+@patch.object(ft, "_save")
+@patch.object(ft, "_classify", return_value={0: ("Consultants and advisory firms", "advisory shop", True)})
+@patch.object(ft, "_web_firms")
+@patch("freedombot.connectors.composio._active_accounts", return_value={})
+@patch("freedombot.control.store.build_context", return_value=MagicMock())
+@patch("freedombot.control.store.get_user", return_value={})
+@patch.object(ft, "get_prospecting_rules")
+@patch.object(ft, "get_settings")
+def test_find_new_prospects_freeze_off_result_still_mentions_saved_rules(
+    mock_settings, mock_rules, _user, _ctx, _accounts, mock_web, _classify, mock_save, mock_lookup,
+):
+    mock_rules.return_value = _rules(follow_request=False)
+    mock_settings.return_value.exa_api_key = ""
+    mock_web.return_value = [
+        {
+            "title": "Acme Co",
+            "url": "https://acme.co",
+            "summary": "An operating business",
+            "_category": "Other",
+            "_query": "founder-led neurosurgery firm, United States",
+            "_web": True,
+            "_founder": ("Jane Smith", "Director", ""),
+            "_email": "jane@acme.co",
+        }
+    ]
+    mock_lookup.by_email.return_value = None
+    saved = MagicMock(icp_category="Consultants and advisory firms", executive_name="Jane Smith", email="jane@acme.co",
+                      company="Acme Co", business_type="advisory shop", discovery_query="q", source="Web search")
+    mock_save.return_value = saved
+    out = ft.find_new_prospects(_find_call(), count=1, focus="neurosurgeons")
+    assert "All of them matched every saved rule." in out
+    assert "Freeze rules is on" not in out
