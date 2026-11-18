@@ -191,6 +191,9 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
   // Already signed in: home goes straight to the chat; the admin panel only once unlocked here.
   useEffect(() => {
     if (!me) return
+    // A link for another workspace (/?workspace=acme) asks for that one: show the form, not this session.
+    const wanted = new URLSearchParams(window.location.search).get('workspace')?.trim()
+    if (wanted && wanted !== me.client.slug) return
     if (!admin) router.replace('/chat')
     else if (adminUnlocked(me.user.id))
       router.replace(me.user.is_platform_owner ? OWNER_HOME : '/admin/chat')

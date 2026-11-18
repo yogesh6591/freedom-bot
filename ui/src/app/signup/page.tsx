@@ -15,6 +15,9 @@ import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, Eye, EyeO
 import { BrandMark } from '@/components/BrandMark'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Btn, ErrorNote, Field, inputClass } from '@/components/common/primitives'
+import { api } from '@/lib/api'
+import { setAdminUnlocked } from '@/lib/panel'
+import { announceSessionChange } from '@/lib/sessionSync'
 import {
   DEPARTMENTS,
   PLANS,
@@ -451,6 +454,31 @@ function Done({
 }) {
   const [reveal, setReveal] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const [opening, setOpening] = useState(false)
+
+  // Sign the new admin in with the details just made, so an older session in this browser (another
+  // account) is replaced instead of reopened. If that fails, sign the old one out and show the sign-in.
+  async function openWorkspace() {
+    setOpening(true)
+    try {
+      await api.post(
+        '/api/auth/login',
+        { email: created.admin_email, password, client_slug: created.workspace },
+        { anyWorkspace: true }
+      )
+      setAdminUnlocked(null)
+      announceSessionChange()
+      window.location.assign('/chat')
+    } catch {
+      try {
+        await api.post('/api/auth/logout', undefined, { anyWorkspace: true })
+        announceSessionChange()
+      } catch {
+        /* no session to end */
+      }
+      window.location.assign(`/?workspace=${encodeURIComponent(created.workspace)}`)
+    }
+  }
   const rows = [
     { label: 'Workspace ID', value: created.workspace },
     { label: 'Admin email', value: created.admin_email },
@@ -510,11 +538,8 @@ function Done({
         Departments: {DEPARTMENTS.filter((d) => departments.includes(d.id)).map((d) => d.label).join(' · ')}
       </p>
 
-      <Btn
-        className="mt-6"
-        onClick={() => window.location.assign(`/?workspace=${encodeURIComponent(created.workspace)}`)}
-      >
-        Sign in to FreedomBot <ArrowRight size={15} aria-hidden />
+      <Btn className="mt-6" disabled={opening} onClick={() => void openWorkspace()}>
+        {opening ? 'Opening FreedomBot…' : 'Open FreedomBot'} <ArrowRight size={15} aria-hidden />
       </Btn>
     </section>
   )
