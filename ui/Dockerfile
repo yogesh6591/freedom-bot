@@ -13,6 +13,9 @@ ARG NEXT_PUBLIC_API_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ARG ACQUISITION_PROXY_URL=http://api:8000
 ENV ACQUISITION_PROXY_URL=$ACQUISITION_PROXY_URL
+# The marketing website container, served at /website (rewrites are fixed at build time).
+ARG WEBSITE_PROXY_URL=http://website:3100
+ENV WEBSITE_PROXY_URL=$WEBSITE_PROXY_URL
 RUN npm run build
 
 FROM node:22-alpine AS runtime

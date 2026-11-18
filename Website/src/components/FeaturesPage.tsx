@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import {
   Building2,
   Fingerprint,
@@ -12,6 +11,7 @@ import {
 import { SiteShell } from '@/components/SiteShell'
 import { Reveal, Stagger, StaggerItem } from '@/components/motion'
 import { DOMAINS } from '@/lib/plans'
+import { signupUrl } from '@/lib/urls'
 
 const PLATFORM = [
   {
@@ -107,9 +107,9 @@ export function FeaturesPage() {
           </Stagger>
 
           <Reveal className="mt-12">
-            <Link href="/signup" className="btn-primary btn-shine px-6 py-3.5">
+            <a href={signupUrl()} className="btn-primary btn-shine px-6 py-3.5">
               Start signup
-            </Link>
+            </a>
           </Reveal>
         </div>
       </section>

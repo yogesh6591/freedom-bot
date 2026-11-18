@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { BrandMark } from './BrandMark'
-import { APP_URL } from '@/lib/urls'
+import { SIGN_IN_URL, signupUrl } from '@/lib/urls'
 
 const COLUMNS = [
   {
@@ -8,14 +8,14 @@ const COLUMNS = [
     links: [
       { href: '/features', label: 'Features' },
       { href: '/pricing', label: 'Pricing' },
-      { href: '/signup', label: 'Start signup' }
+      { href: signupUrl(), label: 'Start signup', external: true }
     ]
   },
   {
     title: 'Company',
     links: [
       { href: '/#how-it-works', label: 'How it works' },
-      { href: APP_URL, label: 'Sign in', external: true }
+      { href: SIGN_IN_URL, label: 'Sign in', external: true }
     ]
   },
   {

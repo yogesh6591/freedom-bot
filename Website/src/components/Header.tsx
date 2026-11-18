@@ -7,7 +7,7 @@ import { Menu, X } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { BrandMark } from './BrandMark'
 import { ThemeToggle } from './ThemeToggle'
-import { APP_URL } from '@/lib/urls'
+import { SIGN_IN_URL, signupUrl } from '@/lib/urls'
 import { cn } from '@/lib/utils'
 
 const NAV = [
@@ -57,12 +57,12 @@ export function Header() {
 
         <div className="hidden items-center gap-2 md:flex">
           <ThemeToggle />
-          <a href={APP_URL} className="btn-ghost">
+          <a href={SIGN_IN_URL} className="btn-ghost">
             Sign in
           </a>
-          <Link href="/signup" className="btn-primary btn-shine">
+          <a href={signupUrl()} className="btn-primary btn-shine">
             Start signup
-          </Link>
+          </a>
         </div>
 
         <div className="flex items-center gap-2 md:hidden">
@@ -99,19 +99,19 @@ export function Header() {
                 </Link>
               ))}
               <a
-                href={APP_URL}
+                href={SIGN_IN_URL}
                 className="rounded-lg px-3 py-3 text-sm text-fg-muted hover:bg-[color:var(--surface-3)]"
                 onClick={() => setOpen(false)}
               >
                 Sign in
               </a>
-              <Link
-                href="/signup"
+              <a
+                href={signupUrl()}
                 className="btn-primary mt-2"
                 onClick={() => setOpen(false)}
               >
                 Start signup
-              </Link>
+              </a>
             </nav>
           </motion.div>
         )}

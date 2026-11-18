@@ -1,17 +1,15 @@
 'use client'
 
-import Link from 'next/link'
 import { motion, useReducedMotion } from 'framer-motion'
 import { Check } from 'lucide-react'
 import { DOMAINS, PLANS, type PlanId } from '@/lib/plans'
 import { cn } from '@/lib/utils'
+import { signupUrl } from '@/lib/urls'
 
 export function PricingCards({
-  ctaBase = '/signup',
   selected,
   onSelect
 }: {
-  ctaBase?: string
   selected?: PlanId
   onSelect?: (id: PlanId) => void
 }) {
@@ -92,15 +90,15 @@ export function PricingCards({
                     {isSelected ? 'Selected' : plan.cta}
                   </button>
                 ) : (
-                  <Link
-                    href={`${ctaBase}?plan=${plan.id}`}
+                  <a
+                    href={signupUrl(plan.id)}
                     className={cn(
                       'w-full',
                       plan.highlighted ? 'btn-primary btn-shine' : 'btn-secondary'
                     )}
                   >
                     {plan.cta}
-                  </Link>
+                  </a>
                 )}
               </div>
             </div>

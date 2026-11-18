@@ -140,6 +140,16 @@ services:
     ports:
       - "127.0.0.1:8031:3000"
 
+  # Marketing website (./Website). Reached through the ui at https://freedombot-core.cloud.cepoch.com/website
+  # (ui rewrites /website/* to it on the internal network). Its Sign up goes to the ui's /signup onboarding.
+  website:
+    build:
+      context: ./Website
+      args:
+        NEXT_PUBLIC_APP_URL: https://freedombot-core.cloud.cepoch.com
+    container_name: fb-core-website
+    restart: unless-stopped
+
 networks:
   default:
     name: freedom-bot-core-net

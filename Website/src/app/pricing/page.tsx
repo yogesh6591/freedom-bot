@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import Link from 'next/link'
+import { signupUrl } from '@/lib/urls'
 import { SiteShell } from '@/components/SiteShell'
 import { PricingCards } from '@/components/PricingCards'
 import { PricingExtras } from '@/components/PricingExtras'
@@ -27,9 +27,9 @@ export default function PricingPage() {
           <PricingCards />
           <PricingExtras />
           <div className="mt-12 text-center">
-            <Link href="/signup" className="btn-primary btn-shine px-6 py-3.5">
+            <a href={signupUrl()} className="btn-primary btn-shine px-6 py-3.5">
               Start onboarding
-            </Link>
+            </a>
           </div>
         </div>
       </section>

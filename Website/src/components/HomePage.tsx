@@ -20,7 +20,7 @@ import {
 import { DomainMarquee } from '@/components/DomainMarquee'
 import { FadeIn, Reveal, Stagger, StaggerItem } from '@/components/motion'
 import { DOMAINS } from '@/lib/plans'
-import { APP_URL } from '@/lib/urls'
+import { SIGN_IN_URL, signupUrl } from '@/lib/urls'
 
 const CAPABILITIES = [
   {
@@ -127,10 +127,10 @@ export function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.32, ease: [0.22, 1, 0.36, 1] }}
             >
-              <Link href="/signup" className="btn-primary btn-shine px-6 py-3.5 text-[15px]">
+              <a href={signupUrl()} className="btn-primary btn-shine px-6 py-3.5 text-[15px]">
                 Start signup
                 <ArrowRight size={16} />
-              </Link>
+              </a>
               <Link href="/pricing" className="btn-secondary px-6 py-3.5 text-[15px]">
                 See pricing
               </Link>
@@ -295,11 +295,11 @@ export function HomePage() {
                   FreedomBot with the same credentials.
                 </p>
                 <div className="mt-8 flex flex-wrap gap-3">
-                  <Link href="/signup" className="btn-primary btn-shine px-6 py-3.5">
+                  <a href={signupUrl()} className="btn-primary btn-shine px-6 py-3.5">
                     Create account
                     <Workflow size={16} />
-                  </Link>
-                  <a href={APP_URL} className="btn-secondary px-6 py-3.5">
+                  </a>
+                  <a href={SIGN_IN_URL} className="btn-secondary px-6 py-3.5">
                     Sign in
                   </a>
                 </div>

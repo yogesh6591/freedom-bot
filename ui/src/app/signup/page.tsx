@@ -83,7 +83,10 @@ export default function SignupPage() {
 
   useEffect(() => {
     const saved = readDraft()
-    setDraft(saved)
+    // A plan picked on the website's pricing cards arrives as ?plan=growth.
+    const wanted = new URLSearchParams(window.location.search).get('plan')
+    const picked = PLANS.find((p) => p.id === wanted)
+    setDraft(picked ? { ...saved, planId: picked.id } : saved)
     setIdEdited(Boolean(saved.workspaceId && saved.workspaceId !== workspaceIdFrom(saved.companyName)))
   }, [])
 
