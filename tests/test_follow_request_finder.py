@@ -36,10 +36,11 @@ def test_labelled_switch_on_drops_founder_led():
     assert pairs[0][1].startswith("neurosurgery firm or practice,")
 
 
-def test_labelled_switch_on_empty_focus_unchanged():
+def test_labelled_switch_on_empty_focus_uses_freeze_plain_query():
+    plain = ft._labelled(_rules(follow_request=True), "", "", relax=True)
+    assert plain == [("General", "real business or organisation, United States")]
     off = ft._labelled(_rules(follow_request=False), "", "", relax=True)
-    on = ft._labelled(_rules(follow_request=True), "", "", relax=True)
-    assert off == on
+    assert plain != off
 
 
 def test_classify_switch_on_prompt_skips_founder_led_and_exclusions(monkeypatch):
@@ -101,8 +102,8 @@ def test_icp_category_for_save_uses_focus_title_case():
 
 
 def test_icp_category_for_save_off_or_empty_focus_unchanged():
-    rules = _rules(follow_request=True)
-    assert ft._icp_category_for_save(rules, "", "Agencies") == "Agencies"
+    assert ft._icp_category_for_save(_rules(follow_request=True), "", "Agencies") == "General"
+    assert ft._icp_category_for_save(_rules(follow_request=False), "", "Agencies") == "Agencies"
     assert ft._icp_category_for_save(_rules(follow_request=False), "neurosurgeons", "Other") == "Other"
 
 
@@ -194,6 +195,93 @@ def test_founder_default_rejects_practice_manager(mock_exa):
     assert ft._founder("key", "Acme Clinic", wide_titles=False) is None
 
 
+def _find_call():
+    db = MagicMock()
+    db.scalar.return_value = None
+    db.scalars.return_value.all.return_value = []
+    return Call(db=db, state={}, latest="", user_id="user-1")
+
+
+def test_labelled_freeze_plain_empty_focus_uses_general_query():
+    pairs = ft._labelled(_rules(follow_request=True), "", "", relax=False)
+    assert pairs == [("General", "real business or organisation, United States")]
+
+
+def test_icp_category_freeze_plain_is_general():
+    assert ft._icp_category_for_save(_rules(follow_request=True), "", "Other") == "General"
+
+
+@patch.object(ft, "lookup")
+@patch.object(ft, "_save")
+@patch.object(ft, "_classify", return_value={0: ("Other", "clinic", True)})
+@patch.object(ft, "_web_firms")
+@patch("freedombot.connectors.composio._active_accounts", return_value={})
+@patch("freedombot.control.store.build_context", return_value=MagicMock())
+@patch("freedombot.control.store.get_user", return_value={})
+@patch.object(ft, "get_prospecting_rules")
+@patch.object(ft, "get_settings")
+def test_find_new_prospects_freeze_on_empty_focus_runs_search_and_saves_general(
+    mock_settings, mock_rules, _user, _ctx, _accounts, mock_web, _classify, mock_save, mock_lookup,
+):
+    mock_rules.return_value = _rules(follow_request=True)
+    mock_settings.return_value.exa_api_key = ""
+    mock_web.return_value = [
+        {
+            "title": "Acme Co",
+            "url": "https://acme.co",
+            "summary": "An operating business",
+            "_category": "Other",
+            "_query": "real business or organisation, United States",
+            "_web": True,
+            "_founder": ("Jane Smith", "Director", ""),
+            "_email": "jane@acme.co",
+        }
+    ]
+    mock_lookup.by_email.return_value = None
+    saved = MagicMock()
+    mock_save.return_value = saved
+
+    ft.find_new_prospects(_find_call(), count=1, focus="")
+
+    mock_web.assert_called()
+    assert mock_web.call_args[0][1] == ""
+    assert "real business or organisation" in mock_web.return_value[0]["_query"]
+    assert mock_save.call_args[0][7] == "General"
+
+
+@patch.object(ft, "_web_firms", return_value=[])
+@patch("freedombot.connectors.composio._active_accounts", return_value={})
+@patch("freedombot.control.store.build_context", return_value=MagicMock())
+@patch("freedombot.control.store.get_user", return_value={})
+@patch.object(ft, "get_prospecting_rules")
+@patch.object(ft, "get_settings")
+def test_find_new_prospects_freeze_off_empty_focus_still_searches(mock_settings, mock_rules, _user, _ctx, _accounts, mock_web):
+    mock_rules.return_value = _rules(follow_request=False)
+    mock_settings.return_value.exa_api_key = ""
+    ft.find_new_prospects(_find_call(), count=1, focus="")
+    mock_web.assert_called()
+    args, kwargs = mock_web.call_args
+    pairs = ft._labelled(mock_rules.return_value, "", args[2], relax=False)
+    assert "real business or organisation" not in pairs[0][1]
+    assert "founder-led" in pairs[0][1]
+
+
+@patch.object(ft, "_web_firms", return_value=[])
+@patch("freedombot.connectors.composio._active_accounts", return_value={})
+@patch("freedombot.control.store.build_context", return_value=MagicMock())
+@patch("freedombot.control.store.get_user", return_value={})
+@patch.object(ft, "get_prospecting_rules")
+@patch.object(ft, "get_settings")
+def test_find_new_prospects_freeze_on_with_focus_unchanged(mock_settings, mock_rules, _user, _ctx, _accounts, mock_web):
+    mock_rules.return_value = _rules(follow_request=True)
+    mock_settings.return_value.exa_api_key = ""
+    ft.find_new_prospects(_find_call(), count=1, focus="clinics")
+    mock_web.assert_called()
+    q = ft._labelled(mock_rules.return_value, "clinics", "", relax=False)[0][1]
+    assert q.startswith("clinics firm or practice,")
+    assert ft._icp_category_for_save(mock_rules.return_value, "clinics", "Other") == "Clinics"
+
+
 @patch.object(ft, "_web_firms", return_value=[])
 @patch("freedombot.connectors.composio._active_accounts", return_value={})
 @patch("freedombot.control.store.build_context", return_value=MagicMock())
@@ -203,10 +291,6 @@ def test_founder_default_rejects_practice_manager(mock_exa):
 def test_find_new_prospects_reports_search_duration(mock_settings, _mock_rules, _user, _ctx, _accounts, _web):
     _mock_rules.return_value = _rules()
     mock_settings.return_value.exa_api_key = ""
-    db = MagicMock()
-    db.scalar.return_value = None
-    db.scalars.return_value.all.return_value = []
-    call = Call(db=db, state={}, latest="", user_id="user-1")
-    out = ft.find_new_prospects(call, count=1)
+    out = ft.find_new_prospects(_find_call(), count=1)
     assert "Search took" in out
     assert "seconds." in out

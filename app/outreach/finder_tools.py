@@ -79,7 +79,17 @@ def _follow_user_request(rules: Any, focus: str) -> bool:
     return bool(getattr(rules, "follow_request", False)) and bool(focus.strip())
 
 
+def _freeze_rules_on(rules: Any) -> bool:
+    return bool(getattr(rules, "follow_request", False))
+
+
+def _freeze_plain(rules: Any, focus: str) -> bool:
+    return _freeze_rules_on(rules) and not focus.strip()
+
+
 def _icp_category_for_save(rules: Any, focus: str, category: str) -> str:
+    if _freeze_plain(rules, focus):
+        return "General"
     if _follow_user_request(rules, focus):
         return proper_case(focus.strip())[:128]
     return category
@@ -103,6 +113,16 @@ def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
     """(category, search text) pairs: one search per category, best priority first (or one search for the kind of
     firm the user named, labelled with the closest saved category or "Other").
     Whatever the user named replaces that part of the saved rules; everything else comes from the rules."""
+    if _freeze_plain(rules, focus):
+        place = f"based in {state}, United States" if state else "United States"
+        if lo or hi:
+            query = (
+                f"real business or organisation, {lo or rules.employees_min} to {hi or rules.employees_max} "
+                f"employees, {place}"
+            )
+        else:
+            query = f"real business or organisation, {place}"
+        return [("General", query)]
     place = f"based in {state}, United States" if state else rules.country
     req_only = _follow_user_request(rules, focus)
     if relax:
@@ -152,7 +172,12 @@ def _classify(rules: Any, focus: str, rows: list[dict], broad: bool = False) -> 
         return {}
     names = [c.name for c in rules.categories]
     firms = "\n".join(f"{i}. {r.get('title') or ''} - {str(r.get('summary') or '')[:400]}" for i, r in enumerate(rows))
-    if _follow_user_request(rules, focus):
+    if _freeze_plain(rules, focus):
+        match_rule = (
+            "matches is true only when the firm or organisation is any real, operating business or organisation. "
+            "Use only what the description says."
+        )
+    elif _follow_user_request(rules, focus):
         wanted = f"the kind of business or organisation the user asked for: {focus.strip()}"
         match_rule = (
             f"matches is true only when the firm or organisation is {wanted}. Use only what the description says."
@@ -198,7 +223,7 @@ def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[i
                  "query": q, "category": "company", "userLocation": "US", "numResults": per,
                  "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}}})]
              for cat, q in pairs]
-    banned = [] if _follow_user_request(rules, focus) else [x.casefold() for x in rules.exclusions]
+    banned = [] if _freeze_rules_on(rules) else [x.casefold() for x in rules.exclusions]
     seen: set[str] = set()
     out: list[dict] = []
     for i in range(per):
@@ -333,7 +358,7 @@ def _web_firms(rules: Any, focus: str, state: str, lo: Optional[int], hi: Option
     """Firms found by web search, shaped like Exa rows, each with its founder and any email printed on a public page."""
     pairs = _labelled(rules, focus, state, lo, hi, relax, broad)
     names = [c.name for c in rules.categories]
-    req_only = _follow_user_request(rules, focus)
+    req_only = _freeze_rules_on(rules)
     skip_line = (
         ""
         if req_only
@@ -378,7 +403,7 @@ def _web_firms(rules: Any, focus: str, state: str, lo: Optional[int], hi: Option
             + schema
         )
     data = _json_in(_web_ask(prompt), "[")
-    banned = [] if req_only else [x.casefold() for x in rules.exclusions]
+    banned = [] if _freeze_rules_on(rules) else [x.casefold() for x in rules.exclusions]
     out: list[dict] = []
     for item in data if isinstance(data, list) else []:
         if not isinstance(item, dict):
@@ -506,6 +531,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
         want = max(1, min(int(count or MAX_FIND), MAX_FIND))
     except (TypeError, ValueError):
         want = MAX_FIND
+    rules = get_prospecting_rules()
     from freedombot.control import store as control
 
     ctx = control.build_context(control.get_user(call.user_id))
@@ -521,8 +547,8 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
     if not prospeo_on:
         exa_on = False
 
-    rules = get_prospecting_rules()
-    req_only = _follow_user_request(rules, focus)
+    freeze_plain = _freeze_plain(rules, focus)
+    freeze_on = _freeze_rules_on(rules)
     place = _state(state)
     lo, hi = _num(employees_min), _num(employees_max)
     added: list[tuple[Prospect, str, str]] = []
@@ -538,8 +564,8 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             break
         # strict first, then looser each round; what the user named in the request is never loosened
         step = min(round_no, 2)
-        relax = step >= 1 and not (lo or hi)
-        broad = step >= 2 and not focus.strip()
+        relax = step >= 1 and not (lo or hi) and not freeze_plain
+        broad = step >= 2 and not focus.strip() and not freeze_plain
         step_note = ("the size range and kind of firm relaxed" if relax and broad else
                      "the size range relaxed" if relax else "the kind of firm relaxed" if broad else "")
         rows: list[dict] = []
@@ -580,7 +606,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             found = row.get("_founder")
             if found is None and exa_on:
                 try:
-                    found = _founder(key, name, wide_titles=req_only)
+                    found = _founder(key, name, wide_titles=freeze_on)
                 except ToolError:
                     exa_on = False
                     notes.append("Exa did not answer, so web search was used for the rest of this run.")
@@ -599,7 +625,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
             if prospeo_on:
                 lookups += 1
                 try:
-                    email, facts, verified = _verified_email(ctx, person, domain, accept_unverified=req_only)
+                    email, facts, verified = _verified_email(ctx, person, domain, accept_unverified=freeze_on)
                     prospeo_unverified = bool(email) and not verified
                 except Exception:  # noqa: BLE001 - Prospeo failed (error, no credits): web search covers the rest
                     prospeo_on = False
