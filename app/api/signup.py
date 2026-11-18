@@ -72,6 +72,129 @@ class SignupBody(BaseModel):
     payment_reference: str = Field(default="", max_length=200)
 
 
+#: The plans sold at signup, as the signup page shows them (ui/src/lib/signup.ts): monthly price in cents
+#: and the departments each covers. The server decides the price, never the browser.
+SIGNUP_PLANS: dict[str, dict[str, Any]] = {
+    "starter": {"name": "Starter", "cents": 24900, "domains": {"general", "operations"}},
+    "growth": {"name": "Growth", "cents": 74900,
+               "domains": {"general", "operations", "sales", "intake", "planning"}},
+    "enterprise": {"name": "Enterprise", "cents": 199900, "domains": None},  # None: every department
+}
+
+
+def _plan(plan_id: str, domains: list[str]) -> dict[str, Any]:
+    """The chosen plan, refused when it does not cover every chosen department."""
+    plan = SIGNUP_PLANS.get((plan_id or "").strip().casefold())
+    if plan is None:
+        raise HTTPException(status_code=400, detail="Choose a plan.")
+    wanted = {str(d).strip().casefold() for d in domains if str(d).strip()} | {"general"}
+    if plan["domains"] is not None and not wanted <= plan["domains"]:
+        raise HTTPException(status_code=400,
+                            detail=f"{plan['name']} doesn't include every department you picked. Choose a larger plan.")
+    return plan
+
+
+def _stripe_keys() -> Optional[tuple[str, str]]:
+    """(secret key, publishable key) when Stripe checkout is switched on; None means the demo checkout."""
+    enabled = os.environ.get("STRIPE_ENABLED", "").strip().casefold() in {"1", "true", "yes", "on"}
+    secret = os.environ.get("STRIPE_SECRET_KEY", "").strip()
+    publishable = os.environ.get("STRIPE_PUBLISHABLE_KEY", "").strip()
+    if not enabled:
+        return None
+    if not secret or not publishable:
+        raise HTTPException(status_code=503, detail="Payments are not set up yet. Please contact FreedomBot.")
+    return secret, publishable
+
+
+def _domains_tag(domains: list[str]) -> str:
+    return ",".join(sorted({str(d).strip().casefold() for d in domains if str(d).strip()} | {"general"}))
+
+
+def _order_tags(*, slug: str, plan_id: str, email: str, domains: list[str]) -> dict[str, str]:
+    """What a Checkout Session is for, so a payment can only make the workspace it was taken for."""
+    from freedombot.util.ids import slugify
+
+    return {"signup_slug": slugify(slug), "signup_plan": plan_id.strip().casefold(),
+            "signup_email": email.strip().casefold(), "signup_domains": _domains_tag(domains)}
+
+
+class CheckoutBody(BaseModel):
+    company_name: str = Field(min_length=1, max_length=new_client.MAX_NAME_LENGTH)
+    slug: Optional[str] = Field(default=None, max_length=40)
+    purchased_domains: list[str] = Field(default_factory=list)
+    plan_id: str = Field(default="", max_length=40)
+    admin_email: EmailStr
+
+
+@router.post("/checkout")
+def start_checkout(request: Request, body: CheckoutBody, x_signup_key: Optional[str] = Header(default=None)) -> dict[str, Any]:
+    """Start paying for a workspace. With Stripe switched on this makes an embedded Checkout Session for the
+    plan's monthly subscription; otherwise the page uses the demo checkout."""
+    _require_key(x_signup_key)
+    _limit(request, "check", CHECKS_PER_HOUR)
+    plan = _plan(body.plan_id, body.purchased_domains)
+    keys = _stripe_keys()
+    if keys is None:
+        return {"mode": "demo"}
+    from freedombot.util.ids import slugify
+
+    slug = slugify(body.slug or body.company_name)
+    if new_client._slug_taken(slug):
+        raise HTTPException(status_code=409, detail=f'The workspace ID "{slug}" is already taken. Choose another.')
+    import stripe
+
+    tags = _order_tags(slug=slug, plan_id=body.plan_id, email=str(body.admin_email), domains=body.purchased_domains)
+    try:
+        session = stripe.checkout.Session.create(
+            api_key=keys[0],
+            ui_mode="embedded",
+            mode="subscription",
+            redirect_on_completion="never",
+            customer_email=str(body.admin_email),
+            line_items=[{
+                "quantity": 1,
+                "price_data": {
+                    "currency": os.environ.get("STRIPE_CURRENCY", "usd").strip().casefold() or "usd",
+                    "unit_amount": plan["cents"],
+                    "recurring": {"interval": "month"},
+                    "product_data": {"name": f"FreedomBot {plan['name']}"},
+                },
+            }],
+            metadata=tags,
+            subscription_data={"metadata": tags},
+        )
+    except stripe.StripeError as exc:
+        from agno.utils.log import log_warning
+
+        log_warning(f"signup checkout could not start: {exc}")
+        raise HTTPException(status_code=502, detail="Payment could not be started. Try again in a minute.") from exc
+    return {"mode": "stripe", "client_secret": session.client_secret, "publishable_key": keys[1],
+            "session_id": session.id}
+
+
+def _confirm_payment(body: "SignupBody") -> None:
+    """With Stripe on: the Checkout Session must be complete, paid, and for exactly this workspace and plan."""
+    keys = _stripe_keys()
+    if keys is None:
+        return
+    reference = (body.payment_reference or "").strip()
+    if not reference.startswith("cs_"):
+        raise HTTPException(status_code=402, detail="Payment is required before the workspace is created.")
+    import stripe
+
+    try:
+        session = stripe.checkout.Session.retrieve(reference, api_key=keys[0])
+    except stripe.StripeError as exc:
+        raise HTTPException(status_code=402, detail="That payment could not be found.") from exc
+    if session.status != "complete" or session.payment_status not in {"paid", "no_payment_required"}:
+        raise HTTPException(status_code=402, detail="The payment has not gone through yet.")
+    wanted = _order_tags(slug=body.slug or body.company_name, plan_id=body.plan_id,
+                         email=str(body.admin_email), domains=body.purchased_domains)
+    paid_for = dict(session.metadata or {})
+    if any(paid_for.get(k) != v for k, v in wanted.items()):
+        raise HTTPException(status_code=402, detail="That payment was for a different workspace or plan.")
+
+
 def _actor():
     """Who made the client, in the control-plane audit: the website, inside Cepoch's internal workspace."""
     from freedombot.bootstrap import ensure_internal_workspace
@@ -98,6 +221,8 @@ def signup(request: Request, body: SignupBody, x_signup_key: Optional[str] = Hea
     """Make the paid client's workspace and first admin. The password is never returned or recorded."""
     _require_key(x_signup_key)
     _limit(request, "signup", SIGNUPS_PER_HOUR)
+    _plan(body.plan_id, body.purchased_domains)
+    _confirm_payment(body)
     try:
         made = new_client.create_client(
             company_name=body.company_name,
@@ -109,6 +234,14 @@ def signup(request: Request, body: SignupBody, x_signup_key: Optional[str] = Hea
             actor=_actor(),
         )
     except admin_ops.AdminError as exc:  # bad input, a taken identifier, or a setup that was undone
+        if (body.payment_reference or "").startswith("cs_"):
+            from agno.utils.log import log_warning
+
+            # Paid but not made: support needs the payment to refund it or finish the setup by hand.
+            log_warning(f"signup paid ({body.payment_reference}) but the workspace was not made: {exc.message}")
+            raise HTTPException(status_code=exc.status, detail=(
+                f"{exc.message} Your payment went through: contact FreedomBot support with reference "
+                f"{body.payment_reference} and we will finish your setup.")) from exc
         raise HTTPException(status_code=exc.status, detail=exc.message) from exc
     _remember_purchase(made["client"]["id"], body)
     return {

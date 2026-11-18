@@ -9,7 +9,8 @@
  * the card details never leave the browser (demo checkout).
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { loadStripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js'
 import Link from 'next/link'
 import { ArrowLeft, ArrowRight, Check, CheckCircle2, Copy, CreditCard, Eye, EyeOff, FileText, Info, Lock, Upload, X } from 'lucide-react'
 import { BrandMark } from '@/components/BrandMark'
@@ -96,6 +97,10 @@ export default function SignupPage() {
   const [card, setCard] = useState({ name: '', number: '', expiry: '', cvc: '' })
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Payment: Stripe's embedded checkout when the server has Stripe switched on, else the demo card form.
+  const [payMode, setPayMode] = useState<'loading' | 'demo' | 'stripe' | 'error'>('loading')
+  const checkoutRef = useRef<StripeEmbeddedCheckout | null>(null)
+  const provisionRef = useRef<(reference: string) => Promise<void>>(async () => {})
   const [created, setCreated] = useState<Created | null>(null)
   // Company documents picked in the Knowledge step. Kept in this tab only, never in storage.
   const [files, setFiles] = useState<File[]>([])
@@ -236,25 +241,20 @@ export default function SignupPage() {
     go(step + 1)
   }
 
-  async function pay() {
+  /** Create the workspace for a payment ("demo", or a Stripe Checkout Session the server checks). */
+  async function provision(reference: string) {
     setError(null)
-    const digits = card.number.replace(/\D/g, '')
-    if (!card.name.trim() || digits.length < 12 || !/^\d{1,2}\s*\/\s*\d{2,4}$/.test(card.expiry) || !/^\d{3,4}$/.test(card.cvc)) {
-      return setError('Enter the card details to continue.')
-    }
     setBusy(true)
-    // Demo checkout: replace with Stripe Checkout / Billing. Card details are never sent anywhere.
-    await new Promise((resolve) => setTimeout(resolve, 700))
     try {
       const response = await fetch('/signup/provision', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...draft, workspaceId, password, paymentReference: 'demo' })
+        body: JSON.stringify({ ...draft, workspaceId, password, paymentReference: reference })
       })
       const body = await response.json().catch(() => ({}))
       if (!response.ok || !body.workspace) {
         setError(detail(body, 'Your workspace could not be created. Try again.'))
-        if (response.status === 409) go(1)
+        if (response.status === 409 && reference === 'demo') go(1)
         return
       }
       setCreated(body as Created)
@@ -271,6 +271,66 @@ export default function SignupPage() {
       setBusy(false)
     }
   }
+  provisionRef.current = provision
+
+  /** Demo checkout (no Stripe on the server): the card details are checked for shape and never sent anywhere. */
+  async function pay() {
+    setError(null)
+    const digits = card.number.replace(/\D/g, '')
+    if (!card.name.trim() || digits.length < 12 || !/^\d{1,2}\s*\/\s*\d{2,4}$/.test(card.expiry) || !/^\d{3,4}$/.test(card.cvc)) {
+      return setError('Enter the card details to continue.')
+    }
+    await provision('demo')
+  }
+
+  // On the Payment step, ask the server how to pay. With Stripe, mount its embedded checkout; when the payment
+  // completes, the workspace is made with that Checkout Session, which the server confirms with Stripe.
+  useEffect(() => {
+    if (step !== PAY_STEP || created) return
+    let cancelled = false
+    setPayMode('loading')
+    void (async () => {
+      try {
+        const response = await fetch('/signup/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...draft, workspaceId })
+        })
+        const body = await response.json().catch(() => ({}))
+        if (cancelled) return
+        if (!response.ok) {
+          setError(detail(body, 'Payment could not be started. Try again in a minute.'))
+          return setPayMode('error')
+        }
+        if (body.mode !== 'stripe') return setPayMode('demo')
+        const stripe = await loadStripe(body.publishable_key)
+        if (cancelled || !stripe) {
+          if (!stripe) setPayMode('error')
+          return
+        }
+        const checkout = await stripe.initEmbeddedCheckout({
+          fetchClientSecret: async () => body.client_secret as string,
+          onComplete: () => void provisionRef.current(body.session_id as string)
+        })
+        if (cancelled) return checkout.destroy()
+        checkoutRef.current = checkout
+        setPayMode('stripe')
+        checkout.mount('#stripe-checkout')
+      } catch {
+        if (!cancelled) {
+          setError('Payment could not be started. Try again in a minute.')
+          setPayMode('error')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+      checkoutRef.current?.destroy()
+      checkoutRef.current = null
+    }
+    // A new session for each visit to the Payment step; the order can only change on the earlier steps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, created])
 
   return (
     <div className="min-h-dvh bg-background text-primary">
@@ -496,6 +556,16 @@ export default function SignupPage() {
                 <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
                   <div className="grid gap-4">
                     <Heading title="Review and pay" text="Your workspace is created as soon as the payment goes through." />
+                    {payMode === 'loading' && <p className="text-[13px] text-muted">Preparing secure payment…</p>}
+                    {payMode === 'stripe' && (
+                      <p className="flex items-center gap-2 text-[12px] text-muted">
+                        <Lock size={13} className="text-brand" aria-hidden /> Secure payment by Stripe. Your card details go to Stripe only.
+                      </p>
+                    )}
+                    <div id="stripe-checkout" className={payMode === 'stripe' ? 'overflow-hidden rounded-xl' : 'hidden'} />
+                    {payMode === 'stripe' && busy && <p className="text-[13px] text-muted">Payment received. Creating your workspace…</p>}
+                    {payMode === 'demo' && (
+                    <>
                     <p className="flex items-center gap-2 text-[12px] text-muted">
                       <Lock size={13} className="text-brand" aria-hidden /> Demo checkout: no real charge is made.
                     </p>
@@ -521,6 +591,8 @@ export default function SignupPage() {
                           onChange={(e) => setCard({ ...card, cvc: e.target.value })} />
                       </Field>
                     </div>
+                    </>
+                    )}
                   </div>
                   <aside className="h-fit rounded-xl border border-border bg-background p-5 text-[13px]">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">Order summary</p>
@@ -559,6 +631,8 @@ export default function SignupPage() {
                   <Btn onClick={() => void next()} loading={busy}>
                     {step === 4 && files.length === 0 ? 'Skip for now' : 'Continue'} <ArrowRight size={15} aria-hidden />
                   </Btn>
+                ) : payMode !== 'demo' ? (
+                  <span />
                 ) : (
                   <Btn onClick={() => void pay()} loading={busy}>
                     Pay {usd(plan.priceMonthly)}/mo and create workspace
