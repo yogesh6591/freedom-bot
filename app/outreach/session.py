@@ -905,8 +905,9 @@ class OutreachSession:
         db = self.db_factory()
         try:
             return (followups.describe(db, outreach_settings.effective(db))
-                    + "\n\nAnswer what the user asked from this. For the whole schedule give one short line per stage. "
-                    "Do not list people.")
+                    + "\n\nAnswer what the user asked from this. When they ask about the schedule or how it works, give a table "
+                    "with one row per stage (columns: Stage, Days, Time, Most), then one short line saying "
+                    "whether it is on, how many people are waiting and when the next is due. Do not list people.")
         finally:
             db.close()
 
