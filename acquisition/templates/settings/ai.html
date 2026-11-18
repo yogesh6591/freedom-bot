@@ -154,6 +154,16 @@
         <div class="pr-chips" data-chips="exclusions"></div>
         <small>Examples: trades, restaurants, law firms.</small>
       </label>
+      <label class="acq-switch-row" for="pr-follow-request" style="margin-top: 1rem;">
+        <span>
+          <span class="acq-switch-label">Follow the user's request only</span>
+          <small>When on, if the user names an industry in chat, saved categories and exclusions are ignored and any firm matching the request can be found. Applies to all organisations.</small>
+        </span>
+        <span class="toggle-field">
+          <input type="checkbox" id="pr-follow-request" {% if pr.follow_request %}checked{% endif %}>
+          <span class="toggle-track" aria-hidden="true"></span>
+        </span>
+      </label>
     </div>
 
     <div class="acq-setting-group">
@@ -467,6 +477,7 @@
     document.getElementById("pr-outreach-cap").value = data.outreach_daily_cap;
     document.getElementById("pr-bounce").value = data.pause_if_bounce_rate_percent;
     document.getElementById("pr-verified").checked = !!data.require_verified_email;
+    document.getElementById("pr-follow-request").checked = !!data.follow_request;
     renderChips(chipsEl("titles"), data.titles || (data.titles = []));
     renderChips(chipsEl("exclusions"), data.exclusions || (data.exclusions = []));
     if (!Array.isArray(data.categories)) data.categories = [];
@@ -493,7 +504,8 @@
       discovery_daily_target: document.getElementById("pr-discovery-target").value,
       outreach_daily_cap: document.getElementById("pr-outreach-cap").value,
       require_verified_email: document.getElementById("pr-verified").checked,
-      pause_if_bounce_rate_percent: document.getElementById("pr-bounce").value
+      pause_if_bounce_rate_percent: document.getElementById("pr-bounce").value,
+      follow_request: document.getElementById("pr-follow-request").checked
     };
   }
   function apiUrl(path) {

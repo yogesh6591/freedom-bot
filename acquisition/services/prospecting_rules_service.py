@@ -44,6 +44,7 @@ class ProspectingRules:
     outreach_daily_cap: int = 5
     require_verified_email: bool = True
     pause_if_bounce_rate_percent: float = 5.0
+    follow_request: bool = False
 
     def to_payload(self) -> dict[str, Any]:
         data = asdict(self)
@@ -207,6 +208,7 @@ def parse_and_validate(raw: dict[str, Any] | None, *, version: int = 0) -> Prosp
             field="Bounce-rate pause",
             errors=errors,
         ),
+        follow_request=_as_bool(src.get("follow_request"), defaults.follow_request),
     )
     if not rules.country:
         errors.append("Country cannot be empty.")

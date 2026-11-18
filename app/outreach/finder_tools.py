@@ -69,6 +69,16 @@ def _exa(key: str, body: dict) -> list[dict]:
     return [r for r in (reply.json().get("results") or []) if isinstance(r, dict)]
 
 
+def _follow_user_request(rules: Any, focus: str) -> bool:
+    return bool(getattr(rules, "follow_request", False)) and bool(focus.strip())
+
+
+def _icp_category_for_save(rules: Any, focus: str, category: str) -> str:
+    if _follow_user_request(rules, focus):
+        return proper_case(focus.strip())[:128]
+    return category
+
+
 def _state(value: str) -> str:
     """The full state name for a name or abbreviation the user typed, or "" when none was given."""
     text = " ".join(str(value or "").split())
@@ -93,6 +103,8 @@ def _labelled(rules: Any, focus: str, state: str = "", lo: Optional[int] = None,
         low = focus.strip().casefold()
         name = next((c.name for c in rules.categories
                      if any(w and w.casefold() in low for w in [c.name, *c.keywords])), "Other")
+        if _follow_user_request(rules, focus):
+            return [(name, f"{focus.strip()} firm or practice, {tail}")]
         return [(name, f"founder-led {focus.strip()} firm, {tail}")]
     if broad:  # saved kinds of firm widened: any owner-led firm that is not an excluded kind
         return [("Other", f"founder-led small consulting, advisory or professional-services firm, {tail}")]
@@ -127,17 +139,26 @@ def _classify(rules: Any, focus: str, rows: list[dict], broad: bool = False) -> 
     if not rows:
         return {}
     names = [c.name for c in rules.categories]
-    wanted = (f"the kind of firm the user asked for: {focus.strip()}" if focus.strip()
-              else "any small consulting, advisory or professional-services firm" if broad
-              else "one of these kinds of firm: " + "; ".join(names))
-    skip = ", ".join(rules.exclusions) or "none"
     firms = "\n".join(f"{i}. {r.get('title') or ''} - {str(r.get('summary') or '')[:400]}" for i, r in enumerate(rows))
+    if _follow_user_request(rules, focus):
+        wanted = f"the kind of business or organisation the user asked for: {focus.strip()}"
+        match_rule = (
+            f"matches is true only when the firm or organisation is {wanted}. Use only what the description says."
+        )
+    else:
+        wanted = (f"the kind of firm the user asked for: {focus.strip()}" if focus.strip()
+                  else "any small consulting, advisory or professional-services firm" if broad
+                  else "one of these kinds of firm: " + "; ".join(names))
+        skip = ", ".join(rules.exclusions) or "none"
+        match_rule = (
+            f"matches is true only when the firm is founder-led and is {wanted}, and is not an excluded kind "
+            f"(excluded: {skip}). Use only what the description says."
+        )
     prompt = (
         "Classify each firm from its short description. Reply with ONLY a JSON array, one object per firm: "
         '{"i": number, "category": exactly one of [' + ", ".join(f'"{n}"' for n in names) + ', "Other"], '
         '"business_type": "what the firm is in 2 to 4 words", "matches": true or false}. '
-        f"matches is true only when the firm is founder-led and is {wanted}, and is not an excluded kind "
-        f"(excluded: {skip}). Use only what the description says.\n\n{firms}")
+        f"{match_rule}\n\n{firms}")
     try:
         data = json.loads(re.search(r"\[.*\]", _small_model(prompt), re.S).group(0))
     except Exception:  # noqa: BLE001 - no answer: keep the search's own category
@@ -165,7 +186,7 @@ def _companies(key: str, rules: Any, focus: str, state: str = "", lo: Optional[i
                  "query": q, "category": "company", "userLocation": "US", "numResults": per,
                  "contents": {"summary": {"query": "What the firm does, number of employees, and where it is based"}}})]
              for cat, q in pairs]
-    banned = [x.casefold() for x in rules.exclusions]
+    banned = [] if _follow_user_request(rules, focus) else [x.casefold() for x in rules.exclusions]
     seen: set[str] = set()
     out: list[dict] = []
     for i in range(per):
@@ -292,19 +313,52 @@ def _web_firms(rules: Any, focus: str, state: str, lo: Optional[int], hi: Option
     """Firms found by web search, shaped like Exa rows, each with its founder and any email printed on a public page."""
     pairs = _labelled(rules, focus, state, lo, hi, relax, broad)
     names = [c.name for c in rules.categories]
-    prompt = (
-        f"Use web search to find up to {WEB_POOL} real, owner-led firms that match these searches, best priority first: "
-        + " | ".join(q for _, q in pairs) + f". Never include these kinds of business: {', '.join(rules.exclusions) or 'none'}. "
-        f"Never include these websites: {', '.join(sorted(d for d in skip if d)[:150]) or 'none'}. "
-        "For each firm find its current founder, owner or CEO (name and title), the founder's public LinkedIn URL if you "
-        "see one, and a business email address for that person ONLY if it is printed on a public page. Never guess an "
-        "address and never build one from a name pattern: use null when you did not see one, and give the page where you "
-        "saw it in email_page. Return ONLY a JSON array, one object per firm: "
-        '{"company": text, "website": text, "category": one of [' + ", ".join(f'"{n}"' for n in names) + ', "Other"], '
+    req_only = _follow_user_request(rules, focus)
+    skip_line = (
+        ""
+        if req_only
+        else f". Never include these kinds of business: {', '.join(rules.exclusions) or 'none'}"
+    )
+    sites = f"Never include these websites: {', '.join(sorted(d for d in skip if d)[:150]) or 'none'}. "
+    schema = (
+        '{"company": text, "website": text, "category": one of ['
+        + ", ".join(f'"{n}"' for n in names)
+        + ', "Other"], '
         '"founder_name": text, "founder_title": text, "founder_linkedin": text or null, "email": text or null, '
         '"email_page": text or null, "summary": "what the firm does, in one sentence"}.')
+    email_rules = (
+        "Never guess an address and never build one from a name pattern: use null when you did not see one, "
+        "and give the page where you saw it in email_page. "
+    )
+    if req_only:
+        prompt = (
+            f"Use web search to find up to {WEB_POOL} real businesses or organisations that match these searches, "
+            f"best priority first: "
+            + " | ".join(q for _, q in pairs)
+            + ". "
+            + sites
+            + "For each firm find the best contact person (founder, owner, CEO, practice manager or head) "
+            "(name and title), the contact's public LinkedIn URL if you see one, and a business email address for "
+            "that person ONLY if it is printed on a public page. "
+            + email_rules
+            + "Return ONLY a JSON array, one object per firm: "
+            + schema
+        )
+    else:
+        prompt = (
+            f"Use web search to find up to {WEB_POOL} real, owner-led firms that match these searches, best priority first: "
+            + " | ".join(q for _, q in pairs)
+            + skip_line
+            + ". "
+            + sites
+            + "For each firm find its current founder, owner or CEO (name and title), the founder's public LinkedIn URL if you "
+            "see one, and a business email address for that person ONLY if it is printed on a public page. "
+            + email_rules
+            + "Return ONLY a JSON array, one object per firm: "
+            + schema
+        )
     data = _json_in(_web_ask(prompt), "[")
-    banned = [x.casefold() for x in rules.exclusions]
+    banned = [] if req_only else [x.casefold() for x in rules.exclusions]
     out: list[dict] = []
     for item in data if isinstance(data, list) else []:
         if not isinstance(item, dict):
@@ -493,6 +547,7 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
                 skipped.append(f"{name}: already saved")
                 continue
             category, label, matches = kinds.get(number, (str(row.get("_category") or "Other"), None, True))
+            category = _icp_category_for_save(rules, focus, category)
             if not matches:
                 skipped.append(f"{name}: not what was asked ({label or 'another kind of firm'})")
                 continue
@@ -580,7 +635,15 @@ def find_new_prospects(call: Call, count: int = MAX_FIND, focus: str = "", state
     if skipped:
         lines.append("Skipped: " + " | ".join(skipped[:8]) + ".")
     if len(added) < want:
-        lines.append(f"Only {len(added)} of {want} could be found within the search limit ({lookups} email lookups); ask again to continue.")
+        if lookups >= MAX_LOOKUPS:
+            lines.append(
+                f"Only {len(added)} of {want} could be found: the lookup limit ({MAX_LOOKUPS}) was reached."
+            )
+        else:
+            lines.append(
+                f"Only {len(added)} of {want} could be found: no more matching firms turned up "
+                f"after {lookups} email lookups."
+            )
     lines.append(f"Email lookups used: {lookups}. Nothing was emailed. Show the people added in the prospects table "
                  "with the Category column, as for any prospect answer.")
     return " ".join(lines)
