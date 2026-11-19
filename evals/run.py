@@ -46,6 +46,9 @@ from freedombot.util.dotenv import load_dotenv  # noqa: E402
 
 load_dotenv()
 os.environ.setdefault("RUNTIME_ENV", "dev")
+# Evals check the policy gates and never send real email, whatever .env says.
+os.environ["POLICY_ENABLED"] = "on"
+os.environ["SUPPORT_TICKET_EMAILS"] = "off"
 os.environ["DATABASE_URL"] = "postgresql+psycopg://{u}:{p}@{h}:{port}/acquisition_test".format(
     u=os.environ.get("DB_USER", "freedombot"), p=os.environ.get("DB_PASS", "freedombot"),
     h=os.environ.get("DB_HOST", "localhost"), port=os.environ.get("DB_PORT", "5432"),

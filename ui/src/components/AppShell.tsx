@@ -165,7 +165,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [locationQuery, setLocationQuery] = useState('')
 
   useEffect(() => {
-    if (!loading && !me) router.replace(chatOnly ? '/login' : '/admin')
+    if (loading || me) return
+    // Keep a ticket email link (?ticket=<id>) through sign-in.
+    const ticket = chatOnly ? new URLSearchParams(window.location.search).get('ticket') : null
+    router.replace(chatOnly ? (ticket ? `/login?ticket=${encodeURIComponent(ticket)}` : '/login') : '/admin')
   }, [loading, me, router, chatOnly])
   useEffect(() => {
     if (me) setAdminOk(adminUnlocked(me.user.id))

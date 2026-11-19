@@ -245,7 +245,10 @@ class ClientSettings:
     # -- Order/DPA (FB-039) -------------------------------------------------
 
     def order_dpa_allows_category(self, category: str) -> bool:
-        return category.casefold() in self.order_dpa_allows
+        from freedombot.settings import policy_enabled
+
+        # With the policy system off (POLICY_ENABLED=off) no regulated category is blocked.
+        return not policy_enabled() or category.casefold() in self.order_dpa_allows
 
     def phi_permitted(self) -> bool:
         """PHI may be processed when the Order/DPA allows it. Owner decision (2026-11-18): no BAA is

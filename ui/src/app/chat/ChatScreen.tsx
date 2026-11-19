@@ -735,6 +735,8 @@ function ChatView({ home }: { home: boolean }) {
   // The settings window's tab: connected apps, or (Cepoch and Jeanne only) their support tickets.
   const [panelTab, setPanelTab] = useState<'apps' | 'tickets'>('apps')
   const supportStaff = useSupportStaff()
+  // ?ticket=<id> (the link in a new-ticket email): open Support tickets on that ticket.
+  const [linkedTicket, setLinkedTicket] = useState<string | null>(null)
   const [accessOpen, setAccessOpen] = useState(false)
   // The open conversation is remembered per workspace and per person, so a
   // refresh or a visit to another page comes back to it (M01-11).
@@ -965,6 +967,15 @@ function ChatView({ home }: { home: boolean }) {
       setSidebarOpen(true)
     }
   }, [])
+
+  useEffect(() => {
+    if (!supportStaff) return
+    const ticket = new URLSearchParams(window.location.search).get('ticket')
+    if (!ticket) return
+    setLinkedTicket(ticket)
+    setPanelTab('tickets')
+    setIntegrationsOpen(true)
+  }, [supportStaff])
 
   // Back from a Composio sign-in (?connected=<toolkit>): reopen Integrations so the new connection shows.
   useEffect(() => {
@@ -2154,7 +2165,12 @@ function ChatView({ home }: { home: boolean }) {
             </div>
             <div className="workspace-scroll min-h-0 flex-1 overflow-y-auto p-5">
               {panelTab === 'tickets' && supportStaff ? (
-                <SupportDesk team={supportStaff.team} teamLabel={supportStaff.teamLabel} embedded />
+                <SupportDesk
+                  team={supportStaff.team}
+                  teamLabel={supportStaff.teamLabel}
+                  embedded
+                  focusTicketId={linkedTicket}
+                />
               ) : (
                 <IntegrationsView callbackPath="/chat" compact />
               )}

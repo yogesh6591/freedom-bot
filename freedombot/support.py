@@ -252,6 +252,9 @@ def create_ticket(
         )
     ticket = get_ticket(ticket_id)
     notify(ticket, team, "new", f"New {'triage ' if routing.triage else ''}ticket: {ticket['subject']}")
+    from freedombot.support_email import notify_new_ticket
+
+    notify_new_ticket(ticket, team)
     return ticket
 
 

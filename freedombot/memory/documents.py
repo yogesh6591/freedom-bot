@@ -117,7 +117,8 @@ def upload(*, title: str, filename: str, data: bytes, access_area: Optional[str]
     text = extract_text(filename, data)
     from freedombot.policy.regulated import STATUS, WHAT, find_blocked
 
-    if find_ssn(text) and "ssn" not in (getattr(settings, "order_dpa_allows", None) or []):
+    ssn_allowed = settings.order_dpa_allows_category("ssn") if settings is not None else False
+    if find_ssn(text) and not ssn_allowed:
         log(AuditEventType.GUARDRAIL_TRIGGERED, ctx=ctx, status="DOCUMENT_SSN_BLOCKED")
         raise DocumentError("This file has a Social Security number in it, so it was not uploaded. "
                             "Remove the number and upload it again.")

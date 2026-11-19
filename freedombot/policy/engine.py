@@ -67,6 +67,22 @@ def evaluate(req: PolicyRequest, *, domain_mode: Optional[ExecutionMode] = None)
             ],
         )
 
+    # Owner decision (2026-11-19): POLICY_ENABLED=off turns the whole policy system off. Every registered
+    # tool runs for every role, with no approval, draft-only, mode or regulated-data rule. On, nothing changes.
+    from freedombot.settings import policy_enabled
+
+    if not policy_enabled():
+        return PolicyDecision(
+            effect=PolicyEffect.ALLOW,
+            tool=req.tool,
+            reason="the policy system is turned off for this deployment",
+            rule="POLICY_DISABLED",
+            mode=ExecutionMode.AUTO_WITHIN_SCOPE,
+            risk=req.risk_override or spec.risk,
+            classification=spec.classification,
+            constraints=[],
+        )
+
     permission: EffectivePermission = resolve_permission(req.tool, req.ctx.roles, ctx=req.ctx)
     mode = resolve_mode(
         req.settings.mode, domain_override=domain_mode, requested=req.requested_mode

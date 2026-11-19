@@ -29,6 +29,7 @@ from typing import Iterable
 from freedombot.control.models import ClientSettings
 from freedombot.domains.packs import DomainPack
 from freedombot.policy.modes import describe as describe_mode
+from freedombot.settings import policy_enabled
 from freedombot.tenancy.context import TenantContext
 from freedombot.types import ExecutionMode
 from freedombot.util.timeutil import local_now, workspace_zone
@@ -301,14 +302,14 @@ def render(
         ),
         card_rule=(
             "This workspace IS configured for payment card data in a compliant environment."
-            if settings.allow_card_data
+            if settings.allow_card_data or not policy_enabled()
             else "This workspace is NOT configured for payment card data. Never record a card "
             "number, CVV or full card details anywhere, including memory and notes."
         ),
         child_rule=(
             "This workspace IS authorized for personal data about children; keep only what "
             "the contracted workflow needs."
-            if getattr(settings, "allow_child_data", False)
+            if getattr(settings, "allow_child_data", False) or not policy_enabled()
             else "This workspace is NOT authorized for personal data about children (anyone "
             "under 18). Do not add, store, record or look up a child's details — not in the "
             "CRM, memory or notes — and do not ask for more of their details. Say it cannot be "

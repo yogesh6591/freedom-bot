@@ -171,6 +171,13 @@ function SignInForm({
 }
 
 /** Sign-in for the home chat (``/login``) or, with ``admin``, for the admin panel (``/admin``). */
+
+/** The chat, or a support ticket in it when the sign-in came from a ticket email link (?ticket=<id>). */
+function chatTarget(): string {
+  const ticket = new URLSearchParams(window.location.search).get('ticket')?.trim()
+  return ticket ? `/chat?ticket=${encodeURIComponent(ticket)}` : '/chat'
+}
+
 export function LoginScreen({ admin = false }: { admin?: boolean }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -194,7 +201,7 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
     // A link for another workspace (/login?workspace=acme) asks for that one: show the form, not this session.
     const wanted = new URLSearchParams(window.location.search).get('workspace')?.trim()
     if (wanted && wanted !== me.client.slug) return
-    if (!admin) router.replace('/chat')
+    if (!admin) router.replace(chatTarget())
     else if (adminUnlocked(me.user.id))
       router.replace(me.user.is_platform_owner ? OWNER_HOME : '/admin/chat')
   }, [me, admin, router])
@@ -224,7 +231,7 @@ export function LoginScreen({ admin = false }: { admin?: boolean }) {
       setAdminUnlocked(adminPanel ? fresh.user.id || session.user?.id || null : null)
       // Platform owners onboard new workspaces from Administration, not from the chat.
       router.replace(
-        adminPanel ? (fresh.user.is_platform_owner ? OWNER_HOME : '/admin/chat') : '/chat'
+        adminPanel ? (fresh.user.is_platform_owner ? OWNER_HOME : '/admin/chat') : chatTarget()
       )
     } catch (err) {
       setError(signInError(err))

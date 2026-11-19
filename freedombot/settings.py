@@ -242,6 +242,55 @@ def scheduled_tasks_enabled() -> bool:
     return getenv("SCHEDULED_TASKS_ENABLED", "on").strip().casefold() not in ("0", "off", "false", "no")
 
 
+def _flag(name: str, default: str) -> bool:
+    return getenv(name, default).strip().casefold() not in ("0", "off", "false", "no")
+
+
+def policy_enabled() -> bool:
+    """The whole policy system (owner decision, 2026-11-19). On unless POLICY_ENABLED is off.
+
+    Off: every registered tool call is allowed for every role, nothing waits for approval, every mode
+    acts as AUTO_WITHIN_SCOPE and no Order/DPA category is blocked. On: everything works as before.
+    Read on every check, so a change takes effect after the process picks up the new environment.
+    """
+    return _flag("POLICY_ENABLED", "on")
+
+
+def support_ticket_emails() -> bool:
+    """Email the assigned team when a new support ticket comes in. On unless SUPPORT_TICKET_EMAILS is off."""
+    return _flag("SUPPORT_TICKET_EMAILS", "on")
+
+
+def support_email_jeanne() -> bool:
+    """Whether Jeanne's new business tickets are emailed too. Off unless SUPPORT_EMAIL_JEANNE is on."""
+    return _flag("SUPPORT_EMAIL_JEANNE", "off")
+
+
+def smtp_config() -> dict[str, object] | None:
+    """Outgoing mail server for platform notices, or ``None`` when SMTP_USER / SMTP_PASSWORD are not set."""
+    user = getenv("SMTP_USER", "").strip()
+    password = getenv("SMTP_PASSWORD", "").replace(" ", "").strip()
+    if not user or not password:
+        return None
+    try:
+        port = int(getenv("SMTP_PORT", "587"))
+    except ValueError:
+        port = 587
+    return {
+        "host": getenv("SMTP_HOST", "smtp.gmail.com").strip(),
+        "port": port,
+        "user": user,
+        "password": password,
+        "sender": getenv("SMTP_FROM", "").strip() or user,
+    }
+
+
+def app_public_url() -> str:
+    """Public origin of the FreedomBot web app, for links in emails (APP_PUBLIC_URL)."""
+    raw = getenv("APP_PUBLIC_URL", "").strip() or (cors_origins() or ["http://localhost:3000"])[0]
+    return raw.rstrip("/")
+
+
 def integration_sync_enabled() -> bool:
     """Background sync of each user's Composio sources (freedombot/sync). On unless INTEGRATION_SYNC_ENABLED is off."""
     return getenv("INTEGRATION_SYNC_ENABLED", "on").strip().casefold() not in ("0", "off", "false", "no")

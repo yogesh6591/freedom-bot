@@ -24,6 +24,9 @@ from freedombot.util.dotenv import load_dotenv
 load_dotenv()
 # Tests must never be able to mint a token accepted by a real deployment.
 os.environ.setdefault("RUNTIME_ENV", "dev")
+# Tests never send real email, and always run with the policy system on, whatever .env says.
+os.environ["SUPPORT_TICKET_EMAILS"] = "off"
+os.environ["POLICY_ENABLED"] = "on"
 # Tests wipe and rebuild acquisition data, so they ALWAYS use a throwaway database,
 # whatever DATABASE_URL says in .env or the shell. The real acquisition database is never touched.
 _DB = dict(

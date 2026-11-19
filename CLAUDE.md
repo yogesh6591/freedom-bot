@@ -11,6 +11,10 @@
   admins (freedombot/policy/engine.py, ADMIN_SKIPS_APPROVAL), including licensed content and tools that always
   need approval. Denials, draft-only, Advise mode and regulated-data blocks still bind admins. Do not
   reintroduce approval for admins.
+- Owner exception (2026-11-19): POLICY_ENABLED=off (env, freedombot/settings.py policy_enabled) turns the
+  whole policy system off: evaluate() allows every registered tool for every role (rule POLICY_DISABLED),
+  every mode acts as AUTO_WITHIN_SCOPE and no Order/DPA category is blocked. POLICY_ENABLED=on (default)
+  must behave exactly as before. Tests and evals always force it on.
 - Tool descriptions follow docs/agent/TOOL_DESCRIPTIONS.md. Any new or changed tool needs:
   routing domain, description, id_fields, requires_prior, a ToolSpec in freedombot/rbac/registry.py,
   and at least 3 eval cases in evals/cases.yaml whose expected gates come from the policy check.

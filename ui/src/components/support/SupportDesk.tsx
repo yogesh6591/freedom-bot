@@ -120,14 +120,17 @@ function priorityTone(severity: string): Tone {
 export function SupportDesk({
   team,
   teamLabel,
-  embedded = false
+  embedded = false,
+  focusTicketId = null
 }: {
   team: Team
   teamLabel: string
   /** Inside the chat window: no page header. */
   embedded?: boolean
+  /** Open this ticket on arrival (the link in a new-ticket email). */
+  focusTicketId?: string | null
 }) {
-  const [view, setView] = useState<'team' | 'triage' | 'all'>('team')
+  const [view, setView] = useState<'team' | 'triage' | 'all'>(focusTicketId ? 'all' : 'team')
   const [status, setStatus] = useState('')
   const [items, setItems] = useState<Ticket[]>([])
   const [selected, setSelected] = useState<Ticket | null>(null)
@@ -164,11 +167,18 @@ export function SupportDesk({
 
   async function open(id: string) {
     try {
-      setSelected((await api.get<{ ticket: Ticket }>(`/api/support/tickets/${id}`)).ticket)
+      setSelected((await api.get<{ ticket: Ticket }>(`/api/support/tickets/${encodeURIComponent(id)}`)).ticket)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not open the ticket')
     }
   }
+
+  useEffect(() => {
+    if (focusTicketId) void open(focusTicketId)
+  }, [focusTicketId])
+
+  // A linked ticket that is not in the current list still shows, above the list.
+  const selectedOutsideList = selected && !items.some((t) => t.id === selected.id) ? selected : null
 
   async function markRead() {
     await api.post('/api/support/notifications/read')
@@ -212,6 +222,17 @@ export function SupportDesk({
         />
       )}
       {error && <ErrorNote>{error}</ErrorNote>}
+      {selectedOutsideList && (
+        <TicketDetail
+          ticket={selectedOutsideList}
+          onClose={() => setSelected(null)}
+          onChanged={async (t) => {
+            setSelected(t)
+            await load()
+          }}
+          onError={setError}
+        />
+      )}
 
       {showNotices && (
         <Panel

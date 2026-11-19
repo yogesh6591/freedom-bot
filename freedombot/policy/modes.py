@@ -22,7 +22,14 @@ from freedombot.types import ExecutionMode, mode_permissiveness
 
 
 def narrowest(*modes: Optional[ExecutionMode]) -> ExecutionMode:
-    """The most restrictive of the supplied modes, ignoring ``None``."""
+    """The most restrictive of the supplied modes, ignoring ``None``.
+
+    With the policy system turned off (POLICY_ENABLED=off) every mode acts as AUTO_WITHIN_SCOPE.
+    """
+    from freedombot.settings import policy_enabled
+
+    if not policy_enabled():
+        return ExecutionMode.AUTO_WITHIN_SCOPE
     present = [m for m in modes if m is not None]
     if not present:
         return ExecutionMode.ADVISE
